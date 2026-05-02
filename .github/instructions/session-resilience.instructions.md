@@ -14,6 +14,7 @@ After every ExecPlan task completion:
    Task: §4.X
    ```
 3. Update Recovery Ledger §5b immediately after commit
+4. Refresh `Current Resume State` and append a timestamped `Progress History` row
 
 ## Conventional Commit Types
 

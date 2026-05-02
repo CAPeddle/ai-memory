@@ -1,26 +1,25 @@
 # FollowUpSessionLog — ai-memory
 
-## Last Session: 2025-05-02
+## Last Session: 2026-05-02
 
 ### Accomplished
-- Created all investigation documents (6 total + 2 OpenClaw research)
-- Initialized git repository (user: CAPeddle)
-- Supplemented workflow + context docs with Cursor and Codex research
-- Created full governance infrastructure (ST-009):
-  - /plan, /continue, /recover prompts
-  - Story board with initial backlog (ST-001 through ST-010)
-  - ExecPlan template with living document sections
-  - Session resilience + coding standards instructions
+- Audited governance artifacts against the context-engineering and workflow investigations
+- Added ST-011 as the highest-priority next planning target for recurring governance review
+- Created `.github/planning/query-packets/QP-011-governance-review-remediation.md` with the full audit baseline
+- Added a minimal `.github/skills/compound-engineering/SKILL.md`
+- Aligned planner discovery and recovery-ledger rules across prompts, instructions, and the ExecPlan template
+- Clarified MCP search-result ownership in the backlog so future planning can map responsibilities cleanly
 
 ### Resume Point
-- Board: all stories in Backlog
-- Next recommended: run `/plan` to create ExecPlan for ST-001 (Scaffold .NET solution)
-- ST-001 is highest priority unblocked story (WSJF: 2.5, no dependencies)
+- Next recommended: run `/plan` for ST-011 using `.github/planning/query-packets/QP-011-governance-review-remediation.md`
+- Goal: scope a dedicated governance-review prompt and recurring audit cadence
+- Product implementation should wait until ST-011 planning is complete
 
 ### Board State
 - In Progress: (none)
 - Review: (none)
+- Backlog priority: ST-011
 - Done: ST-009
 
 ### Avoidance
-(None — first session, no failures)
+- Do not start another broad governance review from scratch; use the ST-011 query packet as the seed context.

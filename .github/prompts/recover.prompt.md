@@ -1,7 +1,7 @@
 ---
-mode: agent
-description: "Session forensics — recover from failures, annotate ExecPlans with avoidance rules"
-model: opus
+name: "Recover"
+description: "Recover ai-memory sessions through forensic analysis, avoidance notes, and ExecPlan annotations"
+agent: "agent"
 ---
 
 # /recover — Lead Engineer (Recovery Mode)
@@ -56,11 +56,8 @@ Determine what went wrong:
 Update **only** these sections:
 
 **§5b Recovery Ledger:**
-- Last completed task (with timestamp)
-- Last successful command
-- Expected outputs produced (list what exists)
-- Next task (where to resume)
-- Known blockers
+- Refresh the `Current Resume State` table to the best evidence-backed checkpoint
+- Append one or more `Progress History` rows with timestamps, task status, evidence, and next step
 
 **§5b Avoidance subsection:**
 ```markdown
@@ -104,7 +101,10 @@ Recovery: annotated §5b, §6
 - **Never** guess at what happened — only report what evidence shows
 - **Always** provide specific Avoidance instructions (not vague warnings)
 - **Always** include evidence for every claim in the timeline
-- **Always** preserve existing Recovery Ledger history (append, don't overwrite)
+- **Always** preserve existing Recovery Ledger history (append to `Progress History` and `Avoidance`; only refresh `Current Resume State`)
+- **Always** use `vscode_askQuestions` for PO-facing questions, approvals, clarifications, and confirmations
+- **Always** post a context message with clickable links immediately before each `vscode_askQuestions` call
+- **Always** include a story-board link and story line/section when the question is about a specific story
 
 ## Context Conservation
 

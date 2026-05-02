@@ -4,7 +4,7 @@
 |-------|-------|
 | **Created** | 2025-05-02 |
 | **Status** | Complete |
-| **Scope** | Three-prompt workflow cadence, board design, and ExecPlan pattern for ai-memory |
+| **Scope** | Planning, intake, execution, and recovery prompt workflow for ai-memory |
 | **Sources** | `copilot_config/.github/prompts/`, `story-app/docs/investigations/AgenticWorkflow_PortabilityManual.md`, Cursor "Scaling long-running autonomous coding" (Jan 2026), OpenAI Codex ExecPlans / PLANS.md |
 
 ---
@@ -13,15 +13,16 @@
 
 This document defines the **board-driven, PO-gated workflow** for developing the ai-memory service. It adapts the continuous-flow kanban system from `copilot_config` and `story-app` into a self-contained workflow within this repository.
 
-The workflow uses three prompts with deliberate model-tier separation:
+The workflow uses three primary prompts plus one intake prompt:
 
 | Prompt | Model Tier | Purpose |
 |--------|-----------|---------|
+| `/plan-new` | Strong (Opus) | Add a story, perform targeted research, and scope impact/priority with the PO |
 | `/plan` | Strong (Opus) | Collaborative scoping, story creation, ExecPlan authoring, plan-review resolution |
 | `/continue` | Cost-efficient (Sonnet) | Task execution from Ready ExecPlans, atomic commits, board maintenance |
 | `/recover` | Strong (Opus) | Session forensics, ExecPlan annotation after failures |
 
-**Key principle:** The ExecPlan is the handoff artifact between tiers. `/plan` writes the recipe; `/continue` follows it mechanically.
+**Key principle:** The ExecPlan is the handoff artifact between tiers. `/plan-new` creates the intake artifact, `/plan` writes the recipe, and `/continue` follows it mechanically.
 
 ---
 
@@ -36,15 +37,27 @@ The workflow uses three prompts with deliberate model-tier separation:
 | Context loss between sessions | ExecPlan + Recovery Ledger + FollowUpSessionLog bridge the gap |
 | Scope creep | Cheap model can't improvise — it escalates instead |
 
-### 2.2 The Three Prompts
+### 2.2 Prompt Set
+
+`/plan-new` is an intake helper, not a replacement for `/plan`. It adds a story, creates a seed query packet, and stops. Full planning still happens in `/plan` after additional PO back-and-forth.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                        PO (Human)                                 │
 │                                                                    │
-│  Decides what to build, approves plans, gates execution            │
+│  Decides what to build, adds stories, approves plans, gates execution│
 └──────────────┬────────────────────────────┬───────────────────────┘
                │                            │
+    ┌──────────▼──────────┐
+    │ /plan-new (Opus)    │
+    │                     │
+    │ • Story intake      │
+    │ • Targeted research │
+    │ • PO priority scope │
+    │ • Seed query packet │
+    └──────────┬──────────┘
+           │ Creates story + query packet
+           ▼
     ┌──────────▼──────────┐     ┌───────────▼──────────────┐
     │  /plan (Opus)       │     │  /recover (Opus)         │
     │                     │     │                          │
@@ -53,8 +66,8 @@ The workflow uses three prompts with deliberate model-tier separation:
     │  • ExecPlan writing │     │  • Avoidance rules       │
     │  • Plan-review fix  │     │  • Recovery annotation   │
     └──────────┬──────────┘     └──────────────────────────┘
-               │ Produces ExecPlan
-               ▼
+           │ Produces ExecPlan
+           ▼
     ┌────────────────────────┐
     │  /continue (Sonnet)    │
     │                        │
@@ -69,6 +82,8 @@ The workflow uses three prompts with deliberate model-tier separation:
 
 Two-phase planning model with a context compact between phases:
 
+**Non-negotiable rule:** planning is collaborative. No query packet, story shaping, or ExecPlan direction may be produced unilaterally without back-and-forth with the PO using `vscode_askQuestions`.
+
 **Phase 1 — Query Packet (collaborative scoping)**
 1. PO runs `/plan` with a strong model
 2. LE determines planning mode: user-directed, plan-review resolution, or board scan
@@ -78,6 +93,18 @@ Two-phase planning model with a context compact between phases:
    - Scope lock — confirm in/out scope and key decisions
 4. LE captures all decisions in a **query packet** under `.github/planning/query-packets/`
 5. Signal PO to compact context
+
+### 2.3b New Story Intake (`/plan-new`)
+
+`/plan-new` exists to add a story before full planning begins.
+
+1. Read the board and gather the PO's initial intent through `vscode_askQuestions`
+2. Perform targeted research to identify likely impact, touched areas, blockers, and related docs
+3. Ask the PO bounded follow-up questions to scope impact, priority, and placement
+4. Create the board entry with the next `ST-N` ID
+5. Create a seed query packet under `.github/planning/query-packets/`
+6. Reserve the future ExecPlan path in the board entry
+7. Stop and direct the PO to `/plan` for full collaborative planning
 
 **Phase 2 — ExecPlan Authoring (fresh context)**
 1. Read the query packet (sole input)
@@ -348,8 +375,10 @@ Tracks alternative approaches when one fails:
 
 **Rules:**
 - Never execute ExecPlan tasks
+- Never plan unilaterally — planning requires PO back-and-forth via `vscode_askQuestions`
 - Never skip collaborative scoping
-- Always link artifacts before asking questions
+- Always use `vscode_askQuestions` for PO-facing questions, approvals, clarifications, and confirmations
+- Always post a context message with clickable artifact links immediately before each questions-tool interaction
 - Always verify §2b before marking Ready
 - Keep scoping rounds focused: 1–3 questions per round
 - Produce plans explicit enough for a cost-efficient model to follow mechanically
@@ -369,6 +398,8 @@ Tracks alternative approaches when one fails:
 - Always check §2b before executing
 - Always check §5b Avoidance before executing
 - Always atomic commit after each task
+- Always use `vscode_askQuestions` for PO-facing questions, approvals, clarifications, and confirmations
+- Always post a context message with clickable artifact links immediately before each questions-tool interaction
 - Follow instructions exactly as written
 
 ### 5.3 `/recover` Contract
@@ -449,11 +480,15 @@ Rules for minimising context consumption:
 
 ### 8.1 Mandatory Artifact Linking
 
+All PO-facing interactions that require a response, approval, clarification, or confirmation must use `vscode_askQuestions`.
+
 Before every `vscode_askQuestions` call, post a context message with clickable links to:
 - The story entry in the board
 - The ExecPlan being discussed
 - Investigation/design docs referenced
 - Specific files, directories, or outputs under discussion
+
+When the question is about a specific story, include the relevant story line or section link so the PO can answer with local context.
 
 ### 8.2 Approval Gate Format
 

@@ -95,11 +95,13 @@ Expected result: description of what success looks like.
 
 ## §5. State Recovery Protocol
 
-If a session is interrupted, the executor reads §5b to determine where to resume. The Recovery Ledger must always reflect the current state of progress.
+If a session is interrupted, the executor reads §5b to determine where to resume. The Recovery Ledger has two parts: a current resume snapshot that can be updated in place, and a progress history that must be append-only.
 
 ---
 
 ## §5b. Recovery Ledger
+
+### Current Resume State
 
 | Field | Value |
 |---|---|
@@ -110,9 +112,15 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | **Known blockers** | None |
 | **Last updated** | — |
 
+### Progress History
+
+| Timestamp (ISO) | Task | Status | Evidence / outputs | Next step |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
 ### Avoidance
 
-(Empty — populated by /recover after failures)
+(Append dated entries here. Do not delete prior guidance.)
 
 ---
 

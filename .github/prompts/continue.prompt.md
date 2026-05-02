@@ -1,7 +1,7 @@
 ---
-mode: agent
-description: "Task execution from Ready ExecPlans — atomic commits, board maintenance"
-model: sonnet
+name: "Continue"
+description: "Execute Ready ExecPlans mechanically for ai-memory, with atomic commits and board maintenance"
+agent: "agent"
 ---
 
 # /continue — Lead Engineer (Execution Mode)
@@ -48,11 +48,8 @@ For a story with a Ready ExecPlan:
    Task: §4.X
    ```
 3. Update §5b Recovery Ledger with:
-   - Last completed task
-   - Last successful command
-   - Expected outputs produced
-   - Next task
-   - Timestamp (ISO format)
+   - `Current Resume State` snapshot fields
+   - One appended row in `Progress History` with ISO timestamp, task, status, evidence, and next step
 4. Update §6b Surprises & Discoveries if anything unexpected occurred
 5. Update §6c Decision Log if any micro-decisions were made
 
@@ -75,8 +72,10 @@ If you encounter **anything** not covered by the ExecPlan:
 - **Never** continue past a failed task without escalating
 - **Always** atomic commit after each task
 - **Always** follow instructions exactly as written
-- **Always** update Recovery Ledger after each task
-- **Always** present artifact links before asking PO questions
+- **Always** update the current snapshot and append a `Progress History` row after each task
+- **Always** use `vscode_askQuestions` for PO-facing questions, approvals, clarifications, and confirmations
+- **Always** post a context message with clickable links immediately before each `vscode_askQuestions` call
+- **Always** include a story-board link and story line/section when the question is about a specific story
 
 ## Additive Bias Self-Check
 

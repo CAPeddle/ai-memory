@@ -1,11 +1,27 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: WSJF (value ÷ effort). Value: 1-5. Effort: XS=1, S=2, M=3, L=5.
-> Last updated: 2025-05-02
+> Next planning target: ST-011 — governance remediation follow-up from the 2026-05-02 audit.
+> Last updated: 2026-05-02
 
 ---
 
 ## Backlog
+
+### ST-011: Institutionalize recurring governance review and remediation
+- Type: debt
+- Source: PO
+- Value: 5 · Effort: XS(1) · WSJF: 5.0
+- Blocked by: none
+- Touches: `.github/prompts/`, `.github/planning/`, `.github/instructions/`, `.github/skills/`, `FollowUpSessionLog.txt`
+- Acceptance criteria:
+  - [ ] A dedicated governance review prompt exists for repeatable audit and remediation passes
+  - [ ] The governance review workflow consumes a seed query packet when one is associated with a story
+  - [ ] The workflow defines when audit findings become prompt, board, or instruction updates
+  - [ ] A follow-up governance review pass validates the remediations from the 2026-05-02 audit
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-011.md`
+- Docs: `docs/investigations/workflow-and-prompt-design.md`, `docs/investigations/context-engineering-principles.md`
+- Notes: Highest-priority planning target. Seed query packet: `.github/planning/query-packets/QP-011-governance-review-remediation.md`. This story remains in Backlog so `/plan` can scope the recurring governance-review prompt and cadence.
 
 ### ST-001: Scaffold .NET solution and project structure
 - Type: infrastructure
@@ -109,6 +125,7 @@
   - [ ] MCP tools: memory_search, memory_log_episode, memory_log_semantic, memory_inspect, memory_feedback
   - [ ] MCP resources: memory://facts/{project}, memory://recent-episodes
   - [ ] MCP prompts: recall_context
+  - [ ] `memory_search` returns token-efficient formatted results with score and provenance
   - [ ] Dual transport: stdio + HTTP (StreamableHTTP)
   - [ ] Integration test: MCP client round-trip
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-007.md`

@@ -396,8 +396,8 @@ Each session improves the context available to the next. This is the "compound" 
 |---------|----------|--------|
 | `memory_search` with limit + MMR | Critical | In ST-005 |
 | Resource `memory://facts/{project}` (top 20 curated) | High | In ST-007 |
-| Formatted results with scores and provenance | High | In ST-006 |
-| Default limit = 10, max = 100 | High | In ST-006 |
+| Formatted results with scores and provenance | High | In ST-007 |
+| Default limit = 10, max = 100 | High | In ST-005 |
 
 ### 10.2 Phase 2: Feedback and Learning
 
