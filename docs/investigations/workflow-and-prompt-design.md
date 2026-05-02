@@ -5,7 +5,7 @@
 | **Created** | 2025-05-02 |
 | **Status** | Complete |
 | **Scope** | Three-prompt workflow cadence, board design, and ExecPlan pattern for ai-memory |
-| **Sources** | `copilot_config/.github/prompts/`, `story-app/docs/investigations/AgenticWorkflow_PortabilityManual.md` |
+| **Sources** | `copilot_config/.github/prompts/`, `story-app/docs/investigations/AgenticWorkflow_PortabilityManual.md`, Cursor "Scaling long-running autonomous coding" (Jan 2026), OpenAI Codex ExecPlans / PLANS.md |
 
 ---
 
@@ -214,7 +214,45 @@ Higher WSJF = higher priority. `/plan` in board-scan mode uses this to recommend
 ## §5b. Recovery Ledger
 ## §5c. Approach Ledger
 ## §6. Execution Log
+## §6b. Surprises & Discoveries
+## §6c. Decision Log
 ## §7. Compound Step / Closeout
+## §7b. Outcomes & Retrospective
+```
+
+### 4.1b Living Document Sections (from OpenAI Codex PLANS.md)
+
+The following four sections are **mandatory** and must be kept current throughout execution. They are adapted from the Codex PLANS.md pattern, which has been validated for multi-hour autonomous agent work.
+
+**§6b. Surprises & Discoveries** — Document unexpected behaviours, performance tradeoffs, bugs, or insights discovered during implementation. Provide concise evidence (test output is ideal).
+
+```markdown
+## §6b. Surprises & Discoveries
+
+- Observation: SQLite FTS5 tokenizer strips hyphens from ULIDs
+  Evidence: `SELECT * FROM memories_fts WHERE content MATCH '01HXY-...'` returns 0 rows
+  Impact: Must use rowid lookup for ID-based queries, not FTS
+```
+
+**§6c. Decision Log** — Record every design decision made during execution with rationale and date.
+
+```markdown
+## §6c. Decision Log
+
+- Decision: Use content-based hashing (SHA-256 of normalized text) for deduplication
+  Rationale: Simpler than embedding-distance threshold; deterministic; zero-cost at query time
+  Date: 2025-05-15
+```
+
+**§7b. Outcomes & Retrospective** — At completion, summarise what was achieved, what remains, and lessons learned. Compare result against original purpose.
+
+```markdown
+## §7b. Outcomes & Retrospective
+
+Achieved: REST API serves 12 endpoints, all passing integration tests.
+Remains: MCP facade (ST-007) not started.
+Lesson: FTS5 trigger-based sync is fragile during batch inserts — bulk-insert path
+should disable triggers and rebuild the FTS index afterwards.
 ```
 
 ### 4.2 Definition of Ready (§2b)
@@ -524,7 +562,103 @@ These stories should populate the board when the workflow is first activated:
 
 ---
 
-## 12. Open Questions
+## 12. External Validation: Multi-Agent Coordination (Cursor Research)
+
+**Source:** Cursor "Scaling long-running autonomous coding" (Jan 2026) — running hundreds of concurrent agents for weeks on single projects (1M+ LoC).
+
+### 12.1 Coordination Approaches Tested
+
+| Approach | Result | Lesson for ai-memory |
+|----------|--------|----------------------|
+| **Flat self-coordination** (shared file + locks) | Failed — agents held locks too long, forgot to release, throughput collapsed to 2-3 effective agents from 20 | Validates our single-LE model with explicit lock table |
+| **Optimistic concurrency** (read freely, fail on write conflict) | Better but agents became risk-averse — avoided hard problems, no ownership | Validates PO-gated story assignment over self-selection |
+| **Planner/Worker separation** | Worked — planners explore and create tasks, workers execute without coordinating with each other | **Directly validates our `/plan` (Opus) + `/continue` (Sonnet) split** |
+| **Integrator role** (quality control agent) | Removed — created more bottlenecks than it solved | Validates not adding a separate QA/review agent |
+| **Judge agent** (end-of-cycle evaluation) | Useful — determines whether to continue or restart | Maps to our PO review gate at story completion |
+
+### 12.2 Key Findings
+
+**"Prompts matter more than harness or models."** Getting agents to coordinate well, avoid pathological behaviours, and maintain focus over long periods required extensive prompt experimentation. This validates our investment in detailed prompt contracts (§5) and ExecPlan explicitness (§4).
+
+**"The right amount of structure is somewhere in the middle."** Too little → conflicts, duplication, drift. Too much → fragility. Our approach (structured ExecPlans + flexible scoping rounds) sits in this middle ground.
+
+**Different models for different roles.** Cursor found GPT-5.2 is a better planner than GPT-5.1-Codex (which is trained specifically for coding). This validates our two-tier model approach — strong model for planning, cost-efficient model for execution — rather than using one model for everything.
+
+**Periodic fresh starts combat drift.** Long-running agents accumulate stale assumptions. Our session-based architecture with FollowUpSessionLog + Recovery Ledger provides natural restart points that Cursor's system had to engineer separately.
+
+**Workers don't need to coordinate with each other.** Cursor eliminated inter-worker coordination. Our WIP-1 limit achieves the same effect — only one story executes at a time, so there are no coordination concerns.
+
+### 12.3 Implications for ai-memory Workflow
+
+| Cursor Finding | ai-memory Response |
+|---------------|--------------------|
+| Planner/Worker is the right split | Already our architecture — `/plan` plans, `/continue` executes |
+| Remove unnecessary roles | Keep PO + LE + SA + Explorer. No integrator or QA agent |
+| Prompts > harness | Invest in prompt quality for §5 contracts; iterate based on failures |
+| Fresh starts needed | FollowUpSessionLog.txt + Recovery Ledger provide these |
+| Model selection per role | Opus for `/plan` + `/recover`, Sonnet for `/continue` |
+
+---
+
+## 13. External Validation: ExecPlan Design (OpenAI Codex PLANS.md)
+
+**Source:** OpenAI Codex ExecPlans cookbook — PLANS.md pattern validated for multi-hour (7+ hour) autonomous agent work from a single prompt.
+
+### 13.1 Core Philosophy
+
+The Codex ExecPlan pattern centres on four requirements that the document calls **non-negotiable**:
+
+> **SELF-CONTAINED, SELF-SUFFICIENT, NOVICE-GUIDING, OUTCOME-FOCUSED**
+
+| Requirement | Meaning | Our Status |
+|-------------|---------|------------|
+| **Self-contained** | All knowledge needed is in the plan itself. No external references, no "as discussed" | Our §1 Background covers this; strengthen with self-containment rule |
+| **Self-sufficient** | A stateless agent with no prior memory can execute from only this document | Our §2b Definition of Ready enforces this |
+| **Novice-guiding** | Define every term; spell out every file path; show expected outputs | Our task format (§4.3) does this; add expected-output requirement |
+| **Outcome-focused** | Describe user-visible behaviour, not internal attributes | Add outcome framing to §2 Definition of Done |
+
+### 13.2 Writing Style Requirements
+
+The PLANS.md codifies writing rules that improve agent comprehension:
+
+| Rule | Rationale | Adoption |
+|------|-----------|----------|
+| **Prose-first** — prefer sentences over lists; narrative over checklists | Agents follow narrative better than fragmented bullets | Adopt for §1, §3; keep checklists for §2b and Progress |
+| **Define every term immediately** | Agents can't infer jargon from prior context | Already in our ExecPlan template |
+| **Show working directory and exact commands** | Removes ambiguity about where to execute | Add to task format |
+| **Include expected output/transcript** | Agent can verify success without human | Strengthen in §4.3 |
+| **Anchor with observable outcomes** | "After starting the server, GET /health returns 200" not "added HealthCheck struct" | Adopt for acceptance criteria style |
+
+### 13.3 Living Document Pattern
+
+PLANS.md mandates four living sections (adapted into our §6b, §6c, §7b above):
+
+1. **Progress** — granular checkboxes with timestamps. Our Recovery Ledger (§5b) serves this role but should add timestamps.
+2. **Surprises & Discoveries** — captured observations with evidence. New section §6b.
+3. **Decision Log** — every decision with rationale. New section §6c.
+4. **Outcomes & Retrospective** — completion summary. New section §7b.
+
+### 13.4 Prototyping and Validation Rules
+
+| PLANS.md Rule | ai-memory Adaptation |
+|---------------|---------------------|
+| **Prototyping milestones are encouraged** for de-risking | Map to spike stories with board impact docs |
+| **Parallel implementations acceptable** during migration | Use §5c Approach Ledger — reserve approaches for fallback |
+| **Validation is not optional** — include test commands and expected results | Strengthen task format: every task must have a verification step |
+| **Idempotent and safe** — steps can be re-run without damage | Aligns with our atomic commit cadence |
+| **Capture evidence** — terminal output, diffs, logs as indented examples | Add to Execution Log (§6) requirements |
+
+### 13.5 Key Additions to Adopt
+
+1. **Timestamp progress entries** — `- [x] (2025-05-15 14:00Z) Implemented FTS5 schema` in Recovery Ledger
+2. **Mandatory verification step per task** — every §4 task must end with a command or assertion the executor can run
+3. **Observable acceptance criteria** — phrase as behaviour ("GET /memories returns 200 with JSON array") not implementation ("added GetMemories method")
+4. **Self-containment rule** — ExecPlans must not reference external blogs or docs; embed the needed knowledge directly
+5. **Revision notes** — when updating an ExecPlan, append a note at the bottom explaining what changed and why
+
+---
+
+## 14. Open Questions
 
 | # | Question | Options | Impact |
 |---|----------|---------|--------|
@@ -542,3 +676,6 @@ These stories should populate the board when the workflow is first activated:
 3. **Dogfood after ST-006** — once REST API exists, start logging episodes during development.
 4. **Start with minimal compound engineering** — Tier 1 detection list + Tier 2 session-end review. Grow the skill file from actual detections.
 5. **ST-009 first** — create governance files before writing code, so the first real ExecPlan (ST-001) already has the full workflow supporting it.
+6. **Adopt OpenAI PLANS.md living sections** — add §6b Surprises & Discoveries, §6c Decision Log, and §7b Outcomes & Retrospective to the ExecPlan template.
+7. **Timestamp Recovery Ledger entries** — per PLANS.md pattern, include ISO timestamps on progress entries to measure velocity.
+8. **Every task must have a verification step** — per PLANS.md validation mandate, no task is complete without an observable proof of success.

@@ -6,6 +6,7 @@
 | **Status** | Complete |
 | **Scope** | Context engineering strategy for ai-memory — how to feed agents the right information at the right time |
 | **Guiding Principle** | **Point, don't dump** — layered, targeted context injection |
+| **Sources** | Alfred blog (cognitive memory), Cursor "Scaling Agents" (Jan 2026), OpenAI Codex ExecPlans / PLANS.md |
 
 ---
 
@@ -432,7 +433,121 @@ Each session improves the context available to the next. This is the "compound" 
 
 ---
 
-## 12. Open Questions
+## 12. External Validation: Self-Containment as Context Engineering (OpenAI Codex PLANS.md)
+
+**Source:** OpenAI Codex ExecPlans cookbook — PLANS.md pattern for multi-hour autonomous work.
+
+### 12.1 The Self-Containment Principle
+
+The Codex PLANS.md establishes a principle that extends "point, don't dump" with a complementary rule: **when you do provide context, make it self-contained.**
+
+> "Do not point to external blogs or docs; if knowledge is required, embed it in the plan itself in your own words."
+
+This creates a nuanced two-rule context engineering framework:
+
+| Rule | When It Applies | Example |
+|------|-----------------|--------|
+| **Point, don't dump** | Runtime context injection (memory → agent) | Search returns 10 scored results, not 500 raw facts |
+| **Embed, don't reference** | Planning artifacts (ExecPlan, instructions) | Plan includes the needed SQL syntax, not "see SQLite docs" |
+
+The distinction: *runtime* context should be minimal and layered; *planning* context should be complete and self-sufficient. A stateless agent with no prior memory must be able to execute from only the ExecPlan.
+
+### 12.2 Observable Outcomes as Context Anchors
+
+PLANS.md mandates anchoring plans with observable outcomes rather than implementation attributes:
+
+```
+BAD:  "Added a HealthCheck struct"              (implementation detail)
+GOOD: "GET /health returns 200 with body OK"    (observable outcome)
+```
+
+This is context engineering at the planning layer — observable outcomes give the executing agent a concrete verification target, reducing the need for additional context about what "success" looks like.
+
+**Application to ai-memory search results:** When memory returns episodic memories about past work, prefer outcome-framed summaries over implementation-framed ones:
+
+```
+BAD:  "Modified MemoryRepository.cs to add SQLite connection pooling"
+GOOD: "SQLite connection pooling reduced p95 search latency from 45ms to 12ms"
+```
+
+### 12.3 Living Documents as Accumulated Context
+
+PLANS.md mandates four living sections (Progress, Surprises & Discoveries, Decision Log, Outcomes & Retrospective). These are context engineering artifacts — they accumulate knowledge that would otherwise be lost between agent sessions:
+
+| Living Section | Context Engineering Function |
+|---------------|-----------------------------|
+| **Progress** (timestamped) | Velocity context — how fast is work moving? |
+| **Surprises & Discoveries** | Hard-won knowledge that prevents repeat mistakes |
+| **Decision Log** | Rationale context — why was this approach chosen? |
+| **Outcomes & Retrospective** | Summary context for future planning sessions |
+
+These map directly to ai-memory's episodic memory type. When an ExecPlan is completed, its living sections should be ingested as episodic memories — they contain exactly the kind of hard-won context that future agents need.
+
+---
+
+## 13. External Validation: Prompts as Context Engineering (Cursor Research)
+
+**Source:** Cursor "Scaling long-running autonomous coding" (Jan 2026) — trillions of tokens deployed across hundreds of concurrent agents.
+
+### 13.1 "Prompts Matter More"
+
+Cursor's most significant finding for context engineering:
+
+> "A surprising amount of the system's behaviour comes down to how we prompt the agents. Getting them to coordinate well, avoid pathological behaviours, and maintain focus over long periods required extensive experimentation. The harness and models matter, but the prompts matter more."
+
+This validates the entire premise of ai-memory as a context engineering tool. The system prompt IS the primary context engineering surface. Memory augmentation makes that surface richer and more adaptive.
+
+### 13.2 Model Selection as Context Engineering
+
+Cursor found that different models excel at different roles:
+- Planning models (GPT-5.2) are better at maintaining big-picture focus
+- Coding models (Codex) are better at precise implementation
+- Planning models "tend to stop earlier and take shortcuts" when used for execution
+
+**Context engineering implication:** The model itself is a context engineering variable. A planning model processes context differently than an execution model. Our two-tier architecture (Opus for `/plan`, Sonnet for `/continue`) isn't just about cost — it's about matching context processing style to the task.
+
+| Model Tier | Context Processing Style | Task Match |
+|-----------|------------------------|------------|
+| Strong (Opus) | Broad context synthesis, trade-off evaluation | Planning, recovery, scoping |
+| Efficient (Sonnet) | Narrow context following, precise execution | Task execution from explicit plans |
+
+### 13.3 Fresh Starts as Context Reset
+
+Cursor found that long-running agents need "periodic fresh starts to combat drift and tunnel vision." This is a context engineering problem — accumulated context becomes stale or biased over time.
+
+**Our architecture already handles this:**
+
+| Drift Vector | Our Mitigation |
+|-------------|----------------|
+| Stale assumptions from earlier in the session | Session boundaries + FollowUpSessionLog |
+| Context window filled with irrelevant history | `/continue` reads board fresh each session |
+| Tunnel vision on one approach | §5c Approach Ledger with rollback triggers |
+| Accumulated noise in memory | Consolidation pipeline (future ST-008) |
+
+### 13.4 The Right Amount of Structure
+
+Cursor's coordination spectrum:
+
+```
+Too little structure          Right amount           Too much structure
+────────────────────┼───────────────────────┼────────────────────
+Conflicts, duplication,        Structured plans +     Fragility, bottlenecks,
+drift, no ownership            flexible execution      lock contention
+
+                            ▲ Our approach sits here
+```
+
+For ai-memory's context delivery, the same principle applies:
+
+| Too little context structure | Right amount | Too much context structure |
+|------------------------------|-------------|----------------------------|
+| Raw search dump, no scores | Scored results with provenance, layered access | Elaborate metadata, explanatory wrapping, context-about-context |
+| No project scoping | Project-boosted results with cross-project visibility | Rigid project isolation |
+| No feedback loop | Optional helpfulness feedback | Mandatory feedback blocking recall |
+
+---
+
+## 14. Open Questions
 
 | # | Question | Options | Impact |
 |---|----------|---------|--------|
@@ -440,3 +555,4 @@ Each session improves the context available to the next. This is the "compound" 
 | 2 | Should search results include a "try also" suggestion? | Yes (guided exploration) vs No (simpler) | Context discovery |
 | 3 | Token budget awareness — should the memory service know the agent's context limit? | Yes (adaptive results) vs No (fixed limits) | Sophistication |
 | 4 | Should episodic memories summarize before returning, or return raw? | Summarize (cheaper) vs Raw (more detail) | Token cost vs fidelity |
+| 5 | Should ExecPlan living sections (Surprises, Decisions) be auto-ingested as episodic memories on story completion? | Yes (automatic knowledge capture) vs No (manual curation) | Automation vs noise |
