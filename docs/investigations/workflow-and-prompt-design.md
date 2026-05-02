@@ -669,7 +669,7 @@ PLANS.md mandates four living sections (adapted into our §6b, §6c, §7b above)
 
 ---
 
-## 13. Recommendations
+## 15. Recommendations
 
 1. **Board in `.github/planning/story-board.md`** — co-located with prompts and ExecPlans for coherent governance.
 2. **Commit query packets** — small cost, high traceability value.
