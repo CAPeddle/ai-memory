@@ -76,6 +76,7 @@ All checks must be `[x]` before `/continue` can execute:
 - [x] Error handling strategy noted for external interactions
 - [x] No tasks require judgment calls needing broad project context
 - [x] Script templates or boilerplate provided in §3 where applicable
+- [x] Scoped requirements are mapped to concrete outputs in §2d (no orphan requirements)
 - [x] Every task ends with a verification step (command or assertion)
 - [x] Acceptance criteria phrased as observable behaviour
 
@@ -86,6 +87,18 @@ Status: ✅ Ready for /continue
 ## §2c. Plan Review Notes
 
 (Empty — populated by /continue when escalating issues)
+
+---
+
+## §2d. Requirement Traceability Matrix
+
+| Requirement (source) | Must appear in output artifact(s) | Implemented by task(s) | Verification evidence |
+|---|---|---|---|
+| Dedicated governance-review prompt with checklist and boundaries (PO scoping + QP-011) | `.github/prompts/governance-review.prompt.md` includes mandatory checklist and remediation boundary sections | Task 4.2 | `Test-Path` + `Select-String` checks in Task 4.2 |
+| Upstream review includes the 7 locked URLs (PO revision request) | Discretionary checks section in `.github/prompts/governance-review.prompt.md` contains all 7 URLs verbatim | Task 4.2, Task 4.3 | URL-by-URL `Select-String` verification in Task 4.2 |
+| Governance review run persists evidence (QP-011) | `.github/planning/audit-reports/audit-report-2026-05-03.md` exists with completed summary | Task 4.1, Task 4.4 | `Test-Path` + `Select-String "Overall status:"` in Task 4.4 |
+
+If a scoped requirement does not map cleanly to an output artifact, stop and escalate during /plan rather than marking Ready.
 
 ---
 
@@ -123,6 +136,8 @@ If multiple reports in one day, append a sequence: `audit-report-YYYY-MM-DD-2.md
 ### Task 4.1: Create the audit-reports folder and report template
 
 **Objective:** Establish the output location and structure for governance audit reports.
+
+**Requirement mapping:** §2d row 3
 
 **Input:** No prior files needed.
 
@@ -205,6 +220,8 @@ Expected result: `True`
 ### Task 4.2: Create the governance-review prompt
 
 **Objective:** Create the main deliverable — a prompt file that agents can use to perform a governance audit.
+
+**Requirement mapping:** §2d rows 1 and 2
 
 **Input:** The audit-reports template from Task 4.1 must exist (for the prompt to reference it).
 
@@ -358,6 +375,8 @@ Expected result: `True`, a line containing `name: "Governance Review"`, and one 
 
 **Objective:** Review external upstream sources for governance, workflow, and context-engineering insights that may have evolved since the project's investigation documents were written. Identify anything that should be incorporated into ai-memory's governance artifacts.
 
+**Requirement mapping:** §2d row 2
+
 **Input:** The governance-review prompt from Task 4.2 must exist (findings may revise it).
 
 **Working directory:** `c:\projects\ai-memory\`
@@ -420,6 +439,8 @@ Expected result: `True`, a line containing `name: "Governance Review"`, and one 
 
 **Objective:** Invoke the newly created governance-review prompt against the repository to confirm it works and to validate that the 2026-05-02 audit remediations are still intact.
 
+**Requirement mapping:** §2d row 3
+
 **Input:** Both files from Tasks 4.1 and 4.2 must exist.
 
 **Working directory:** `c:\projects\ai-memory\`
@@ -470,6 +491,8 @@ Expected result: `True` and a line containing an overall status assessment.
 ### Task 4.5: Update board and session log
 
 **Objective:** Move ST-011 to In Progress (or Review if all other tasks passed), update the session log, and commit.
+
+**Requirement mapping:** Supports plan closeout; no direct §2d row
 
 **Input:** Tasks 4.1–4.4 must be complete.
 
