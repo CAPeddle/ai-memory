@@ -268,7 +268,14 @@ Run every check below. Record result in the report.
 - Investigation docs referenced by stories still exist at claimed paths
 - Prompt files don't contain stale references to removed features or renamed files
 - Skill files match the structure expected by their consumers
-- Upstream material review: check external sources (compound-engineering repos, context-engineering blogs, agent workflow frameworks) for patterns that should be incorporated
+- Upstream material review: review and track relevance of the following sources:
+   - https://cursor.com/blog/scaling-agents
+   - https://github.com/openai/openai-cookbook
+   - https://github.com/EveryInc/compound-engineering-plugin
+   - https://github.com/gsd-build/get-shit-done
+   - https://github.com/andrewyng/context-hub/blob/main/docs/byod-guide.md
+   - https://github.com/affaan-m/everything-claude-code
+   - https://github.com/github/awesome-copilot
 
 ## Remediation Boundary
 
@@ -328,8 +335,20 @@ After completing all checks and remediations:
 Test-Path "c:\projects\ai-memory\.github\prompts\governance-review.prompt.md"
 # Check frontmatter
 Select-String -Path "c:\projects\ai-memory\.github\prompts\governance-review.prompt.md" -Pattern "^name:" | Select-Object -First 1
+# Check required upstream URLs are present verbatim
+@(
+   'https://cursor.com/blog/scaling-agents',
+   'https://github.com/openai/openai-cookbook',
+   'https://github.com/EveryInc/compound-engineering-plugin',
+   'https://github.com/gsd-build/get-shit-done',
+   'https://github.com/andrewyng/context-hub/blob/main/docs/byod-guide.md',
+   'https://github.com/affaan-m/everything-claude-code',
+   'https://github.com/github/awesome-copilot'
+) | ForEach-Object {
+   Select-String -Path "c:\projects\ai-memory\.github\prompts\governance-review.prompt.md" -Pattern [regex]::Escape($_) | Select-Object -First 1
+}
 ```
-Expected result: `True` and a line containing `name: "Governance Review"`.
+Expected result: `True`, a line containing `name: "Governance Review"`, and one match per required upstream URL.
 
 **Failure handling:** If the file already exists, compare to the content above and update only if materially different. If identical, skip.
 

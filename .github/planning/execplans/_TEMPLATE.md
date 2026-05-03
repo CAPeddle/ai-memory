@@ -35,6 +35,7 @@ All checks must be `[x]` before `/continue` can execute:
 - [ ] Error handling strategy noted for external interactions
 - [ ] No tasks require judgment calls needing broad project context
 - [ ] Script templates or boilerplate provided in §3 where applicable
+- [ ] Scoped requirements are mapped to concrete outputs in §2d (no orphan requirements)
 - [ ] Every task ends with a verification step (command or assertion)
 - [ ] Acceptance criteria phrased as observable behaviour
 
@@ -45,6 +46,19 @@ Status: ⬜ Not ready — requires /plan
 ## §2c. Plan Review Notes
 
 (Empty — populated by /continue when escalating issues)
+
+---
+
+## §2d. Requirement Traceability Matrix
+
+Capture every explicit scoped requirement from PO discussion and query packets. If a requirement is listed here, at least one task must implement it and one verification step must prove it.
+
+| Requirement (source) | Must appear in output artifact(s) | Implemented by task(s) | Verification evidence |
+|---|---|---|---|
+| Example: "Review these 7 upstream URLs" (QP-XXX) | Prompt file discretionary-check section includes all 7 URLs verbatim | Task 4.2, Task 4.3 | `Select-String` evidence for each URL in the prompt file |
+| Example: "Persist audit results to audit-reports" (PO) | `audit-report-YYYY-MM-DD.md` under `.github/planning/audit-reports/` | Task 4.4 | `Test-Path` + report section checks |
+
+If a scoped requirement does not map cleanly to an output artifact, stop and escalate during /plan rather than marking Ready.
 
 ---
 
@@ -77,11 +91,15 @@ Include boilerplate or script templates the executor will need.
 
 **Expected output:** Files created/modified, observable state change.
 
+**Requirement mapping:** List the specific §2d requirement rows this task satisfies. If none, explain why this task is still necessary.
+
 **Verification:**
 ```
 exact command to run
 ```
 Expected result: description of what success looks like.
+
+When this task produces or updates content files, verification must include evidence for required literals or structures from §2d (for example, each required URL/path appears in the output file).
 
 **Failure handling:** What to do if verification fails.
 
