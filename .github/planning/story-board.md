@@ -1,27 +1,42 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: WSJF (value ÷ effort). Value: 1-5. Effort: XS=1, S=2, M=3, L=5.
-> Next planning target: ST-011 — governance remediation follow-up from the 2026-05-02 audit.
-> Last updated: 2026-05-02
+> Next planning target: ST-012 — governance asset catalog and validation (after ST-011 review sign-off).
+> Last updated: 2026-05-03
 
 ---
 
 ## Backlog
 
-### ST-011: Institutionalize recurring governance review and remediation
-- Type: debt
+### ST-012: Add discoverable AI-governance asset catalog and validation
+- Type: infrastructure
 - Source: PO
-- Value: 5 · Effort: XS(1) · WSJF: 5.0
-- Blocked by: none
-- Touches: `.github/prompts/`, `.github/planning/`, `.github/instructions/`, `.github/skills/`, `FollowUpSessionLog.txt`
+- Value: 4 · Effort: S(2) · WSJF: 2.0
+- Blocked by: ST-011
+- Touches: `.github/prompts/`, `.github/instructions/`, `.github/planning/`, `docs/`
 - Acceptance criteria:
-  - [ ] A dedicated governance review prompt exists for repeatable audit and remediation passes
-  - [ ] The governance review workflow consumes a seed query packet when one is associated with a story
-  - [ ] The workflow defines when audit findings become prompt, board, or instruction updates
-  - [ ] A follow-up governance review pass validates the remediations from the 2026-05-02 audit
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-011.md`
-- Docs: `docs/investigations/workflow-and-prompt-design.md`, `docs/investigations/context-engineering-principles.md`
-- Notes: Highest-priority planning target. Seed query packet: `.github/planning/query-packets/QP-011-governance-review-remediation.md`. This story remains in Backlog so `/plan` can scope the recurring governance-review prompt and cadence.
+  - [ ] A documented metadata contract exists for repo AI-governance assets covering prompts, instructions, and planned future extensions such as agents or skills
+  - [ ] A machine-readable inventory or index exposes the repo's AI-governance assets and their intended use
+  - [ ] Validation guidance or automation detects drift between asset metadata, indexes, and published docs
+  - [ ] Contribution guidance defines what prompt/instruction/skill-style additions are accepted, rejected, or deferred
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-012.md`
+- Docs: `docs/investigations/awesome-copilot-applicability-review.md`, `docs/investigations/workflow-and-prompt-design.md`, `docs/investigations/context-engineering-principles.md`
+- Notes: Follow-up from the awesome-copilot applicability investigation. Keep behind ST-011 so the recurring governance-review workflow lands before broader asset-catalog and validation work.
+
+### ST-013: Split investigation docs into landing pages and focused fragments
+- Type: infrastructure
+- Source: PO
+- Value: 4 · Effort: M(3) · WSJF: 1.3
+- Blocked by: ST-011
+- Touches: `.github/copilot-instructions.md`, `.github/prompts/`, `.github/planning/`, `docs/investigations/`
+- Acceptance criteria:
+  - [ ] Each current top-level investigation file remains in place as a compact landing page that links to focused fragment docs
+  - [ ] All eight investigation docs have per-topic fragment sets under `docs/investigations/` that preserve the current approved design decisions
+  - [ ] Governance consumers reference either the retained landing pages or precise fragment docs instead of broad monolith assumptions
+  - [ ] A completeness review proves every original major section has a destination and no design-authority content was dropped during the split
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-013.md`
+- Docs: `docs/investigations/memory-architecture-design.md`, `docs/investigations/language-stack-recommendation.md`, `docs/investigations/sqlite-vs-postgresql.md`, `docs/investigations/interface-design-mcp-rest.md`, `docs/investigations/workflow-and-prompt-design.md`, `docs/investigations/context-engineering-principles.md`, `docs/investigations/openclaw-official-docs-review.md`, `docs/investigations/openclaw-memory-architecture-analysis.md`
+- Notes: Split the current investigation monoliths into per-topic folders while keeping the top-level files as compact landing pages. Seed query packet: `.github/planning/query-packets/QP-013-split-investigation-docs.md`. Keep behind ST-011 so governance-review workflow changes land before broader doc-structure refactoring.
 
 ### ST-001: Scaffold .NET solution and project structure
 - Type: infrastructure
@@ -177,7 +192,20 @@
 
 ## Review
 
-(Empty — WIP limit: 1)
+### ST-011: Institutionalize recurring governance review and remediation
+- Type: debt
+- Source: PO
+- Value: 5 · Effort: XS(1) · WSJF: 5.0
+- Blocked by: none
+- Touches: `.github/prompts/`, `.github/planning/`, `.github/instructions/`, `.github/skills/`, `FollowUpSessionLog.txt`
+- Acceptance criteria:
+  - [x] A dedicated governance review prompt exists for repeatable audit and remediation passes
+  - [x] The governance review workflow consumes a seed query packet when one is associated with a story
+  - [x] The workflow defines when audit findings become prompt, board, or instruction updates
+  - [x] A follow-up governance review pass validates the remediations from the 2026-05-02 audit
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-011.md`
+- Docs: `docs/investigations/workflow-and-prompt-design.md`, `docs/investigations/context-engineering-principles.md`
+- Notes: Execution complete via `/continue`. Awaiting PO acceptance in Review. Validation report: `.github/planning/audit-reports/audit-report-2026-05-03.md`.
 
 ---
 
