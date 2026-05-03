@@ -497,12 +497,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.2 — Create the governance-review prompt |
-| **Last successful command** | `Select-String -Path "c:\projects\ai-memory\.github\prompts\governance-review.prompt.md" -Pattern "^name:"` |
-| **Expected outputs produced** | `.github/prompts/governance-review.prompt.md` created with valid frontmatter |
-| **Next task** | Task 4.3 — Upstream material review |
+| **Last completed task** | Task 4.3 — Upstream material review |
+| **Last successful command** | `fetch_webpage` for 7 Task 4.3 source URLs |
+| **Expected outputs produced** | Upstream findings summary recorded in §6; discretionary checks updated in `.github/prompts/governance-review.prompt.md` |
+| **Next task** | Task 4.4 — Validate by running the governance-review prompt |
 | **Known blockers** | None |
-| **Last updated** | 2026-05-03T21:42:59.2228228+02:00 |
+| **Last updated** | 2026-05-03T21:43:00+02:00 |
 
 ### Progress History
 
@@ -510,6 +510,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 |---|---|---|---|---|
 | 2026-05-03T21:34:45.6986139+02:00 | Task 4.1 | completed | Created `.github/planning/audit-reports/` and `_TEMPLATE.md`; verification command returned `True` | Start Task 4.2 |
 | 2026-05-03T21:42:59.2228228+02:00 | Task 4.2 | completed | Created `.github/prompts/governance-review.prompt.md`; `Test-Path` returned `True` and frontmatter contains `name: "Governance Review"` | Start Task 4.3 |
+| 2026-05-03T21:43:00+02:00 | Task 4.3 | completed | Reviewed 7 upstream sources; added 2 discretionary-check bullets to governance prompt; no escalations | Start Task 4.4 |
 
 ### Avoidance
 
@@ -537,6 +538,15 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 - 2026-05-03T21:34:45.6986139+02:00: Completed Task 4.1 by creating `.github/planning/audit-reports/_TEMPLATE.md` and verifying the file exists.
 - 2026-05-03T21:42:59.2228228+02:00: Completed Task 4.2 by creating `.github/prompts/governance-review.prompt.md` and verifying file existence plus required `name` frontmatter.
+- 2026-05-03T21:43:00+02:00: Task 4.3 upstream review completed across seven sources.
+   - Source 1 (`cursor.com/blog/scaling-agents`): actionable pattern to avoid lock-heavy shared state and keep planner/worker role separation. Classified as safe incorporation in discretionary checks.
+   - Source 2 (`github.com/openai/openai-cookbook`): broad API-example corpus; no direct governance-workflow delta for this repository. Classified as no actionable finding.
+   - Source 3 (`github.com/EveryInc/compound-engineering-plugin`): reinforces explicit looping (`plan/work/review/compound`) and documented limitations per harness. No contract change required; no actionable finding beyond existing guidance.
+   - Source 4 (`github.com/gsd-build/get-shit-done`): reinforces atomic commits, phase gating, and resumability artifacts. Already aligned with current governance model.
+   - Source 5 (`github.com/andrewyng/context-hub/.../byod-guide.md`): supports layered public/private context source model; aligns with existing "point, don't dump" guidance.
+   - Source 6 (`github.com/affaan-m/everything-claude-code`): strong evidence for context-budget controls and explicit hook/runtime boundaries. Classified as safe incorporation in discretionary checks.
+   - Source 7 (`github.com/github/awesome-copilot`): confirms metadata + inventory + learning-hub governance patterns already tracked by ST-012.
+   - Net result: one safe prompt update applied (two discretionary-check bullets); zero escalations required.
 
 ---
 

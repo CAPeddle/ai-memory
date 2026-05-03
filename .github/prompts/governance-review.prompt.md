@@ -51,6 +51,8 @@ Run every check below. Record result in the report.
 - Investigation docs referenced by stories still exist at claimed paths
 - Prompt files don't contain stale references to removed features or renamed files
 - Skill files match the structure expected by their consumers
+- Coordination topology sanity: prompts avoid lock-heavy shared-state patterns for multi-agent work and keep role boundaries clear
+- Context budget guardrails: long-running workflows still define compaction, fresh-start, or bounded-context checks to prevent drift
 - Upstream material review: check external sources (compound-engineering repos, context-engineering blogs, agent workflow frameworks) for patterns that should be incorporated
 
 ## Remediation Boundary
