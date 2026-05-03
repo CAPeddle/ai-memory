@@ -8,19 +8,20 @@
 - Executed ST-011 Task 4.3: reviewed 7 upstream sources and applied safe discretionary-check enhancements
 - Executed ST-011 Task 4.4: ran governance validation and wrote `.github/planning/audit-reports/audit-report-2026-05-03.md`
 - Executed ST-011 Task 4.5: moved ST-011 to Review and updated board metadata
+- PO accepted ST-011; story moved from Review to Done
 
 ### Resume Point
-- Next recommended: PO review/accept ST-011 in Review (`.github/planning/execplans/exec-plan-ST-011.md` complete through Task 4.5)
-- After PO sign-off, resume with `ST-013` Task 4.1 and remove ST-011 blockers from `ST-012`/`ST-013` as appropriate
+- Next recommended: resume `ST-013` at `.github/planning/execplans/exec-plan-ST-013.md` Task 4.1
+- `ST-012` is now unblocked and can be planned/executed after `ST-013` priority decisions
 
 ### Board State
 - In Progress: (none)
-- Review: `ST-011`
-- Backlog priority: `ST-012` (blocked by ST-011 review sign-off)
-- Backlog follow-on: `ST-013` approved plan, blocked by `ST-011`
+- Review: (none)
+- Done: `ST-011`
+- Backlog priority: `ST-013` (approved plan, now unblocked)
+- Backlog follow-on: `ST-012` (now unblocked)
 
 ### Avoidance
-- Keep ST-011 in Review until PO acceptance; do not mark Done unilaterally.
 - Do not execute `ST-013` before `ST-011` is complete unless the PO explicitly removes the blocker.
 - Do not rename or remove the eight top-level investigation files during `ST-013`; they must remain as landing pages.
 - Task 4.3 (upstream review) fetches 7 external URLs — if any are unreachable, record and continue; do not block the story.

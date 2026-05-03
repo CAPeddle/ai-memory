@@ -1,7 +1,7 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: WSJF (value ÷ effort). Value: 1-5. Effort: XS=1, S=2, M=3, L=5.
-> Next planning target: ST-012 — governance asset catalog and validation (after ST-011 review sign-off).
+> Next planning target: ST-013 — split investigation docs into landing pages and focused fragments.
 > Last updated: 2026-05-03
 
 ---
@@ -12,7 +12,7 @@
 - Type: infrastructure
 - Source: PO
 - Value: 4 · Effort: S(2) · WSJF: 2.0
-- Blocked by: ST-011
+- Blocked by: none
 - Touches: `.github/prompts/`, `.github/instructions/`, `.github/planning/`, `docs/`
 - Acceptance criteria:
   - [ ] A documented metadata contract exists for repo AI-governance assets covering prompts, instructions, and planned future extensions such as agents or skills
@@ -27,7 +27,7 @@
 - Type: infrastructure
 - Source: PO
 - Value: 4 · Effort: M(3) · WSJF: 1.3
-- Blocked by: ST-011
+- Blocked by: none
 - Touches: `.github/copilot-instructions.md`, `.github/prompts/`, `.github/planning/`, `docs/investigations/`
 - Acceptance criteria:
   - [ ] Each current top-level investigation file remains in place as a compact landing page that links to focused fragment docs
@@ -192,24 +192,18 @@
 
 ## Review
 
-### ST-011: Institutionalize recurring governance review and remediation
-- Type: debt
-- Source: PO
-- Value: 5 · Effort: XS(1) · WSJF: 5.0
-- Blocked by: none
-- Touches: `.github/prompts/`, `.github/planning/`, `.github/instructions/`, `.github/skills/`, `FollowUpSessionLog.txt`
-- Acceptance criteria:
-  - [x] A dedicated governance review prompt exists for repeatable audit and remediation passes
-  - [x] The governance review workflow consumes a seed query packet when one is associated with a story
-  - [x] The workflow defines when audit findings become prompt, board, or instruction updates
-  - [x] A follow-up governance review pass validates the remediations from the 2026-05-02 audit
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-011.md`
-- Docs: `docs/investigations/workflow-and-prompt-design.md`, `docs/investigations/context-engineering-principles.md`
-- Notes: Execution complete via `/continue`. Awaiting PO acceptance in Review. Validation report: `.github/planning/audit-reports/audit-report-2026-05-03.md`.
+(Empty — WIP limit: 1)
 
 ---
 
 ## Done
+
+### ST-011: Institutionalize recurring governance review and remediation
+- Type: debt
+- Source: PO
+- Value: 5 · Effort: XS(1) · WSJF: 5.0
+- Completed: 2026-05-03
+- Notes: Accepted by PO after `/continue` execution. Validation evidence: `.github/planning/audit-reports/audit-report-2026-05-03.md`.
 
 ### ST-009: Create workflow governance files (.github/)
 - Type: infrastructure
