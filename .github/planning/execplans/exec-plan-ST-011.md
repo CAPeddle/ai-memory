@@ -497,18 +497,19 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.1 — Create the audit-reports folder and report template |
-| **Last successful command** | `Test-Path "c:\projects\ai-memory\.github\planning\audit-reports\_TEMPLATE.md"` |
-| **Expected outputs produced** | `.github/planning/audit-reports/_TEMPLATE.md` created |
-| **Next task** | Task 4.2 — Create the governance-review prompt |
+| **Last completed task** | Task 4.2 — Create the governance-review prompt |
+| **Last successful command** | `Select-String -Path "c:\projects\ai-memory\.github\prompts\governance-review.prompt.md" -Pattern "^name:"` |
+| **Expected outputs produced** | `.github/prompts/governance-review.prompt.md` created with valid frontmatter |
+| **Next task** | Task 4.3 — Upstream material review |
 | **Known blockers** | None |
-| **Last updated** | 2026-05-03T21:34:45.6986139+02:00 |
+| **Last updated** | 2026-05-03T21:42:59.2228228+02:00 |
 
 ### Progress History
 
 | Timestamp (ISO) | Task | Status | Evidence / outputs | Next step |
 |---|---|---|---|---|
 | 2026-05-03T21:34:45.6986139+02:00 | Task 4.1 | completed | Created `.github/planning/audit-reports/` and `_TEMPLATE.md`; verification command returned `True` | Start Task 4.2 |
+| 2026-05-03T21:42:59.2228228+02:00 | Task 4.2 | completed | Created `.github/prompts/governance-review.prompt.md`; `Test-Path` returned `True` and frontmatter contains `name: "Governance Review"` | Start Task 4.3 |
 
 ### Avoidance
 
@@ -535,6 +536,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 ## §6. Execution Log
 
 - 2026-05-03T21:34:45.6986139+02:00: Completed Task 4.1 by creating `.github/planning/audit-reports/_TEMPLATE.md` and verifying the file exists.
+- 2026-05-03T21:42:59.2228228+02:00: Completed Task 4.2 by creating `.github/prompts/governance-review.prompt.md` and verifying file existence plus required `name` frontmatter.
 
 ---
 
