@@ -657,12 +657,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.1 — Create an isolated upstream workspace |
-| **Last successful command** | `& $Py -c "import memsearch; print(memsearch.__file__)"` |
-| **Expected outputs produced** | `.tmp\st-014-memsearch\upstream\`, `.tmp\st-014-memsearch\logs\upstream-commit.txt`, `.tmp\st-014-memsearch\logs\upstream-version.txt`, `.tmp\st-014-memsearch\fixture\synthetic\2026-05-04.md`, `.tmp\st-014-memsearch\fixture\synthetic\transcripts\session-st014.jsonl`, `.tmp\st-014-memsearch\fixture\ai-memory-doc-sample.md`, `.tmp\st-014-memsearch\logs\index-attempt-1.txt`, `.tmp\st-014-memsearch\logs\runtime-attempt-1-failure.txt` |
-| **Next task** | Task 4.2 — Run the lightweight memsearch smoke test |
+| **Last completed task** | Task 4.2 — Run the lightweight memsearch smoke test |
+| **Last successful command** | Persisted `.tmp\st-014-memsearch\logs\task-4.2-verification.txt` with the Task 4.2 verification result `True` |
+| **Expected outputs produced** | `.tmp\st-014-memsearch\upstream\`, `.tmp\st-014-memsearch\logs\upstream-commit.txt`, `.tmp\st-014-memsearch\logs\upstream-version.txt`, `.tmp\st-014-memsearch\fixture\synthetic\2026-05-04.md`, `.tmp\st-014-memsearch\fixture\synthetic\transcripts\session-st014.jsonl`, `.tmp\st-014-memsearch\fixture\ai-memory-doc-sample.md`, `.tmp\st-014-memsearch\logs\wsl-status.txt`, `.tmp\st-014-memsearch\logs\wsl-python.txt`, `.tmp\st-014-memsearch\logs\pip-install-linux-attempt-.txt`, `.tmp\st-014-memsearch\logs\index-attempt-.txt`, `.tmp\st-014-memsearch\logs\runtime-failure.txt`, `.tmp\st-014-memsearch\logs\task-4.2-verification.txt` |
+| **Next task** | Task 4.3 — Capture upstream docs and code evidence |
 | **Known blockers** | None |
-| **Last updated** | 2026-05-04T11:22:14.7686569+02:00 |
+| **Last updated** | 2026-05-04T14:00:39.8764558+02:00 |
 
 ### Progress History
 
@@ -671,6 +671,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-05-04T10:22:49.9822794+02:00 | Task 4.1 | Complete | Created `.tmp\st-014-memsearch\upstream\`; logged `upstream-commit.txt` and `upstream-version.txt` | Task 4.2 — Run the lightweight memsearch smoke test |
 | 2026-05-04T10:38:45.8215126+02:00 | Task 4.2 | Blocked — plan-review | Created the synthetic fixture and ai-memory sample; install succeeded; first index attempt failed with upstream `RuntimeError: milvus-lite does not support Windows (no wheels on PyPI)` in `index-attempt-1.txt` and `runtime-attempt-1-failure.txt` | `/plan` must revise the Windows validation path before `/continue` resumes |
 | 2026-05-04T11:22:14.7686569+02:00 | Plan-review | Resolved | Revised Task 4.2 to use existing WSL2 via the shared `/mnt/c/...` temp workspace with docs+code fallback when unavailable | Resume `/continue` at Task 4.2 |
+| 2026-05-04T14:00:39.8764558+02:00 | Task 4.2 | Complete — degraded docs+code mode | Reused the synthetic fixture and ai-memory sample, confirmed WSL2 + `python3` availability, captured the Linux-side install log in `pip-install-linux-attempt-.txt`, recorded the bounded runtime gap in `runtime-failure.txt`, and persisted `task-4.2-verification.txt = True` | Task 4.3 — Capture upstream docs and code evidence |
 
 ### Avoidance
 
@@ -683,13 +684,14 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 ### Approach Registry
 | # | Description | Rollback Point | Status |
 |---|-------------|---------------|--------|
-| 1 | Primary approach: shallow-clone memsearch, run ONNX smoke test, inspect upstream docs/code, then write the investigation and bounded repo updates | Before Task 4.2 install step | 🟢 Active |
-| 2 | Fallback approach: if ONNX runtime validation fails after one retry, continue with docs+code evidence only, document the runtime gap, and do not mutate ST-004/ST-005 based on runtime claims | Before any board edit in Task 4.5 | ⬜ Reserve |
+| 1 | Primary approach: shallow-clone memsearch, run ONNX smoke test, inspect upstream docs/code, then write the investigation and bounded repo updates | Before Task 4.2 install step | 🟡 Runtime gap captured |
+| 2 | Fallback approach: if ONNX runtime validation fails after one retry, continue with docs+code evidence only, document the runtime gap, and do not mutate ST-004/ST-005 based on runtime claims | Before any board edit in Task 4.5 | 🟢 Active |
 
 ### Approach Failure Log
 | Timestamp (ISO) | Approach # | Failure | Outcome |
 |---|---|---|---|
 | 2026-05-04T10:38:45.8215126+02:00 | 1 | Task 4.2 is blocked on Windows because upstream memsearch rejects the Milvus Lite local-file mode used by this ExecPlan (`milvus-lite` has no Windows wheels) | Escalated to plan-review; do not continue execution |
+| 2026-05-04T14:00:39.8764558+02:00 | 1 | The revised WSL2 runtime sequence installed successfully but the local index attempt still did not complete; `index-attempt-.txt` ends in a `KeyboardInterrupt` during the `pymilvus` / `protobuf` import chain | Switched to the approved docs+code fallback for the remainder of the story |
 
 **Rollback triggers:**
 - 2+ additive bias checks true → propose rollback
@@ -703,6 +705,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 - 2026-05-04T10:22:49.9822794+02:00 — Completed Task 4.1 by creating the isolated upstream workspace, shallow-cloning `zilliztech/memsearch`, and recording the reviewed commit/version metadata.
 - 2026-05-04T10:38:45.8215126+02:00 — Stopped during Task 4.2 after the local Milvus Lite indexing path failed on Windows in upstream memsearch. Recorded the blocker and escalated the story to plan-review instead of substituting a different validation environment.
+- 2026-05-04T14:00:39.8764558+02:00 — Completed Task 4.2 in the approved degraded mode by reusing the synthetic fixture, validating WSL availability, capturing the Linux-side install log, recording the bounded runtime gap from the revised WSL index attempt, and persisting a `True` verification result for the fallback path.
 
 ---
 
@@ -713,6 +716,9 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - Observation: Upstream memsearch's documented local `--milvus-uri <file>.db` path is not runnable on this Windows host because `milvus-lite` has no Windows wheels on PyPI.
 	Evidence: `.tmp\st-014-memsearch\logs\index-attempt-1.txt` shows `RuntimeError: milvus-lite does not support Windows (no wheels on PyPI)`.
 	Impact: Task 4.2's planned lightweight runtime validation path is invalid on Windows as written, so the story must return to `/plan` before execution can continue.
+- Observation: The revised WSL2 path reached the Linux-side dependency-install stage, but the local indexing attempt still failed before any search/expand/transcript evidence was produced.
+	Evidence: `.tmp\st-014-memsearch\logs\pip-install-linux-attempt-.txt` shows a successful editable install with `[onnx]`, while `.tmp\st-014-memsearch\logs\index-attempt-.txt` ends in a `KeyboardInterrupt` during the `pymilvus` / `protobuf` import chain and `.tmp\st-014-memsearch\logs\task-4.2-verification.txt` records `True` only through the approved runtime-gap path.
+	Impact: Continue ST-014 in docs+code mode and avoid using partial runtime artefacts as the basis for architectural recommendations.
 
 ---
 
@@ -723,6 +729,9 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - Decision: Escalate ST-014 to plan-review after the first Task 4.2 runtime attempt instead of substituting WSL2, Docker, or a remote Milvus endpoint.
 	Rationale: The ExecPlan did not authorize an alternate validation environment, and `/continue` must not improvise around uncovered plan gaps.
 	Date: 2026-05-04T10:38:45.8215126+02:00
+- Decision: Treat Task 4.2 as complete through the approved docs+code fallback after the revised WSL2 attempt failed and the persisted verification result returned `True`.
+	Rationale: The ExecPlan explicitly authorizes bounded fallback after a failed runtime sequence, and further retries would violate the hard-cap/additive-bias guidance without improving the investigation evidence.
+	Date: 2026-05-04T14:00:39.8764558+02:00
 
 ---
 
