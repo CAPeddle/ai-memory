@@ -192,10 +192,17 @@
 
 ## Review
 
+(Empty)
+
+---
+
+## Done
+
 ### ST-014: Investigate memsearch (zilliztech) for architectural learnings
 - Type: spike
 - Source: PO
 - Value: 4 · Effort: S(2) · WSJF: 2.0
+- Completed: 2026-05-04
 - Blocked by: none
 - Touches: `docs/investigations/`, `docs/investigations/memory-architecture-design.md`, `docs/investigations/sqlite-vs-postgresql.md`
 - Acceptance criteria:
@@ -206,11 +213,7 @@
   - [x] Findings captured in a new investigation doc: `docs/investigations/memsearch-applicability-review.md`
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-014.md`
 - Docs: `docs/investigations/memory-architecture-design.md`, `docs/investigations/sqlite-vs-postgresql.md`
-- Notes: Execution complete under `/continue`; moved to Review after ST-011 acceptance cleared the slot.
-
----
-
-## Done
+- Notes: Accepted by PO. Use memsearch as a reference for future provider flexibility and staged recall UX, not as a replacement architecture.
 
 ### ST-011: Institutionalize recurring governance review and remediation
 - Type: debt
