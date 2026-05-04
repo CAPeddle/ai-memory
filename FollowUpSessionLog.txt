@@ -10,6 +10,7 @@
 - Kept ST-004 and ST-005 board metadata unchanged because the review concluded `Board edit required = no`.
 - Removed `.tmp/st-014-memsearch/` and completed final verification.
 - Accepted ST-011 and moved it to Done; moved ST-014 from Refined to Review.
+- Applied a git-tooling fallback pattern by pivoting to direct non-interactive `git -C` commands for the final board-transition commit path.
 
 ### Resume Point
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-014.md`
@@ -20,6 +21,7 @@
 - Do not retry native Windows Milvus Lite local indexing for ST-014.
 - Do not widen ST-004 or ST-005 based on ST-014 without a later approved plan.
 - Keep Review WIP limit at 1; do not start another Review story until ST-014 is accepted or moved out.
+- If git tooling fails twice or returns unusable output, switch to direct `git -C <repo>` commands and log the pivot reason.
 
 ### Board State
 - In Progress: none

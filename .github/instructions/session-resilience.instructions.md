@@ -44,6 +44,13 @@ Maximum 40 lines. Must be parseable by a fresh agent with no prior context.
 - Maximum 1 story in Review at a time
 - If both slots full, resolve Review before starting new work
 
+## Git Tooling Fallback
+
+- Keep git operations non-interactive and scoped to task files.
+- If the active git tooling path fails twice or returns unusable output, pivot to direct terminal git commands using `git -C <repo> ...`.
+- After a pivot, log the reason and command path in the active ExecPlan (§6c) or `FollowUpSessionLog.txt` so later sessions can replay the same recovery pattern.
+- Do not stage unrelated files while applying fallback commits.
+
 ## Lock Protocol
 
 Only one story may hold a module lock at a time. Locks are declared in the story's ExecPlan §3 Preconditions and released on story completion.

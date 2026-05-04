@@ -32,6 +32,18 @@ Before ending a governance-focused session:
 3. Update `FollowUpSessionLog.txt` so the next session can resume with minimal context.
 4. Do not promote speculative ideas; only promote rules supported by concrete evidence from the working tree.
 
+## Git Tooling Interaction Loop
+
+Use this optional loop when git operations required repeated retries, tool changes, or fallback behavior during a session.
+
+1. Count interactions: record how many times git was used for status, add, diff, log, or commit during the workflow.
+2. Count pivots: record each time the git execution path changed because output was unusable or the prior path failed.
+3. Capture evidence paths: point to concrete artifacts such as `FollowUpSessionLog.txt`, the active ExecPlan §5b/§6c, and related board or story files.
+4. Promote with thresholds:
+	- If one-off and session-specific, keep it as an `Avoidance` note in `FollowUpSessionLog.txt`.
+	- If repeated or process-level, promote a concise fallback rule to `.github/instructions/session-resilience.instructions.md`.
+5. Keep promotions minimal: avoid duplicating the same fallback rule across prompt, instruction, and skill unless each layer serves a distinct purpose.
+
 ## Promotion Heuristic
 
 - Prompt: use when the behavior should guide a repeatable agent workflow.
