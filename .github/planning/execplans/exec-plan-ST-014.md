@@ -657,12 +657,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.2 — Run the lightweight memsearch smoke test |
-| **Last successful command** | Persisted `.tmp\st-014-memsearch\logs\task-4.2-verification.txt` with the Task 4.2 verification result `True` |
-| **Expected outputs produced** | `.tmp\st-014-memsearch\upstream\`, `.tmp\st-014-memsearch\logs\upstream-commit.txt`, `.tmp\st-014-memsearch\logs\upstream-version.txt`, `.tmp\st-014-memsearch\fixture\synthetic\2026-05-04.md`, `.tmp\st-014-memsearch\fixture\synthetic\transcripts\session-st014.jsonl`, `.tmp\st-014-memsearch\fixture\ai-memory-doc-sample.md`, `.tmp\st-014-memsearch\logs\wsl-status.txt`, `.tmp\st-014-memsearch\logs\wsl-python.txt`, `.tmp\st-014-memsearch\logs\pip-install-linux-attempt-.txt`, `.tmp\st-014-memsearch\logs\index-attempt-.txt`, `.tmp\st-014-memsearch\logs\runtime-failure.txt`, `.tmp\st-014-memsearch\logs\task-4.2-verification.txt` |
-| **Next task** | Task 4.3 — Capture upstream docs and code evidence |
+| **Last completed task** | Task 4.3 — Capture upstream docs and code evidence |
+| **Last successful command** | Persisted `.tmp\st-014-memsearch\logs\task-4.3-verification.txt` with the Task 4.3 verification result `True` |
+| **Expected outputs produced** | `.tmp\st-014-memsearch\upstream\`, `.tmp\st-014-memsearch\logs\upstream-commit.txt`, `.tmp\st-014-memsearch\logs\upstream-version.txt`, `.tmp\st-014-memsearch\fixture\synthetic\2026-05-04.md`, `.tmp\st-014-memsearch\fixture\synthetic\transcripts\session-st014.jsonl`, `.tmp\st-014-memsearch\fixture\ai-memory-doc-sample.md`, `.tmp\st-014-memsearch\logs\wsl-status.txt`, `.tmp\st-014-memsearch\logs\wsl-python.txt`, `.tmp\st-014-memsearch\logs\pip-install-linux-attempt-.txt`, `.tmp\st-014-memsearch\logs\index-attempt-.txt`, `.tmp\st-014-memsearch\logs\runtime-failure.txt`, `.tmp\st-014-memsearch\logs\task-4.2-verification.txt`, `.tmp\st-014-memsearch\logs\docs-evidence.txt`, `.tmp\st-014-memsearch\logs\code-evidence.txt`, `.tmp\st-014-memsearch\logs\plugin-evidence.txt`, `.tmp\st-014-memsearch\logs\task-4.3-verification.txt` |
+| **Next task** | Task 4.4 — Author the memsearch applicability review |
 | **Known blockers** | None |
-| **Last updated** | 2026-05-04T14:00:39.8764558+02:00 |
+| **Last updated** | 2026-05-04T14:09:31.5737477+02:00 |
 
 ### Progress History
 
@@ -672,6 +672,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-05-04T10:38:45.8215126+02:00 | Task 4.2 | Blocked — plan-review | Created the synthetic fixture and ai-memory sample; install succeeded; first index attempt failed with upstream `RuntimeError: milvus-lite does not support Windows (no wheels on PyPI)` in `index-attempt-1.txt` and `runtime-attempt-1-failure.txt` | `/plan` must revise the Windows validation path before `/continue` resumes |
 | 2026-05-04T11:22:14.7686569+02:00 | Plan-review | Resolved | Revised Task 4.2 to use existing WSL2 via the shared `/mnt/c/...` temp workspace with docs+code fallback when unavailable | Resume `/continue` at Task 4.2 |
 | 2026-05-04T14:00:39.8764558+02:00 | Task 4.2 | Complete — degraded docs+code mode | Reused the synthetic fixture and ai-memory sample, confirmed WSL2 + `python3` availability, captured the Linux-side install log in `pip-install-linux-attempt-.txt`, recorded the bounded runtime gap in `runtime-failure.txt`, and persisted `task-4.2-verification.txt = True` | Task 4.3 — Capture upstream docs and code evidence |
+| 2026-05-04T14:09:31.5737477+02:00 | Task 4.3 | Complete | Captured curated upstream doc, code, and plugin evidence into `docs-evidence.txt`, `code-evidence.txt`, and `plugin-evidence.txt`, then persisted `task-4.3-verification.txt = True` after mapping the four focus areas to upstream references | Task 4.4 — Author the memsearch applicability review |
 
 ### Avoidance
 
@@ -706,6 +707,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - 2026-05-04T10:22:49.9822794+02:00 — Completed Task 4.1 by creating the isolated upstream workspace, shallow-cloning `zilliztech/memsearch`, and recording the reviewed commit/version metadata.
 - 2026-05-04T10:38:45.8215126+02:00 — Stopped during Task 4.2 after the local Milvus Lite indexing path failed on Windows in upstream memsearch. Recorded the blocker and escalated the story to plan-review instead of substituting a different validation environment.
 - 2026-05-04T14:00:39.8764558+02:00 — Completed Task 4.2 in the approved degraded mode by reusing the synthetic fixture, validating WSL availability, capturing the Linux-side install log, recording the bounded runtime gap from the revised WSL index attempt, and persisting a `True` verification result for the fallback path.
+- 2026-05-04T14:09:31.5737477+02:00 — Completed Task 4.3 by capturing upstream doc, code, and plugin evidence into the required logs and persisting a `True` verification result after validating the required keywords against the inspected upstream checkout.
 
 ---
 
@@ -732,6 +734,9 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - Decision: Treat Task 4.2 as complete through the approved docs+code fallback after the revised WSL2 attempt failed and the persisted verification result returned `True`.
 	Rationale: The ExecPlan explicitly authorizes bounded fallback after a failed runtime sequence, and further retries would violate the hard-cap/additive-bias guidance without improving the investigation evidence.
 	Date: 2026-05-04T14:00:39.8764558+02:00
+- Decision: Accept Task 4.3 evidence gathered through workspace search over the same upstream checkout after the direct shell-based capture attempt returned unusable output.
+	Rationale: Task 4.3 requires file-level upstream evidence logs and a persisted verification result, not any specific shell transport. Reconstructing the logs from the inspected checkout preserved the planned evidence shape without introducing new claims.
+	Date: 2026-05-04T14:09:31.5737477+02:00
 
 ---
 
