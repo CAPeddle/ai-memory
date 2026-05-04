@@ -35,6 +35,7 @@ Definitions used in this plan:
 - **Progressive disclosure**: a staged recall workflow where the system starts with cheap, short search results and only pulls larger context when needed.
 - **Source of truth**: the artifact considered authoritative if derived indexes and cached views disagree.
 - **Milvus Lite**: the file-backed local deployment mode of Milvus that keeps Milvus data in a local `.db` file but still uses Milvus APIs.
+- **WSL2**: Windows Subsystem for Linux version 2, used here only when an existing Linux distro is already installed and callable through `wsl.exe`.
 
 Key local files under discussion:
 
@@ -93,7 +94,8 @@ Status: ✅ Ready — `/continue` may execute this plan.
 
 ## §2c. Plan Review Notes
 
-(Empty — populated by `/continue` when escalating issues)
+- 2026-05-04T10:38:45.8215126+02:00 — Task 4.2 cannot continue as written on this Windows host. The first `memsearch index ... --milvus-uri <local .db>` attempt fails in upstream code with `RuntimeError: milvus-lite does not support Windows (no wheels on PyPI).` This ExecPlan only defines degraded handling for ONNX download/runtime failures, not for a deterministic upstream Windows + Milvus Lite incompatibility that invalidates the selected smoke-test path. Story blocked pending `/plan` guidance on a replacement validation mode or an explicit waiver of local runtime validation.
+- 2026-05-04T11:22:14.7686569+02:00 — Resolved during `/plan`: Task 4.2 now uses an existing WSL2 environment through the shared `/mnt/c/...` temp workspace and falls back to docs+code mode when WSL2 or the Linux-side runtime is unavailable. PO approved the revised plan, so `/continue` may resume at Task 4.2.
 
 ---
 
@@ -134,13 +136,14 @@ List any prerequisites:
   ```powershell
   rg --version
   ```
-- Python 3.11+ is available as `py -3`. If only `python` exists, substitute that interpreter consistently in every command in this plan:
+- `wsl.exe` is callable from PowerShell so the runtime smoke test can use an existing WSL2 distro when available:
   ```powershell
-  py -3 --version
+	wsl.exe --status
   ```
+- If WSL2 runtime validation is attempted, the existing default distro must already provide `python3` with `venv` support. If it does not, Task 4.2 records `runtime-failure.txt` and continues in docs+code mode.
 - Internet access is available for:
   - cloning `https://github.com/zilliztech/memsearch.git`
-  - installing Python dependencies from package indexes
+	- installing Python dependencies from package indexes inside WSL when runtime validation proceeds
   - downloading the ONNX model on first use if runtime validation proceeds successfully
 - At least 3 GB of free disk space is available for the upstream clone, Python environment, installed packages, and ONNX model cache.
 - No other session is simultaneously editing `.github/planning/story-board.md` or the local investigation docs.
@@ -158,7 +161,15 @@ $SyntheticRoot = Join-Path $FixtureRoot 'synthetic'
 $TranscriptRoot = Join-Path $SyntheticRoot 'transcripts'
 $AiSamplePath = Join-Path $FixtureRoot 'ai-memory-doc-sample.md'
 $MilvusLitePath = Join-Path $TempRoot 'memsearch-lite.db'
-$Py = Join-Path $TempRoot 'venv\Scripts\python.exe'
+$WslRepoRoot = '/mnt/c/projects/ai-memory'
+$WslTempRoot = "$WslRepoRoot/.tmp/st-014-memsearch"
+$WslUpstreamRoot = "$WslTempRoot/upstream"
+$WslLogsRoot = "$WslTempRoot/logs"
+$WslSyntheticRoot = "$WslTempRoot/fixture/synthetic"
+$WslTranscriptPath = "$WslTempRoot/fixture/synthetic/transcripts/session-st014.jsonl"
+$WslAiSamplePath = "$WslTempRoot/fixture/ai-memory-doc-sample.md"
+$WslMilvusLitePath = "$WslTempRoot/memsearch-lite.db"
+$WslPy = "$WslTempRoot/venv-linux/bin/python"
 ```
 
 ---
@@ -216,31 +227,21 @@ Expected result: `True`.
 
 ### Task 4.2: Run the lightweight memsearch smoke test
 
-**Objective:** Validate key memsearch runtime claims with a tiny, repeatable corpus built from both synthetic content and a small ai-memory doc sample.
+**Objective:** Validate key memsearch runtime claims with a tiny, repeatable corpus built from both synthetic content and a small ai-memory doc sample, using an existing WSL2 environment when available and falling back to docs+code evidence when it is not.
 
 **Input:** The upstream clone from Task 4.1 and the existing local investigation docs.
 
 **Working directory:** `c:\projects\ai-memory\`
 
 **Steps:**
-1. Reuse the path variables from §3 and create the Python environment:
-	```powershell
-	py -3 -m venv (Join-Path $TempRoot 'venv')
-	& $Py -m pip install --upgrade pip
-	Push-Location $UpstreamRoot
-	& (Join-Path $TempRoot 'venv\Scripts\python.exe') -m pip install -e '.[onnx]'
-	Pop-Location
-	```
-2. Create a transcript file for level-3 recall validation:
+1. Reuse the path variables from §3 and create the transcript and synthetic markdown fixture for level-3 recall validation:
 	```powershell
 	$TranscriptPath = Join-Path $TranscriptRoot 'session-st014.jsonl'
 	@'
 {"uuid":"st014-turn-001","timestamp":"2026-05-04T09:00:00Z","content":"What embedding option avoids API keys?","tool_calls":[]}
 {"uuid":"st014-turn-002","timestamp":"2026-05-04T09:00:30Z","content":"Use ONNX bge-m3 int8 for local CPU-only embeddings without an API key.","tool_calls":[]}
 '@ | Set-Content $TranscriptPath
-	```
-3. Create the synthetic markdown fixture that covers the four investigation areas and includes transcript anchor metadata:
-	```powershell
+
 	$SyntheticDocPath = Join-Path $SyntheticRoot '2026-05-04.md'
 	@"
 # ST-014 Synthetic Memory
@@ -256,7 +257,7 @@ Start with search snippets, expand to a full section only when needed, and use t
 Milvus Lite keeps vectors in a local file with the same API as larger Milvus deployments, while SQLite keeps the service fully embedded and single-file on Windows.
 "@ | Set-Content $SyntheticDocPath
 	```
-4. Create the tiny ai-memory sample file by copying short excerpts from the current design-authority docs rather than indexing the entire repo:
+2. Create the tiny ai-memory sample file by copying short excerpts from the current design-authority docs rather than indexing the entire repo:
 	```powershell
 	@(
 	  '# ai-memory doc sample'
@@ -271,43 +272,88 @@ Milvus Lite keeps vectors in a local file with the same API as larger Milvus dep
 	(Get-Content '.\docs\investigations\sqlite-vs-postgresql.md' | Select-Object -Skip 13 -First 12) |
 	Set-Content $AiSamplePath
 	```
-5. Run the memsearch index over both corpus sources, using ONNX and a disposable Milvus Lite file in the temp workspace:
+3. Detect whether an existing WSL2 environment is available and record the result before attempting runtime validation:
 	```powershell
-	& $Py -m memsearch index $SyntheticRoot $AiSamplePath --provider onnx --milvus-uri $MilvusLitePath |
-	  Tee-Object (Join-Path $LogsRoot 'index.txt')
+	$WslStatus = wsl.exe --status 2>&1
+	$WslStatus | Set-Content (Join-Path $LogsRoot 'wsl-status.txt')
+	$WslPythonCheck = wsl.exe sh -lc 'python3 --version' 2>&1
+	$WslPythonCheck | Set-Content (Join-Path $LogsRoot 'wsl-python.txt')
+	$UseWsl = ($LASTEXITCODE -eq 0)
+	$RuntimeOk = $false
 	```
-6. Run three searches and store the JSON output:
+4. If `$UseWsl` is `True`, remove any stale Linux runtime artifacts from a prior failed attempt before entering the retry loop:
 	```powershell
-	& $Py -m memsearch search 'Which embedding option avoids API keys?' --provider onnx --milvus-uri $MilvusLitePath --json-output |
-	  Set-Content (Join-Path $LogsRoot 'search-embedding.json')
-
-	& $Py -m memsearch search 'How does progressive recall work?' --provider onnx --milvus-uri $MilvusLitePath --json-output |
-	  Set-Content (Join-Path $LogsRoot 'search-progressive.json')
-
-	& $Py -m memsearch search 'Which storage approach is zero-config on Windows?' --provider onnx --milvus-uri $MilvusLitePath --json-output |
-	  Set-Content (Join-Path $LogsRoot 'search-storage.json')
+	if ($UseWsl) {
+	  if (Test-Path $MilvusLitePath) { Remove-Item $MilvusLitePath -Force }
+	  if (Test-Path (Join-Path $TempRoot 'venv-linux')) { Remove-Item (Join-Path $TempRoot 'venv-linux') -Recurse -Force }
+	}
 	```
-7. Expand the top progressive-disclosure result and record it:
+5. If `$UseWsl` is `True`, run the memsearch index and query commands from inside WSL against the shared `/mnt/c/...` workspace. Retry the full runtime sequence once if install or runtime execution fails:
 	```powershell
-	$Progressive = Get-Content (Join-Path $LogsRoot 'search-progressive.json') -Raw | ConvertFrom-Json
-	$ChunkHash = $Progressive[0].chunk_hash
-	& $Py -m memsearch expand $ChunkHash --provider onnx --milvus-uri $MilvusLitePath --json-output |
-	  Set-Content (Join-Path $LogsRoot 'expand-progressive.json')
+	if ($UseWsl) {
+	  for ($Attempt = 1; $Attempt -le 2 -and -not $RuntimeOk; $Attempt++) {
+	    if (Test-Path $MilvusLitePath) { Remove-Item $MilvusLitePath -Force }
+	    if ($Attempt -gt 1 -and Test-Path (Join-Path $TempRoot 'venv-linux')) { Remove-Item (Join-Path $TempRoot 'venv-linux') -Recurse -Force }
+	
+	    wsl.exe sh -lc "python3 -m venv '$WslTempRoot/venv-linux' && '$WslPy' -m pip install --upgrade pip && cd '$WslUpstreamRoot' && '$WslPy' -m pip install -e '.[onnx]'" 2>&1 |
+	      Set-Content (Join-Path $LogsRoot ("pip-install-linux-attempt-{0}.txt" -f $Attempt))
+	    if ($LASTEXITCODE -ne 0) { continue }
+	
+	    wsl.exe sh -lc "'$WslPy' -m memsearch index '$WslSyntheticRoot' '$WslAiSamplePath' --provider onnx --milvus-uri '$WslMilvusLitePath'" 2>&1 |
+	      Set-Content (Join-Path $LogsRoot ("index-attempt-{0}.txt" -f $Attempt))
+	    if ($LASTEXITCODE -ne 0) { continue }
+	
+	    wsl.exe sh -lc "'$WslPy' -m memsearch search 'Which embedding option avoids API keys?' --provider onnx --milvus-uri '$WslMilvusLitePath' --json-output" |
+	      Set-Content (Join-Path $LogsRoot 'search-embedding.json')
+	    if ($LASTEXITCODE -ne 0) { continue }
+	
+	    wsl.exe sh -lc "'$WslPy' -m memsearch search 'How does progressive recall work?' --provider onnx --milvus-uri '$WslMilvusLitePath' --json-output" |
+	      Set-Content (Join-Path $LogsRoot 'search-progressive.json')
+	    if ($LASTEXITCODE -ne 0) { continue }
+	
+	    wsl.exe sh -lc "'$WslPy' -m memsearch search 'Which storage approach is zero-config on Windows?' --provider onnx --milvus-uri '$WslMilvusLitePath' --json-output" |
+	      Set-Content (Join-Path $LogsRoot 'search-storage.json')
+	    if ($LASTEXITCODE -ne 0) { continue }
+	
+	    $Progressive = Get-Content (Join-Path $LogsRoot 'search-progressive.json') -Raw | ConvertFrom-Json
+	    $ChunkHash = $Progressive[0].chunk_hash
+	    wsl.exe sh -lc "'$WslPy' -m memsearch expand '$ChunkHash' --provider onnx --milvus-uri '$WslMilvusLitePath' --json-output" |
+	      Set-Content (Join-Path $LogsRoot 'expand-progressive.json')
+	    if ($LASTEXITCODE -ne 0) { continue }
+	
+	    wsl.exe sh -lc "'$WslPy' -m memsearch transcript '$WslTranscriptPath' --turn st014-turn-002 --json-output" |
+	      Set-Content (Join-Path $LogsRoot 'transcript.json')
+	    if ($LASTEXITCODE -ne 0) { continue }
+	
+	    wsl.exe sh -lc "'$WslPy' -m memsearch stats --milvus-uri '$WslMilvusLitePath'" |
+	      Set-Content (Join-Path $LogsRoot 'stats.txt')
+	    if ($LASTEXITCODE -ne 0) { continue }
+	
+	    Copy-Item (Join-Path $LogsRoot ("index-attempt-{0}.txt" -f $Attempt)) (Join-Path $LogsRoot 'index.txt') -Force
+	    $RuntimeOk = $true
+	  }
+	}
 	```
-8. Validate the transcript command directly against the known transcript file and capture stats:
+6. If WSL2 is unavailable or the Linux-side install/runtime sequence does not complete successfully, record a bounded runtime gap and continue the story in docs+code mode:
 	```powershell
-	& $Py -m memsearch transcript $TranscriptPath --turn st014-turn-002 --json-output |
-	  Set-Content (Join-Path $LogsRoot 'transcript.json')
-
-	& $Py -m memsearch stats --milvus-uri $MilvusLitePath |
-	  Set-Content (Join-Path $LogsRoot 'stats.txt')
+	if (-not $UseWsl -or -not $RuntimeOk) {
+	  @(
+	    'Runtime validation gap recorded during Task 4.2.',
+	    '',
+	    'WSL status:',
+	    (Get-Content (Join-Path $LogsRoot 'wsl-status.txt') -Raw),
+	    '',
+	    'WSL python check:',
+	    (Get-Content (Join-Path $LogsRoot 'wsl-python.txt') -Raw)
+	  ) | Set-Content (Join-Path $LogsRoot 'runtime-failure.txt')
+	}
 	```
 
 **Expected output:**
-- Installed editable memsearch environment under `.tmp\st-014-memsearch\venv\`
 - Synthetic fixture markdown and transcript files
 - `ai-memory-doc-sample.md`
-- Runtime logs under `.tmp\st-014-memsearch\logs\`
+- If WSL runtime validation succeeds: installed Linux-side memsearch environment under `.tmp\st-014-memsearch\venv-linux\` plus runtime logs under `.tmp\st-014-memsearch\logs\`
+- If WSL runtime validation is unavailable or fails: `.tmp\st-014-memsearch\logs\runtime-failure.txt`
 
 **Requirement mapping:**
 - `Assess ONNX bge-m3`
@@ -318,21 +364,33 @@ Milvus Lite keeps vectors in a local file with the same API as larger Milvus dep
 
 **Verification:**
 ```powershell
-$Embedding = Get-Content (Join-Path $LogsRoot 'search-embedding.json') -Raw | ConvertFrom-Json
-$Storage = Get-Content (Join-Path $LogsRoot 'search-storage.json') -Raw | ConvertFrom-Json
-$Expand = Get-Content (Join-Path $LogsRoot 'expand-progressive.json') -Raw | ConvertFrom-Json
-$Transcript = Get-Content (Join-Path $LogsRoot 'transcript.json') -Raw | ConvertFrom-Json
+$FixturesOk =
+  (Test-Path (Join-Path $SyntheticRoot '2026-05-04.md')) -and
+  (Test-Path (Join-Path $TranscriptRoot 'session-st014.jsonl')) -and
+  (Test-Path $AiSamplePath)
 
-($Embedding.Count -ge 1) -and
-($Storage.Count -ge 1) -and
-($Expand.content -match 'Progressive recall') -and
-($Transcript[0].content -match 'API key')
+$RuntimeOk = $false
+if (Test-Path (Join-Path $LogsRoot 'search-embedding.json')) {
+  $Embedding = Get-Content (Join-Path $LogsRoot 'search-embedding.json') -Raw | ConvertFrom-Json
+  $Storage = Get-Content (Join-Path $LogsRoot 'search-storage.json') -Raw | ConvertFrom-Json
+  $Expand = Get-Content (Join-Path $LogsRoot 'expand-progressive.json') -Raw | ConvertFrom-Json
+  $Transcript = Get-Content (Join-Path $LogsRoot 'transcript.json') -Raw | ConvertFrom-Json
+  $RuntimeOk =
+    ($Embedding.Count -ge 1) -and
+    ($Storage.Count -ge 1) -and
+    ($Expand.content -match 'Progressive recall') -and
+    ($Transcript[0].content -match 'API key')
+}
+
+$GapOk = Test-Path (Join-Path $LogsRoot 'runtime-failure.txt')
+
+$FixturesOk -and ($RuntimeOk -or $GapOk)
 ```
 Expected result: `True`.
 
 **Failure handling:**
-- If dependency installation fails, retry once after re-running the pip install step.
-- If ONNX model download or ONNX runtime execution fails twice, capture the failure text into `runtime-failure.txt`, skip the remaining runtime commands, continue with Tasks 4.3–4.5 in docs+code mode, and explicitly mark ONNX runtime validation as a gap in the investigation doc.
+- If `wsl.exe --status` or `wsl.exe sh -lc 'python3 --version'` fails, record `runtime-failure.txt`, skip the remaining runtime commands, continue with Tasks 4.3–4.5 in docs+code mode, and explicitly mark local runtime validation as a gap in the investigation doc.
+- If Linux-side dependency installation or runtime execution fails, retry the full WSL runtime sequence once after recreating `venv-linux` or deleting `$MilvusLitePath` as needed. If the second attempt still fails, capture the failure text into `runtime-failure.txt`, skip the remaining runtime commands, continue with Tasks 4.3–4.5 in docs+code mode, and explicitly mark runtime validation as a gap in the investigation doc.
 - If runtime validation is skipped or degraded, do not use runtime-only claims as the basis for changing ST-004 or ST-005 metadata.
 
 ---
@@ -600,21 +658,23 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | Field | Value |
 |---|---|
 | **Last completed task** | Task 4.1 — Create an isolated upstream workspace |
-| **Last successful command** | `git -C $UpstreamRoot describe --tags --always 2>$null | Set-Content (Join-Path $LogsRoot 'upstream-version.txt')` |
-| **Expected outputs produced** | `.tmp\st-014-memsearch\upstream\`, `.tmp\st-014-memsearch\logs\upstream-commit.txt`, `.tmp\st-014-memsearch\logs\upstream-version.txt` |
+| **Last successful command** | `& $Py -c "import memsearch; print(memsearch.__file__)"` |
+| **Expected outputs produced** | `.tmp\st-014-memsearch\upstream\`, `.tmp\st-014-memsearch\logs\upstream-commit.txt`, `.tmp\st-014-memsearch\logs\upstream-version.txt`, `.tmp\st-014-memsearch\fixture\synthetic\2026-05-04.md`, `.tmp\st-014-memsearch\fixture\synthetic\transcripts\session-st014.jsonl`, `.tmp\st-014-memsearch\fixture\ai-memory-doc-sample.md`, `.tmp\st-014-memsearch\logs\index-attempt-1.txt`, `.tmp\st-014-memsearch\logs\runtime-attempt-1-failure.txt` |
 | **Next task** | Task 4.2 — Run the lightweight memsearch smoke test |
 | **Known blockers** | None |
-| **Last updated** | 2026-05-04T10:22:49.9822794+02:00 |
+| **Last updated** | 2026-05-04T11:22:14.7686569+02:00 |
 
 ### Progress History
 
 | Timestamp (ISO) | Task | Status | Evidence / outputs | Next step |
 |---|---|---|---|---|
 | 2026-05-04T10:22:49.9822794+02:00 | Task 4.1 | Complete | Created `.tmp\st-014-memsearch\upstream\`; logged `upstream-commit.txt` and `upstream-version.txt` | Task 4.2 — Run the lightweight memsearch smoke test |
+| 2026-05-04T10:38:45.8215126+02:00 | Task 4.2 | Blocked — plan-review | Created the synthetic fixture and ai-memory sample; install succeeded; first index attempt failed with upstream `RuntimeError: milvus-lite does not support Windows (no wheels on PyPI)` in `index-attempt-1.txt` and `runtime-attempt-1-failure.txt` | `/plan` must revise the Windows validation path before `/continue` resumes |
+| 2026-05-04T11:22:14.7686569+02:00 | Plan-review | Resolved | Revised Task 4.2 to use existing WSL2 via the shared `/mnt/c/...` temp workspace with docs+code fallback when unavailable | Resume `/continue` at Task 4.2 |
 
 ### Avoidance
 
-(Append dated entries here. Do not delete prior guidance.)
+- 2026-05-04: Do not retry the native Windows Milvus Lite local-validation path for Task 4.2. Use the revised WSL2 flow or the explicit docs+code fallback when WSL2 or the Linux-side runtime is unavailable.
 
 ---
 
@@ -627,7 +687,9 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2 | Fallback approach: if ONNX runtime validation fails after one retry, continue with docs+code evidence only, document the runtime gap, and do not mutate ST-004/ST-005 based on runtime claims | Before any board edit in Task 4.5 | ⬜ Reserve |
 
 ### Approach Failure Log
-(Empty — no failures yet)
+| Timestamp (ISO) | Approach # | Failure | Outcome |
+|---|---|---|---|
+| 2026-05-04T10:38:45.8215126+02:00 | 1 | Task 4.2 is blocked on Windows because upstream memsearch rejects the Milvus Lite local-file mode used by this ExecPlan (`milvus-lite` has no Windows wheels) | Escalated to plan-review; do not continue execution |
 
 **Rollback triggers:**
 - 2+ additive bias checks true → propose rollback
@@ -640,6 +702,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 (Populated during execution — timestamped entries of significant actions)
 
 - 2026-05-04T10:22:49.9822794+02:00 — Completed Task 4.1 by creating the isolated upstream workspace, shallow-cloning `zilliztech/memsearch`, and recording the reviewed commit/version metadata.
+- 2026-05-04T10:38:45.8215126+02:00 — Stopped during Task 4.2 after the local Milvus Lite indexing path failed on Windows in upstream memsearch. Recorded the blocker and escalated the story to plan-review instead of substituting a different validation environment.
 
 ---
 
@@ -647,9 +710,9 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 (Document unexpected behaviours, performance tradeoffs, bugs, or insights. Provide evidence.)
 
-- Observation: ...
-  Evidence: ...
-  Impact: ...
+- Observation: Upstream memsearch's documented local `--milvus-uri <file>.db` path is not runnable on this Windows host because `milvus-lite` has no Windows wheels on PyPI.
+	Evidence: `.tmp\st-014-memsearch\logs\index-attempt-1.txt` shows `RuntimeError: milvus-lite does not support Windows (no wheels on PyPI)`.
+	Impact: Task 4.2's planned lightweight runtime validation path is invalid on Windows as written, so the story must return to `/plan` before execution can continue.
 
 ---
 
@@ -657,9 +720,9 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 (Record every decision made during execution with rationale.)
 
-- Decision: ...
-  Rationale: ...
-  Date: ...
+- Decision: Escalate ST-014 to plan-review after the first Task 4.2 runtime attempt instead of substituting WSL2, Docker, or a remote Milvus endpoint.
+	Rationale: The ExecPlan did not authorize an alternate validation environment, and `/continue` must not improvise around uncovered plan gaps.
+	Date: 2026-05-04T10:38:45.8215126+02:00
 
 ---
 
@@ -688,3 +751,4 @@ Lesson: ...
 ## Revision Notes
 
 - 2026-05-04: Replaced the stub with a full Ready ExecPlan based on QP-014 and the PO's /plan scoping decisions. Added explicit smoke-test steps, bounded downstream-edit rules, fallback behavior for ONNX runtime failure, and WIP-limit handling for the occupied Review column.
+- 2026-05-04: Revised Task 4.2 during plan-review to replace the invalid native Windows Milvus Lite path with an existing-WSL2 validation flow and a docs+code fallback when WSL2 is unavailable or still fails.

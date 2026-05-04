@@ -1,27 +1,26 @@
 # FollowUpSessionLog — ai-memory
 
-## Last Session: 2026-05-03
+## Last Session: 2026-05-04
 
 ### Accomplished
-- Executed ST-011 Task 4.1: created `.github/planning/audit-reports/_TEMPLATE.md`
-- Executed ST-011 Task 4.2: created `.github/prompts/governance-review.prompt.md`
-- Executed ST-011 Task 4.3: reviewed 7 upstream sources and applied safe discretionary-check enhancements
-- Executed ST-011 Task 4.4: ran governance validation and wrote `.github/planning/audit-reports/audit-report-2026-05-03.md`
-- Executed ST-011 Task 4.5: moved ST-011 to Review and updated board metadata
-- PO accepted ST-011; story moved from Review to Done
+- Executed ST-014 startup checks under `/continue`: Ready check passed and recovery state was reviewed before execution.
+- Executed ST-014 Task 4.1: created `.tmp\st-014-memsearch\upstream\` and logged the reviewed upstream commit/version.
+- Began ST-014 Task 4.2: created the synthetic fixture, transcript, and ai-memory doc sample in `.tmp\st-014-memsearch\fixture\`.
+- Captured the native Windows Milvus Lite blocker in `.tmp\st-014-memsearch\logs\index-attempt-1.txt` and `.tmp\st-014-memsearch\logs\runtime-attempt-1-failure.txt`.
+- Switched to `/plan`, updated `QP-014` and `exec-plan-ST-014.md`, and replaced the invalid Windows runtime path with an existing-WSL2 flow plus docs+code fallback.
+- Cleared the ST-014 `plan-review` blocker after PO approval.
 
 ### Resume Point
-- Next recommended: resume `ST-013` at `.github/planning/execplans/exec-plan-ST-013.md` Task 4.1
-- `ST-012` is now unblocked and can be planned/executed after `ST-013` priority decisions
+- Next required: resume `/continue` on ST-014 at Task 4.2 using `.github/planning/execplans/exec-plan-ST-014.md`.
+- If WSL2 or Linux-side Python is unavailable, Task 4.2 must create `runtime-failure.txt` and continue in docs+code mode instead of blocking again.
 
 ### Board State
 - In Progress: (none)
-- Review: (none)
-- Done: `ST-011`
-- Backlog priority: `ST-013` (approved plan, now unblocked)
-- Backlog follow-on: `ST-012` (now unblocked)
+- Review: `ST-011`
+- Refined ready for `/continue`: `ST-014`
+- Backlog priority: `ST-012` (blocked by ST-011 review sign-off)
 
 ### Avoidance
-- Do not execute `ST-013` before `ST-011` is complete unless the PO explicitly removes the blocker.
-- Do not rename or remove the eight top-level investigation files during `ST-013`; they must remain as landing pages.
-- Task 4.3 (upstream review) fetches 7 external URLs — if any are unreachable, record and continue; do not block the story.
+- Do not retry native Windows Milvus Lite local indexing for ST-014; use the approved WSL2 path or the explicit docs+code fallback.
+- Do not install WSL2 as part of `/continue`; detect and use an existing WSL2 environment only.
+- Keep ST-011 in Review until PO acceptance; do not mark Done unilaterally.
