@@ -657,12 +657,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.3 — Capture upstream docs and code evidence |
-| **Last successful command** | Persisted `.tmp\st-014-memsearch\logs\task-4.3-verification.txt` with the Task 4.3 verification result `True` |
-| **Expected outputs produced** | `.tmp\st-014-memsearch\upstream\`, `.tmp\st-014-memsearch\logs\upstream-commit.txt`, `.tmp\st-014-memsearch\logs\upstream-version.txt`, `.tmp\st-014-memsearch\fixture\synthetic\2026-05-04.md`, `.tmp\st-014-memsearch\fixture\synthetic\transcripts\session-st014.jsonl`, `.tmp\st-014-memsearch\fixture\ai-memory-doc-sample.md`, `.tmp\st-014-memsearch\logs\wsl-status.txt`, `.tmp\st-014-memsearch\logs\wsl-python.txt`, `.tmp\st-014-memsearch\logs\pip-install-linux-attempt-.txt`, `.tmp\st-014-memsearch\logs\index-attempt-.txt`, `.tmp\st-014-memsearch\logs\runtime-failure.txt`, `.tmp\st-014-memsearch\logs\task-4.2-verification.txt`, `.tmp\st-014-memsearch\logs\docs-evidence.txt`, `.tmp\st-014-memsearch\logs\code-evidence.txt`, `.tmp\st-014-memsearch\logs\plugin-evidence.txt`, `.tmp\st-014-memsearch\logs\task-4.3-verification.txt` |
-| **Next task** | Task 4.4 — Author the memsearch applicability review |
+| **Last completed task** | Task 4.4 — Author the memsearch applicability review |
+| **Last successful command** | Created `docs\investigations\memsearch-applicability-review.md` and verified the required sections and default-preservation statement |
+| **Expected outputs produced** | `.tmp\st-014-memsearch\upstream\`, `.tmp\st-014-memsearch\logs\upstream-commit.txt`, `.tmp\st-014-memsearch\logs\upstream-version.txt`, `.tmp\st-014-memsearch\fixture\synthetic\2026-05-04.md`, `.tmp\st-014-memsearch\fixture\synthetic\transcripts\session-st014.jsonl`, `.tmp\st-014-memsearch\fixture\ai-memory-doc-sample.md`, `.tmp\st-014-memsearch\logs\wsl-status.txt`, `.tmp\st-014-memsearch\logs\wsl-python.txt`, `.tmp\st-014-memsearch\logs\pip-install-linux-attempt-.txt`, `.tmp\st-014-memsearch\logs\index-attempt-.txt`, `.tmp\st-014-memsearch\logs\runtime-failure.txt`, `.tmp\st-014-memsearch\logs\task-4.2-verification.txt`, `.tmp\st-014-memsearch\logs\docs-evidence.txt`, `.tmp\st-014-memsearch\logs\code-evidence.txt`, `.tmp\st-014-memsearch\logs\plugin-evidence.txt`, `.tmp\st-014-memsearch\logs\task-4.3-verification.txt`, `docs\investigations\memsearch-applicability-review.md` |
+| **Next task** | Task 4.5 — Apply bounded traceability and story-metadata updates |
 | **Known blockers** | None |
-| **Last updated** | 2026-05-04T14:09:31.5737477+02:00 |
+| **Last updated** | 2026-05-04T14:15:38.4562551+02:00 |
 
 ### Progress History
 
@@ -673,6 +673,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-05-04T11:22:14.7686569+02:00 | Plan-review | Resolved | Revised Task 4.2 to use existing WSL2 via the shared `/mnt/c/...` temp workspace with docs+code fallback when unavailable | Resume `/continue` at Task 4.2 |
 | 2026-05-04T14:00:39.8764558+02:00 | Task 4.2 | Complete — degraded docs+code mode | Reused the synthetic fixture and ai-memory sample, confirmed WSL2 + `python3` availability, captured the Linux-side install log in `pip-install-linux-attempt-.txt`, recorded the bounded runtime gap in `runtime-failure.txt`, and persisted `task-4.2-verification.txt = True` | Task 4.3 — Capture upstream docs and code evidence |
 | 2026-05-04T14:09:31.5737477+02:00 | Task 4.3 | Complete | Captured curated upstream doc, code, and plugin evidence into `docs-evidence.txt`, `code-evidence.txt`, and `plugin-evidence.txt`, then persisted `task-4.3-verification.txt = True` after mapping the four focus areas to upstream references | Task 4.4 — Author the memsearch applicability review |
+| 2026-05-04T14:15:38.4562551+02:00 | Task 4.4 | Complete | Authored `docs\investigations\memsearch-applicability-review.md` with explicit findings for ONNX, Milvus Lite, progressive disclosure, and Markdown-as-source-of-truth, plus the ST-004/ST-005 impact table | Task 4.5 — Apply bounded traceability and story-metadata updates |
 
 ### Avoidance
 
@@ -708,6 +709,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - 2026-05-04T10:38:45.8215126+02:00 — Stopped during Task 4.2 after the local Milvus Lite indexing path failed on Windows in upstream memsearch. Recorded the blocker and escalated the story to plan-review instead of substituting a different validation environment.
 - 2026-05-04T14:00:39.8764558+02:00 — Completed Task 4.2 in the approved degraded mode by reusing the synthetic fixture, validating WSL availability, capturing the Linux-side install log, recording the bounded runtime gap from the revised WSL index attempt, and persisting a `True` verification result for the fallback path.
 - 2026-05-04T14:09:31.5737477+02:00 — Completed Task 4.3 by capturing upstream doc, code, and plugin evidence into the required logs and persisting a `True` verification result after validating the required keywords against the inspected upstream checkout.
+- 2026-05-04T14:15:38.4562551+02:00 — Completed Task 4.4 by authoring the standalone memsearch applicability review, documenting the runtime gap explicitly, and recording that ST-004 and ST-005 remain `Adapt later` with no immediate board edit required.
 
 ---
 
@@ -721,6 +723,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - Observation: The revised WSL2 path reached the Linux-side dependency-install stage, but the local indexing attempt still failed before any search/expand/transcript evidence was produced.
 	Evidence: `.tmp\st-014-memsearch\logs\pip-install-linux-attempt-.txt` shows a successful editable install with `[onnx]`, while `.tmp\st-014-memsearch\logs\index-attempt-.txt` ends in a `KeyboardInterrupt` during the `pymilvus` / `protobuf` import chain and `.tmp\st-014-memsearch\logs\task-4.2-verification.txt` records `True` only through the approved runtime-gap path.
 	Impact: Continue ST-014 in docs+code mode and avoid using partial runtime artefacts as the basis for architectural recommendations.
+- Observation: memsearch's marketed ONNX default is partly a plugin-level experience choice rather than a core-engine default.
+	Evidence: `evaluation/README.md` describes the ONNX `bge-m3` switch for plugin users, while `src/memsearch/core.py` still defaults `embedding_provider` to `openai`.
+	Impact: ai-memory should treat ONNX as a credible provider option, not as evidence that local embeddings must replace an abstraction-first provider design immediately.
+- Observation: memsearch's strongest differentiator versus ai-memory is staged recall UX over markdown and transcript sources, not a fundamentally different search core.
+	Evidence: `src/memsearch/store.py` already uses dense + BM25 + RRF hybrid search, while `src/memsearch/cli.py` and `plugins/openclaw/index.ts` add the `expand` and transcript drill-down surfaces.
+	Impact: If ai-memory adopts anything from memsearch, the likely candidate is a later retrieval-surface enhancement after base hybrid search exists.
 
 ---
 
@@ -737,6 +745,9 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - Decision: Accept Task 4.3 evidence gathered through workspace search over the same upstream checkout after the direct shell-based capture attempt returned unusable output.
 	Rationale: Task 4.3 requires file-level upstream evidence logs and a persisted verification result, not any specific shell transport. Reconstructing the logs from the inspected checkout preserved the planned evidence shape without introducing new claims.
 	Date: 2026-05-04T14:09:31.5737477+02:00
+- Decision: Record ST-004 and ST-005 as `Adapt later` with `Board edit required = no` in the Task 4.4 investigation doc.
+	Rationale: The doc-and-code evidence is decision-useful, but the degraded runtime path means neither story should widen scope based on unverified local behaviour in this repo.
+	Date: 2026-05-04T14:15:38.4562551+02:00
 
 ---
 
