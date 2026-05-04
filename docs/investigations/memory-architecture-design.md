@@ -287,6 +287,8 @@ This feedback directly influences the relevance score in the consolidation pipel
 
 Search uses a hybrid approach combining full-text search (exact keyword matching) with semantic search (embedding similarity):
 
+See also: `docs/investigations/memsearch-applicability-review.md` for the ST-014 comparison against memsearch's Milvus-backed hybrid search and its recommendation to keep this hybrid direction while deferring staged recall ideas.
+
 ```
 ┌─────────────────────────────────────────────────────┐
 │                  QUERY INPUT                         │

@@ -657,12 +657,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.4 — Author the memsearch applicability review |
-| **Last successful command** | Created `docs\investigations\memsearch-applicability-review.md` and verified the required sections and default-preservation statement |
-| **Expected outputs produced** | `.tmp\st-014-memsearch\upstream\`, `.tmp\st-014-memsearch\logs\upstream-commit.txt`, `.tmp\st-014-memsearch\logs\upstream-version.txt`, `.tmp\st-014-memsearch\fixture\synthetic\2026-05-04.md`, `.tmp\st-014-memsearch\fixture\synthetic\transcripts\session-st014.jsonl`, `.tmp\st-014-memsearch\fixture\ai-memory-doc-sample.md`, `.tmp\st-014-memsearch\logs\wsl-status.txt`, `.tmp\st-014-memsearch\logs\wsl-python.txt`, `.tmp\st-014-memsearch\logs\pip-install-linux-attempt-.txt`, `.tmp\st-014-memsearch\logs\index-attempt-.txt`, `.tmp\st-014-memsearch\logs\runtime-failure.txt`, `.tmp\st-014-memsearch\logs\task-4.2-verification.txt`, `.tmp\st-014-memsearch\logs\docs-evidence.txt`, `.tmp\st-014-memsearch\logs\code-evidence.txt`, `.tmp\st-014-memsearch\logs\plugin-evidence.txt`, `.tmp\st-014-memsearch\logs\task-4.3-verification.txt`, `docs\investigations\memsearch-applicability-review.md` |
-| **Next task** | Task 4.5 — Apply bounded traceability and story-metadata updates |
+| **Last completed task** | Task 4.5 — Apply bounded traceability and story-metadata updates |
+| **Last successful command** | Verified the new review link in `memory-architecture-design.md` and `sqlite-vs-postgresql.md` while confirming `.github\planning\story-board.md` remained unchanged |
+| **Expected outputs produced** | `.tmp\st-014-memsearch\upstream\`, `.tmp\st-014-memsearch\logs\upstream-commit.txt`, `.tmp\st-014-memsearch\logs\upstream-version.txt`, `.tmp\st-014-memsearch\fixture\synthetic\2026-05-04.md`, `.tmp\st-014-memsearch\fixture\synthetic\transcripts\session-st014.jsonl`, `.tmp\st-014-memsearch\fixture\ai-memory-doc-sample.md`, `.tmp\st-014-memsearch\logs\wsl-status.txt`, `.tmp\st-014-memsearch\logs\wsl-python.txt`, `.tmp\st-014-memsearch\logs\pip-install-linux-attempt-.txt`, `.tmp\st-014-memsearch\logs\index-attempt-.txt`, `.tmp\st-014-memsearch\logs\runtime-failure.txt`, `.tmp\st-014-memsearch\logs\task-4.2-verification.txt`, `.tmp\st-014-memsearch\logs\docs-evidence.txt`, `.tmp\st-014-memsearch\logs\code-evidence.txt`, `.tmp\st-014-memsearch\logs\plugin-evidence.txt`, `.tmp\st-014-memsearch\logs\task-4.3-verification.txt`, `docs\investigations\memsearch-applicability-review.md`, `docs\investigations\memory-architecture-design.md`, `docs\investigations\sqlite-vs-postgresql.md` |
+| **Next task** | Task 4.6 — Remove the temporary workspace and run final verification |
 | **Known blockers** | None |
-| **Last updated** | 2026-05-04T14:15:38.4562551+02:00 |
+| **Last updated** | 2026-05-04T15:03:56.0045206+02:00 |
 
 ### Progress History
 
@@ -674,6 +674,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-05-04T14:00:39.8764558+02:00 | Task 4.2 | Complete — degraded docs+code mode | Reused the synthetic fixture and ai-memory sample, confirmed WSL2 + `python3` availability, captured the Linux-side install log in `pip-install-linux-attempt-.txt`, recorded the bounded runtime gap in `runtime-failure.txt`, and persisted `task-4.2-verification.txt = True` | Task 4.3 — Capture upstream docs and code evidence |
 | 2026-05-04T14:09:31.5737477+02:00 | Task 4.3 | Complete | Captured curated upstream doc, code, and plugin evidence into `docs-evidence.txt`, `code-evidence.txt`, and `plugin-evidence.txt`, then persisted `task-4.3-verification.txt = True` after mapping the four focus areas to upstream references | Task 4.4 — Author the memsearch applicability review |
 | 2026-05-04T14:15:38.4562551+02:00 | Task 4.4 | Complete | Authored `docs\investigations\memsearch-applicability-review.md` with explicit findings for ONNX, Milvus Lite, progressive disclosure, and Markdown-as-source-of-truth, plus the ST-004/ST-005 impact table | Task 4.5 — Apply bounded traceability and story-metadata updates |
+| 2026-05-04T15:03:56.0045206+02:00 | Task 4.5 | Complete | Added the approved `See also` links to `memory-architecture-design.md` and `sqlite-vs-postgresql.md` and verified that `.github\planning\story-board.md` remained unchanged because the review required no ST-004/ST-005 board edit | Task 4.6 — Remove the temporary workspace and run final verification |
 
 ### Avoidance
 
@@ -710,6 +711,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - 2026-05-04T14:00:39.8764558+02:00 — Completed Task 4.2 in the approved degraded mode by reusing the synthetic fixture, validating WSL availability, capturing the Linux-side install log, recording the bounded runtime gap from the revised WSL index attempt, and persisting a `True` verification result for the fallback path.
 - 2026-05-04T14:09:31.5737477+02:00 — Completed Task 4.3 by capturing upstream doc, code, and plugin evidence into the required logs and persisting a `True` verification result after validating the required keywords against the inspected upstream checkout.
 - 2026-05-04T14:15:38.4562551+02:00 — Completed Task 4.4 by authoring the standalone memsearch applicability review, documenting the runtime gap explicitly, and recording that ST-004 and ST-005 remain `Adapt later` with no immediate board edit required.
+- 2026-05-04T15:03:56.0045206+02:00 — Completed Task 4.5 by applying the bounded traceability links to the two approved investigation docs and confirming that the story board remained unchanged.
 
 ---
 
@@ -748,6 +750,9 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - Decision: Record ST-004 and ST-005 as `Adapt later` with `Board edit required = no` in the Task 4.4 investigation doc.
 	Rationale: The doc-and-code evidence is decision-useful, but the degraded runtime path means neither story should widen scope based on unverified local behaviour in this repo.
 	Date: 2026-05-04T14:15:38.4562551+02:00
+- Decision: Leave `.github\planning\story-board.md` unchanged in Task 4.5 and apply only the approved design-doc cross-links.
+	Rationale: The Task 4.4 story-impact table explicitly set `Board edit required = no` for both ST-004 and ST-005, so widening Task 4.5 beyond traceability edits would contradict the bounded execution rules.
+	Date: 2026-05-04T15:03:56.0045206+02:00
 
 ---
 
