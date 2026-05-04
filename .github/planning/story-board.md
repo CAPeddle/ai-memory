@@ -38,6 +38,22 @@
 - Docs: `docs/investigations/memory-architecture-design.md`, `docs/investigations/language-stack-recommendation.md`, `docs/investigations/sqlite-vs-postgresql.md`, `docs/investigations/interface-design-mcp-rest.md`, `docs/investigations/workflow-and-prompt-design.md`, `docs/investigations/context-engineering-principles.md`, `docs/investigations/openclaw-official-docs-review.md`, `docs/investigations/openclaw-memory-architecture-analysis.md`
 - Notes: Split the current investigation monoliths into per-topic folders while keeping the top-level files as compact landing pages. Seed query packet: `.github/planning/query-packets/QP-013-split-investigation-docs.md`. Keep behind ST-011 so governance-review workflow changes land before broader doc-structure refactoring.
 
+### ST-015: Improve ExecPlan template to show outcomes up front
+- Type: infrastructure
+- Source: PO
+- Value: 3 · Effort: S(2) · WSJF: 1.5
+- Blocked by: none
+- Touches: `.github/planning/execplans/_TEMPLATE.md`, `.github/planning/execplans/`
+- Acceptance criteria:
+  - [ ] ExecPlan template now has an "Outcomes & Conclusions" section immediately after §1 Background
+  - [ ] The Outcomes section has type-specific structure: spikes emphasize discoveries/learnings, features emphasize completion/delivery, and infrastructure/debt emphasize risk/improvements
+  - [ ] Template documents required fields: completion status, key findings/achievements, requirements met vs unmet, architectural impact, supporting evidence, and downstream changes
+  - [ ] A worked example (based on a completed story like ST-014) shows how the new section is populated
+  - [ ] The narrative flow makes it clear at a glance: intent → requirements → what was actually delivered
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-015.md`
+- Docs: `.github/planning/execplans/_TEMPLATE.md`, `.github/planning/execplans/exec-plan-ST-014.md`
+- Notes: Improves PO visibility when reviewing completed stories. Seed query packet: `.github/planning/query-packets/QP-015-execplan-outcomes-template.md`.
+
 ### ST-001: Scaffold .NET solution and project structure
 - Type: infrastructure
 - Source: PO
