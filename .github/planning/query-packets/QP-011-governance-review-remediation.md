@@ -2,77 +2,85 @@
 
 > Story: ST-011
 > Created: 2026-05-02
+> Updated: 2026-05-03 (Phase 1 scoping complete)
 > Source: governance audit requested by PO
-> Status: Seed packet for `/plan`
+> Status: Scoped — ready for Phase 2 ExecPlan authoring
 
 ## Intent
 
-Turn the one-off governance audit performed on 2026-05-02 into a repeatable workflow artifact. The next `/plan` pass should use this packet to scope a dedicated governance-review prompt and a lightweight cadence for recurring audits.
+Turn the one-off governance audit performed on 2026-05-02 into a repeatable workflow artifact. Produce a dedicated governance-review prompt file and supporting infrastructure so the PO can invoke a structured audit at any time.
+
+## Collaborative Scoping Decisions (2026-05-03)
+
+The following decisions were locked during Phase 1 scoping with the PO:
+
+### Artifact shape
+- Primary deliverable: `.github/prompts/governance-review.prompt.md`
+- Follows the same frontmatter pattern as other prompts (`name`, `description`, `agent`)
+- Includes a built-in mandatory audit checklist inside the prompt body
+- Also grants the agent discretion to check additional areas beyond the checklist
+
+### Trigger model
+- **On-demand only.** The PO invokes the prompt when they suspect governance drift or want a periodic health check.
+- No scheduled cadence logic or event triggers built into the prompt.
+
+### Output and evidence
+- Findings are persisted to a file under `.github/planning/audit-reports/` (one report per run, timestamped filename).
+- A report template is created so reports have a consistent structure.
+
+### Remediation boundary
+- **Safe (apply directly):** file creation for missing artifacts, instruction text fixes, dead-link repair, cross-reference corrections.
+- **Escalated (raise to /plan):** board edits, prompt behavioral changes, acceptance-criteria rewording, architecture-decision changes.
+- The prompt must clearly define this boundary so the executing agent does not overreach.
+
+### Validation pass
+- The ExecPlan includes a final task that invokes the new governance-review prompt to validate the 2026-05-02 remediations as a real-world test.
+
+## Deliverables
+
+1. `.github/prompts/governance-review.prompt.md` — the repeatable governance-review prompt
+2. `.github/planning/audit-reports/` folder with a `_TEMPLATE.md` report template
+3. Updated `FollowUpSessionLog.txt` and board metadata reflecting story completion
 
 ## Current State
 
 The repository contains governance scaffolding under `.github/`, but no runtime implementation exists yet under `src/` or `tests/`. The most immediate value is keeping governance artifacts internally consistent so future planning and execution sessions do not dead-end on missing files or contradictory instructions.
 
-## Findings From The 2026-05-02 Audit
+## Findings From The 2026-05-02 Audit (preserved for context)
 
-1. The runtime context-engineering system described in the investigations is not implemented yet. Search, resources, prompts, feedback, and MCP surfaces exist only as planned stories.
-2. The planner required `.github/planning/query-packets/`, but that path did not exist, so Phase 1 planning could not produce its mandated artifact.
-3. The recommended compound-engineering skill path did not exist, even though the workflow investigation treats it as part of the governance layout.
-4. The recovery contract was internally inconsistent: prompts required append-preserved history and timestamped progress, while the ExecPlan template only offered a single overwrite-style snapshot table.
-5. Story ownership for search responsibilities was not fully aligned: search limit behavior belonged with hybrid search, while formatted score/provenance output belonged with the MCP-facing search surface.
-6. The next planning target after the audit needed to be explicit, otherwise `/plan` board scan would continue recommending ST-001 and would not naturally build on this governance review session.
+1. The runtime context-engineering system described in the investigations is not implemented yet.
+2. The planner required `.github/planning/query-packets/`, but that path did not exist.
+3. The recommended compound-engineering skill path did not exist.
+4. The recovery contract was internally inconsistent.
+5. Story ownership for search responsibilities was not fully aligned.
+6. The next planning target after the audit needed to be explicit.
 
-## Remediations Applied In This Session
+## Remediations Applied During The 2026-05-02 Session
 
 1. Created `.github/planning/query-packets/` and stored this seed packet there.
-2. Created `.github/skills/compound-engineering/SKILL.md` with a minimal Tier 1 and Tier 2 workflow.
-3. Updated the planner prompt so that when a selected story references a seed query packet, `/plan` must read it before scoping.
-4. Reworked the ExecPlan recovery structure into two parts:
-   - current resume state for the latest snapshot
-   - append-only progress history for timestamped recovery evidence
-5. Aligned `.github/prompts/continue.prompt.md`, `.github/prompts/recover.prompt.md`, and `.github/instructions/session-resilience.instructions.md` to the same recovery-ledger contract.
-6. Added ST-011 to the board as the highest-priority next planning target and updated the session log to point to it.
-7. Clarified search-result ownership so backlog and investigation guidance match the intended architecture.
+2. Created `.github/skills/compound-engineering/SKILL.md`.
+3. Updated the planner prompt for seed-packet discovery.
+4. Reworked the ExecPlan recovery structure (current state + append-only history).
+5. Aligned recovery contracts across continue, recover, and session-resilience instructions.
+6. Added ST-011 to the board as highest-priority next planning target.
+7. Clarified search-result ownership in the backlog.
 
-## Design Decisions Locked In
-
-1. ST-011 remains in Backlog even though some governance fixes were applied directly in this session.
-2. ST-011 is about institutionalizing recurring governance review, not merely fixing the first audit’s defects.
-3. Seed query packets are durable planning inputs and should be referenced from the associated story so `/plan` can discover them.
-4. Recovery history must be append-only, while the current resume state can be overwritten to reflect the latest known checkpoint.
-5. Governance review should become a dedicated prompt rather than an implicit convention.
-
-## Scope For The Next `/plan` Pass
+## Scope
 
 In scope:
-- Define a dedicated governance-review prompt and its contract
-- Decide cadence and triggers for recurring governance audits
-- Specify how findings are classified into prompts, instructions, board changes, skill updates, or follow-on stories
-- Define evidence expectations for a governance review pass
-- Author an ExecPlan for ST-011 that a cost-efficient executor can follow mechanically
+- Create the governance-review prompt with built-in checklist + discretionary checks
+- Create audit-reports folder and report template
+- Define the safe-vs-escalated remediation boundary inside the prompt
+- Final validation task that runs the new prompt against the repo
 
 Out of scope:
 - Implementing runtime memory service code under `src/`
 - Scaffolding ST-001 or any product feature story
-- Re-auditing the repo from scratch without first using this packet as baseline context
+- Adding scheduled or event-triggered audit automation
+- Changing the `/plan`, `/continue`, or `/recover` prompt files (unless the review finds a fix needed)
 
 ## Risks And Watch Points
 
 1. If the governance-review prompt is too broad, it will become another context dump rather than a targeted audit workflow.
-2. If recovery instructions drift again between template and prompts, future `/continue` and `/recover` sessions will produce incompatible edits.
-3. If ST-011 is not planned next, this audit context will decay and the same governance gaps may reappear later.
-
-## Artifacts To Read First During `/plan`
-
-1. `.github/planning/story-board.md`
-2. `.github/prompts/plan.prompt.md`
-3. `.github/planning/execplans/_TEMPLATE.md`
-4. `.github/prompts/continue.prompt.md`
-5. `.github/prompts/recover.prompt.md`
-6. `.github/instructions/session-resilience.instructions.md`
-7. `docs/investigations/workflow-and-prompt-design.md`
-8. `docs/investigations/context-engineering-principles.md`
-
-## Suggested Outcome For ST-011
-
-Produce a governance-review prompt plus an ExecPlan that formalizes recurring audits without turning the workflow into excessive process overhead. The result should preserve the current “point, don’t dump” philosophy while giving future sessions a deterministic way to audit and remediate governance drift.
+2. The built-in checklist must stay maintainable — items should be verifiable by file-existence checks or grep commands, not subjective assessments.
+3. The remediation boundary must be unambiguous enough that a cost-efficient model won't accidentally make escalation-level changes.
