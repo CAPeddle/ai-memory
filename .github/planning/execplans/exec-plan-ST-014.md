@@ -1,6 +1,6 @@
 # ExecPlan — ST-014: Investigate memsearch (zilliztech) for architectural learnings
 
-> Status: ✅ Ready for /continue
+> Status: ✅ Execution complete — awaiting Review slot
 > Story: ST-014
 > Created: 2026-05-04
 > Parent: `.github/planning/query-packets/QP-014-memsearch-investigation.md`
@@ -657,12 +657,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.5 — Apply bounded traceability and story-metadata updates |
-| **Last successful command** | Verified the new review link in `memory-architecture-design.md` and `sqlite-vs-postgresql.md` while confirming `.github\planning\story-board.md` remained unchanged |
-| **Expected outputs produced** | `.tmp\st-014-memsearch\upstream\`, `.tmp\st-014-memsearch\logs\upstream-commit.txt`, `.tmp\st-014-memsearch\logs\upstream-version.txt`, `.tmp\st-014-memsearch\fixture\synthetic\2026-05-04.md`, `.tmp\st-014-memsearch\fixture\synthetic\transcripts\session-st014.jsonl`, `.tmp\st-014-memsearch\fixture\ai-memory-doc-sample.md`, `.tmp\st-014-memsearch\logs\wsl-status.txt`, `.tmp\st-014-memsearch\logs\wsl-python.txt`, `.tmp\st-014-memsearch\logs\pip-install-linux-attempt-.txt`, `.tmp\st-014-memsearch\logs\index-attempt-.txt`, `.tmp\st-014-memsearch\logs\runtime-failure.txt`, `.tmp\st-014-memsearch\logs\task-4.2-verification.txt`, `.tmp\st-014-memsearch\logs\docs-evidence.txt`, `.tmp\st-014-memsearch\logs\code-evidence.txt`, `.tmp\st-014-memsearch\logs\plugin-evidence.txt`, `.tmp\st-014-memsearch\logs\task-4.3-verification.txt`, `docs\investigations\memsearch-applicability-review.md`, `docs\investigations\memory-architecture-design.md`, `docs\investigations\sqlite-vs-postgresql.md` |
-| **Next task** | Task 4.6 — Remove the temporary workspace and run final verification |
-| **Known blockers** | None |
-| **Last updated** | 2026-05-04T15:03:56.0045206+02:00 |
+| **Last completed task** | Task 4.6 — Remove the temporary workspace and run final verification |
+| **Last successful command** | Verified the review doc sections still pass and confirmed `.tmp\st-014-memsearch\` has been removed |
+| **Expected outputs produced** | `docs\investigations\memsearch-applicability-review.md`, `docs\investigations\memory-architecture-design.md`, `docs\investigations\sqlite-vs-postgresql.md`, and an empty `.tmp\` directory after removing `.tmp\st-014-memsearch\` |
+| **Next task** | None — all ExecPlan tasks are complete; wait for the Review slot to free before moving ST-014 on the board |
+| **Known blockers** | Review WIP slot remains occupied by ST-011 in `.github\planning\story-board.md` |
+| **Last updated** | 2026-05-04T15:07:07.7098525+02:00 |
 
 ### Progress History
 
@@ -675,6 +675,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-05-04T14:09:31.5737477+02:00 | Task 4.3 | Complete | Captured curated upstream doc, code, and plugin evidence into `docs-evidence.txt`, `code-evidence.txt`, and `plugin-evidence.txt`, then persisted `task-4.3-verification.txt = True` after mapping the four focus areas to upstream references | Task 4.4 — Author the memsearch applicability review |
 | 2026-05-04T14:15:38.4562551+02:00 | Task 4.4 | Complete | Authored `docs\investigations\memsearch-applicability-review.md` with explicit findings for ONNX, Milvus Lite, progressive disclosure, and Markdown-as-source-of-truth, plus the ST-004/ST-005 impact table | Task 4.5 — Apply bounded traceability and story-metadata updates |
 | 2026-05-04T15:03:56.0045206+02:00 | Task 4.5 | Complete | Added the approved `See also` links to `memory-architecture-design.md` and `sqlite-vs-postgresql.md` and verified that `.github\planning\story-board.md` remained unchanged because the review required no ST-004/ST-005 board edit | Task 4.6 — Remove the temporary workspace and run final verification |
+| 2026-05-04T15:07:07.7098525+02:00 | Task 4.6 | Complete | Removed `.tmp\st-014-memsearch\`, re-verified the final investigation doc sections, and confirmed that ST-011 still occupies the lone Review slot | Await Review-slot availability, then move ST-014 to Review if still appropriate |
 
 ### Avoidance
 
@@ -712,6 +713,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - 2026-05-04T14:09:31.5737477+02:00 — Completed Task 4.3 by capturing upstream doc, code, and plugin evidence into the required logs and persisting a `True` verification result after validating the required keywords against the inspected upstream checkout.
 - 2026-05-04T14:15:38.4562551+02:00 — Completed Task 4.4 by authoring the standalone memsearch applicability review, documenting the runtime gap explicitly, and recording that ST-004 and ST-005 remain `Adapt later` with no immediate board edit required.
 - 2026-05-04T15:03:56.0045206+02:00 — Completed Task 4.5 by applying the bounded traceability links to the two approved investigation docs and confirming that the story board remained unchanged.
+- 2026-05-04T15:07:07.7098525+02:00 — Completed Task 4.6 by removing the disposable `.tmp\st-014-memsearch\` workspace, re-running the final document checks, and stopping before any board move because the Review slot is still occupied by ST-011.
 
 ---
 
@@ -731,6 +733,9 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - Observation: memsearch's strongest differentiator versus ai-memory is staged recall UX over markdown and transcript sources, not a fundamentally different search core.
 	Evidence: `src/memsearch/store.py` already uses dense + BM25 + RRF hybrid search, while `src/memsearch/cli.py` and `plugins/openclaw/index.ts` add the `expand` and transcript drill-down surfaces.
 	Impact: If ai-memory adopts anything from memsearch, the likely candidate is a later retrieval-surface enhancement after base hybrid search exists.
+- Observation: ST-014 finished all planned execution work while the sole Review slot remained occupied by ST-011.
+	Evidence: `.github\planning\story-board.md` still shows ST-011 under `## Review`, and the board's stated WIP limit allows only one story in Review at a time.
+	Impact: ST-014 must stop after verification and cleanup without moving to Review in this session.
 
 ---
 
@@ -753,6 +758,9 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - Decision: Leave `.github\planning\story-board.md` unchanged in Task 4.5 and apply only the approved design-doc cross-links.
 	Rationale: The Task 4.4 story-impact table explicitly set `Board edit required = no` for both ST-004 and ST-005, so widening Task 4.5 beyond traceability edits would contradict the bounded execution rules.
 	Date: 2026-05-04T15:03:56.0045206+02:00
+- Decision: Stop after Task 4.6 verification instead of moving ST-014 to Review.
+	Rationale: The board already has ST-011 in Review, and the WIP limit permits only one story there at a time.
+	Date: 2026-05-04T15:07:07.7098525+02:00
 
 ---
 
@@ -772,9 +780,9 @@ If the Review slot is still occupied by ST-011, complete verification, capture t
 
 (Summarise at completion: what was achieved, what remains, lessons learned.)
 
-Achieved: ...
-Remains: ...
-Lesson: ...
+Achieved: Authored the memsearch applicability review, added the approved traceability links, and completed cleanup/final verification without widening ST-004/ST-005 or changing the approved architecture.
+Remains: Move ST-014 to Review only after ST-011 leaves the occupied Review slot; no further execution tasks remain.
+Lesson: For Windows-first validation of Linux-centric upstream tools, the bounded fallback path and explicit evidence logging were essential to keep the investigation decision-useful without improvising past platform gaps.
 
 ---
 
