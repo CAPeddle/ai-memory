@@ -1,7 +1,7 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: WSJF (value ÷ effort). Value: 1-5. Effort: XS=1, S=2, M=3, L=5.
-> Next planning target: ST-012 — governance asset catalog and validation (after ST-011 review sign-off).
+> Next planning target: ST-012 — governance asset catalog and validation.
 > Last updated: 2026-05-03
 
 ---
@@ -12,7 +12,7 @@
 - Type: infrastructure
 - Source: PO
 - Value: 4 · Effort: S(2) · WSJF: 2.0
-- Blocked by: ST-011
+- Blocked by: none
 - Touches: `.github/prompts/`, `.github/instructions/`, `.github/planning/`, `docs/`
 - Acceptance criteria:
   - [ ] A documented metadata contract exists for repo AI-governance assets covering prompts, instructions, and planned future extensions such as agents or skills
@@ -27,7 +27,7 @@
 - Type: infrastructure
 - Source: PO
 - Value: 4 · Effort: M(3) · WSJF: 1.3
-- Blocked by: ST-011
+- Blocked by: none
 - Touches: `.github/copilot-instructions.md`, `.github/prompts/`, `.github/planning/`, `docs/investigations/`
 - Acceptance criteria:
   - [ ] Each current top-level investigation file remains in place as a compact landing page that links to focused fragment docs
@@ -180,21 +180,7 @@
 
 ## Refined
 
-### ST-014: Investigate memsearch (zilliztech) for architectural learnings
-- Type: spike
-- Source: PO
-- Value: 4 · Effort: S(2) · WSJF: 2.0
-- Blocked by: none
-- Touches: `docs/investigations/`, `docs/investigations/memory-architecture-design.md`, `docs/investigations/sqlite-vs-postgresql.md`
-- Acceptance criteria:
-  - [ ] Assessment of ONNX bge-m3 local embeddings as an alternative to OpenAI for ST-004 — feasibility, trade-offs, and a go/no-go recommendation
-  - [ ] Assessment of Milvus Lite as a vector store option against ai-memory's current SQLite + pgvector plan — documented in investigation note
-  - [ ] Summary of memsearch's 3-layer progressive recall pattern (search → expand → transcript) with a recommendation on whether to adopt, adapt, or skip for ai-memory
-  - [ ] Comparison of memsearch's markdown-as-source-of-truth model against ai-memory's SQLite-first design — with documented rationale for maintaining or reconsidering the current approach
-  - [ ] Findings captured in a new investigation doc: `docs/investigations/memsearch-applicability-review.md`
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-014.md`
-- Docs: `docs/investigations/memory-architecture-design.md`, `docs/investigations/sqlite-vs-postgresql.md`
-- Notes: Seed query packet at `.github/planning/query-packets/QP-014-memsearch-investigation.md`. No blockers — can be planned and executed independently of ST-011/ST-012/ST-013.
+(Empty)
 
 ---
 
@@ -206,24 +192,32 @@
 
 ## Review
 
-### ST-011: Institutionalize recurring governance review and remediation
-- Type: debt
+### ST-014: Investigate memsearch (zilliztech) for architectural learnings
+- Type: spike
 - Source: PO
-- Value: 5 · Effort: XS(1) · WSJF: 5.0
+- Value: 4 · Effort: S(2) · WSJF: 2.0
 - Blocked by: none
-- Touches: `.github/prompts/`, `.github/planning/`, `.github/instructions/`, `.github/skills/`, `FollowUpSessionLog.txt`
+- Touches: `docs/investigations/`, `docs/investigations/memory-architecture-design.md`, `docs/investigations/sqlite-vs-postgresql.md`
 - Acceptance criteria:
-  - [x] A dedicated governance review prompt exists for repeatable audit and remediation passes
-  - [x] The governance review workflow consumes a seed query packet when one is associated with a story
-  - [x] The workflow defines when audit findings become prompt, board, or instruction updates
-  - [x] A follow-up governance review pass validates the remediations from the 2026-05-02 audit
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-011.md`
-- Docs: `docs/investigations/workflow-and-prompt-design.md`, `docs/investigations/context-engineering-principles.md`
-- Notes: Execution complete via `/continue`. Awaiting PO acceptance in Review. Validation report: `.github/planning/audit-reports/audit-report-2026-05-03.md`.
+  - [x] Assessment of ONNX bge-m3 local embeddings as an alternative to OpenAI for ST-004 — feasibility, trade-offs, and a go/no-go recommendation
+  - [x] Assessment of Milvus Lite as a vector store option against ai-memory's current SQLite + pgvector plan — documented in investigation note
+  - [x] Summary of memsearch's 3-layer progressive recall pattern (search → expand → transcript) with a recommendation on whether to adopt, adapt, or skip for ai-memory
+  - [x] Comparison of memsearch's markdown-as-source-of-truth model against ai-memory's SQLite-first design — with documented rationale for maintaining or reconsidering the current approach
+  - [x] Findings captured in a new investigation doc: `docs/investigations/memsearch-applicability-review.md`
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-014.md`
+- Docs: `docs/investigations/memory-architecture-design.md`, `docs/investigations/sqlite-vs-postgresql.md`
+- Notes: Execution complete under `/continue`; moved to Review after ST-011 acceptance cleared the slot.
 
 ---
 
 ## Done
+
+### ST-011: Institutionalize recurring governance review and remediation
+- Type: debt
+- Source: PO
+- Value: 5 · Effort: XS(1) · WSJF: 5.0
+- Completed: 2026-05-04
+- Notes: Accepted by PO; review slot cleared. Validation report: `.github/planning/audit-reports/audit-report-2026-05-03.md`.
 
 ### ST-009: Create workflow governance files (.github/)
 - Type: infrastructure
