@@ -2,7 +2,7 @@
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: WSJF (value ÷ effort). Value: 1-5. Effort: XS=1, S=2, M=3, L=5.
 > Next planning target: ST-012 — governance asset catalog and validation.
-> Last updated: 2026-05-03
+> Last updated: 2026-05-05
 
 ---
 
@@ -58,7 +58,7 @@
 - Type: infrastructure
 - Source: PO
 - Value: 5 · Effort: S(2) · WSJF: 2.5
-- Blocked by: plan-review
+- Blocked by: none
 - Touches: `src/`, `tests/`, `*.sln`, `Directory.Build.props`
 - Acceptance criteria:
   - [ ] Solution builds with `dotnet build`
