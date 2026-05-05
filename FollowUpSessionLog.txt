@@ -7,12 +7,12 @@
 - Added governance metadata contract and contribution policy docs under docs/governance.
 - Implemented hybrid validator tooling (PowerShell wrappers + .NET validator + TDD tests) and generated asset catalog JSON/Markdown outputs.
 - Verified drift behavior: clean validate success, forced drift non-zero failure, rebuild recovery, and no .github/workflows changes.
-- Moved ST-012 to Review on the board with all acceptance criteria checked.
+- Moved ST-012 to Review with all acceptance criteria checked, then to Done after PO acceptance.
 
 ### Resume Point
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-012.md`
-- Task: `Task 4.6 complete` — ST-012 is in Review pending PO acceptance.
-- Next action: PO review/acceptance for ST-012, then move to Done or capture review feedback.
+- Task: `accepted` — ST-012 is complete and closed.
+- Next action: backlog prioritization or `/plan` for ST-013.
 
 ### Avoidance
 - Keep ST-012 validation local-only in this story; do not add CI workflow enforcement for governance-catalog checks.
@@ -21,6 +21,6 @@
 
 ### Board State
 - In Progress: none.
-- Review: ST-012.
-- Done: ST-001, ST-014, ST-011.
+- Review: none.
+- Done: ST-012, ST-001, ST-014, ST-011.
 - Backlog: ST-013 is the next planning target.

@@ -178,6 +178,12 @@
 
 ## Review
 
+(Empty)
+
+---
+
+## Done
+
 ### ST-012: Add discoverable AI-governance asset catalog and validation
 - Type: infrastructure
 - Source: PO
@@ -192,11 +198,7 @@
   - [x] Contribution guidance defines what prompt/instruction/skill-style additions are accepted, rejected, or deferred
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-012.md`
 - Docs: `docs/investigations/awesome-copilot-applicability-review.md`, `docs/investigations/workflow-and-prompt-design.md`, `docs/investigations/context-engineering-principles.md`
-- Notes: Follow-up from the awesome-copilot applicability investigation.
-
----
-
-## Done
+- Notes: Accepted by PO.
 
 ### ST-001: Scaffold .NET solution and project structure
 - Type: infrastructure
