@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0.0",
+  "source_version": "1.0.0",
+  "generated_by": "governance-asset-validator",
+  "in_scope_asset_types": [
+    "prompt",
+    "instruction",
+    "skill"
+  ],
+  "reserved_future_categories": [
+    "agent",
+    "hook",
+    "workflow",
+    "plugin"
+  ],
+  "generation": {
+    "json_output_path": ".github/planning/assets/asset-catalog.json",
+    "markdown_output_path": ".github/planning/assets/asset-catalog.md",
+    "source_of_truth": "file frontmatter + this source file"
+  },
+  "notes": "Canonical source metadata only. Do not hardcode generated catalog rows here."
+}
