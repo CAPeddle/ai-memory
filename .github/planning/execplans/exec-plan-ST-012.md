@@ -346,12 +346,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.2 - Add contribution guidance and normalize in-file metadata |
-| **Last successful command** | Select-String -Path .github/instructions/*.md -Pattern "^---" -CaseSensitive |
-| **Expected outputs produced** | docs/governance/asset-contribution-policy.md; frontmatter added to .github/instructions/*.instructions.md |
-| **Next task** | Task 4.3 - Implement hybrid validator using explicit TDD red-green |
+| **Last completed task** | Task 4.3 - Implement hybrid validator using explicit TDD red-green |
+| **Last successful command** | Select-String -Path .github/planning/scripts/build-governance-catalog.ps1,.github/planning/scripts/validate-governance-catalog.ps1 -Pattern "dotnet" |
+| **Expected outputs produced** | tools/GovernanceAssetValidator; tools/GovernanceAssetValidator.Tests; build/validate wrapper scripts under .github/planning/scripts |
+| **Next task** | Task 4.4 - Generate catalog outputs from shared source flow |
 | **Known blockers** | None |
-| **Last updated** | 2026-05-05T13:16:39.0481358+02:00 |
+| **Last updated** | 2026-05-05T13:21:27.6829544+02:00 |
 
 ### Progress History
 
@@ -359,6 +359,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 |---|---|---|---|---|
 | 2026-05-05T13:15:17.7529022+02:00 | Task 4.1 | completed | Created contract/schema/source files; Test-Path checks True; Select-String matched prompt/instruction/skill/agent/hook/workflow/plugin | Execute Task 4.2 |
 | 2026-05-05T13:16:39.0481358+02:00 | Task 4.2 | completed | Added contribution policy and instruction frontmatter; verification found Accepted/Rejected/Deferred sections and frontmatter markers | Execute Task 4.3 |
+| 2026-05-05T13:21:27.6829544+02:00 | Task 4.3 | completed | Red checkpoint failed (3 tests), then green checkpoint passed; refactor checkpoint remained green; wrapper scripts verified for dotnet invocation | Execute Task 4.4 |
 
 ### Avoidance
 
@@ -398,7 +399,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 ## §6c. Decision Log
 
-(Record every decision made during execution with rationale.)
+- 2026-05-05T13:21:27.6829544+02:00: Validator accepts `description` as fallback for `summary` and infers `asset_type` from path when missing to remain compatible with existing prompt/skill frontmatter while still enforcing missing-field and drift checks.
 
 ---
 
