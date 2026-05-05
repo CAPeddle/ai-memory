@@ -402,17 +402,19 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | — |
-| **Last successful command** | — |
-| **Expected outputs produced** | — |
-| **Next task** | Task 4.1 — Create global.json |
+| **Last completed task** | Task 4.1 — Create global.json |
+| **Last successful command** | `Test-Path global.json; dotnet --version` |
+| **Expected outputs produced** | `global.json` created and verified; .NET SDK 8.0.100 installed |
+| **Next task** | Task 4.2 — Create Directory.Build.props |
 | **Known blockers** | None |
-| **Last updated** | — |
+| **Last updated** | 2026-05-05T09:06:32.0010060+02:00 |
 
 ### Progress History
 
 | Timestamp (ISO) | Task | Status | Evidence / outputs | Next step |
 |---|---|---|---|---|
+| 2026-05-05T08:57:07.0701489+02:00 | Task 4.1 | blocked | `global.json` created; verification failed with "A compatible .NET SDK was not found" (installed: 10.0.107, 10.0.203) | Install .NET 8 SDK and re-run Task 4.1 verification |
+| 2026-05-05T09:06:32.0010060+02:00 | Task 4.1 | completed | `Test-Path global.json` returned `True`; `dotnet --version` returned `8.0.100` | Start Task 4.2 |
 | — | — | — | — | — |
 
 ### Avoidance
@@ -442,17 +444,28 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 (Populated during execution — timestamped entries of significant actions)
 
+- 2026-05-05T08:57:07.0701489+02:00: Started ST-001 Task 4.1. Created `global.json`; verification blocked by missing .NET 8 SDK.
+- 2026-05-05T09:06:32.0010060+02:00: Installed .NET SDK 8.0.100 and re-ran Task 4.1 verification successfully.
+
 ---
 
 ## §6b. Surprises & Discoveries
 
 (Document unexpected behaviours, performance tradeoffs, bugs, or insights. Provide evidence.)
 
+- Observation: `global.json` pin to SDK 8.0.100 immediately prevents `dotnet` command execution when only SDK 10.x is installed.
+  Evidence: `dotnet --version` returned "A compatible .NET SDK was not found" and listed installed SDKs 10.0.107, 10.0.203.
+  Impact: Task 4.1 cannot be marked complete until .NET 8 SDK is installed.
+
 ---
 
 ## §6c. Decision Log
 
 (Record every decision made during execution with rationale.)
+
+- Decision: Install SDK 8.0.100 directly from Microsoft installer after package-manager install could not provide the exact pinned band.
+  Rationale: Preserve approved Task 4.1 requirement (`global.json` version 8.0.100) without altering ExecPlan scope.
+  Date: 2026-05-05
 
 ---
 
