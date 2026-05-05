@@ -6,9 +6,9 @@
 |---|---|
 | **Last completed task** | Task 4.4 — Create AiMemory.Server project |
 | **Last successful command** | `dotnet build src/AiMemory.Server/AiMemory.Server.csproj --no-restore` |
-| **Expected outputs produced** | `global.json`, `Directory.Build.props`, `NuGet.config`, `src/AiMemory.Core/AiMemory.Core.csproj`, `src/AiMemory.Core/IMemoryService.cs`, `src/AiMemory.Server/AiMemory.Server.csproj`, and `src/AiMemory.Server/Program.cs`; Core and Server restore/build paths verified |
+| **Expected outputs produced** | `global.json`, `Directory.Build.props`, `NuGet.config`, `src/AiMemory.Core/AiMemory.Core.csproj`, `src/AiMemory.Core/IMemoryService.cs`, `src/AiMemory.Server/AiMemory.Server.csproj`, `src/AiMemory.Server/Program.cs`, and a draft `tests/AiMemory.Tests/AiMemory.Tests.csproj`; Core and Server restore/build paths verified, Task 4.5 blocked pending plan review |
 | **Next task** | Task 4.5 — Create AiMemory.Tests project |
-| **Known blockers** | None — revised plan now defines the restore-source remediation path |
+| **Known blockers** | Task 4.5 boilerplate omits the xUnit v3 requirement to set `<OutputType>Exe</OutputType>` for the test project |
 | **Last updated** | 2026-05-05 |
 
 ### Progress History
@@ -22,8 +22,10 @@
 | 2026-05-05T10:06:41.9216168+02:00 | Task 4.2a | completed | `Test-Path NuGet.config` returned `True`; `Select-String` matched `<clear />` and `https://api.nuget.org/v3/index.json` | Start Task 4.3 |
 | 2026-05-05T10:09:24.7224770+02:00 | Task 4.3 | completed | `src/AiMemory.Core` already matched boilerplate; `dotnet restore ... --configfile NuGet.config --source https://api.nuget.org/v3/index.json` and `dotnet build ... --no-restore` succeeded with 0 warnings and 0 errors | Start Task 4.4 |
 | 2026-05-05T10:10:40.0349555+02:00 | Task 4.4 | completed | `dotnet restore src/AiMemory.Server/AiMemory.Server.csproj --configfile NuGet.config --source https://api.nuget.org/v3/index.json` returned `RESTORE_OK`; `dotnet build src/AiMemory.Server/AiMemory.Server.csproj --no-restore` succeeded with 0 warnings and 0 errors | Start Task 4.5 |
+| 2026-05-05T10:11:56.7076569+02:00 | Task 4.5 | blocked | `dotnet restore tests/AiMemory.Tests/AiMemory.Tests.csproj --configfile NuGet.config --source https://api.nuget.org/v3/index.json` returned `RESTORE_OK`; `dotnet build tests/AiMemory.Tests/AiMemory.Tests.csproj --no-restore` failed because xUnit v3 requires `<OutputType>Exe</OutputType>` | Escalate to plan-review and pause execution |
 | — | — | — | — | — |
 
 ### Avoidance
 
 - 2026-05-05: Use the repo-local `NuGet.config` together with explicit `--configfile NuGet.config --source https://api.nuget.org/v3/index.json` on every restore command in ST-001. If any restore still contacts a private feed, stop and escalate.
+- 2026-05-05: Do not add `<OutputType>Exe</OutputType>` or alter the pinned xUnit test package layout in `tests/AiMemory.Tests/AiMemory.Tests.csproj` without a plan-approved Task 4.5 revision.

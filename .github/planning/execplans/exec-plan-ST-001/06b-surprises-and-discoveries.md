@@ -13,3 +13,7 @@
 - Observation: `dotnet build` on a zero-dependency project can still fail when machine-level NuGet config includes inaccessible authenticated feeds.
   Evidence: Task 4.3 failed in `NuGet.targets` loading `https://pkgs.dev.azure.com/kubusinfo/_packaging/Shared-Resources/nuget/v3/index.json` with `401`.
   Impact: Execution cannot proceed without either feed authentication or a plan-approved restore-source override strategy.
+
+- Observation: The approved `xunit.v3 3.2.2` test project boilerplate is incomplete because xUnit v3 test projects must set `<OutputType>Exe</OutputType>`.
+  Evidence: Task 4.5 restore succeeded, but build failed in `xunit.v3.core.mtp-v1.targets` with `xUnit.net v3 test projects must be executable (set project property '<OutputType>Exe</OutputType>')`.
+  Impact: ST-001 cannot satisfy the `dotnet build` / `dotnet test` acceptance path until Task 4.5 or its boilerplate is revised under `/plan`.
