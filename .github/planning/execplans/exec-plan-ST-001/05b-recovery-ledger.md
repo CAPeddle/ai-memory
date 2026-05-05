@@ -4,10 +4,10 @@
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.5a — Update governance docs for the repo-wide TDD expectation |
-| **Last successful command** | `Select-String -Path .github/prompts/continue.prompt.md -Pattern "TDD|red|green"` |
-| **Expected outputs produced** | `.github/instructions/coding-standards.instructions.md`, `.github/prompts/plan.prompt.md`, and `.github/prompts/continue.prompt.md` now include the plan-approved TDD guidance lines |
-| **Next task** | Task 4.6 — Create solution and verify end-to-end |
+| **Last completed task** | Task 4.6 — Create solution and verify end-to-end |
+| **Last successful command** | `dotnet test src/AiMemory.sln --no-restore --no-build` |
+| **Expected outputs produced** | `src/AiMemory.sln` exists and contains all three projects; root `ai-memory.sln` removed; solution-level restore/build/test succeeded with 1 passing smoke test |
+| **Next task** | Task 4.7 — Update board and session log |
 | **Known blockers** | None |
 | **Last updated** | 2026-05-05 |
 
@@ -27,6 +27,7 @@
 | 2026-05-05T11:13:16.9060369+02:00 | Plan-review | resolved | Query packet and ExecPlan updated: Task 4.5 now uses xunit.v3 + `xunit.runner.visualstudio` + `Microsoft.NET.Test.Sdk` boilerplate, and red-green moves to smoke-test content | Resume at Task 4.5 |
 | 2026-05-05T11:51:04.5355607+02:00 | Task 4.5 | completed | Restore/build succeeded with revised test-project packages; red checkpoint produced exactly one failing smoke test; final green-state build/test succeeded with 1 passed, 0 failed | Start Task 4.5a |
 | 2026-05-05T11:53:14.2365999+02:00 | Task 4.5a | completed | `Select-String` verification confirmed the new TDD guidance in coding standards plus `/plan` and `/continue` prompts | Start Task 4.6 |
+| 2026-05-05T11:55:58.7568326+02:00 | Task 4.6 | completed | Removed root solution file, created `src/AiMemory.sln`, added Core/Server/Tests, and solution restore/build/test passed (1/1 smoke tests) | Start Task 4.7 |
 | — | — | — | — | — |
 
 ### Avoidance
