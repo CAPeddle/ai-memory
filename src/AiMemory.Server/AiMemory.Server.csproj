@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\\AiMemory.Core\\AiMemory.Core.csproj" />
+  </ItemGroup>
+
+</Project>
