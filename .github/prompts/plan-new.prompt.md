@@ -1,6 +1,12 @@
 ---
 name: "Plan New"
 description: "Add a new ai-memory story through PO-guided intake, targeted research, and priority scoping"
+summary: "Add a new ai-memory story through PO-guided intake, targeted research, and priority scoping"
+asset_type: "prompt"
+status: "active"
+owners:
+	- "ai-memory-maintainers"
+source_path: ".github/prompts/plan-new.prompt.md"
 agent: "agent"
 ---
 

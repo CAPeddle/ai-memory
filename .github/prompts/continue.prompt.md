@@ -1,6 +1,12 @@
 ---
 name: "Continue"
 description: "Execute Ready ExecPlans mechanically for ai-memory, with atomic commits and board maintenance"
+summary: "Execute Ready ExecPlans mechanically for ai-memory, with atomic commits and board maintenance"
+asset_type: "prompt"
+status: "active"
+owners:
+   - "ai-memory-maintainers"
+source_path: ".github/prompts/continue.prompt.md"
 agent: "agent"
 ---
 

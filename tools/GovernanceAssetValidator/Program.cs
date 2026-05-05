@@ -481,39 +481,20 @@ public sealed record CatalogValidationResult(bool IsValid, IReadOnlyList<string>
 
 internal sealed class CatalogSourceFile
 {
+    [System.Text.Json.Serialization.JsonPropertyName("schema_version")]
     public string SchemaVersion { get; init; } = "1.0.0";
 
+    [System.Text.Json.Serialization.JsonPropertyName("generated_by")]
     public string GeneratedBy { get; init; } = "governance-asset-validator";
 
+    [System.Text.Json.Serialization.JsonPropertyName("in_scope_asset_types")]
     public List<string> InScopeAssetTypes { get; init; } = [];
 
+    [System.Text.Json.Serialization.JsonPropertyName("reserved_future_categories")]
     public List<string> ReservedFutureCategories { get; init; } = [];
 
+    [System.Text.Json.Serialization.JsonPropertyName("generation")]
     public CatalogGenerationSection? Generation { get; init; }
-
-    [System.Text.Json.Serialization.JsonPropertyName("schema_version")]
-    public string SchemaVersionAlias
-    {
-        init => SchemaVersion = value;
-    }
-
-    [System.Text.Json.Serialization.JsonPropertyName("generated_by")]
-    public string GeneratedByAlias
-    {
-        init => GeneratedBy = value;
-    }
-
-    [System.Text.Json.Serialization.JsonPropertyName("in_scope_asset_types")]
-    public List<string> InScopeAssetTypesAlias
-    {
-        init => InScopeAssetTypes = value;
-    }
-
-    [System.Text.Json.Serialization.JsonPropertyName("reserved_future_categories")]
-    public List<string> ReservedFutureCategoriesAlias
-    {
-        init => ReservedFutureCategories = value;
-    }
 }
 
 internal sealed class CatalogGenerationSection

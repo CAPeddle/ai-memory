@@ -1,6 +1,12 @@
 ---
 name: compound-engineering
 description: 'Capture governance drift and workflow learnings during a session, then promote them into prompts, instructions, skills, stories, or query packets. Use for governance audits, prompt drift, and recurring workflow remediation.'
+summary: 'Capture governance drift and workflow learnings during a session, then promote them into prompts, instructions, skills, stories, or query packets. Use for governance audits, prompt drift, and recurring workflow remediation.'
+asset_type: "skill"
+status: "active"
+owners:
+	- "ai-memory-maintainers"
+source_path: ".github/skills/compound-engineering/SKILL.md"
 user-invocable: true
 ---
 

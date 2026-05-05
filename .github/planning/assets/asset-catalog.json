@@ -1,0 +1,116 @@
+﻿{
+  "metadata": {
+    "schema_version": "1.0.0",
+    "generated_at_utc": "deterministic",
+    "generated_by": "governance-asset-validator",
+    "in_scope_asset_types": [
+      "prompt",
+      "instruction",
+      "skill"
+    ],
+    "reserved_future_categories": [
+      "agent",
+      "hook",
+      "workflow",
+      "plugin"
+    ],
+    "required_fields": [
+      "name",
+      "summary",
+      "asset_type",
+      "status",
+      "owners",
+      "source_path"
+    ]
+  },
+  "assets": [
+    {
+      "asset_id": "instruction:.github/instructions/coding-standards.instructions.md",
+      "name": "Coding Standards",
+      "summary": "Repository coding conventions and architecture constraints for ai-memory",
+      "asset_type": "instruction",
+      "status": "active",
+      "owners": [
+        "ai-memory-maintainers"
+      ],
+      "source_path": ".github/instructions/coding-standards.instructions.md"
+    },
+    {
+      "asset_id": "instruction:.github/instructions/session-resilience.instructions.md",
+      "name": "Session Resilience",
+      "summary": "Session-level execution safety and commit hygiene rules",
+      "asset_type": "instruction",
+      "status": "active",
+      "owners": [
+        "ai-memory-maintainers"
+      ],
+      "source_path": ".github/instructions/session-resilience.instructions.md"
+    },
+    {
+      "asset_id": "prompt:.github/prompts/continue.prompt.md",
+      "name": "Continue",
+      "summary": "Execute Ready ExecPlans mechanically for ai-memory, with atomic commits and board maintenance",
+      "asset_type": "prompt",
+      "status": "active",
+      "owners": [
+        "ai-memory-maintainers"
+      ],
+      "source_path": ".github/prompts/continue.prompt.md"
+    },
+    {
+      "asset_id": "prompt:.github/prompts/governance-review.prompt.md",
+      "name": "Governance Review",
+      "summary": "Audit ai-memory governance artifacts for drift, apply safe fixes, escalate risky changes",
+      "asset_type": "prompt",
+      "status": "active",
+      "owners": [
+        "ai-memory-maintainers"
+      ],
+      "source_path": ".github/prompts/governance-review.prompt.md"
+    },
+    {
+      "asset_id": "prompt:.github/prompts/plan-new.prompt.md",
+      "name": "Plan New",
+      "summary": "Add a new ai-memory story through PO-guided intake, targeted research, and priority scoping",
+      "asset_type": "prompt",
+      "status": "active",
+      "owners": [
+        "ai-memory-maintainers"
+      ],
+      "source_path": ".github/prompts/plan-new.prompt.md"
+    },
+    {
+      "asset_id": "prompt:.github/prompts/plan.prompt.md",
+      "name": "Plan",
+      "summary": "Collaborative planning for ai-memory: scoping, story creation, query packets, and ExecPlan authoring",
+      "asset_type": "prompt",
+      "status": "active",
+      "owners": [
+        "ai-memory-maintainers"
+      ],
+      "source_path": ".github/prompts/plan.prompt.md"
+    },
+    {
+      "asset_id": "prompt:.github/prompts/recover.prompt.md",
+      "name": "Recover",
+      "summary": "Recover ai-memory sessions through forensic analysis, avoidance notes, and ExecPlan annotations",
+      "asset_type": "prompt",
+      "status": "active",
+      "owners": [
+        "ai-memory-maintainers"
+      ],
+      "source_path": ".github/prompts/recover.prompt.md"
+    },
+    {
+      "asset_id": "skill:.github/skills/compound-engineering/SKILL.md",
+      "name": "compound-engineering",
+      "summary": "Capture governance drift and workflow learnings during a session, then promote them into prompts, instructions, skills, stories, or query packets. Use for governance audits, prompt drift, and recurring workflow remediation.",
+      "asset_type": "skill",
+      "status": "active",
+      "owners": [
+        "ai-memory-maintainers"
+      ],
+      "source_path": ".github/skills/compound-engineering/SKILL.md"
+    }
+  ]
+}
