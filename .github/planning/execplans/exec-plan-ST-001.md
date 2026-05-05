@@ -402,12 +402,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.1 — Create global.json |
-| **Last successful command** | `Test-Path global.json; dotnet --version` |
-| **Expected outputs produced** | `global.json` created and verified; .NET SDK 8.0.100 installed |
-| **Next task** | Task 4.2 — Create Directory.Build.props |
+| **Last completed task** | Task 4.2 — Create Directory.Build.props |
+| **Last successful command** | `Test-Path Directory.Build.props; Select-String -Path Directory.Build.props -Pattern "TargetFramework|LangVersion|Nullable|ImplicitUsings|TreatWarningsAsErrors"` |
+| **Expected outputs produced** | `Directory.Build.props` created and verified with all five required properties |
+| **Next task** | Task 4.3 — Create AiMemory.Core project |
 | **Known blockers** | None |
-| **Last updated** | 2026-05-05T09:06:32.0010060+02:00 |
+| **Last updated** | 2026-05-05T09:07:22.3438562+02:00 |
 
 ### Progress History
 
@@ -415,6 +415,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 |---|---|---|---|---|
 | 2026-05-05T08:57:07.0701489+02:00 | Task 4.1 | blocked | `global.json` created; verification failed with "A compatible .NET SDK was not found" (installed: 10.0.107, 10.0.203) | Install .NET 8 SDK and re-run Task 4.1 verification |
 | 2026-05-05T09:06:32.0010060+02:00 | Task 4.1 | completed | `Test-Path global.json` returned `True`; `dotnet --version` returned `8.0.100` | Start Task 4.2 |
+| 2026-05-05T09:07:22.3438562+02:00 | Task 4.2 | completed | `Test-Path Directory.Build.props` returned `True`; `Select-String` returned 5 required property matches | Start Task 4.3 |
 | — | — | — | — | — |
 
 ### Avoidance
@@ -446,6 +447,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 - 2026-05-05T08:57:07.0701489+02:00: Started ST-001 Task 4.1. Created `global.json`; verification blocked by missing .NET 8 SDK.
 - 2026-05-05T09:06:32.0010060+02:00: Installed .NET SDK 8.0.100 and re-ran Task 4.1 verification successfully.
+- 2026-05-05T09:07:22.3438562+02:00: Completed Task 4.2 by creating `Directory.Build.props` and verifying required compiler settings.
 
 ---
 
