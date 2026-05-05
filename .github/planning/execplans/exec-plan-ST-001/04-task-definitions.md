@@ -145,7 +145,7 @@ Expected result: Restore and build both succeed, 0 warnings, 0 errors.
 
 ### Task 4.5: Create AiMemory.Tests project via TDD red-green
 
-**Objective:** Create the test project with xunit.v3, FluentAssertions, NSubstitute, and a reference to Core, while following an explicit TDD red-green sequence that ends with one passing smoke test.
+**Objective:** Create the test project with xunit.v3, the VSTest bridge packages needed for `dotnet test` on the pinned .NET 8 SDK, FluentAssertions, NSubstitute, and a reference to Core, while following an explicit TDD red-green sequence that ends with one passing smoke test.
 
 **Input:** `src/AiMemory.Core/AiMemory.Core.csproj` and `NuGet.config` must exist (Tasks 4.3, 4.2a).
 
@@ -154,30 +154,30 @@ Expected result: Restore and build both succeed, 0 warnings, 0 errors.
 **Steps:**
 
 1. Create directory `tests/AiMemory.Tests/`.
-2. Create file `tests/AiMemory.Tests/SmokeTests.cs` with exact content from §3 Boilerplate (SmokeTests.cs).
-3. Create file `tests/AiMemory.Tests/AiMemory.Tests.csproj` with exact content from §3 Boilerplate (AiMemory.Tests.csproj — red state).
+2. Create file `tests/AiMemory.Tests/AiMemory.Tests.csproj` with exact content from §3 Boilerplate (AiMemory.Tests.csproj).
+3. Create file `tests/AiMemory.Tests/SmokeTests.cs` with exact content from §3 Boilerplate (SmokeTests.cs — red state).
 4. Run: `dotnet restore tests/AiMemory.Tests/AiMemory.Tests.csproj --configfile NuGet.config --source https://api.nuget.org/v3/index.json`
 5. Run: `dotnet build tests/AiMemory.Tests/AiMemory.Tests.csproj --no-restore`
-6. Confirm the build in Step 5 fails with the expected red-state message: `xUnit.net v3 test projects must be executable (set project property '<OutputType>Exe</OutputType>')`. This failure is planned evidence for the red step and is not a blocker.
-7. Replace `tests/AiMemory.Tests/AiMemory.Tests.csproj` with the exact content from §3 Boilerplate (AiMemory.Tests.csproj — green state).
-8. Run: `dotnet restore tests/AiMemory.Tests/AiMemory.Tests.csproj --configfile NuGet.config --source https://api.nuget.org/v3/index.json`
+6. Run: `dotnet test tests/AiMemory.Tests/AiMemory.Tests.csproj --no-build`
+7. Confirm the test run in Step 6 completes and reports exactly one failed smoke test (`Placeholder_WhenExecuted_Passes`). This failing test result is the planned red checkpoint and is not a blocker.
+8. Replace `tests/AiMemory.Tests/SmokeTests.cs` with the exact content from §3 Boilerplate (SmokeTests.cs — green state).
 9. Run: `dotnet build tests/AiMemory.Tests/AiMemory.Tests.csproj --no-restore`
 10. Run: `dotnet test tests/AiMemory.Tests/AiMemory.Tests.csproj --no-build`
 
-**Expected output:** Final executable test project file exists, the smoke test file exists, the red-state build fails with the expected xUnit message, and the final build/test pass with one discovered passing test.
+**Expected output:** Final executable test project file exists with `xunit.v3`, `xunit.runner.visualstudio`, `Microsoft.NET.Test.Sdk`, `FluentAssertions`, and `NSubstitute`; the smoke test file exists; the red-state `dotnet test` run completes with one failing assertion; and the final build/test pass with one discovered passing test.
 
 **Requirement mapping:** "Three projects exist", "`dotnet test` runs and executes a placeholder smoke test", and "Tests follow the approved TDD scaffold path" rows in §2d.
 
 **Verification:**
 ```powershell
 dotnet restore tests/AiMemory.Tests/AiMemory.Tests.csproj --configfile NuGet.config --source https://api.nuget.org/v3/index.json
-Select-String -Path tests/AiMemory.Tests/AiMemory.Tests.csproj -Pattern "OutputType|IsTestProject|xunit.v3|FluentAssertions|NSubstitute"
+Select-String -Path tests/AiMemory.Tests/AiMemory.Tests.csproj -Pattern "OutputType|IsTestProject|xunit.v3|xunit.runner.visualstudio|Microsoft.NET.Test.Sdk|FluentAssertions|NSubstitute"
 dotnet build tests/AiMemory.Tests/AiMemory.Tests.csproj --no-restore
 dotnet test tests/AiMemory.Tests/AiMemory.Tests.csproj --no-build
 ```
-Expected result: The planned red-state failure was observed earlier in Step 5, the final `Select-String` output includes `OutputType`, and the final build/test succeed with 0 warnings, 0 errors, and 1 test passed.
+Expected result: The planned red-state failing test was observed earlier in Step 6, the final `Select-String` output includes the VSTest bridge packages plus `OutputType`, and the final build/test succeed with 0 warnings, 0 errors, and 1 test passed.
 
-**Failure handling:** If the restore in Step 4 or Step 8 contacts a private feed or returns `401`, stop and escalate — do not change machine-level NuGet configuration. If the build in Step 5 fails with anything other than the expected xUnit executable-project message, stop and escalate because the planned red checkpoint changed. If the final build or test still fails after Step 7, compare both files to the exact §3 boilerplate before retrying once; if the project still does not build/test green, stop and escalate.
+**Failure handling:** If the restore in Step 4 contacts a private feed or returns `401`, stop and escalate — do not change machine-level NuGet configuration. If the red checkpoint in Step 6 aborts with a host/discovery/package error, or if it unexpectedly passes instead of reporting one failed test, stop and escalate because the planned TDD checkpoint changed. If the final build or test still fails after Step 8, compare both files to the exact §3 boilerplate before retrying once; if the project still does not build/test green, stop and escalate.
 
 ---
 
@@ -215,7 +215,7 @@ Expected result: Each command returns the newly inserted TDD guidance line.
 
 **Objective:** Wire all three projects into a solution file and confirm full acceptance criteria pass.
 
-**Input:** All three project csproj files and the smoke test file must exist (Tasks 4.3–4.5), and the TDD governance guidance must be updated (Task 4.5a).
+**Input:** All three project csproj files and the final green-state smoke test file must exist (Tasks 4.3–4.5), and the TDD governance guidance must be updated (Task 4.5a).
 
 **Working directory:** `c:\projects\ai-memory\`
 
@@ -242,7 +242,7 @@ dotnet test src/AiMemory.sln --no-restore --no-build
 ```
 Expected result: Root solution path returns `False`; `src\AiMemory.sln` returns `True`; restore and build succeed; `dotnet test` succeeds and reports 1 test passed.
 
-**Failure handling:** If `dotnet sln add` fails on relative paths, use absolute paths. If restore still contacts a private feed or returns `401`, stop and escalate. If solution-level `dotnet test` discovers 0 tests or reports a host error, verify that Task 4.5 ended with the green-state `AiMemory.Tests.csproj` and that `SmokeTests.cs` matches the §3 boilerplate before retrying once. If build or test still fails after the planned retry, stop and escalate.
+**Failure handling:** If `dotnet sln add` fails on relative paths, use absolute paths. If restore still contacts a private feed or returns `401`, stop and escalate. If solution-level `dotnet test` discovers 0 tests or reports a host error, verify that Task 4.5 ended with the VSTest-bridge `AiMemory.Tests.csproj` boilerplate and the green-state `SmokeTests.cs` boilerplate before retrying once. If build or test still fails after the planned retry, stop and escalate.
 
 ---
 

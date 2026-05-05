@@ -68,7 +68,7 @@
   - [ ] Coding standards plus `/plan` and `/continue` prompts state that testing follows TDD principles
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-001.md`
 - Docs: `docs/investigations/language-stack-recommendation.md`
-- Notes: Foundation for all subsequent stories. Current plan-review remediation broadens ST-001 to encode the repo-wide TDD expectation while fixing the xUnit v3 test-project shape.
+- Notes: Foundation for all subsequent stories. Plan-review resolved: Task 4.5 now uses xunit.v3 plus VSTest-bridge packages for deterministic `dotnet test` on the pinned .NET 8 SDK path, with red-green checkpoints moved into the smoke test content.
 
 ### ST-002: Implement SQLite schema + FTS5 + migrations
 - Type: infrastructure

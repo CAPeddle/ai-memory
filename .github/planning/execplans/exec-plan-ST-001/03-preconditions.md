@@ -82,28 +82,7 @@ var app = builder.Build();
 app.Run();
 ```
 
-**Boilerplate: AiMemory.Tests.csproj (red state)**
-```xml
-<Project Sdk="Microsoft.NET.Sdk">
-
-  <PropertyGroup>
-    <IsTestProject>true</IsTestProject>
-  </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="xunit.v3" Version="3.2.2" />
-    <PackageReference Include="FluentAssertions" Version="8.9.0" />
-    <PackageReference Include="NSubstitute" Version="5.3.0" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\\..\\src\\AiMemory.Core\\AiMemory.Core.csproj" />
-  </ItemGroup>
-
-</Project>
-```
-
-**Boilerplate: AiMemory.Tests.csproj (green state)**
+**Boilerplate: AiMemory.Tests.csproj**
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
 
@@ -114,6 +93,8 @@ app.Run();
 
   <ItemGroup>
     <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.5.1" />
     <PackageReference Include="FluentAssertions" Version="8.9.0" />
     <PackageReference Include="NSubstitute" Version="5.3.0" />
   </ItemGroup>
@@ -125,7 +106,7 @@ app.Run();
 </Project>
 ```
 
-**Boilerplate: SmokeTests.cs**
+**Boilerplate: SmokeTests.cs (red state)**
 ```csharp
 using FluentAssertions;
 using Xunit;
@@ -137,6 +118,23 @@ public class SmokeTests
     [Fact]
     public void Placeholder_WhenExecuted_Passes()
     {
+    false.Should().BeTrue();
+  }
+}
+```
+
+**Boilerplate: SmokeTests.cs (green state)**
+```csharp
+using FluentAssertions;
+using Xunit;
+
+namespace AiMemory.Tests;
+
+public class SmokeTests
+{
+  [Fact]
+  public void Placeholder_WhenExecuted_Passes()
+  {
         true.Should().BeTrue();
     }
 }

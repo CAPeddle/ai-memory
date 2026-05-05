@@ -6,9 +6,9 @@
 |---|---|
 | **Last completed task** | Task 4.4 — Create AiMemory.Server project |
 | **Last successful command** | `dotnet build src/AiMemory.Server/AiMemory.Server.csproj --no-restore` |
-| **Expected outputs produced** | `global.json`, `Directory.Build.props`, `NuGet.config`, `src/AiMemory.Core/AiMemory.Core.csproj`, `src/AiMemory.Core/IMemoryService.cs`, `src/AiMemory.Server/AiMemory.Server.csproj`, `src/AiMemory.Server/Program.cs`, and a draft `tests/AiMemory.Tests/AiMemory.Tests.csproj`; Core and Server restore/build paths verified, and the revised TDD-based Task 4.5 path is now defined |
+| **Expected outputs produced** | `global.json`, `Directory.Build.props`, `NuGet.config`, `src/AiMemory.Core/AiMemory.Core.csproj`, `src/AiMemory.Core/IMemoryService.cs`, `src/AiMemory.Server/AiMemory.Server.csproj`, `src/AiMemory.Server/Program.cs`; plan-review guidance now revised so Task 4.5 can resume with corrected xUnit v3 + VSTest bridge boilerplate |
 | **Next task** | Task 4.5 — Create AiMemory.Tests project via TDD red-green |
-| **Known blockers** | None — the revised plan now defines the xUnit v3 executable project shape, the smoke test, and the expected red-green sequence |
+| **Known blockers** | None — plan-review resolved by updating Task 4.5 test-runner assumptions and red-green checkpoints |
 | **Last updated** | 2026-05-05 |
 
 ### Progress History
@@ -23,10 +23,12 @@
 | 2026-05-05T10:09:24.7224770+02:00 | Task 4.3 | completed | `src/AiMemory.Core` already matched boilerplate; `dotnet restore ... --configfile NuGet.config --source https://api.nuget.org/v3/index.json` and `dotnet build ... --no-restore` succeeded with 0 warnings and 0 errors | Start Task 4.4 |
 | 2026-05-05T10:10:40.0349555+02:00 | Task 4.4 | completed | `dotnet restore src/AiMemory.Server/AiMemory.Server.csproj --configfile NuGet.config --source https://api.nuget.org/v3/index.json` returned `RESTORE_OK`; `dotnet build src/AiMemory.Server/AiMemory.Server.csproj --no-restore` succeeded with 0 warnings and 0 errors | Start Task 4.5 |
 | 2026-05-05T10:11:56.7076569+02:00 | Task 4.5 | blocked | `dotnet restore tests/AiMemory.Tests/AiMemory.Tests.csproj --configfile NuGet.config --source https://api.nuget.org/v3/index.json` returned `RESTORE_OK`; `dotnet build tests/AiMemory.Tests/AiMemory.Tests.csproj --no-restore` failed because xUnit v3 requires `<OutputType>Exe</OutputType>` | Escalate to plan-review and pause execution |
+| 2026-05-05T11:13:16.9060369+02:00 | Task 4.5 | blocked | `dotnet build tests/AiMemory.Tests/AiMemory.Tests.csproj --no-restore` succeeded after adding `<OutputType>Exe</OutputType>`, but both `dotnet test tests/AiMemory.Tests/AiMemory.Tests.csproj --no-build` attempts aborted because `testhost.deps.json` could not resolve `Newtonsoft.Json` version `13.0.1` | Escalate to plan-review and pause execution |
+| 2026-05-05T11:13:16.9060369+02:00 | Plan-review | resolved | Query packet and ExecPlan updated: Task 4.5 now uses xunit.v3 + `xunit.runner.visualstudio` + `Microsoft.NET.Test.Sdk` boilerplate, and red-green moves to smoke-test content | Resume at Task 4.5 |
 | — | — | — | — | — |
 
 ### Avoidance
 
 - 2026-05-05: Use the repo-local `NuGet.config` together with explicit `--configfile NuGet.config --source https://api.nuget.org/v3/index.json` on every restore command in ST-001. If any restore still contacts a private feed, stop and escalate.
-- 2026-05-05: Do not add `<OutputType>Exe</OutputType>` or alter the pinned xUnit test package layout in `tests/AiMemory.Tests/AiMemory.Tests.csproj` without a plan-approved Task 4.5 revision.
-- 2026-05-05: In revised Task 4.5, the initial test-project build failure is intentional. Treat only a failure message other than the expected xUnit executable-project error as a blocker.
+- 2026-05-05: Follow the revised Task 4.5 boilerplate exactly, including `xunit.runner.visualstudio` and `Microsoft.NET.Test.Sdk`; do not substitute an MTP-specific config path unless a new plan-review explicitly approves it.
+- 2026-05-05: In revised Task 4.5, the red checkpoint is one intentionally failing smoke test result, not a project-configuration failure. Treat host/discovery/package aborts during the red run as blockers.
