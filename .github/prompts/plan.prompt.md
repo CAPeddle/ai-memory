@@ -76,6 +76,7 @@ Walk the PO through the plan in iterative review rounds. On approval, commit.
 - **Always** define every term of art — do not assume the executor knows project jargon
 - **Always** show working directory and exact commands in task steps
 - **Always** embed needed knowledge directly — do not reference external blogs or docs
+- **Always** encode test-bearing work with explicit TDD sequencing in the ExecPlan: define the red step first, then the minimum green step, then any refactor checkpoint when applicable
 
 ## Self-Containment Rule (from Codex PLANS.md)
 

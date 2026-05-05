@@ -4,10 +4,10 @@
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.5 — Create AiMemory.Tests project via TDD red-green |
-| **Last successful command** | `dotnet test tests/AiMemory.Tests/AiMemory.Tests.csproj --no-build` |
-| **Expected outputs produced** | `tests/AiMemory.Tests/AiMemory.Tests.csproj` now matches revised boilerplate with `xunit.v3`, `xunit.runner.visualstudio`, `Microsoft.NET.Test.Sdk`, `FluentAssertions`, `NSubstitute`, and `<OutputType>Exe</OutputType>`; `tests/AiMemory.Tests/SmokeTests.cs` exists in green state with one passing placeholder test; red checkpoint evidence captured via one intentional failing test run |
-| **Next task** | Task 4.5a — Update governance docs for the repo-wide TDD expectation |
+| **Last completed task** | Task 4.5a — Update governance docs for the repo-wide TDD expectation |
+| **Last successful command** | `Select-String -Path .github/prompts/continue.prompt.md -Pattern "TDD|red|green"` |
+| **Expected outputs produced** | `.github/instructions/coding-standards.instructions.md`, `.github/prompts/plan.prompt.md`, and `.github/prompts/continue.prompt.md` now include the plan-approved TDD guidance lines |
+| **Next task** | Task 4.6 — Create solution and verify end-to-end |
 | **Known blockers** | None |
 | **Last updated** | 2026-05-05 |
 
@@ -26,6 +26,7 @@
 | 2026-05-05T11:13:16.9060369+02:00 | Task 4.5 | blocked | `dotnet build tests/AiMemory.Tests/AiMemory.Tests.csproj --no-restore` succeeded after adding `<OutputType>Exe</OutputType>`, but both `dotnet test tests/AiMemory.Tests/AiMemory.Tests.csproj --no-build` attempts aborted because `testhost.deps.json` could not resolve `Newtonsoft.Json` version `13.0.1` | Escalate to plan-review and pause execution |
 | 2026-05-05T11:13:16.9060369+02:00 | Plan-review | resolved | Query packet and ExecPlan updated: Task 4.5 now uses xunit.v3 + `xunit.runner.visualstudio` + `Microsoft.NET.Test.Sdk` boilerplate, and red-green moves to smoke-test content | Resume at Task 4.5 |
 | 2026-05-05T11:51:04.5355607+02:00 | Task 4.5 | completed | Restore/build succeeded with revised test-project packages; red checkpoint produced exactly one failing smoke test; final green-state build/test succeeded with 1 passed, 0 failed | Start Task 4.5a |
+| 2026-05-05T11:53:14.2365999+02:00 | Task 4.5a | completed | `Select-String` verification confirmed the new TDD guidance in coding standards plus `/plan` and `/continue` prompts | Start Task 4.6 |
 | — | — | — | — | — |
 
 ### Avoidance

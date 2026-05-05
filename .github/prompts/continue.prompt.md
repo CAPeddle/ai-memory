@@ -76,6 +76,7 @@ If you encounter **anything** not covered by the ExecPlan:
 - **Always** use `vscode_askQuestions` for PO-facing questions, approvals, clarifications, and confirmations
 - **Always** post a context message with clickable links immediately before each `vscode_askQuestions` call
 - **Always** include a story-board link and story line/section when the question is about a specific story
+- **Always** execute explicit red-green test steps in the order written when an ExecPlan defines them; do not skip the failing-test checkpoint unless the plan marks it not applicable
 
 ## Additive Bias Self-Check
 

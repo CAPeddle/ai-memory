@@ -61,6 +61,7 @@ tests/
 - Use in-memory SQLite (`:memory:`) for repository tests
 - Name tests: `MethodName_Scenario_ExpectedResult`
 - One assertion per test (logical, not literal)
+- Follow TDD for new behavior and bug fixes: start with a failing test (red), make the minimum change to pass (green), then refactor with tests still green
 
 ## REST API Style
 
