@@ -193,11 +193,17 @@
 
 ## Review
 
+(Empty)
+
+---
+
+## Done
+
 ### ST-001: Scaffold .NET solution and project structure
 - Type: infrastructure
 - Source: PO
 - Value: 5 · Effort: S(2) · WSJF: 2.5
-- Completed: 2026-05-04
+- Completed: 2026-05-05
 - Blocked by: none
 - Touches: `src/`, `tests/`, `*.sln`, `Directory.Build.props`, `NuGet.config`, `.github/instructions/`, `.github/prompts/`
 - Acceptance criteria:
@@ -208,11 +214,7 @@
   - [x] Coding standards plus `/plan` and `/continue` prompts state that testing follows TDD principles
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-001.md`
 - Docs: `docs/investigations/language-stack-recommendation.md`
-- Notes: Execution complete; ready for PO review and acceptance.
-
----
-
-## Done
+- Notes: Accepted by PO.
 
 ### ST-014: Investigate memsearch (zilliztech) for architectural learnings
 - Type: spike
