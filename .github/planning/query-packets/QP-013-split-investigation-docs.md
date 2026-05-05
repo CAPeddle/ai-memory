@@ -26,7 +26,7 @@ The board changed during scoping: `ST-012` is already reserved for a different g
 ## Design Decisions Locked In
 
 1. This is a separate story, not part of `ST-011`.
-2. The story type is `infrastructure`, with `Value: 4`, `Effort: M(3)`, and `WSJF: 1.3`.
+2. The story type is `infrastructure`, with `Value: 4`.
 3. The story enters Backlog and remains blocked by `ST-011`.
 4. All eight current investigation documents are in scope.
 5. The split is physical, not merely additive: detailed content moves into per-topic folders under `docs/investigations/`.

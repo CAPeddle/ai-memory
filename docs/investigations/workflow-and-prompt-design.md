@@ -166,7 +166,7 @@ PO runs /continue → resumes from Recovery Ledger
 ```markdown
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
-> Prioritisation: WSJF (value ÷ effort). Value: 1-5. Effort: XS=1, S=2, M=3, L=5.
+> Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
 > Last updated: YYYY-MM-DD
 ```
 
@@ -186,7 +186,7 @@ PO runs /continue → resumes from Recovery Ledger
 ### ST-N: Title
 - Type: feature | spike | infrastructure | debt
 - Source: PO | agent-proposed
-- Value: 1-5 · Effort: XS/S/M/L · WSJF: computed
+- Value: 1-5
 - Blocked by: ST-N, plan-review, or none
 - Touches: files, modules, projects affected
 - Acceptance criteria:
@@ -210,12 +210,12 @@ Rule: Only one story may hold a lock at a time. Only the LE edits the board.
 
 ### 3.5 Prioritization
 
-Use WSJF (Weighted Shortest Job First):
+Use value-first, dependency-aware sequencing:
 - Value: 1–5 (business/user impact)
-- Effort: XS=1, S=2, M=3, L=5
-- WSJF = Value ÷ Effort
+- Prioritize unblocked stories with higher value first
+- Respect dependency chains and readiness gates before selecting blocked work
 
-Higher WSJF = higher priority. `/plan` in board-scan mode uses this to recommend what to plan next.
+`/plan` in board-scan mode uses value, dependency state, and readiness to recommend what to plan next.
 
 ---
 
@@ -570,20 +570,20 @@ FollowUpSessionLog.txt        # Session delta (root)
 
 These stories should populate the board when the workflow is first activated:
 
-| ID | Title | Type | Value | Effort | WSJF |
-|----|-------|------|-------|--------|------|
-| ST-001 | Scaffold .NET solution and project structure | infrastructure | 5 | S(2) | 2.5 |
-| ST-002 | Implement SQLite schema + FTS5 + migrations | infrastructure | 5 | M(3) | 1.7 |
-| ST-003 | Implement IMemoryRepository (SQLite) | feature | 4 | M(3) | 1.3 |
-| ST-004 | Implement embedding service (OpenAI) | feature | 4 | S(2) | 2.0 |
-| ST-005 | Implement hybrid search (FTS5 + vector + RRF + MMR) | feature | 5 | L(5) | 1.0 |
-| ST-006 | Implement REST API endpoints | feature | 4 | M(3) | 1.3 |
-| ST-007 | Implement MCP server (facade over service layer) | feature | 5 | M(3) | 1.7 |
-| ST-008 | Implement consolidation pipeline | feature | 3 | L(5) | 0.6 |
-| ST-009 | Create workflow governance files (.github/) | infrastructure | 5 | S(2) | 2.5 |
-| ST-010 | Integration testing (E2E round-trip) | debt | 4 | M(3) | 1.3 |
+| ID | Title | Type | Value | Primary dependency |
+|----|-------|------|-------|--------------------|
+| ST-001 | Scaffold .NET solution and project structure | infrastructure | 5 | none |
+| ST-002 | Implement SQLite schema + FTS5 + migrations | infrastructure | 5 | ST-001 |
+| ST-003 | Implement IMemoryRepository (SQLite) | feature | 4 | ST-002 |
+| ST-004 | Implement embedding service (OpenAI) | feature | 4 | ST-001 |
+| ST-005 | Implement hybrid search (FTS5 + vector + RRF + MMR) | feature | 5 | ST-003, ST-004 |
+| ST-006 | Implement REST API endpoints | feature | 4 | ST-003, ST-005 |
+| ST-007 | Implement MCP server (facade over service layer) | feature | 5 | ST-006 |
+| ST-008 | Implement consolidation pipeline | feature | 3 | ST-005 |
+| ST-009 | Create workflow governance files (.github/) | infrastructure | 5 | none |
+| ST-010 | Integration testing (E2E round-trip) | debt | 4 | ST-007 |
 
-**Recommended execution order (by WSJF + dependencies):**
+**Recommended execution order (by value + dependencies):**
 1. ST-009 (governance) — enables all other stories
 2. ST-001 (scaffold) — enables all implementation
 3. ST-002 (schema) — enables repository

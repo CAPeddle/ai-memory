@@ -1,6 +1,6 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
-> Prioritisation: WSJF (value ÷ effort). Value: 1-5. Effort: XS=1, S=2, M=3, L=5.
+> Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
 > Next planning target: ST-013 — split investigation docs into landing pages and focused fragments.
 > Last updated: 2026-05-05
 
@@ -11,7 +11,7 @@
 ### ST-013: Split investigation docs into landing pages and focused fragments
 - Type: infrastructure
 - Source: PO
-- Value: 4 · Effort: M(3) · WSJF: 1.3
+- Value: 4
 - Blocked by: none
 - Touches: `.github/copilot-instructions.md`, `.github/prompts/`, `.github/planning/`, `docs/investigations/`
 - Acceptance criteria:
@@ -26,7 +26,7 @@
 ### ST-015: Improve ExecPlan template to show outcomes up front
 - Type: infrastructure
 - Source: PO
-- Value: 3 · Effort: S(2) · WSJF: 1.5
+- Value: 3
 - Blocked by: none
 - Touches: `.github/planning/execplans/_TEMPLATE.md`, `.github/planning/execplans/`
 - Acceptance criteria:
@@ -42,7 +42,7 @@
 ### ST-002: Implement SQLite schema + FTS5 + migrations
 - Type: infrastructure
 - Source: PO
-- Value: 5 · Effort: M(3) · WSJF: 1.7
+- Value: 5
 - Blocked by: ST-001
 - Touches: `src/AiMemory.Core/`, database migrations
 - Acceptance criteria:
@@ -56,7 +56,7 @@
 ### ST-003: Implement IMemoryRepository (SQLite)
 - Type: feature
 - Source: PO
-- Value: 4 · Effort: M(3) · WSJF: 1.3
+- Value: 4
 - Blocked by: ST-002
 - Touches: `src/AiMemory.Core/`
 - Acceptance criteria:
@@ -71,7 +71,7 @@
 ### ST-004: Implement embedding service (OpenAI)
 - Type: feature
 - Source: PO
-- Value: 4 · Effort: S(2) · WSJF: 2.0
+- Value: 4
 - Blocked by: ST-001
 - Touches: `src/AiMemory.Core/`
 - Acceptance criteria:
@@ -86,7 +86,7 @@
 ### ST-005: Implement hybrid search (FTS5 + vector + RRF + MMR)
 - Type: feature
 - Source: PO
-- Value: 5 · Effort: L(5) · WSJF: 1.0
+- Value: 5
 - Blocked by: ST-003, ST-004
 - Touches: `src/AiMemory.Core/`
 - Acceptance criteria:
@@ -104,7 +104,7 @@
 ### ST-006: Implement REST API endpoints
 - Type: feature
 - Source: PO
-- Value: 4 · Effort: M(3) · WSJF: 1.3
+- Value: 4
 - Blocked by: ST-003, ST-005
 - Touches: `src/AiMemory.Server/`
 - Acceptance criteria:
@@ -119,7 +119,7 @@
 ### ST-007: Implement MCP server (facade over service layer)
 - Type: feature
 - Source: PO
-- Value: 5 · Effort: M(3) · WSJF: 1.7
+- Value: 5
 - Blocked by: ST-006
 - Touches: `src/AiMemory.Server/`
 - Acceptance criteria:
@@ -135,7 +135,7 @@
 ### ST-008: Implement consolidation pipeline
 - Type: feature
 - Source: PO
-- Value: 3 · Effort: L(5) · WSJF: 0.6
+- Value: 3
 - Blocked by: ST-005
 - Touches: `src/AiMemory.Core/`
 - Acceptance criteria:
@@ -150,7 +150,7 @@
 ### ST-010: Integration testing (E2E round-trip)
 - Type: debt
 - Source: PO
-- Value: 4 · Effort: M(3) · WSJF: 1.3
+- Value: 4
 - Blocked by: ST-007
 - Touches: `tests/`
 - Acceptance criteria:
@@ -166,7 +166,20 @@
 
 ## Refined
 
-(Empty)
+### ST-016: Research software engineering best practices for governance adoption
+- Type: infrastructure
+- Source: PO
+- Value: 5
+- Blocked by: none
+- Touches: `.github/instructions/`, `.github/prompts/`, `.github/planning/`, `docs/investigations/`
+- Acceptance criteria:
+  - [ ] Provisional: A research-backed shortlist of software engineering practices (code quality + C# idioms) is documented with applicability to ai-memory
+  - [ ] Provisional: Recommended governance updates define where each practice is enforced (instructions, prompts, checklists, or automation)
+  - [ ] Provisional: A WoW proposal captures linting/setup expectations and checklist-driven execution guidance for future stories
+  - [ ] Provisional: Adoption guidance identifies what to introduce now vs defer, including rationale and risk
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-016.md`
+- Docs: `docs/investigations/workflow-and-prompt-design.md`, `.github/instructions/coding-standards.instructions.md`
+- Notes: Seed query packet: `.github/planning/query-packets/QP-016-se-best-practices-governance.md`. Intake intent: prepare code-quality and C# idiom governance before future implementation work.
 
 ---
 
@@ -187,7 +200,7 @@
 ### ST-012: Add discoverable AI-governance asset catalog and validation
 - Type: infrastructure
 - Source: PO
-- Value: 4 · Effort: S(2) · WSJF: 2.0
+- Value: 4
 - Completed: 2026-05-05
 - Blocked by: none
 - Touches: `.github/prompts/`, `.github/instructions/`, `.github/planning/`, `docs/`
@@ -203,7 +216,7 @@
 ### ST-001: Scaffold .NET solution and project structure
 - Type: infrastructure
 - Source: PO
-- Value: 5 · Effort: S(2) · WSJF: 2.5
+- Value: 5
 - Completed: 2026-05-05
 - Blocked by: none
 - Touches: `src/`, `tests/`, `*.sln`, `Directory.Build.props`, `NuGet.config`, `.github/instructions/`, `.github/prompts/`
@@ -220,7 +233,7 @@
 ### ST-014: Investigate memsearch (zilliztech) for architectural learnings
 - Type: spike
 - Source: PO
-- Value: 4 · Effort: S(2) · WSJF: 2.0
+- Value: 4
 - Completed: 2026-05-04
 - Blocked by: none
 - Touches: `docs/investigations/`, `docs/investigations/memory-architecture-design.md`, `docs/investigations/sqlite-vs-postgresql.md`
@@ -237,13 +250,13 @@
 ### ST-011: Institutionalize recurring governance review and remediation
 - Type: debt
 - Source: PO
-- Value: 5 · Effort: XS(1) · WSJF: 5.0
+- Value: 5
 - Completed: 2026-05-04
 - Notes: Accepted by PO; review slot cleared. Validation report: `.github/planning/audit-reports/audit-report-2026-05-03.md`.
 
 ### ST-009: Create workflow governance files (.github/)
 - Type: infrastructure
 - Source: PO
-- Value: 5 · Effort: S(2) · WSJF: 2.5
+- Value: 5
 - Completed: 2025-05-02
 - Notes: Prompts, board, ExecPlan template, instructions, session log created from investigation docs

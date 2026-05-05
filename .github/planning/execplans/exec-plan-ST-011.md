@@ -264,7 +264,7 @@ Run every check below. Record result in the report.
 ## Discretionary Checks (examples — not exhaustive)
 
 - Recovery-ledger contract consistency across `continue.prompt.md`, `recover.prompt.md`, `session-resilience.instructions.md`, and `_TEMPLATE.md`
-- Board metadata consistency (WSJF calculations, blocked-by chains, column placement)
+- Board metadata consistency (value fields, blocked-by chains, column placement)
 - Investigation docs referenced by stories still exist at claimed paths
 - Prompt files don't contain stale references to removed features or renamed files
 - Skill files match the structure expected by their consumers

@@ -72,8 +72,6 @@ The PO confirmed all four investigation angles:
 | Type | spike |
 | Placement | Refined |
 | Value | 4 |
-| Effort | S (2) |
-| WSJF | 2.0 |
 | Blocked by | none |
 
 ---

@@ -27,7 +27,7 @@ Determine your planning mode from context:
 1. **Plan-review resolution** (highest priority) — If any story on the board has `blocked_by: plan-review`, address it first. Read §2c Plan Review Notes for the issue to resolve.
 2. **User-directed** — PO specifies a story or need. Scope and plan that work.
 3. **Phase 2 resume** — PO provides a query packet path. Skip scoping; proceed to ExecPlan authoring.
-4. **Board scan** — No specific direction. Read the board, recommend what to plan next by WSJF score.
+4. **Board scan** — No specific direction. Read the board, recommend what to plan next using value plus dependency/readiness signals.
 
 When board scan or user-directed mode selects a story that already names a seed query packet, read that packet before recommending scope or asking questions.
 
@@ -99,7 +99,7 @@ ExecPlans must be **SELF-CONTAINED, SELF-SUFFICIENT, NOVICE-GUIDING, OUTCOME-FOC
 Only the LE edits the board. When creating a new story:
 1. Add to the appropriate column in `.github/planning/story-board.md`
 2. Assign the next ST-N ID
-3. Compute WSJF (Value ÷ Effort)
+3. Capture PO-confirmed value metadata (no effort estimate)
 4. Link the ExecPlan file
 
 ## Key Files

@@ -70,7 +70,6 @@ Return to the PO with context and ask bounded questions to determine:
 - **Story placement**: Backlog or Refined
 - **Type**: feature, spike, infrastructure, or debt
 - **Value**: 1–5
-- **Effort**: XS, S, M, or L
 - **Blocked by**: none, plan-review, or one or more story IDs
 - **Initial acceptance shape**: short outcome-oriented bullets if the PO wants them captured now
 
@@ -82,7 +81,7 @@ Once the PO has answered enough questions:
 1. Read the board to find the next available `ST-N` ID
 2. Create a board entry in `.github/planning/story-board.md`
 3. Place it in the column the PO selected
-4. Compute WSJF from PO-confirmed value and effort
+4. Record PO-confirmed value and dependency context for prioritisation
 5. Reserve the future ExecPlan path: `.github/planning/execplans/exec-plan-ST-NNN.md`
 6. Create a seed query packet: `.github/planning/query-packets/QP-NNN-slug.md`
 
@@ -105,7 +104,7 @@ Use the existing story schema:
 - Title
 - Type
 - Source
-- Value / Effort / WSJF
+- Value
 - Blocked by
 - Touches
 - Acceptance criteria
