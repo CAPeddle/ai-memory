@@ -10,3 +10,4 @@
   - Error: `xUnit.net v3 test projects must be executable (set project property '<OutputType>Exe</OutputType>')`
   - Gap: ExecPlan Task 4.5 pins `xunit.v3 3.2.2` but does not define the required `<OutputType>Exe</OutputType>` setting or any alternative package layout.
   - Action: Escalated to plan-review; execution paused at Task 4.5.
+- 2026-05-05 — Resolution approved during `/plan`: revise Task 4.5 to use an explicit TDD red-green sequence, add `tests/AiMemory.Tests/SmokeTests.cs`, make the final xUnit v3 project executable via `<OutputType>Exe</OutputType>`, and broaden ST-001 so coding standards plus `/plan` and `/continue` prompts record the repo-wide TDD expectation.

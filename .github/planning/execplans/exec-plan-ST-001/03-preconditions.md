@@ -82,7 +82,7 @@ var app = builder.Build();
 app.Run();
 ```
 
-**Boilerplate: AiMemory.Tests.csproj**
+**Boilerplate: AiMemory.Tests.csproj (red state)**
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
 
@@ -101,4 +101,58 @@ app.Run();
   </ItemGroup>
 
 </Project>
+```
+
+**Boilerplate: AiMemory.Tests.csproj (green state)**
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsTestProject>true</IsTestProject>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="FluentAssertions" Version="8.9.0" />
+    <PackageReference Include="NSubstitute" Version="5.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\\..\\src\\AiMemory.Core\\AiMemory.Core.csproj" />
+  </ItemGroup>
+
+</Project>
+```
+
+**Boilerplate: SmokeTests.cs**
+```csharp
+using FluentAssertions;
+using Xunit;
+
+namespace AiMemory.Tests;
+
+public class SmokeTests
+{
+    [Fact]
+    public void Placeholder_WhenExecuted_Passes()
+    {
+        true.Should().BeTrue();
+    }
+}
+```
+
+**Boilerplate: coding-standards TDD bullet**
+```markdown
+- Follow TDD for new behavior and bug fixes: start with a failing test (red), make the minimum change to pass (green), then refactor with tests still green
+```
+
+**Boilerplate: plan-prompt TDD rule**
+```markdown
+- **Always** encode test-bearing work with explicit TDD sequencing in the ExecPlan: define the red step first, then the minimum green step, then any refactor checkpoint when applicable
+```
+
+**Boilerplate: continue-prompt TDD rule**
+```markdown
+- **Always** execute explicit red-green test steps in the order written when an ExecPlan defines them; do not skip the failing-test checkpoint unless the plan marks it not applicable
 ```

@@ -6,9 +6,9 @@
 |---|---|
 | **Last completed task** | Task 4.4 — Create AiMemory.Server project |
 | **Last successful command** | `dotnet build src/AiMemory.Server/AiMemory.Server.csproj --no-restore` |
-| **Expected outputs produced** | `global.json`, `Directory.Build.props`, `NuGet.config`, `src/AiMemory.Core/AiMemory.Core.csproj`, `src/AiMemory.Core/IMemoryService.cs`, `src/AiMemory.Server/AiMemory.Server.csproj`, `src/AiMemory.Server/Program.cs`, and a draft `tests/AiMemory.Tests/AiMemory.Tests.csproj`; Core and Server restore/build paths verified, Task 4.5 blocked pending plan review |
-| **Next task** | Task 4.5 — Create AiMemory.Tests project |
-| **Known blockers** | Task 4.5 boilerplate omits the xUnit v3 requirement to set `<OutputType>Exe</OutputType>` for the test project |
+| **Expected outputs produced** | `global.json`, `Directory.Build.props`, `NuGet.config`, `src/AiMemory.Core/AiMemory.Core.csproj`, `src/AiMemory.Core/IMemoryService.cs`, `src/AiMemory.Server/AiMemory.Server.csproj`, `src/AiMemory.Server/Program.cs`, and a draft `tests/AiMemory.Tests/AiMemory.Tests.csproj`; Core and Server restore/build paths verified, and the revised TDD-based Task 4.5 path is now defined |
+| **Next task** | Task 4.5 — Create AiMemory.Tests project via TDD red-green |
+| **Known blockers** | None — the revised plan now defines the xUnit v3 executable project shape, the smoke test, and the expected red-green sequence |
 | **Last updated** | 2026-05-05 |
 
 ### Progress History
@@ -29,3 +29,4 @@
 
 - 2026-05-05: Use the repo-local `NuGet.config` together with explicit `--configfile NuGet.config --source https://api.nuget.org/v3/index.json` on every restore command in ST-001. If any restore still contacts a private feed, stop and escalate.
 - 2026-05-05: Do not add `<OutputType>Exe</OutputType>` or alter the pinned xUnit test package layout in `tests/AiMemory.Tests/AiMemory.Tests.csproj` without a plan-approved Task 4.5 revision.
+- 2026-05-05: In revised Task 4.5, the initial test-project build failure is intentional. Treat only a failure message other than the expected xUnit executable-project error as a blocker.
