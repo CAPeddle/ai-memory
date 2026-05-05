@@ -77,7 +77,11 @@ Status: ✅ Ready for /continue
 
 ## §2c. Plan Review Notes
 
-(Empty — populated by /continue when escalating issues)
+- 2026-05-05T09:11:22.1510882+02:00 — Task 4.3 verification (`dotnet build src/AiMemory.Core/AiMemory.Core.csproj`) failed due an environment-level private NuGet feed authentication error:
+  - Source: `https://pkgs.dev.azure.com/kubusinfo/_packaging/Shared-Resources/nuget/v3/index.json`
+  - Error: `401 (Unauthorized)` from NuGet restore in `NuGet.targets`
+  - Gap: ExecPlan failure handling for Task 4.3 covers SDK/nullable issues only; it does not define behavior for machine-level NuGet source auth conflicts.
+  - Action: Escalated to plan-review; execution paused at Task 4.3.
 
 ---
 
@@ -403,11 +407,11 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | Field | Value |
 |---|---|
 | **Last completed task** | Task 4.2 — Create Directory.Build.props |
-| **Last successful command** | `Test-Path Directory.Build.props; Select-String -Path Directory.Build.props -Pattern "TargetFramework|LangVersion|Nullable|ImplicitUsings|TreatWarningsAsErrors"` |
-| **Expected outputs produced** | `Directory.Build.props` created and verified with all five required properties |
-| **Next task** | Task 4.3 — Create AiMemory.Core project |
-| **Known blockers** | None |
-| **Last updated** | 2026-05-05T09:07:22.3438562+02:00 |
+| **Last successful command** | `dotnet build src/AiMemory.Core/AiMemory.Core.csproj` |
+| **Expected outputs produced** | `src/AiMemory.Core/AiMemory.Core.csproj` and `src/AiMemory.Core/IMemoryService.cs` created; Task 4.3 verification failed |
+| **Next task** | None — blocked on plan-review |
+| **Known blockers** | NuGet restore attempts unauthorized private source (`pkgs.dev.azure.com/kubusinfo/...`) causing Task 4.3 build failure |
+| **Last updated** | 2026-05-05T09:11:22.1510882+02:00 |
 
 ### Progress History
 
@@ -416,6 +420,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-05-05T08:57:07.0701489+02:00 | Task 4.1 | blocked | `global.json` created; verification failed with "A compatible .NET SDK was not found" (installed: 10.0.107, 10.0.203) | Install .NET 8 SDK and re-run Task 4.1 verification |
 | 2026-05-05T09:06:32.0010060+02:00 | Task 4.1 | completed | `Test-Path global.json` returned `True`; `dotnet --version` returned `8.0.100` | Start Task 4.2 |
 | 2026-05-05T09:07:22.3438562+02:00 | Task 4.2 | completed | `Test-Path Directory.Build.props` returned `True`; `Select-String` returned 5 required property matches | Start Task 4.3 |
+| 2026-05-05T09:11:22.1510882+02:00 | Task 4.3 | blocked | `dotnet build src/AiMemory.Core/AiMemory.Core.csproj` failed with `401 Unauthorized` on private NuGet feed `pkgs.dev.azure.com/kubusinfo/...` | Escalate to plan-review and pause execution |
 | — | — | — | — | — |
 
 ### Avoidance
@@ -449,6 +454,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - 2026-05-05T09:06:32.0010060+02:00: Installed .NET SDK 8.0.100 and re-ran Task 4.1 verification successfully.
 - 2026-05-05T09:07:22.3438562+02:00: Completed Task 4.2 by creating `Directory.Build.props` and verifying required compiler settings.
 - 2026-05-05T09:10:26.8585324+02:00: Detected global git ignore rule (`*.props`) excluded `Directory.Build.props`; force-added file and committed corrective Task 4.2 artifact commit.
+- 2026-05-05T09:11:22.1510882+02:00: Task 4.3 build failed due machine-level private NuGet feed auth (`401 Unauthorized`); execution paused and escalated to plan-review.
 
 ---
 
@@ -464,6 +470,10 @@ If a session is interrupted, the executor reads §5b to determine where to resum
   Evidence: `git check-ignore -v Directory.Build.props` output matched the global rule.
   Impact: Task 4.2 required a force-add commit to keep required artifact under version control.
 
+- Observation: `dotnet build` on a zero-dependency project can still fail when machine-level NuGet config includes inaccessible authenticated feeds.
+  Evidence: Task 4.3 failed in `NuGet.targets` loading `https://pkgs.dev.azure.com/kubusinfo/_packaging/Shared-Resources/nuget/v3/index.json` with `401`.
+  Impact: Execution cannot proceed without either feed authentication or a plan-approved restore-source override strategy.
+
 ---
 
 ## §6c. Decision Log
@@ -476,6 +486,10 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 - Decision: Use `git add -f Directory.Build.props` and a corrective Task 4.2 commit instead of changing ignore configuration.
   Rationale: Minimal, task-scoped fix that preserves existing user/global git settings and keeps required file tracked.
+  Date: 2026-05-05
+
+- Decision: Stop at Task 4.3 and escalate to plan-review instead of introducing ad-hoc restore-source workarounds.
+  Rationale: ExecPlan did not define behavior for private-feed auth conflicts; `/continue` rules require escalation for uncovered issues.
   Date: 2026-05-05
 
 ---

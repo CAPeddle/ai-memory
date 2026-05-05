@@ -58,7 +58,7 @@
 - Type: infrastructure
 - Source: PO
 - Value: 5 · Effort: S(2) · WSJF: 2.5
-- Blocked by: none
+- Blocked by: plan-review
 - Touches: `src/`, `tests/`, `*.sln`, `Directory.Build.props`
 - Acceptance criteria:
   - [ ] Solution builds with `dotnet build`
