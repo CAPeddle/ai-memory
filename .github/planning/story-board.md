@@ -1,27 +1,12 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: WSJF (value ÷ effort). Value: 1-5. Effort: XS=1, S=2, M=3, L=5.
-> Next planning target: ST-012 — governance asset catalog and validation.
+> Next planning target: ST-013 — split investigation docs into landing pages and focused fragments.
 > Last updated: 2026-05-05
 
 ---
 
 ## Backlog
-
-### ST-012: Add discoverable AI-governance asset catalog and validation
-- Type: infrastructure
-- Source: PO
-- Value: 4 · Effort: S(2) · WSJF: 2.0
-- Blocked by: none
-- Touches: `.github/prompts/`, `.github/instructions/`, `.github/planning/`, `docs/`
-- Acceptance criteria:
-  - [ ] A documented metadata contract exists for repo AI-governance assets covering prompts, instructions, and planned future extensions such as agents or skills
-  - [ ] A machine-readable inventory or index exposes the repo's AI-governance assets and their intended use
-  - [ ] Validation guidance or automation detects drift between asset metadata, indexes, and published docs
-  - [ ] Contribution guidance defines what prompt/instruction/skill-style additions are accepted, rejected, or deferred
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-012.md`
-- Docs: `docs/investigations/awesome-copilot-applicability-review.md`, `docs/investigations/workflow-and-prompt-design.md`, `docs/investigations/context-engineering-principles.md`
-- Notes: Follow-up from the awesome-copilot applicability investigation. Keep behind ST-011 so the recurring governance-review workflow lands before broader asset-catalog and validation work.
 
 ### ST-013: Split investigation docs into landing pages and focused fragments
 - Type: infrastructure
@@ -193,7 +178,21 @@
 
 ## Review
 
-(Empty)
+### ST-012: Add discoverable AI-governance asset catalog and validation
+- Type: infrastructure
+- Source: PO
+- Value: 4 · Effort: S(2) · WSJF: 2.0
+- Completed: 2026-05-05
+- Blocked by: none
+- Touches: `.github/prompts/`, `.github/instructions/`, `.github/planning/`, `docs/`
+- Acceptance criteria:
+  - [x] A documented metadata contract exists for repo AI-governance assets covering prompts, instructions, and planned future extensions such as agents or skills
+  - [x] A machine-readable inventory or index exposes the repo's AI-governance assets and their intended use
+  - [x] Validation guidance or automation detects drift between asset metadata, indexes, and published docs
+  - [x] Contribution guidance defines what prompt/instruction/skill-style additions are accepted, rejected, or deferred
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-012.md`
+- Docs: `docs/investigations/awesome-copilot-applicability-review.md`, `docs/investigations/workflow-and-prompt-design.md`, `docs/investigations/context-engineering-principles.md`
+- Notes: Follow-up from the awesome-copilot applicability investigation.
 
 ---
 

@@ -346,12 +346,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.5 - Validate drift behavior and local-command boundary |
-| **Last successful command** | git status --short .github/workflows |
-| **Expected outputs produced** | Drift failure and recovery validated; local-only boundary confirmed with no workflow changes |
-| **Next task** | Task 4.6 - Close out story governance artifacts |
+| **Last completed task** | Task 4.6 - Close out story governance artifacts |
+| **Last successful command** | Select-String -Path FollowUpSessionLog.txt -Pattern "ST-012|Review" |
+| **Expected outputs produced** | ST-012 moved to Review with acceptance criteria complete; FollowUpSessionLog updated for review handoff |
+| **Next task** | PO review and acceptance for ST-012 |
 | **Known blockers** | None |
-| **Last updated** | 2026-05-05T13:25:53.2020125+02:00 |
+| **Last updated** | 2026-05-05T13:27:39.6150056+02:00 |
 
 ### Progress History
 
@@ -362,6 +362,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-05-05T13:21:27.6829544+02:00 | Task 4.3 | completed | Red checkpoint failed (3 tests), then green checkpoint passed; refactor checkpoint remained green; wrapper scripts verified for dotnet invocation | Execute Task 4.4 |
 | 2026-05-05T13:24:05.9568144+02:00 | Task 4.4 | completed | Build script generated catalog JSON/Markdown; verification found instruction assets and reserved categories in outputs | Execute Task 4.5 |
 | 2026-05-05T13:25:53.2020125+02:00 | Task 4.5 | completed | Validate passed on clean state; controlled markdown drift produced non-zero validation failure; rebuild restored green validation; workflows status remained empty | Execute Task 4.6 |
+| 2026-05-05T13:27:39.6150056+02:00 | Task 4.6 | completed | Board shows ST-012 in Review with completed criteria; FollowUpSessionLog updated with ST-012 review handoff | Present results to PO for acceptance |
 
 ### Avoidance
 
@@ -421,9 +422,9 @@ At story completion:
 
 (Summarize at completion: what was achieved, what remains, lessons learned.)
 
-Achieved: -
-Remains: -
-Lesson: -
+Achieved: Added governance metadata contract, contribution policy, hybrid validator tooling, generated asset catalog outputs, and drift validation workflow; moved ST-012 to Review.
+Remains: PO review and acceptance decision for ST-012.
+Lesson: Deterministic local generation plus explicit drift checks gives reliable governance-asset auditing without adding CI enforcement in this story.
 
 ---
 

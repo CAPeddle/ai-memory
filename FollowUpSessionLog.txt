@@ -3,21 +3,24 @@
 ## Last Session: 2026-05-05
 
 ### Accomplished
-- Accepted ST-001 and moved it from Review to Done on the board.
-- Preserved ST-001 execution artifacts and verification outcomes without reopening implementation tasks.
+- Executed ST-012 Tasks 4.1 through 4.5 from the Ready ExecPlan using atomic commits after each task.
+- Added governance metadata contract and contribution policy docs under docs/governance.
+- Implemented hybrid validator tooling (PowerShell wrappers + .NET validator + TDD tests) and generated asset catalog JSON/Markdown outputs.
+- Verified drift behavior: clean validate success, forced drift non-zero failure, rebuild recovery, and no .github/workflows changes.
+- Moved ST-012 to Review on the board with all acceptance criteria checked.
 
 ### Resume Point
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-001.md`
-- Task: `accepted` — ST-001 is complete and closed.
-- Next action: backlog prioritization or `/plan` for ST-012.
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-012.md`
+- Task: `Task 4.6 complete` — ST-012 is in Review pending PO acceptance.
+- Next action: PO review/acceptance for ST-012, then move to Done or capture review feedback.
 
 ### Avoidance
-- Keep using repo-local `NuGet.config` with explicit `--configfile` and `--source` for restore commands in this repo.
-- For xunit.v3 on the current .NET 8 flow, keep the VSTest bridge packages in test projects unless a new approved plan changes runner strategy.
-- Maintain explicit red-green checkpoints in ExecPlan test-bearing tasks; treat host/discovery/package aborts during red checkpoints as blockers.
+- Keep ST-012 validation local-only in this story; do not add CI workflow enforcement for governance-catalog checks.
+- Execute wrapper scripts in this terminal via direct invocation (& .\\.github\\planning\\scripts\\*.ps1) to avoid nested pwsh interruption behavior.
+- Preserve explicit red-green checkpoints for validator behavior; do not skip red failure evidence.
 
 ### Board State
 - In Progress: none.
-- Review: none.
+- Review: ST-012.
 - Done: ST-001, ST-014, ST-011.
-- Backlog: ST-012 remains the next planning target.
+- Backlog: ST-013 is the next planning target.
