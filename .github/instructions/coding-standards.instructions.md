@@ -1,3 +1,13 @@
+---
+name: "Coding Standards"
+summary: "Repository coding conventions and architecture constraints for ai-memory"
+asset_type: "instruction"
+status: "active"
+owners:
+	- "ai-memory-maintainers"
+source_path: ".github/instructions/coding-standards.instructions.md"
+---
+
 # Coding Standards — ai-memory
 
 ## Language & Framework

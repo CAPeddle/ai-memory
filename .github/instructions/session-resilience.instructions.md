@@ -1,3 +1,13 @@
+---
+name: "Session Resilience"
+summary: "Session-level execution safety and commit hygiene rules"
+asset_type: "instruction"
+status: "active"
+owners:
+   - "ai-memory-maintainers"
+source_path: ".github/instructions/session-resilience.instructions.md"
+---
+
 # Session Resilience
 
 These rules apply to every agent session regardless of prompt mode.

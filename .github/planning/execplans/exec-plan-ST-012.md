@@ -346,18 +346,19 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.1 - Create governance metadata contract artifacts |
-| **Last successful command** | Select-String -Path docs/governance/asset-metadata-contract.md -Pattern "prompt|instruction|skill|agent|hook|workflow|plugin" |
-| **Expected outputs produced** | docs/governance/asset-metadata-contract.md; .github/planning/assets/asset-catalog.schema.json; .github/planning/assets/asset-catalog-source.json |
-| **Next task** | Task 4.2 - Add contribution guidance and normalize in-file metadata |
+| **Last completed task** | Task 4.2 - Add contribution guidance and normalize in-file metadata |
+| **Last successful command** | Select-String -Path .github/instructions/*.md -Pattern "^---" -CaseSensitive |
+| **Expected outputs produced** | docs/governance/asset-contribution-policy.md; frontmatter added to .github/instructions/*.instructions.md |
+| **Next task** | Task 4.3 - Implement hybrid validator using explicit TDD red-green |
 | **Known blockers** | None |
-| **Last updated** | 2026-05-05T13:15:17.7529022+02:00 |
+| **Last updated** | 2026-05-05T13:16:39.0481358+02:00 |
 
 ### Progress History
 
 | Timestamp (ISO) | Task | Status | Evidence / outputs | Next step |
 |---|---|---|---|---|
 | 2026-05-05T13:15:17.7529022+02:00 | Task 4.1 | completed | Created contract/schema/source files; Test-Path checks True; Select-String matched prompt/instruction/skill/agent/hook/workflow/plugin | Execute Task 4.2 |
+| 2026-05-05T13:16:39.0481358+02:00 | Task 4.2 | completed | Added contribution policy and instruction frontmatter; verification found Accepted/Rejected/Deferred sections and frontmatter markers | Execute Task 4.3 |
 
 ### Avoidance
 
