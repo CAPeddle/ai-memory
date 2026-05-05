@@ -4,10 +4,10 @@
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.6 — Create solution and verify end-to-end |
-| **Last successful command** | `dotnet test src/AiMemory.sln --no-restore --no-build` |
-| **Expected outputs produced** | `src/AiMemory.sln` exists and contains all three projects; root `ai-memory.sln` removed; solution-level restore/build/test succeeded with 1 passing smoke test |
-| **Next task** | Task 4.7 — Update board and session log |
+| **Last completed task** | Task 4.7 — Update board and session log |
+| **Last successful command** | `Select-String -Path ".github/planning/story-board.md" -Pattern "ST-001"` |
+| **Expected outputs produced** | ST-001 moved to `## Review` on the board with completed acceptance criteria and a `Completed` date; `FollowUpSessionLog.txt` updated to the current session state and resume guidance |
+| **Next task** | Story execution complete — awaiting PO review/acceptance in board `Review` |
 | **Known blockers** | None |
 | **Last updated** | 2026-05-05 |
 
@@ -28,6 +28,7 @@
 | 2026-05-05T11:51:04.5355607+02:00 | Task 4.5 | completed | Restore/build succeeded with revised test-project packages; red checkpoint produced exactly one failing smoke test; final green-state build/test succeeded with 1 passed, 0 failed | Start Task 4.5a |
 | 2026-05-05T11:53:14.2365999+02:00 | Task 4.5a | completed | `Select-String` verification confirmed the new TDD guidance in coding standards plus `/plan` and `/continue` prompts | Start Task 4.6 |
 | 2026-05-05T11:55:58.7568326+02:00 | Task 4.6 | completed | Removed root solution file, created `src/AiMemory.sln`, added Core/Server/Tests, and solution restore/build/test passed (1/1 smoke tests) | Start Task 4.7 |
+| 2026-05-05T11:58:05.0828790+02:00 | Task 4.7 | completed | Board updated with ST-001 in Review and completed criteria; session log replaced with ST-001 execution outcomes and resume guidance | Await PO review/acceptance |
 | — | — | — | — | — |
 
 ### Avoidance

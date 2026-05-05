@@ -1,31 +1,26 @@
 # FollowUpSessionLog — ai-memory
 
-## Last Session: 2026-05-04
+## Last Session: 2026-05-05
 
 ### Accomplished
-- Completed ST-014 Tasks 4.2-4.6 under `/continue`.
-- Captured the approved runtime gap after WSL2 install succeeded but memsearch indexing still failed in the `pymilvus` / `protobuf` import chain.
-- Created `docs/investigations/memsearch-applicability-review.md`.
-- Added bounded `See also` links in `docs/investigations/memory-architecture-design.md` and `docs/investigations/sqlite-vs-postgresql.md`.
-- Kept ST-004 and ST-005 board metadata unchanged because the review concluded `Board edit required = no`.
-- Removed `.tmp/st-014-memsearch/` and completed final verification.
-- Accepted ST-011 and moved it to Done; moved ST-014 from Refined to Review.
-- PO accepted ST-014 and it was moved from Review to Done.
-- Applied a git-tooling fallback pattern by pivoting to direct non-interactive `git -C` commands for the final board-transition commit path.
+- Resolved ST-001 plan-review blocker for Task 4.5 by standardizing xunit.v3 test execution on the VSTest bridge path (`xunit.runner.visualstudio` + `Microsoft.NET.Test.Sdk`).
+- Completed ST-001 Task 4.5 with explicit TDD red-green execution: one intentional failing smoke test checkpoint, then one passing smoke test.
+- Completed ST-001 Task 4.5a by adding repo-wide TDD guidance to coding standards plus `/plan` and `/continue` prompts.
+- Completed ST-001 Task 4.6 by removing stray root `ai-memory.sln`, creating `src/AiMemory.sln`, wiring all three projects, and passing solution-level restore/build/test.
+- Moved ST-001 to Review on the board with completed acceptance criteria.
 
 ### Resume Point
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-014.md`
-- Task: `accepted` — ST-014 is complete and closed.
-- Next action: backlog prioritization. `ST-012` remains the next planning target unless the PO chooses a different story.
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-001.md`
+- Task: `4.7 complete` — story execution complete.
+- Next action: PO review and acceptance decision for ST-001 in Review.
 
 ### Avoidance
-- Do not retry native Windows Milvus Lite local indexing for ST-014.
-- Do not widen ST-004 or ST-005 based on ST-014 without a later approved plan.
-- If git tooling fails twice or returns unusable output, switch to direct `git -C <repo>` commands and log the pivot reason.
+- Keep using repo-local `NuGet.config` with explicit `--configfile` and `--source` for restore commands in this repo.
+- For xunit.v3 on the current .NET 8 flow, keep the VSTest bridge packages in test projects unless a new approved plan changes runner strategy.
+- Maintain explicit red-green checkpoints in ExecPlan test-bearing tasks; treat host/discovery/package aborts during red checkpoints as blockers.
 
 ### Board State
-- In Progress: none
-- Review: none relevant.
+- In Progress: none.
+- Review: ST-001.
 - Done: ST-014, ST-011.
-- Refined: (none relevant).
 - Backlog: ST-012 remains the next planning target.

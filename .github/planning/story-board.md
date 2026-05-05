@@ -54,22 +54,6 @@
 - Docs: `.github/planning/execplans/_TEMPLATE.md`, `.github/planning/execplans/exec-plan-ST-014.md`
 - Notes: Improves PO visibility when reviewing completed stories. Seed query packet: `.github/planning/query-packets/QP-015-execplan-outcomes-template.md`.
 
-### ST-001: Scaffold .NET solution and project structure
-- Type: infrastructure
-- Source: PO
-- Value: 5 · Effort: S(2) · WSJF: 2.5
-- Blocked by: none
-- Touches: `src/`, `tests/`, `*.sln`, `Directory.Build.props`, `NuGet.config`, `.github/instructions/`, `.github/prompts/`
-- Acceptance criteria:
-  - [ ] Solution builds with `dotnet build`
-  - [ ] Three projects exist: AiMemory.Core, AiMemory.Server, AiMemory.Tests
-  - [ ] Directory.Build.props sets C# 12, .NET 8, nullable enabled, implicit usings
-  - [ ] `dotnet test` runs and executes one placeholder smoke test
-  - [ ] Coding standards plus `/plan` and `/continue` prompts state that testing follows TDD principles
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-001.md`
-- Docs: `docs/investigations/language-stack-recommendation.md`
-- Notes: Foundation for all subsequent stories. Plan-review resolved: Task 4.5 now uses xunit.v3 plus VSTest-bridge packages for deterministic `dotnet test` on the pinned .NET 8 SDK path, with red-green checkpoints moved into the smoke test content.
-
 ### ST-002: Implement SQLite schema + FTS5 + migrations
 - Type: infrastructure
 - Source: PO
@@ -209,7 +193,22 @@
 
 ## Review
 
-(Empty)
+### ST-001: Scaffold .NET solution and project structure
+- Type: infrastructure
+- Source: PO
+- Value: 5 · Effort: S(2) · WSJF: 2.5
+- Completed: 2026-05-04
+- Blocked by: none
+- Touches: `src/`, `tests/`, `*.sln`, `Directory.Build.props`, `NuGet.config`, `.github/instructions/`, `.github/prompts/`
+- Acceptance criteria:
+  - [x] Solution builds with `dotnet build`
+  - [x] Three projects exist: AiMemory.Core, AiMemory.Server, AiMemory.Tests
+  - [x] Directory.Build.props sets C# 12, .NET 8, nullable enabled, implicit usings
+  - [x] `dotnet test` runs and executes one placeholder smoke test
+  - [x] Coding standards plus `/plan` and `/continue` prompts state that testing follows TDD principles
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-001.md`
+- Docs: `docs/investigations/language-stack-recommendation.md`
+- Notes: Execution complete; ready for PO review and acceptance.
 
 ---
 
