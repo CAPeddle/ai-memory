@@ -166,6 +166,12 @@
 
 ## Refined
 
+(Empty)
+
+---
+
+## In Progress
+
 ### ST-016: Research software engineering best practices for governance adoption
 - Type: infrastructure
 - Source: PO
@@ -173,19 +179,13 @@
 - Blocked by: none
 - Touches: `.github/instructions/`, `.github/prompts/`, `.github/planning/`, `docs/investigations/`
 - Acceptance criteria:
-  - [ ] Provisional: A research-backed shortlist of software engineering practices (code quality + C# idioms) is documented with applicability to ai-memory
-  - [ ] Provisional: Recommended governance updates define where each practice is enforced (instructions, prompts, checklists, or automation)
-  - [ ] Provisional: A WoW proposal captures linting/setup expectations and checklist-driven execution guidance for future stories
-  - [ ] Provisional: Adoption guidance identifies what to introduce now vs defer, including rationale and risk
+  - [ ] A research-backed shortlist of software engineering practices (code quality + C# idioms) is documented with applicability to ai-memory
+  - [ ] Recommended governance updates define where each practice is enforced (instructions, prompts, checklists, or automation)
+  - [ ] A WoW proposal captures linting/setup expectations and checklist-driven execution guidance for future stories
+  - [ ] Adoption guidance identifies what to introduce now vs defer, including rationale and risk
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-016.md`
 - Docs: `docs/investigations/workflow-and-prompt-design.md`, `.github/instructions/coding-standards.instructions.md`
-- Notes: Seed query packet: `.github/planning/query-packets/QP-016-se-best-practices-governance.md`. Intake intent: prepare code-quality and C# idiom governance before future implementation work.
-
----
-
-## In Progress
-
-(Empty — WIP limit: 1)
+- Notes: Seed query packet: `.github/planning/query-packets/QP-016-se-best-practices-governance.md`.
 
 ---
 
