@@ -3,30 +3,23 @@
 ## Last Session: 2026-05-06
 
 ### Accomplished
-- Completed ST-016 (SE best practices governance) in full across a multi-session workflow: `/plan-new`, `/plan`, `/continue`.
-- Executed all 6 ExecPlan tasks with atomic commits:
-  - Task 4.1: `docs/investigations/se-best-practices.md` (6 categories, adoption timeline) — c060546
-  - Task 4.2: `.editorconfig` (formatting + C# naming rules) — a169756
-  - Task 4.3: 4 Roslyn analyzers in `Directory.Build.props`; 3 suppressions; 2 code fixes; build clean — d5d1b55
-  - Task 4.4: `coverlet.collector` + `.gitignore` coverage entry — 6a76441
-  - Task 4.5: SOLID/DRY/Design Patterns/Dependency Management sections in `coding-standards.instructions.md` — 935accb
-  - Task 4.6: `ways-of-working.instructions.md` (5 sections: Pre-Implementation Checklist, Analyzer Expectations, Coverage Tracking, Code Review Quality Gate, Dependency Update Cadence) — b50421b
-- Moved ST-016 from In Progress → Review with all 4 acceptance criteria checked.
-- Updated ExecPlan §5b Recovery Ledger and §7b Outcomes & Retrospective.
+- Executed ST-015 via `/continue` from `.github/planning/execplans/exec-plan-ST-015.md`.
+- Completed Task 4.1: added mandatory `§1b. Outcomes & Conclusions` to `.github/planning/execplans/_TEMPLATE.md` with required fields and type-specific prompts — commit `686f74e`.
+- Completed Task 4.2: clarified template flow so `§1b` is primary and `§7b` is retrospective depth — commit `a38de72`.
+- Completed Task 4.3: aligned worked example at `.github/planning/execplans/supporting_material/exec-plan-ST-014-outcomes-worked-example.md` to required field labels and spike framing — commit `d1b315a`.
+- Completed Task 4.4: reran bounded validations, updated recovery/execution logs, and moved ST-015 to Review in board — commit `efa23cf`.
 
 ### Resume Point
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-016.md`
-- Task: Closeout committed. ST-016 is in Review awaiting PO acceptance.
-- Next action: PO reviews ST-016 for acceptance, then `/plan` for next story (ST-013, ST-015, or ST-002 per board priority).
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-015.md`
+- Task: All tasks complete; story is in Review awaiting PO acceptance.
+- Next action: PO review/accept ST-015, then pick next execution story (likely ST-013 planning follow-up or ST-002 implementation path).
 
 ### Avoidance
-- SonarAnalyzer version references in ExecPlans must be verified on NuGet before authoring the plan (10.8.0.117992 does not exist; 10.9.0.115408 does).
-- CA1707 (no underscores in names) conflicts with xunit `MethodName_Scenario_ExpectedResult` convention — suppress globally in .editorconfig with rationale.
-- SA1633 (file headers) and SA0001 (XML doc) are intentionally deferred to Phase 2; do not attempt to fix in early stories.
-- Use `git add -f .gitignore` when .gitignore is untracked (it may be ignored by a parent rule).
+- Case-sensitive verification literals in ExecPlans should match heading text exactly to avoid false negatives during `/continue` checks.
+- Keep unrelated local workspace drift out of story commits (for this run: `tests/AiMemory.Tests/AiMemory.Tests.csproj`, `analyze-file-types.ps1`).
 
 ### Board State
 - In Progress: none.
-- Review: ST-016.
+- Review: ST-015, ST-016.
 - Done: ST-012, ST-001, ST-014, ST-011.
-- Backlog: ST-013 (split investigation docs), ST-015 (ExecPlan outcomes template), ST-002 onward (implementation).
+- Backlog: ST-013 and ST-002 onward.
