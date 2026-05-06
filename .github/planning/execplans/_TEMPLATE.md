@@ -6,7 +6,7 @@
 > Parent: linked investigation or design doc
 > PLANS.md: This document must be maintained per `.github/planning/execplans/_TEMPLATE.md`
 
-This ExecPlan is a living document. The sections §6b Surprises & Discoveries, §6c Decision Log, and §7b Outcomes & Retrospective must be kept up to date as work proceeds.
+This ExecPlan is a living document. Keep §1b Outcomes & Conclusions current as the primary completion summary, and keep §6b Surprises & Discoveries, §6c Decision Log, and §7b Outcomes & Retrospective up to date as supporting execution detail.
 
 ---
 
@@ -221,7 +221,7 @@ At story completion:
 
 ## §7b. Outcomes & Retrospective
 
-(Summarise at completion: what was achieved, what remains, lessons learned.)
+(Use this section for retrospective depth only. The primary at-a-glance outcomes summary belongs in §1b.)
 
 Achieved: ...
 Remains: ...

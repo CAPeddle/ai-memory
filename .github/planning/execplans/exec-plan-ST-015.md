@@ -261,18 +261,19 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.1 — Add mandatory §1b Outcomes & Conclusions to the template |
-| **Last successful command** | `Select-String -Path ".github/planning/execplans/_TEMPLATE.md" -Pattern "## §1\. Background & Context\|## §1b\. Outcomes & Conclusions\|completion status\|requirements met\|architectural impact\|supporting evidence\|downstream changes\|spike\|feature\|infrastructure\|debt" -CaseSensitive` |
-| **Expected outputs produced** | `.github/planning/execplans/_TEMPLATE.md` includes mandatory `§1b. Outcomes & Conclusions` with required fields and type-specific prompts |
-| **Next task** | Task 4.2 — Reconcile template flow and avoid duplicated outcomes guidance |
+| **Last completed task** | Task 4.2 — Reconcile template flow and avoid duplicated outcomes guidance |
+| **Last successful command** | `Select-String -Path ".github/planning/execplans/_TEMPLATE.md" -Pattern "§1b\. Outcomes & Conclusions\|§7b\|living document\|Definition of Done" -CaseSensitive` |
+| **Expected outputs produced** | `.github/planning/execplans/_TEMPLATE.md` wording now marks `§1b` as primary summary and `§7b` as retrospective depth |
+| **Next task** | Task 4.3 — Update ST-014 worked example artifact to demonstrate the new §1b shape |
 | **Known blockers** | None |
-| **Last updated** | 2026-05-06T12:53:53.1177451+02:00 |
+| **Last updated** | 2026-05-06T12:55:25.2949004+02:00 |
 
 ### Progress History
 
 | Timestamp (ISO) | Task | Status | Evidence / outputs | Next step |
 |---|---|---|---|---|
 | 2026-05-06T12:53:53.1177451+02:00 | Task 4.1 | Completed | Template updated with `§1b`; verification `Select-String` matched headings and required literals | Task 4.2 |
+| 2026-05-06T12:55:25.2949004+02:00 | Task 4.2 | Completed | Template wording updated to set `§1b` as primary outcomes summary and keep `§7b` retrospective-only; verification command passed | Task 4.3 |
 
 ### Avoidance
 
@@ -302,6 +303,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 (Populated during execution — timestamped entries of significant actions)
 
 - 2026-05-06T12:53:53.1177451+02:00 — Completed Task 4.1 by adding mandatory `§1b. Outcomes & Conclusions` in `.github/planning/execplans/_TEMPLATE.md` with shared required fields, evidence rule, and type-specific prompts; verification command passed.
+- 2026-05-06T12:55:25.2949004+02:00 — Completed Task 4.2 by reconciling narrative flow text in `.github/planning/execplans/_TEMPLATE.md` so `§1b` is the primary summary and `§7b` remains retrospective detail; verification command passed.
 
 ---
 
@@ -313,6 +315,10 @@ If a session is interrupted, the executor reads §5b to determine where to resum
   Evidence: Verification command returned all required heading and field matches.
   Impact: Continue with planned sequence to Task 4.2.
 
+- Observation: No unexpected behaviours in Task 4.2.
+  Evidence: Verification command matched `living document`, `§1b`, `Definition of Done`, and `§7b` references.
+  Impact: Continue with planned sequence to Task 4.3.
+
 ---
 
 ## §6c. Decision Log
@@ -321,6 +327,10 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 - Decision: Kept required field names in lower-case literal form inside `§1b`.
   Rationale: Task 4.1 verification is case-sensitive and requires exact literal matches for required phrases.
+  Date: 2026-05-06
+
+- Decision: Preserved the `§7b. Outcomes & Retrospective` heading and clarified its role instead of renaming the section.
+  Rationale: This keeps compatibility with existing templates while making `§1b` the clear primary outcomes location.
   Date: 2026-05-06
 
 ---
@@ -349,3 +359,4 @@ Lesson: ...
 
 - 2026-05-06: Initial Ready ExecPlan authored from PO-scoped QP-015 decisions.
 - 2026-05-06: Execution updates recorded for completed Task 4.1 (ledger, progress history, execution log, decision log).
+- 2026-05-06: Execution updates recorded for completed Task 4.2 (ledger, progress history, execution log, and decision updates).
