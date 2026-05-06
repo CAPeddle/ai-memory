@@ -261,12 +261,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.2 — Reconcile template flow and avoid duplicated outcomes guidance |
-| **Last successful command** | `Select-String -Path ".github/planning/execplans/_TEMPLATE.md" -Pattern "§1b\. Outcomes & Conclusions\|§7b\|living document\|Definition of Done" -CaseSensitive` |
-| **Expected outputs produced** | `.github/planning/execplans/_TEMPLATE.md` wording now marks `§1b` as primary summary and `§7b` as retrospective depth |
-| **Next task** | Task 4.3 — Update ST-014 worked example artifact to demonstrate the new §1b shape |
+| **Last completed task** | Task 4.3 — Update ST-014 worked example artifact to demonstrate the new §1b shape |
+| **Last successful command** | `Select-String -Path .github/planning/execplans/supporting_material/exec-plan-ST-014-outcomes-worked-example.md -Pattern 'Outcomes & Conclusions','Completion status','Key findings','Requirements met','Architectural impact','Supporting evidence','Downstream changes','spike'` |
+| **Expected outputs produced** | `.github/planning/execplans/supporting_material/exec-plan-ST-014-outcomes-worked-example.md` aligned to required `§1b` fields with explicit spike framing and evidence sections |
+| **Next task** | Task 4.4 — Run bounded validation and enforce scope guardrails |
 | **Known blockers** | None |
-| **Last updated** | 2026-05-06T12:55:25.2949004+02:00 |
+| **Last updated** | 2026-05-06T12:58:54.6125095+02:00 |
 
 ### Progress History
 
@@ -274,6 +274,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 |---|---|---|---|---|
 | 2026-05-06T12:53:53.1177451+02:00 | Task 4.1 | Completed | Template updated with `§1b`; verification `Select-String` matched headings and required literals | Task 4.2 |
 | 2026-05-06T12:55:25.2949004+02:00 | Task 4.2 | Completed | Template wording updated to set `§1b` as primary outcomes summary and keep `§7b` retrospective-only; verification command passed | Task 4.3 |
+| 2026-05-06T12:58:54.6125095+02:00 | Task 4.3 | Completed | ST-014 worked example updated with required `§1b` field labels and spike framing; verification matched all required literals | Task 4.4 |
 
 ### Avoidance
 
@@ -304,6 +305,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 - 2026-05-06T12:53:53.1177451+02:00 — Completed Task 4.1 by adding mandatory `§1b. Outcomes & Conclusions` in `.github/planning/execplans/_TEMPLATE.md` with shared required fields, evidence rule, and type-specific prompts; verification command passed.
 - 2026-05-06T12:55:25.2949004+02:00 — Completed Task 4.2 by reconciling narrative flow text in `.github/planning/execplans/_TEMPLATE.md` so `§1b` is the primary summary and `§7b` remains retrospective detail; verification command passed.
+- 2026-05-06T12:58:54.6125095+02:00 — Completed Task 4.3 by updating `.github/planning/execplans/supporting_material/exec-plan-ST-014-outcomes-worked-example.md` to use the required `§1b` field labels and spike-oriented framing; verification command passed.
 
 ---
 
@@ -319,6 +321,10 @@ If a session is interrupted, the executor reads §5b to determine where to resum
   Evidence: Verification command matched `living document`, `§1b`, `Definition of Done`, and `§7b` references.
   Impact: Continue with planned sequence to Task 4.3.
 
+- Observation: PowerShell rendering truncated one regex-based verification output that included `§` literals; a literal-pattern verification rerun produced complete evidence.
+  Evidence: Successful `Select-String` literal-pattern output with line hits for all required Task 4.3 field labels.
+  Impact: Task 4.3 completion confirmed without changing scope or outputs.
+
 ---
 
 ## §6c. Decision Log
@@ -331,6 +337,10 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 - Decision: Preserved the `§7b. Outcomes & Retrospective` heading and clarified its role instead of renaming the section.
   Rationale: This keeps compatibility with existing templates while making `§1b` the clear primary outcomes location.
+  Date: 2026-05-06
+
+- Decision: Adjusted worked-example heading capitalization to literal forms (`Key findings`, `Requirements met`, etc.).
+  Rationale: Task 4.3 verification requires case-sensitive literal matches for required §1b field names.
   Date: 2026-05-06
 
 ---
@@ -360,3 +370,4 @@ Lesson: ...
 - 2026-05-06: Initial Ready ExecPlan authored from PO-scoped QP-015 decisions.
 - 2026-05-06: Execution updates recorded for completed Task 4.1 (ledger, progress history, execution log, decision log).
 - 2026-05-06: Execution updates recorded for completed Task 4.2 (ledger, progress history, execution log, and decision updates).
+- 2026-05-06: Execution updates recorded for completed Task 4.3 (ledger, progress history, execution log, surprises, and decision updates).

@@ -16,11 +16,11 @@ Insert the following section immediately after `## §1. Background & Context` in
 
 ## §1b. Outcomes & Conclusions
 
-### Completion Snapshot
+### Completion status and snapshot
 
 | Field | Value |
 |---|---|
-| **Story type** | Spike / investigation |
+| **Story type** | spike / investigation |
 | **Completion status** | Complete and PO-accepted |
 | **Primary deliverable** | `docs/investigations/memsearch-applicability-review.md` |
 | **Secondary deliverables** | Bounded `See also` links in `docs/investigations/memory-architecture-design.md` and `docs/investigations/sqlite-vs-postgresql.md` |
@@ -51,7 +51,7 @@ Stated plainly: ST-014 delivered an investigation and recommendation package, no
 - No widening of ST-004 or ST-005 scope.
 - No storage-direction change away from SQLite-first.
 
-### Key Findings And Recommendations
+### Key findings and recommendations
 
 | Focus area | Result | Recommendation label | Why it matters |
 |---|---|---|---|
@@ -60,7 +60,7 @@ Stated plainly: ST-014 delivered an investigation and recommendation package, no
 | Progressive disclosure (`search -> expand -> transcript`) | Most interesting memsearch idea, but still a later retrieval-surface concern rather than a current ST-005 scope change | `Adapt later` | Revisit after base hybrid retrieval exists and transcript provenance can be modelled cleanly |
 | Markdown as source of truth vs SQLite-first | Useful for portability and transparency, but not a better fit than the approved SQLite-first design | `Keep current` | ai-memory depends on structured records, recall logging, and database-centric state |
 
-### Requirements Met Vs Unmet
+### Requirements met vs unmet
 
 | Scope item | Status | Evidence |
 |---|---|---|
@@ -77,14 +77,14 @@ Summary:
 - Unmet: none.
 - Degraded: local runtime depth. The plan explicitly allowed docs+code fallback, and the final story recommendations were kept within that confidence level.
 
-### Architectural Impact
+### Architectural impact
 
 - Supported the current architectural defaults rather than overturning them.
 - Reinforced SQLite-first storage, FTS5-first text search, and the current hybrid retrieval direction.
 - Reinforced ST-004 as OpenAI-first for now while preserving room for later provider broadening.
 - Identified progressive disclosure as a future enhancement candidate, not a current ST-005 scope change.
 
-### Supporting Evidence
+### Supporting evidence
 
 - `docs/investigations/memsearch-applicability-review.md`: final investigation output and recommendation.
 - `docs/investigations/memory-architecture-design.md`: updated with bounded traceability back to the memsearch review.
@@ -92,7 +92,7 @@ Summary:
 - `.github/planning/story-board.md`: shows that ST-004 and ST-005 were left unchanged and ST-014 was closed separately.
 - `.github/planning/execplans/supporting_material/exec-plan-ST-014-copy.md`: records the execution history, runtime gap, decisions, and the original closeout narrative that this example is summarising.
 
-### Downstream Changes
+### Downstream changes
 
 - Added `See also` links in `docs/investigations/memory-architecture-design.md` and `docs/investigations/sqlite-vs-postgresql.md`.
 - Left ST-004 and ST-005 board metadata unchanged because the investigation concluded `Board edit required = no`.
