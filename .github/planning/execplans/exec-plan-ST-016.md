@@ -487,18 +487,23 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | — |
-| **Last successful command** | — |
-| **Expected outputs produced** | — |
-| **Next task** | Task 4.1 — Create investigation doc |
+| **Last completed task** | Task 4.6 — Create ways-of-working.instructions.md |
+| **Last successful command** | `git commit b50421b` |
+| **Expected outputs produced** | ways-of-working.instructions.md created; 5 sections; commit b50421b |
+| **Next task** | Closeout: board → Review, §7b, FollowUpSessionLog |
 | **Known blockers** | None |
-| **Last updated** | — |
+| **Last updated** | 2026-05-06 |
 
 ### Progress History
 
 | Timestamp (ISO) | Task | Status | Evidence / outputs | Next step |
-|---|---|---|---|---|
-| — | — | — | — | — |
+|---|---|---|---|-—|
+| 2026-05-06T00:00:00Z | Task 4.1 | ✅ Done | `docs/investigations/se-best-practices.md` created; 24 section matches; commit c060546 | Task 4.2 |
+| 2026-05-06T00:01:00Z | Task 4.2 | ✅ Done | `.editorconfig` created; build 0 errors 0 warnings; commit a169756 | Task 4.3 |
+| 2026-05-06T00:02:00Z | Task 4.3 | ✅ Done | 4 analyzers added; 3 suppressions + 2 code fixes applied; build clean; commit d5d1b55 | Task 4.4 |
+| 2026-05-06T00:03:00Z | Task 4.4 | ✅ Done | coverlet.collector added; coverage.cobertura.xml produced; .gitignore committed; commit 6a76441 | Task 4.5 |
+| 2026-05-06T00:04:00Z | Task 4.5 | ✅ Done | coding-standards updated with 4 sections; count=4; commit 935accb | Task 4.6 |
+| 2026-05-06T00:05:00Z | Task 4.6 | ✅ Done | ways-of-working.instructions.md created; 5 sections; commit b50421b | Closeout |
 
 ### Avoidance
 
@@ -532,7 +537,25 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 ## §6b. Surprises & Discoveries
 
-(Document unexpected behaviours, performance tradeoffs, bugs, or insights. Provide evidence.)
+- **Observation:** SonarAnalyzer.CSharp 10.8.0.117992 (reference version in ExecPlan) did not exist on NuGet; best match was 10.9.0.115408.
+  **Evidence:** NU1603 error on `dotnet restore`.
+  **Impact:** Updated version to 10.9.0.115408. No functional difference expected.
+
+- **Observation:** SA1633 (file headers) and SA0001 (XML doc analysis) fired immediately for all files.
+  **Evidence:** Build errors on first analyzer run.
+  **Impact:** Suppressed both in `.editorconfig` with dated comments; deferred to Phase 2.
+
+- **Observation:** CA1707 (no underscores in member names) fired on `Placeholder_WhenExecuted_Passes()` test method, directly conflicting with the project's `MethodName_Scenario_ExpectedResult` naming convention.
+  **Evidence:** Build error for `SmokeTests.Placeholder_WhenExecuted_Passes()`.
+  **Impact:** Suppressed CA1707 globally in `.editorconfig` with rationale noting the intentional test naming convention.
+
+- **Observation:** S6966 (await RunAsync) and MA0004 (ConfigureAwait) fired on `Program.cs app.Run()`.
+  **Evidence:** Build errors in AiMemory.Server.
+  **Impact:** Both trivially fixed: `app.Run()` → `await app.RunAsync().ConfigureAwait(false)`.
+
+- **Observation:** SA1518 (file must end with newline) fired on both `SmokeTests.cs` and `Program.cs`.
+  **Evidence:** Build errors for both files.
+  **Impact:** Trivially fixed by adding terminal newlines to both files.
 
 ---
 
@@ -554,4 +577,26 @@ At story completion:
 
 ## §7b. Outcomes & Retrospective
 
-(Summarise at completion: what was achieved, what remains, lessons learned.)
+### What was achieved
+
+All 6 tasks executed and verified. The ai-memory project now has:
+
+- **`docs/investigations/se-best-practices.md`** — Research-backed rationale for 6 SE practice categories (SOLID, DRY, Design Patterns, Static Analysis, Code Coverage, Dependency Management) with adoption timeline and ai-memory applicability assessment. Commit c060546.
+- **`.editorconfig`** — Formatting rules (charset, indent, newlines) + C# naming rules (_camelCase fields, I-prefix interfaces, PascalCase constants) + 3 documented suppressions (SA1633, SA0001, CA1707). Commit a169756.
+- **4 Roslyn analyzers** in `Directory.Build.props` — NetAnalyzers, StyleCop, SonarAnalyzer, Meziantou — all active on every build with TreatWarningsAsErrors. Build is clean (0 errors, 0 warnings). Commit d5d1b55.
+- **Coverage tracking** — `coverlet.collector` in test project; cobertura.xml coverage report produced on `dotnet test --collect`. Commit 6a76441.
+- **`coding-standards.instructions.md`** — New sections: SOLID Principles, DRY, Design Patterns, Dependency Management with cross-reference footer. Commit 935accb.
+- **`ways-of-working.instructions.md`** — Pre-Implementation Checklist, Analyzer Expectations, Coverage Tracking, Code Review Quality Gate, Dependency Update Cadence. Commit b50421b.
+
+### What remains
+
+- SA1633 file headers deferred to Phase 2 (governance maturity)
+- SA0001 XML doc analysis deferred to ST-006 area
+- CA1707 suppressed globally to preserve `MethodName_Scenario_ExpectedResult` test convention
+- Coverage threshold gate deferred (no hard minimum set)
+
+### Lessons learned
+
+- SonarAnalyzer version references in ExecPlans must be verified against NuGet before commit
+- CA1707 conflicts with xunit naming conventions — suppress with explicit rationale rather than rename tests
+- PrivateAssets="all" is essential for analyzer packages to prevent them appearing as transitive dependencies
