@@ -1,12 +1,6 @@
 ---
 name: "Recover"
 description: "Recover ai-memory sessions through forensic analysis, avoidance notes, and ExecPlan annotations"
-summary: "Recover ai-memory sessions through forensic analysis, avoidance notes, and ExecPlan annotations"
-asset_type: "prompt"
-status: "active"
-owners:
-	- "ai-memory-maintainers"
-source_path: ".github/prompts/recover.prompt.md"
 agent: "agent"
 ---
 

@@ -1,12 +1,6 @@
 ---
 name: "Governance Review"
 description: "Audit ai-memory governance artifacts for drift, apply safe fixes, escalate risky changes"
-summary: "Audit ai-memory governance artifacts for drift, apply safe fixes, escalate risky changes"
-asset_type: "prompt"
-status: "active"
-owners:
-   - "ai-memory-maintainers"
-source_path: ".github/prompts/governance-review.prompt.md"
 agent: "agent"
 ---
 

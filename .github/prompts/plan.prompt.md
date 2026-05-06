@@ -1,12 +1,6 @@
 ---
 name: "Plan"
 description: "Collaborative planning for ai-memory: scoping, story creation, query packets, and ExecPlan authoring"
-summary: "Collaborative planning for ai-memory: scoping, story creation, query packets, and ExecPlan authoring"
-asset_type: "prompt"
-status: "active"
-owners:
-	- "ai-memory-maintainers"
-source_path: ".github/prompts/plan.prompt.md"
 agent: "agent"
 ---
 
