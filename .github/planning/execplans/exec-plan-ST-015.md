@@ -261,18 +261,18 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | — |
-| **Last successful command** | — |
-| **Expected outputs produced** | — |
-| **Next task** | Task 4.1 — Add mandatory §1b Outcomes & Conclusions to the template |
+| **Last completed task** | Task 4.1 — Add mandatory §1b Outcomes & Conclusions to the template |
+| **Last successful command** | `Select-String -Path ".github/planning/execplans/_TEMPLATE.md" -Pattern "## §1\. Background & Context\|## §1b\. Outcomes & Conclusions\|completion status\|requirements met\|architectural impact\|supporting evidence\|downstream changes\|spike\|feature\|infrastructure\|debt" -CaseSensitive` |
+| **Expected outputs produced** | `.github/planning/execplans/_TEMPLATE.md` includes mandatory `§1b. Outcomes & Conclusions` with required fields and type-specific prompts |
+| **Next task** | Task 4.2 — Reconcile template flow and avoid duplicated outcomes guidance |
 | **Known blockers** | None |
-| **Last updated** | — |
+| **Last updated** | 2026-05-06T12:53:53.1177451+02:00 |
 
 ### Progress History
 
 | Timestamp (ISO) | Task | Status | Evidence / outputs | Next step |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| 2026-05-06T12:53:53.1177451+02:00 | Task 4.1 | Completed | Template updated with `§1b`; verification `Select-String` matched headings and required literals | Task 4.2 |
 
 ### Avoidance
 
@@ -301,15 +301,17 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 (Populated during execution — timestamped entries of significant actions)
 
+- 2026-05-06T12:53:53.1177451+02:00 — Completed Task 4.1 by adding mandatory `§1b. Outcomes & Conclusions` in `.github/planning/execplans/_TEMPLATE.md` with shared required fields, evidence rule, and type-specific prompts; verification command passed.
+
 ---
 
 ## §6b. Surprises & Discoveries
 
 (Document unexpected behaviours, tradeoffs, or governance edge cases. Provide evidence.)
 
-- Observation: ...
-  Evidence: ...
-  Impact: ...
+- Observation: No unexpected behaviours in Task 4.1.
+  Evidence: Verification command returned all required heading and field matches.
+  Impact: Continue with planned sequence to Task 4.2.
 
 ---
 
@@ -317,9 +319,9 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 (Record every decision made during execution with rationale.)
 
-- Decision: ...
-  Rationale: ...
-  Date: ...
+- Decision: Kept required field names in lower-case literal form inside `§1b`.
+  Rationale: Task 4.1 verification is case-sensitive and requires exact literal matches for required phrases.
+  Date: 2026-05-06
 
 ---
 
@@ -346,3 +348,4 @@ Lesson: ...
 ## Revision Notes
 
 - 2026-05-06: Initial Ready ExecPlan authored from PO-scoped QP-015 decisions.
+- 2026-05-06: Execution updates recorded for completed Task 4.1 (ledger, progress history, execution log, decision log).

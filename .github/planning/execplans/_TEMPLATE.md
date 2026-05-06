@@ -18,6 +18,30 @@ Do not refer to prior plans or external docs — embed all needed knowledge here
 
 ---
 
+## §1b. Outcomes & Conclusions
+
+This is a required section for completion visibility. Capture outcomes here so readers can see at a glance what was actually delivered before scanning execution detail.
+
+Required fields (all story types):
+- completion status: full, partial, or not completed
+- key findings/achievements: the most important delivered results
+- requirements met vs unmet: explicit list of what passed and what did not
+- architectural impact: supported, challenged, or unchanged decisions
+- supporting evidence: command outputs and artifact references that prove each key claim
+- downstream changes: board updates, follow-on stories, or document changes triggered by this work
+
+Evidence rule:
+- Every key claim must cite at least one concrete verification command output or artifact reference.
+
+Type-specific prompts:
+- spike stories: emphasize discoveries, learnings, confidence level, and recommendation quality
+- feature stories: emphasize delivered behaviour, acceptance coverage, and user-visible outcomes
+- infrastructure/debt stories: emphasize risk reduction, maintainability improvements, and operational impact
+
+Use concise bullet points and avoid repeating low-signal execution log detail.
+
+---
+
 ## §2. Definition of Done
 
 Acceptance criteria phrased as observable behaviour:
