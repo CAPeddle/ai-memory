@@ -1,0 +1,38 @@
+# Temporary directories
+/tmp/
+.tmp/
+
+# Build artifacts
+bin/
+obj/
+.vs/
+
+# Test results and coverage
+**/TestResults/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node modules
+node_modules/
+package-lock.json
+yarn.lock
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# NuGet
+packages/
+*.nupkg
