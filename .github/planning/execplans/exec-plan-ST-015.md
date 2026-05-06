@@ -261,12 +261,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.3 — Update ST-014 worked example artifact to demonstrate the new §1b shape |
-| **Last successful command** | `Select-String -Path .github/planning/execplans/supporting_material/exec-plan-ST-014-outcomes-worked-example.md -Pattern 'Outcomes & Conclusions','Completion status','Key findings','Requirements met','Architectural impact','Supporting evidence','Downstream changes','spike'` |
-| **Expected outputs produced** | `.github/planning/execplans/supporting_material/exec-plan-ST-014-outcomes-worked-example.md` aligned to required `§1b` fields with explicit spike framing and evidence sections |
-| **Next task** | Task 4.4 — Run bounded validation and enforce scope guardrails |
+| **Last completed task** | Task 4.4 — Run bounded validation and enforce scope guardrails |
+| **Last successful command** | `git diff --name-only` |
+| **Expected outputs produced** | Required field checks passed for template and worked example; scope guardrail confirmed ST-015 edits stayed in planning artifacts while unrelated pre-existing file changes remained excluded |
+| **Next task** | None — all §4 tasks completed; proceed with story closeout and PO review |
 | **Known blockers** | None |
-| **Last updated** | 2026-05-06T12:58:54.6125095+02:00 |
+| **Last updated** | 2026-05-06T13:00:20.9441636+02:00 |
 
 ### Progress History
 
@@ -275,6 +275,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-05-06T12:53:53.1177451+02:00 | Task 4.1 | Completed | Template updated with `§1b`; verification `Select-String` matched headings and required literals | Task 4.2 |
 | 2026-05-06T12:55:25.2949004+02:00 | Task 4.2 | Completed | Template wording updated to set `§1b` as primary outcomes summary and keep `§7b` retrospective-only; verification command passed | Task 4.3 |
 | 2026-05-06T12:58:54.6125095+02:00 | Task 4.3 | Completed | ST-014 worked example updated with required `§1b` field labels and spike framing; verification matched all required literals | Task 4.4 |
+| 2026-05-06T13:00:20.9441636+02:00 | Task 4.4 | Completed | Re-ran required literal checks for template/worked-example and executed `git diff --name-only` scope guardrail | Story closeout |
 
 ### Avoidance
 
@@ -306,6 +307,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - 2026-05-06T12:53:53.1177451+02:00 — Completed Task 4.1 by adding mandatory `§1b. Outcomes & Conclusions` in `.github/planning/execplans/_TEMPLATE.md` with shared required fields, evidence rule, and type-specific prompts; verification command passed.
 - 2026-05-06T12:55:25.2949004+02:00 — Completed Task 4.2 by reconciling narrative flow text in `.github/planning/execplans/_TEMPLATE.md` so `§1b` is the primary summary and `§7b` remains retrospective detail; verification command passed.
 - 2026-05-06T12:58:54.6125095+02:00 — Completed Task 4.3 by updating `.github/planning/execplans/supporting_material/exec-plan-ST-014-outcomes-worked-example.md` to use the required `§1b` field labels and spike-oriented framing; verification command passed.
+- 2026-05-06T13:00:20.9441636+02:00 — Completed Task 4.4 by replaying Task 4.1–4.3 verification checks and running `git diff --name-only` for scope guardrails; outputs confirmed ST-015 artifacts met required literals and no broad historical ExecPlan retrofit occurred.
 
 ---
 
@@ -325,6 +327,10 @@ If a session is interrupted, the executor reads §5b to determine where to resum
   Evidence: Successful `Select-String` literal-pattern output with line hits for all required Task 4.3 field labels.
   Impact: Task 4.3 completion confirmed without changing scope or outputs.
 
+- Observation: `git diff --name-only` in Task 4.4 included a pre-existing unrelated local change in `tests/AiMemory.Tests/AiMemory.Tests.csproj`.
+  Evidence: Task 4.4 verification output listed `tests/AiMemory.Tests/AiMemory.Tests.csproj` alongside ST-015 artifacts.
+  Impact: Kept unrelated file excluded from staging/commits and continued with scoped ST-015 closeout.
+
 ---
 
 ## §6c. Decision Log
@@ -343,6 +349,10 @@ If a session is interrupted, the executor reads §5b to determine where to resum
   Rationale: Task 4.3 verification requires case-sensitive literal matches for required §1b field names.
   Date: 2026-05-06
 
+- Decision: Treated pre-existing `tests/AiMemory.Tests/AiMemory.Tests.csproj` workspace drift as out-of-scope for ST-015.
+  Rationale: Task 4.4 failure-handling requires excluding unrelated files from this story rather than folding them into planning commits.
+  Date: 2026-05-06
+
 ---
 
 ## §7. Compound Step / Closeout
@@ -359,9 +369,9 @@ At story completion:
 
 (Summarize completion reflections. Primary at-a-glance outcomes must be captured in §1b of the updated template artifacts.)
 
-Achieved: ...
-Remains: ...
-Lesson: ...
+Achieved: Added mandatory `§1b. Outcomes & Conclusions` near the top of the template, clarified narrative flow so `§1b` is primary and `§7b` is retrospective depth, and aligned the ST-014 worked example to the required field labels with spike framing and evidence anchors.
+Remains: PO review and acceptance confirmation for ST-015 in Review state.
+Lesson: Case-sensitive verification literals should be reflected directly in field labels to keep execution checks deterministic.
 
 ---
 
@@ -371,3 +381,4 @@ Lesson: ...
 - 2026-05-06: Execution updates recorded for completed Task 4.1 (ledger, progress history, execution log, decision log).
 - 2026-05-06: Execution updates recorded for completed Task 4.2 (ledger, progress history, execution log, and decision updates).
 - 2026-05-06: Execution updates recorded for completed Task 4.3 (ledger, progress history, execution log, surprises, and decision updates).
+- 2026-05-06: Execution updates recorded for completed Task 4.4 and story closeout notes.
