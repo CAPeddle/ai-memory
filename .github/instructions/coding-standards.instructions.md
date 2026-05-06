@@ -87,3 +87,40 @@ tests/
 - Resource URIs: `memory://` scheme
 - Use `ModelContextProtocol.AspNetCore` for HTTP transport
 - Tools call the same `IMemoryService` as REST endpoints
+
+## SOLID Principles
+
+- **SRP:** Each class/service has one reason to change. `ISearchService` handles search only; don't combine search + consolidation in one class.
+- **ISP:** Prefer small, focused interfaces. `IMemoryRepository` for CRUD, `ISearchService` for search, `IEmbeddingService` for embeddings — not one mega-interface.
+- **DIP:** Depend on abstractions. Core defines interfaces; Server provides implementations registered in `Program.cs`. Never `new` up a service directly — always inject via constructor.
+- **OCP:** Design services to be extended (new embedding providers, new search strategies) without modifying existing implementations where practical.
+- **LSP:** Any implementation of an interface must be substitutable without altering correctness. Use NSubstitute mocks in tests to verify substitutability.
+
+## DRY (Don't Repeat Yourself)
+
+- Extract shared query patterns into helper methods on the repository rather than duplicating SQL across services.
+- Reuse configuration-binding patterns — don't hand-parse settings in multiple places.
+- Avoid premature DRY: if two blocks look similar but serve different domain purposes, keep them separate until a third use proves the abstraction.
+- Prefer a single source of truth for constants (e.g., `DefaultSearchLimit` in one place, referenced elsewhere).
+
+## Design Patterns
+
+- **Repository:** `IMemoryRepository` encapsulates data access. All SQL lives in repository implementations — never in services.
+- **Strategy:** `IEmbeddingService` allows swapping embedding providers (OpenAI, local ONNX) without changing consuming code.
+- **Factory:** `IDbConnectionFactory` creates and configures database connections. Services never open connections directly.
+- **Result:** Use `Result<T>` for operations that can fail expectedly (duplicate insert, not-found). Reserve exceptions for truly exceptional conditions.
+- **Don't force it:** Only apply a pattern when it solves a real problem in this codebase. Simpler code > pattern compliance.
+
+## Dependency Management
+
+- Pin exact package versions in `.csproj` files (no floating versions like `*` or version ranges).
+- Review NuGet updates monthly: `dotnet list package --outdated` from `src/`.
+- Prefer packages with: active maintenance, no known CVEs, compatible license (MIT/Apache-2.0 preferred).
+- Minimize transitive dependency count — fewer dependencies = smaller attack surface.
+- Document any package with a non-MIT/Apache license in this file when added.
+- Major version upgrades: create a dedicated story rather than inlining during feature work.
+
+---
+
+For rationale behind these practices, see `docs/investigations/se-best-practices.md`.
+For operational checklists, see `.github/instructions/ways-of-working.instructions.md`.
