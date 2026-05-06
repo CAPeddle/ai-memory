@@ -69,3 +69,22 @@ csharp_style_expression_bodied_properties = true:suggestion
 csharp_style_expression_bodied_accessors = true:suggestion
 csharp_using_directive_placement = outside_namespace:warning
 dotnet_sort_system_directives_first = true
+
+# ── Analyzer suppressions (Phase 1) ──────────────────────────────────────────
+# Rules suppressed here are deferred to Phase 2 for tightening or permanent
+# exception documentation. Each suppression includes the rule ID and reason.
+
+# Suppressed: SA1633 — StyleCop requires file-header copyright comments.
+# Deferred: will add a standard header template in a future governance story.
+dotnet_diagnostic.SA1633.severity = none
+
+# Suppressed: SA0001 — StyleCop XML-doc analysis requires GenerateDocumentationFile=true.
+# Deferred: enabling XML docs and adding doc comments to all public APIs is
+# scoped to a future story (likely alongside REST API work in ST-006).
+dotnet_diagnostic.SA0001.severity = none
+
+# Suppressed: CA1707 — Underscores in member names.
+# This rule conflicts with the project's established test naming convention:
+# MethodName_Scenario_ExpectedResult (coded in coding-standards.instructions.md).
+# Suppressed globally as the convention is intentional.
+dotnet_diagnostic.CA1707.severity = none
