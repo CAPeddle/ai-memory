@@ -1,25 +1,32 @@
 # FollowUpSessionLog — ai-memory
 
-## Last Session: 2026-05-06
+## Last Session: 2026-05-13
 
 ### Accomplished
-- Executed ST-015 via `/continue` from `.github/planning/execplans/exec-plan-ST-015.md`.
-- Completed Task 4.1: added mandatory `§1b. Outcomes & Conclusions` to `.github/planning/execplans/_TEMPLATE.md` with required fields and type-specific prompts — commit `686f74e`.
-- Completed Task 4.2: clarified template flow so `§1b` is primary and `§7b` is retrospective depth — commit `a38de72`.
-- Completed Task 4.3: aligned worked example at `.github/planning/execplans/supporting_material/exec-plan-ST-014-outcomes-worked-example.md` to required field labels and spike framing — commit `d1b315a`.
-- Completed Task 4.4: reran bounded validations, updated recovery/execution logs, and moved ST-015 to Review in board — commit `efa23cf`.
+- Executed ST-017 (Open Brain Pivot Evaluation) via `/continue` from `.github/planning/execplans/exec-plan-ST-017.md`.
+- Completed Task 4.1: Mapped OB1 extension model from GitHub source (server/index.ts, entity-extraction schema, agent-memory schema, extensions template).
+- Completed Tasks 4.2–4.5: Analysed per-ingest synthesis feasibility, graph similarity feasibility, stack tradeoffs, and hosting costs for all 4 platform options.
+- Completed Task 4.6: Wrote investigation document at `docs/investigations/openbrain-pivot-evaluation.md` (11 sections, scored options matrix, recommendation).
+- Completed Task 4.7: Moved ST-017 to Review; added ST-018 and ST-019 to Backlog; updated FollowUpSessionLog.
+
+### Key Finding
+- **Recommendation: Stay Current (Option C, score 4.50)** — C#/.NET 8 + SQLite.
+- OB1 provides neither per-ingest synthesis nor graph similarity out of the box. Both must be built on any platform.
+- Option C wins: per-ingest synthesis is trivial in C# (domain event → ISynthesisService → FileWriter), costs $0/month (SQLite + Ollama), no stack switch required.
+- Option D-C# (Build Fresh with Postgres + AGE) is the runner-up (score 3.55) and remains viable if graph traversal via openCypher is later required.
 
 ### Resume Point
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-015.md`
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-017.md`
 - Task: All tasks complete; story is in Review awaiting PO acceptance.
-- Next action: PO review/accept ST-015, then pick next execution story (likely ST-013 planning follow-up or ST-002 implementation path).
-
-### Avoidance
-- Case-sensitive verification literals in ExecPlans should match heading text exactly to avoid false negatives during `/continue` checks.
-- Keep unrelated local workspace drift out of story commits (for this run: `tests/AiMemory.Tests/AiMemory.Tests.csproj`, `analyze-file-types.ps1`).
+- Next action: PO review/accept ST-017 recommendation, then plan ST-018 and ST-019 (per-ingest synthesis capability stories).
 
 ### Board State
 - In Progress: none.
-- Review: ST-015, ST-016.
+- Review: ST-015, ST-016, ST-017.
 - Done: ST-012, ST-001, ST-014, ST-011.
-- Backlog: ST-013 and ST-002 onward.
+- Backlog: ST-018, ST-019, ST-013, ST-002 onward.
+
+### Avoidance
+- Case-sensitive verification literals in ExecPlans should match heading text exactly to avoid false negatives during `/continue` checks.
+- Keep unrelated local workspace drift out of story commits.
+- Apache AGE is NOT available on Supabase managed service — do not plan graph stories assuming AGE unless self-hosted Postgres is confirmed.

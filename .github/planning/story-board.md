@@ -2,11 +2,44 @@
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
 > Next planning target: ST-013 — split investigation docs into landing pages and focused fragments.
-> Last updated: 2026-05-05
+> Last updated: 2026-05-13
 
 ---
 
 ## Backlog
+
+### ST-018: Graph schema + structural fingerprints for SQLite
+- Type: feature
+- Source: ST-017 spike outcome
+- Value: 4
+- Blocked by: ST-002, ST-003
+- Touches: `src/AiMemory.Core/`, database migrations
+- Acceptance criteria:
+  - [ ] SQLite tables for graph layer: `entities`, `edges`, `thought_entities` with typed relationships
+  - [ ] AFTER INSERT trigger on memories table queues thoughts for entity extraction
+  - [ ] Structural fingerprint vector stored alongside semantic embedding in sqlite-vec
+  - [ ] Recursive CTE query for multi-hop traversal implemented in `IMemoryRepository`
+  - [ ] Unit tests covering graph insert, traversal, and structural similarity lookup
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-018.md` (to be created)
+- Docs: `docs/investigations/openbrain-pivot-evaluation.md`, `docs/investigations/memory-architecture-design.md`
+- Notes: Downstream from ST-017. Borrows entity-extraction schema pattern from OB1. Structural fingerprints as sqlite-vec vectors cover ~80% of structural similarity use cases without Apache AGE.
+
+### ST-019: ISynthesisService + Obsidian-compatible Markdown view writer
+- Type: feature
+- Source: ST-017 spike outcome
+- Value: 4
+- Blocked by: ST-003, ST-004
+- Touches: `src/AiMemory.Core/`
+- Acceptance criteria:
+  - [ ] `ISynthesisService` interface defined in AiMemory.Core
+  - [ ] Default implementation calls `ILlmClient` after `IMemoryRepository.StoreAsync()` fires
+  - [ ] Writes Obsidian-compatible Markdown files to a configurable output path
+  - [ ] Incremental update: tracks last-synthesised thought ID per view; does not fully regenerate on every write
+  - [ ] At least one built-in view type: topic-summary board
+  - [ ] Unit tests with mocked LLM client
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-019.md` (to be created)
+- Docs: `docs/investigations/openbrain-pivot-evaluation.md`, `docs/investigations/memory-architecture-design.md`
+- Notes: Downstream from ST-017. Per-ingest synthesis with direct filesystem writes — the key advantage of C# over OB1 cloud-hosted approaches. Can use Ollama for $0 synthesis cost.
 
 ### ST-013: Split investigation docs into landing pages and focused fragments
 - Type: infrastructure
@@ -150,8 +183,6 @@
 
 ## Refined
 
-(Empty)
-
 ---
 
 ## In Progress
@@ -192,6 +223,24 @@
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-016.md`
 - Docs: `docs/investigations/se-best-practices.md`, `.github/instructions/coding-standards.instructions.md`, `.github/instructions/ways-of-working.instructions.md`
 - Notes: All 6 tasks executed and verified. Build clean, tests pass, 4 analyzers active.
+
+### ST-017: Evaluate Open Brain as base layer vs current architecture
+- Type: spike
+- Source: PO
+- Value: 5
+- Blocked by: none
+- Touches: `docs/investigations/`, `.github/planning/`
+- Acceptance criteria:
+  - [x] Documented assessment of Open Brain (OB1) as a platform for ai-memory's use cases — can it be used directly with plugins/recipes/schemas?
+  - [x] Evaluation of per-ingest synthesis extension feasibility on OB1 vs current C#/SQLite architecture — which base makes this easier to build?
+  - [x] Evaluation of graph/structural similarity search extension feasibility on OB1 vs current architecture
+  - [x] Stack tradeoff analysis: TypeScript/Python (OB1 ecosystem) vs C#/.NET 8 (current) — evaluation of ecosystem, hosting, and extension authoring
+  - [x] Hosting model evaluation: Supabase/OpenRouter (OB1 default) vs local-first (current) vs hybrid
+  - [x] Clear recommendation: use OB1 as-is + extend, fork OB1, adopt patterns in C#, or stay current course — with rationale
+  - [x] Impact assessment on existing backlog stories ST-002 through ST-010 if pivot is recommended
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-017.md`
+- Docs: `docs/investigations/openbrain-pivot-evaluation.md`
+- Notes: Spike complete. Recommendation: Stay Current on C#/.NET 8 + SQLite (Option C, score 4.50). ST-018 and ST-019 added to Backlog for per-ingest synthesis capability.
 
 ---
 
