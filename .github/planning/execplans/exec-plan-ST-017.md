@@ -1,6 +1,6 @@
 # ExecPlan — ST-017: Evaluate Open Brain as base layer vs current architecture
 
-> Status: ✅ Complete
+> Status: ⚠️ Review feedback — revision required
 > Story: ST-017
 > Created: 2025-07-17
 > Parent: docs/investigations/memory-architecture-design.md
@@ -92,7 +92,7 @@ Since both extensions must be built regardless of platform, the question is: whi
 
 ## §1b. Outcomes & Conclusions
 
-**Completion status:** Full
+**Completion status:** Revision required — PO review identified two analytical gaps
 
 **Key findings/achievements:**
 - Investigation document written at `docs/investigations/openbrain-pivot-evaluation.md` with all 11 required sections
@@ -100,6 +100,12 @@ Since both extensions must be built regardless of platform, the question is: whi
 - All 4 options rated across 5 weighted dimensions; Option C (Stay Current) wins with weighted score 4.50 vs next-best 3.55 (Option D-C#)
 - **Recommendation: Stay Current on C#/.NET 8 + SQLite** — confirmed by source evidence, not assumption
 - Two follow-on implementation stories identified: ST-018 (graph schema + structural fingerprints) and ST-019 (ISynthesisService + Markdown writer)
+
+**PO Review Feedback (2026-05-14) — two gaps identified:**
+1. **Cloud-side synthesis workflow not evaluated.** The investigation dismissed OB1 per-ingest synthesis partly because "Edge Functions cannot write to local filesystems." The PO described a viable hybrid workflow: ingest via OB1 → trigger cloud-side extraction + LLM synthesis (Edge Function worker) → write compiled Markdown to Supabase Storage or table → sync/download to local Obsidian vault via polling daemon. This separates synthesis (cloud) from delivery (local sync) and makes the OB1 entity-extraction trigger pattern (`trg_queue_entity_extraction`) directly usable. Answers the open question: "Can OB1's Supabase edge functions + schemas support per-ingest synthesis?" — yes, if a bridge to local files is accepted.
+2. **Free-tier cost gap overstated.** The document's primary cost comparison ($25–30/month vs $0) uses Supabase Pro pricing. At personal-use scale, the Free tier ($0 Supabase + $2–5 OpenRouter) might suffice, reducing the cost advantage of Option C significantly. The 7-day inactivity pause caveat was noted but not weighted into the scoring.
+
+**Next action:** Revise `docs/investigations/openbrain-pivot-evaluation.md` §4 (per-ingest synthesis — Options A & B) and §7 (hosting costs — free-tier analysis). Then re-evaluate whether §8 scores and §9 recommendation change. If recommendation holds, explain why despite the narrower gaps. If it changes, update follow-on stories.
 
 **Requirements met vs unmet:**
 - R1 Documented OB1 platform assessment ✅ — doc §3 Options + §4, §5 analyses
@@ -668,12 +674,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.7 — Update Board, ExecPlan, Session Log |
-| **Last successful command** | git commit (all tasks) |
-| **Expected outputs produced** | `docs/investigations/openbrain-pivot-evaluation.md`, board updated, §1b populated, session log refreshed |
-| **Next task** | — (all tasks complete) |
-| **Known blockers** | None |
-| **Last updated** | 2026-05-13 |
+| **Last completed task** | Task 4.7 — all tasks complete, but PO review returned with feedback |
+| **Last successful command** | git commit `4efaaec` |
+| **Expected outputs produced** | `docs/investigations/openbrain-pivot-evaluation.md` (needs revision), board updated, §1b populated |
+| **Next task** | Revise investigation doc §4 (Options A/B synthesis) and §7 (free-tier costs), then re-evaluate §8 scores and §9 recommendation |
+| **Known blockers** | None — revision is straightforward desk work |
+| **Last updated** | 2026-05-14 |
 
 ### Progress History
 
@@ -686,10 +692,17 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-05-13T00:00Z | Task 4.5 | ✅ Complete | Hosting costs: Option C = $0, OB1 options = $27–30/month (Pro) | Task 4.6 |
 | 2026-05-13T00:00Z | Task 4.6 | ✅ Complete | `docs/investigations/openbrain-pivot-evaluation.md` created with 11 sections; all R1–R7 requirements met | Task 4.7 |
 | 2026-05-13T00:00Z | Task 4.7 | ✅ Complete | Board updated; §1b populated; session log refreshed; committed | — |
+| 2026-05-14T00:00Z | PO Review | ⚠️ Feedback | Two analytical gaps identified: (1) cloud-side synthesis hybrid workflow not evaluated for Options A/B, (2) free-tier cost analysis missing from scoring. See §1b PO Review Feedback. | Revise §4, §7 in investigation doc; re-evaluate §8/§9 |
 
 ### Avoidance
 
-_(Append dated entries here. Do not delete prior guidance.)_
+#### From /recover 2026-05-14
+
+- DO NOT: Dismiss cloud-hosted synthesis solely because Edge Functions cannot write local files. The PO's workflow separates synthesis (cloud-side) from delivery (local sync daemon). Evaluate the full pipeline, not just the final write step.
+- DO NOT: Use production-tier pricing ($25/month Pro) as the sole cost comparison against $0 local. Always include free-tier analysis with caveats clearly weighted.
+- INSTEAD: When evaluating feasibility of a cloud-hosted capability, consider hybrid architectures (cloud processing + local sync) as a valid pattern, and rate the bridge complexity as a separate sub-dimension rather than a blanket dismissal.
+- INSTEAD: Present cost comparisons as a range (free-tier with caveats → production tier) and let the PO decide which scenario is relevant.
+- WATCH FOR: Bias toward local-first conclusions that underweight cloud-with-sync patterns. The investigation had a subtle local-first framing that inflated Option C's advantages on local file writing without adequately considering that cloud synthesis + local sync is an established pattern (e.g., Supabase Storage + Obsidian Remotely Save plugin).
 
 ---
 
@@ -728,6 +741,18 @@ All analysis performed in-session. Per-ingest synthesis and graph similarity con
 **2026-05-13 — Task 4.6: Investigation document written**
 
 File created at `docs/investigations/openbrain-pivot-evaluation.md`. All 11 sections present. Scored options matrix complete. Recommendation: Option C — Stay Current.
+
+**2026-05-14 — /recover: PO review feedback**
+
+ST-017 was in Review. PO raised two challenges during review:
+1. §4 Options A/B per-ingest synthesis: The cloud-side synthesis workflow (trigger → Edge Function worker → Supabase Storage → local sync daemon) was not evaluated. The investigation's "Edge Functions cannot write to local filesystems" treated the constraint as terminal rather than evaluating a bridge pattern.
+2. §7 Hosting costs: Free-tier personal-use cost ($0 Supabase + $2–5 OpenRouter) was noted in the table but not factored into the scoring matrix. The primary comparison used $25–30/month vs $0, overstating the cost gap.
+
+PO verbatim:
+> "Using the Open Brain, remote access would allow the synthesis to happen at extraction. Therefore the work flow would be that the ingestion is as per Open Brain WoW - direct in with some processing to enable structural similarity and FTS5 + vector + RRF + MMR. Then this would trigger some extraction processing to create the synthesis into a local obsidian file."
+> "The following statement assumes the full production cost is required, if we stay within low usage it could be lower cost?"
+
+Failure mode: **Wrong approach (partial)** — analysis completed but reached conclusions based on incomplete evaluation of two scenarios the PO cares about. Investigation doc needs targeted revision, not rewrite.
 
 ---
 

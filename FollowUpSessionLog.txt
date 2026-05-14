@@ -1,32 +1,28 @@
 # FollowUpSessionLog — ai-memory
 
-## Last Session: 2026-05-13
+## Last Session: 2026-05-14
 
-### Accomplished
-- Executed ST-017 (Open Brain Pivot Evaluation) via `/continue` from `.github/planning/execplans/exec-plan-ST-017.md`.
-- Completed Task 4.1: Mapped OB1 extension model from GitHub source (server/index.ts, entity-extraction schema, agent-memory schema, extensions template).
-- Completed Tasks 4.2–4.5: Analysed per-ingest synthesis feasibility, graph similarity feasibility, stack tradeoffs, and hosting costs for all 4 platform options.
-- Completed Task 4.6: Wrote investigation document at `docs/investigations/openbrain-pivot-evaluation.md` (11 sections, scored options matrix, recommendation).
-- Completed Task 4.7: Moved ST-017 to Review; added ST-018 and ST-019 to Backlog; updated FollowUpSessionLog.
+### What Happened
+- ST-017 (Open Brain Pivot Evaluation) was in Review with all tasks completed (commit `4efaaec`).
+- PO provided review feedback challenging two analytical conclusions in `docs/investigations/openbrain-pivot-evaluation.md`.
+- `/recover` performed: annotated ExecPlan §5b (Recovery Ledger, Avoidance) and §6 (Execution Log) with PO feedback. No work re-executed.
 
-### Key Finding
-- **Recommendation: Stay Current (Option C, score 4.50)** — C#/.NET 8 + SQLite.
-- OB1 provides neither per-ingest synthesis nor graph similarity out of the box. Both must be built on any platform.
-- Option C wins: per-ingest synthesis is trivial in C# (domain event → ISynthesisService → FileWriter), costs $0/month (SQLite + Ollama), no stack switch required.
-- Option D-C# (Build Fresh with Postgres + AGE) is the runner-up (score 3.55) and remains viable if graph traversal via openCypher is later required.
+### PO Feedback (two gaps)
+1. **Cloud-side synthesis not evaluated** — Investigation dismissed OB1 per-ingest synthesis because "Edge Functions cannot write to local filesystems." PO described a viable hybrid: ingest → cloud synthesis (trigger + Edge Function worker) → Supabase Storage → local Obsidian sync. This was not evaluated.
+2. **Free-tier costs overstated** — Cost comparison used $25+/month Pro pricing. At personal-use scale, Supabase Free ($0 + $2–5 OpenRouter) might suffice, narrowing the cost gap significantly.
 
 ### Resume Point
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-017.md`
-- Task: All tasks complete; story is in Review awaiting PO acceptance.
-- Next action: PO review/accept ST-017 recommendation, then plan ST-018 and ST-019 (per-ingest synthesis capability stories).
+- Status: ⚠️ Review feedback — revision required
+- Next action: `/continue` should revise investigation doc §4 (Options A/B per-ingest synthesis) and §7 (free-tier cost analysis), then re-evaluate §8 scores and §9 recommendation. Read §5b Avoidance section first.
 
 ### Board State
-- In Progress: none.
-- Review: ST-015, ST-016, ST-017.
-- Done: ST-012, ST-001, ST-014, ST-011.
-- Backlog: ST-018, ST-019, ST-013, ST-002 onward.
+- In Progress: none
+- Review: ST-015, ST-016, ST-017 (revision needed)
+- Done: ST-012, ST-001, ST-014, ST-011
+- Backlog: ST-018, ST-019, ST-013, ST-002 onward
 
-### Avoidance
-- Case-sensitive verification literals in ExecPlans should match heading text exactly to avoid false negatives during `/continue` checks.
-- Keep unrelated local workspace drift out of story commits.
-- Apache AGE is NOT available on Supabase managed service — do not plan graph stories assuming AGE unless self-hosted Postgres is confirmed.
+### Avoidance (MUST READ before next /continue)
+- DO NOT dismiss cloud-hosted synthesis because Edge Functions can't write local files — evaluate the cloud→local sync pipeline as a whole.
+- DO NOT use production-tier pricing as the sole cost comparison — always include free-tier analysis.
+- Read ExecPlan §5b Avoidance section dated 2026-05-14 for full guidance.
