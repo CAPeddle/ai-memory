@@ -183,6 +183,24 @@
 
 ## Refined
 
+### ST-017: Evaluate Open Brain as base layer vs current architecture
+- Type: spike
+- Source: PO
+- Value: 5
+- Blocked by: none
+- Touches: `docs/investigations/`, `.github/planning/`
+- Acceptance criteria:
+  - [x] Documented assessment of Open Brain (OB1) as a platform for ai-memory's use cases — can it be used directly with plugins/recipes/schemas?
+  - [x] Evaluation of per-ingest synthesis extension feasibility on OB1 vs current C#/SQLite architecture — which base makes this easier to build?
+  - [x] Evaluation of graph/structural similarity search extension feasibility on OB1 vs current architecture
+  - [x] Stack tradeoff analysis: TypeScript/Python (OB1 ecosystem) vs C#/.NET 8 (current) — evaluation of ecosystem, hosting, and extension authoring
+  - [x] Hosting model evaluation: Supabase/OpenRouter (OB1 default) vs local-first (current) vs hybrid
+  - [x] Clear recommendation: use OB1 as-is + extend, fork OB1, adopt patterns in C#, or stay current course — with rationale
+  - [x] Impact assessment on existing backlog stories ST-002 through ST-010 if pivot is recommended
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-017.md`
+- Docs: `docs/investigations/openbrain-pivot-evaluation.md`
+- Notes: Plan-review resolved. Tasks 4.8 and 4.9 add a dedicated OpenRouter subsection, concrete provider/model examples, A/B-only re-score if warranted, and refreshed closeout. Recommendation may change if the new evidence supports it.
+
 ---
 
 ## In Progress
@@ -223,26 +241,6 @@
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-016.md`
 - Docs: `docs/investigations/se-best-practices.md`, `.github/instructions/coding-standards.instructions.md`, `.github/instructions/ways-of-working.instructions.md`
 - Notes: All 6 tasks executed and verified. Build clean, tests pass, 4 analyzers active.
-
-### ST-017: Evaluate Open Brain as base layer vs current architecture
-- Type: spike
-- Source: PO
-- Value: 5
-- Blocked by: plan-review
-- Touches: `docs/investigations/`, `.github/planning/`
-- Acceptance criteria:
-  - [x] Documented assessment of Open Brain (OB1) as a platform for ai-memory's use cases — can it be used directly with plugins/recipes/schemas?
-  - [x] Evaluation of per-ingest synthesis extension feasibility on OB1 vs current C#/SQLite architecture — which base makes this easier to build?
-  - [x] Evaluation of graph/structural similarity search extension feasibility on OB1 vs current architecture
-  - [x] Stack tradeoff analysis: TypeScript/Python (OB1 ecosystem) vs C#/.NET 8 (current) — evaluation of ecosystem, hosting, and extension authoring
-  - [x] Hosting model evaluation: Supabase/OpenRouter (OB1 default) vs local-first (current) vs hybrid
-  - [x] Clear recommendation: use OB1 as-is + extend, fork OB1, adopt patterns in C#, or stay current course — with rationale
-  - [x] Impact assessment on existing backlog stories ST-002 through ST-010 if pivot is recommended
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-017.md`
-- Docs: `docs/investigations/openbrain-pivot-evaluation.md`
-- Notes: Spike revised after PO feedback. Recommendation remains Stay Current on C#/.NET 8 + SQLite (Option C, score 4.50). OB1 per-ingest synthesis is viable via trigger + worker + remote Markdown + local sync, but adds bridge complexity. ST-018 and ST-019 remain the downstream stories. PO requested further changes after the revised review pass; blocked pending `/plan`.
-
----
 
 ## Done
 

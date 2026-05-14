@@ -3,27 +3,22 @@
 ## Last Session: 2026-05-14
 
 ### Accomplished
-- Resumed ST-017 from the recovery state and executed the revision pass for Task 4.6 and Task 4.7.
-- Revised `docs/investigations/openbrain-pivot-evaluation.md` to evaluate OB1's trigger → worker → remote Markdown → local sync path and to include Supabase Free hobby-scale costs.
-- Re-scored options: Option A rose from 1.95 to 2.10; Option C remained 4.50 and stayed the recommendation.
-- Updated the ST-017 ExecPlan outcomes, Recovery Ledger, board note, and this handoff log.
-
-### Key Finding
-- **Recommendation remains Option C — Stay Current on C#/.NET 8 + SQLite.**
-- OB1 can support per-ingest synthesis if remote Markdown storage plus a local sync bridge is acceptable.
-- Supabase Free narrows the hobby-scale cost gap, but the full stated workload still pushes A/B toward Pro and leaves them with more operational complexity than Option C.
+- Resolved the ST-017 `plan-review` blocker through `/plan`.
+- Updated QP-017 and the ST-017 ExecPlan to add an explicit OpenRouter-focused revision pass.
+- Added Task 4.8 (dedicated OpenRouter subsection, concrete examples, A/B re-score if warranted) and Task 4.9 (refresh closeout artifacts and unblock renewed review).
 
 ### Resume Point
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-017.md`
-- Status: ⚠️ Blocked by `plan-review` after revised review pass
-- Next action: PO requested further changes after review. Story is now blocked by `plan-review`; run `/plan` for ST-017 before any more edits.
+- Status: ✅ Ready for `/continue`
+- Next action: Execute Task 4.8, then Task 4.9.
 
 ### Board State
 - In Progress: none
-- Review: ST-015, ST-016, ST-017 (blocked by `plan-review`)
+- Refined: ST-017
+- Review: ST-015, ST-016
 - Done: ST-012, ST-001, ST-014, ST-011
 - Backlog: ST-018, ST-019, ST-013, ST-002 onward
 
 ### Avoidance
-- Evaluate cloud-hosted workflows end-to-end, including the sync bridge back to local tools.
-- Present both hobby-scale and full-baseline cost ranges when comparing hosting models.
+- State OpenRouter portability explicitly; do not treat it as magically exclusive to OB1.
+- Still weight the practical OpenRouter benefit mainly toward A/B unless direct evidence supports broader score changes.

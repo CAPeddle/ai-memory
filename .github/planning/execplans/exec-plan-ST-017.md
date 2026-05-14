@@ -1,6 +1,6 @@
 # ExecPlan — ST-017: Evaluate Open Brain as base layer vs current architecture
 
-> Status: ⚠️ Blocked by plan-review after revised review pass
+> Status: ✅ Ready for /continue — OpenRouter revision planned
 > Story: ST-017
 > Created: 2025-07-17
 > Parent: docs/investigations/memory-architecture-design.md
@@ -77,6 +77,7 @@ Since both extensions must be built regardless of platform, the question is: whi
 | **sqlite-vec** | SQLite extension for vector similarity search |
 | **Obsidian** | A Markdown-based personal knowledge management tool; the PO wants compiled views to be Obsidian-compatible |
 | **OB1** | Open Brain version 1 — the candidate platform being evaluated |
+| **OpenRouter** | A multi-provider LLM gateway that exposes models from multiple vendors behind one API, allowing model switching, provider redundancy, and centralized pricing/routing |
 | **Structural fingerprint** | A vector encoding of a document's structural properties (heading depth, list nesting, entity graph shape) rather than its semantic content |
 
 ### The four platform options being evaluated
@@ -140,6 +141,7 @@ Acceptance criteria phrased as observable behaviour:
 5. After reading §1b of this ExecPlan, it contains a completion summary with supporting evidence references.
 6. After checking `.github/planning/story-board.md`, ST-017 appears under "Review" (moved from "Refined").
 7. After checking `FollowUpSessionLog.txt`, it contains session outcomes reflecting this spike.
+8. After reading the revised stack/hosting analysis, there is a dedicated OpenRouter subsection that: (a) states OpenRouter is portable in theory, (b) evaluates its practical benefit mainly for Options A/B, and (c) uses 2–3 concrete provider/model examples.
 
 ---
 
@@ -166,6 +168,8 @@ Status: ✅ Ready for /continue
 - **2026-05-14 escalation:** The revised ST-017 spike outcome was presented for PO acceptance after Tasks 4.6 and 4.7 completed. The PO selected **"Further changes needed"** but did not specify the requested changes in the approval round.
 - **Why this is a plan-review blocker:** The current ExecPlan fully covers the completed revision pass (cloud-side synthesis analysis and free-tier cost re-evaluation). Any additional changes would be new scope not defined in §4 task steps.
 - **Required next step:** Run `/plan` for ST-017 to capture the new requested changes explicitly before any further execution.
+- **2026-05-14 scope resolution (draft):** The PO has now specified the missing scope. Add a dedicated OpenRouter subsection, use 2–3 concrete model/provider examples, state OpenRouter portability explicitly, re-score A/B if warranted, and allow the recommendation to change if evidence supports it.
+- **2026-05-14 approval:** The PO approved the revised plan. The blocker is resolved. `/continue` should resume at Task 4.8 and then Task 4.9.
 
 ---
 
@@ -178,6 +182,7 @@ Status: ✅ Ready for /continue
 | R3 | Graph/structural similarity feasibility evaluation (ST-017 AC3) | Investigation doc §4.2 with 4 option ratings | Task 4.3 | Each option has a feasibility rating |
 | R4 | Stack tradeoff analysis (ST-017 AC4) | Investigation doc §4.3 comparison table with 6 dimensions | Task 4.4 | Table with 6 rows (one per dimension) and 2+ columns |
 | R5 | Hosting model evaluation (ST-017 AC5) | Investigation doc §4.4 cost table with monthly estimates | Task 4.5 | Table with cost per option |
+| R5a | OpenRouter-specific platform-value analysis (plan-review resolution 2026-05-14) | Investigation doc dedicated OpenRouter subsection with portability note, 2–3 provider/model examples, and stated impact on A/B scoring | Task 4.8 | `Select-String` for `OpenRouter` + example provider names + portability wording |
 | R6 | Clear recommendation with rationale (ST-017 AC6) | Investigation doc §6 Recommendation section naming a specific option | Task 4.6 | "Recommend" keyword present with named option (A/B/C/D) |
 | R7 | Impact assessment on ST-002–ST-010 (ST-017 AC7) | Investigation doc §7 Impact Assessment with per-option consequences | Task 4.6 | Each of ST-002 through ST-010 mentioned or grouped with disposition |
 
@@ -190,6 +195,7 @@ Status: ✅ Ready for /continue
 | Tool | Purpose | Version |
 |------|---------|---------|
 | Web browser / `fetch_webpage` | Read OB1 GitHub repo, Supabase docs, AGE docs | Any |
+| Web browser / `fetch_webpage` | Read OpenRouter pricing/model pages and docs for current representative examples | Any |
 | GitHub MCP tools | Read OB1 repo structure and files via `mcp_github_get_file_contents` | Available in session |
 | Text editor / file tools | Write investigation doc and update ExecPlan | Available in session |
 | `Select-String` (PowerShell) | Verify presence of required content in output files | Built-in |
@@ -212,6 +218,7 @@ None — ST-017 is unblocked.
 
 - **OB1 GitHub repo inaccessible**: If `https://github.com/NateBJones-Projects/OB1` cannot be reached via GitHub tools or web fetch, **stop and escalate to the PO** to resolve. Do not fall back to incomplete data.
 - **Supabase/AGE documentation unavailable**: Use cached knowledge from the query packet research findings in §1. Note any gaps in §6b Surprises.
+- **OpenRouter docs/pricing unavailable**: Use current public pricing/model pages if reachable; if exact example model names differ from prior research, choose nearest current equivalents and record them explicitly in the document.
 
 ### Investigation doc boilerplate
 
@@ -661,6 +668,117 @@ Expected result: ST-017 under Review; §1b has "completion status" entry; sessio
 
 ---
 
+### Task 4.8: Evaluate OpenRouter as Part of the OB1 Platform Value
+
+**Objective:** Revise the existing investigation to treat OpenRouter as a first-class part of the OB1 stack value proposition, not merely a cost line item, while keeping the comparison fair.
+
+**Input:** Current `docs/investigations/openbrain-pivot-evaluation.md`, query packet `QP-017`, OpenRouter docs/pricing/model pages, and the completed findings from Tasks 4.4–4.6.
+
+**Working directory:** `c:\projects\ai-memory\`
+
+**Steps:**
+
+1. **Read only the affected sections** of `docs/investigations/openbrain-pivot-evaluation.md`: Stack & Ecosystem Analysis, Hosting Cost Comparison, Option Scoring Matrix, and Recommendation. Do not reopen unrelated sections unless needed for wording consistency.
+
+2. **Research OpenRouter capability facts** using current public pages:
+   - confirm the single-API, multi-provider model access pattern
+   - confirm enough information to discuss model switching, provider redundancy/fallback, and experimentation simplicity
+   - identify 3 representative model families from different providers
+
+3. **Use these representative example categories** in the write-up:
+   - one OpenAI GPT-4o-mini-class model
+   - one Anthropic Claude Haiku/Sonnet-class model
+   - one Google Gemini Flash-class model
+   If exact names differ on the current OpenRouter pages, choose the nearest current equivalents and record the actual names used.
+
+4. **Add a dedicated subsection** under the Stack & Ecosystem Analysis titled exactly:
+   `### OpenRouter-specific leverage for OB1-based options`
+
+5. In that subsection, write explicit analysis covering all of the following points:
+   - OpenRouter is **portable in theory** to any HTTP-capable application, including a future C# path.
+   - For **this spike's platform comparison**, the practical benefit is concentrated on Options A and B because OB1 already assumes Supabase-hosted async workers plus OpenRouter in its default operating model.
+   - OpenRouter can reduce model-lock-in for OB1-based options through easier provider switching.
+   - OpenRouter can improve resilience for OB1-based options through provider redundancy/fallback.
+   - OpenRouter can improve experimentation speed for OB1-based options because prompt/worker code can stay stable while the backing model changes.
+   - The 3 representative examples must be used to illustrate why this matters in practice.
+
+6. **Revise Hosting Cost Comparison only where necessary** so the document clearly separates:
+   - Supabase infrastructure cost
+   - OpenRouter token/API cost
+   - OpenRouter strategic upside (which belongs in the new subsection, not only in the cost table)
+
+7. **Revisit the Option Scoring Matrix** with these rules:
+   - re-score **Options A and B only** if the OpenRouter analysis warrants a change
+   - leave C and D unchanged unless there is a direct, documented reason they must change
+   - if no scores move, state that explicitly in the scoring notes
+   - if A/B scores move, recalculate their weighted totals and explain which row(s) changed and why
+
+8. **Revise the Recommendation** so it addresses the new OpenRouter analysis directly. The recommendation may change if the evidence supports it. If it does not change, state why OpenRouter's upside still fails to overcome the OB1 path's extra moving parts.
+
+**Expected output:** `docs/investigations/openbrain-pivot-evaluation.md` contains the dedicated OpenRouter subsection, concrete examples, any warranted A/B re-score, and an updated recommendation rationale.
+
+**Requirement mapping:** R5a (OpenRouter-specific analysis), R6 (recommendation)
+
+**Verification:**
+```powershell
+Select-String -Path "docs\investigations\openbrain-pivot-evaluation.md" -Pattern "OpenRouter-specific leverage for OB1-based options"
+Select-String -Path "docs\investigations\openbrain-pivot-evaluation.md" -Pattern "portable in theory"
+Select-String -Path "docs\investigations\openbrain-pivot-evaluation.md" -Pattern "OpenAI|Anthropic|Gemini"
+```
+Expected result: All three commands match at least once.
+
+**Failure handling:** If OpenRouter pages have renamed models, document the actual current equivalents chosen. If OpenRouter pages are unavailable, use the best available public information and note the limitation in §6b Surprises.
+
+---
+
+### Task 4.9: Refresh Governance Artifacts After the OpenRouter Revision
+
+**Objective:** Close out the OpenRouter-focused revision pass and unblock ST-017 from `plan-review`.
+
+**Input:** Completed OpenRouter revision from Task 4.8.
+
+**Working directory:** `c:\projects\ai-memory\`
+
+**Steps:**
+
+1. **Update ExecPlan §1b Outcomes & Conclusions** in this file so it reflects the final post-OpenRouter result:
+   - whether the recommendation changed or stayed the same
+   - whether A/B scores changed or stayed the same
+   - what the OpenRouter analysis added to the reasoning
+
+2. **Update §2c Plan Review Notes** to record that the missing scope was captured and executed.
+
+3. **Update `.github/planning/story-board.md`** for ST-017:
+   - change `Blocked by: plan-review` back to `Blocked by: none`
+   - keep ST-017 in Review
+   - update the Notes line to mention the OpenRouter revision and resulting recommendation status
+
+4. **Update `FollowUpSessionLog.txt`** so the next session resumes at renewed PO review, not plan-review.
+
+5. **Commit all Task 4.8 and 4.9 changes** with:
+   ```
+   docs(spike): incorporate OpenRouter revision into ST-017
+
+   Story: ST-017
+   Task: §4.8-§4.9
+   ```
+
+**Expected output:** ST-017 no longer blocked by `plan-review`; board, ExecPlan, and session log all reflect the OpenRouter-focused revision.
+
+**Requirement mapping:** Supports DoD items 5, 6, 7, 8.
+
+**Verification:**
+```powershell
+Select-String -Path ".github\planning\story-board.md" -Pattern "### ST-017","Blocked by: none","OpenRouter"
+Select-String -Path "FollowUpSessionLog.txt" -Pattern "OpenRouter","PO review"
+Select-String -Path ".github\planning\execplans\exec-plan-ST-017.md" -Pattern "OpenRouter"
+```
+Expected result: All three files contain the refreshed OpenRouter-related closeout state.
+
+**Failure handling:** If the recommendation changes materially, ensure the board note and §1b say so explicitly. If git commit fails, leave the blocker state untouched and note the failure in `FollowUpSessionLog.txt`.
+
+---
+
 ## §5. State Recovery Protocol
 
 If a session is interrupted, the executor reads §5b to determine where to resume. The Recovery Ledger has two parts: a current resume snapshot that can be updated in place, and a progress history that must be append-only.
@@ -673,11 +791,11 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.7 — governance artifacts refreshed after doc revision |
-| **Last successful command** | `Select-String` verification on `.github/planning/story-board.md` and `FollowUpSessionLog.txt` |
-| **Expected outputs produced** | Revised investigation doc, refreshed §1b outcomes, updated ST-017 board note, refreshed `FollowUpSessionLog.txt` |
-| **Next task** | `/plan` for ST-017 to define the newly requested changes |
-| **Known blockers** | `plan-review` — PO requested further changes without specifying scope during the acceptance round |
+| **Last completed task** | Planning revision approved for Tasks 4.8 and 4.9 |
+| **Last successful command** | `/plan` scope lock + PO approval for the OpenRouter revision |
+| **Expected outputs produced** | Revised query packet, revised ExecPlan with Tasks 4.8/4.9, board returned to Refined, refreshed handoff log |
+| **Next task** | Task 4.8 — Evaluate OpenRouter as Part of the OB1 Platform Value |
+| **Known blockers** | None |
 | **Last updated** | 2026-05-14 |
 
 ### Progress History
@@ -695,6 +813,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-05-14T21:49:00.1414037+02:00 | Task 4.6 (revision) | ✅ Complete | Revised `openbrain-pivot-evaluation.md`: A/B synthesis now explicitly supports trigger → worker → remote Markdown → local sync; Supabase Free hobby-scale costs added; Option A score changed 1.95 → 2.10; recommendation remains Option C | Task 4.7 |
 | 2026-05-14T21:50:55.1851042+02:00 | Task 4.7 (revision) | ✅ Complete | Refreshed §1b outcomes, corrected OB1 trigger note in background, updated ST-017 board note, refreshed `FollowUpSessionLog.txt`; verification passed | — |
 | 2026-05-14T21:56:02.6745627+02:00 | Revised PO review | ⚠️ Blocked | Revised spike outcome presented for acceptance. PO selected "Further changes needed" without specifying the requested changes. This exceeds the current ExecPlan scope. | Block story by `plan-review`; run `/plan` |
+| 2026-05-14T23:01:38.6567170+02:00 | /plan revision approved | ✅ Planned | QP-017 updated with OpenRouter scope; ExecPlan extended with Tasks 4.8/4.9; blocker resolved by PO approval | Task 4.8 |
 
 ### Avoidance
 
