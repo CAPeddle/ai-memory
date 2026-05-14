@@ -11,7 +11,7 @@ source_path: "docs/investigations/openbrain-pivot-evaluation.md"
 # Open Brain Pivot Evaluation
 
 **Story:** ST-017  
-**Date:** 2026-05-13  
+**Date:** 2026-05-14 (revised after PO review)  
 **Author:** AI Lead Engineer (via /continue execution of exec-plan-ST-017.md)
 
 ---
@@ -22,13 +22,13 @@ This spike evaluates whether the ai-memory project should pivot its foundational
 
 **Recommendation: Stay Current (Option C) — continue building on C#/.NET 8 + SQLite.**
 
-The investigation shows that OB1 neither provides nor makes easy either target capability. Both require substantial custom development on any platform. Given this parity, the decisive factors become stack fit, operational cost, and codebase continuity — all of which strongly favour Option C. The OB1 codebase is nonetheless a valuable reference: its entity-extraction schema's trigger pattern, relation sidecars, and schema-based extension model are design inspirations worth borrowing.
+The revised analysis confirms that OB1 still does not provide either target capability out of the box, but it can support a remote per-ingest synthesis workflow through its existing trigger pattern, a queue-processing Edge Function worker, and a Markdown sync bridge back to a local Obsidian vault. Supabase Free also narrows the hobby-scale cost gap. Even with those adjustments, both target capabilities still require substantial custom development, and the decisive factors remain stack fit, direct filesystem access, operational simplicity, and codebase continuity — all of which still favour Option C. The OB1 codebase remains a valuable reference: its entity-extraction schema's trigger pattern, relation sidecars, and schema-based extension model are design inspirations worth borrowing.
 
 **Scores (1–5 scale):**
 
 | Option | Weighted Score | Rank |
 |--------|---------------|------|
-| A — Adopt OB1 | 1.95 | 4 |
+| A — Adopt OB1 | 2.10 | 4 |
 | B — Fork OB1 | 2.55 | 3 |
 | C — Stay Current | **4.50** | **1** |
 | D — Adopt Approach, Build Fresh | 3.55 | 2 |
@@ -92,7 +92,7 @@ Trigger: `thoughts_updated_at` (BEFORE UPDATE, sets updated_at).
 
 ## §4 Per-Ingest Synthesis Analysis
 
-Per-ingest synthesis means: when a new thought/memory is stored, the system automatically generates or updates one or more compiled Markdown files representing synthesised views. The synthesis requires calling an LLM with the new content in context of existing related memories, then writing Obsidian-compatible Markdown to a configurable output.
+Per-ingest synthesis means: when a new thought/memory is stored, the system automatically generates or updates one or more compiled Markdown files representing synthesised views. The synthesis requires calling an LLM with the new content in context of existing related memories, then writing Obsidian-compatible Markdown to a configurable output. For cloud-hosted options, that output can be represented remotely first (database table or object storage) and then synchronised into a local Obsidian vault; direct local file writes are not mandatory at synthesis time.
 
 The four aspects evaluated per option:
 - **Hook mechanism**: how the ingest event triggers synthesis
@@ -104,23 +104,23 @@ The four aspects evaluated per option:
 
 | Aspect | Assessment |
 |--------|-----------|
-| Hook mechanism | No ingest hooks in `capture_thought`. Would need a PostgreSQL trigger (as per entity-extraction schema pattern) that queues the thought and a new Edge Function worker to process the queue — built entirely from scratch. |
-| LLM integration | OpenRouter API is already wired. Can call it from a new Edge Function worker with synthesis prompt. Works. |
-| Output format | Edge Functions cannot write to local filesystems. Obsidian-compatible Markdown would need to go into a Supabase Storage bucket or another database table — not a local file. Local-file Obsidian integration is not possible without an additional polling bridge (e.g., a local daemon that downloads from Storage). |
-| Incremental update | Would need a `compiled_views` table and a timestamp-based "last compiled" tracker. Feasible but requires significant schema design. |
+| Hook mechanism | `capture_thought` itself has no middleware hook, but OB1's `entity-extraction` schema already proves the ingest-time pattern: an `AFTER INSERT OR UPDATE` trigger on `thoughts` can queue work for asynchronous processing. A synthesis extension can use the same trigger+queue design, then run a dedicated Edge Function worker to process queued thoughts. |
+| LLM integration | OpenRouter API is already wired. A synthesis worker can call the same provider with a synthesis prompt and persist compiled output remotely. |
+| Output format | Edge Functions cannot write directly to local filesystems, but they can write Markdown-compatible output to Supabase Storage or a `compiled_views` table. A local sync daemon or pull step can then materialize that content into an Obsidian vault. This is a bridge cost, not a hard blocker. |
+| Incremental update | Add a `compiled_views` table keyed by view name with `last_compiled_thought_id` or `last_compiled_at`. Worker processes only queued changes and updates the affected view payloads. |
 
-**Feasibility rating: Significant** — requires building a queue-processing Edge Function worker from scratch, building a compiled views storage scheme, and cannot naturally produce local Obsidian files without an additional bridge layer.
+**Feasibility rating: Significant** — viable, but still requires a new queue-processing worker, remote compiled-view storage, and a local sync bridge for Obsidian. **Answer to the PO's open question:** yes, OB1's Supabase schemas + Edge Functions can support per-ingest synthesis if remotely stored Markdown and a sync bridge are acceptable.
 
 ### Option B — Fork OB1
 
 | Aspect | Assessment |
 |--------|-----------|
-| Hook mechanism | Can modify `capture_thought` in `server/index.ts` directly to call a synthesis function after writing the thought. Or add a PostgreSQL trigger. Full code freedom. |
-| LLM integration | Same as Option A — OpenRouter already wired. |
-| Output format | Same limitation as Option A: Edge Functions run in Supabase's cloud. Local Obsidian files require a bridge. If self-hosting Postgres (not Supabase), a Node.js synthesis server could write local files. |
-| Incremental update | Same design work required. Forking removes upstream compatibility but unlocks arbitrary architectural changes. |
+| Hook mechanism | Can modify `capture_thought` in `server/index.ts` directly to enqueue or invoke synthesis after writing the thought, or reuse the trigger pattern from Option A. This removes the main limitation of the as-is adoption path. |
+| LLM integration | Same as Option A — OpenRouter already wired. A fork can centralize capture, extraction, and synthesis orchestration in one codebase. |
+| Output format | Same cloud-first constraint as Option A when staying on Supabase: write remote Markdown first, then sync locally. If self-hosting the fork, a Node.js service can write local files directly and eliminate the bridge. |
+| Incremental update | Same `compiled_views` state-tracking design work required. Forking makes it easier to add direct hooks but creates upstream maintenance debt. |
 
-**Feasibility rating: Moderate** — more flexible than Option A because `capture_thought` can be modified directly, but the cloud-hosting constraint persists on Supabase. Self-hosted Postgres removes the cloud constraint but adds operational complexity.
+**Feasibility rating: Moderate** — more flexible than Option A because the core capture flow can be changed directly. On Supabase it still needs remote storage + local sync; on self-hosted Postgres it can write local files directly, but at the cost of operating the fork and its infrastructure.
 
 ### Option C — Stay Current (C# + SQLite)
 
@@ -145,8 +145,8 @@ Custom TypeScript synthesis service using Postgres triggers + a queue-processing
 
 | Option | Rating | Key constraint |
 |--------|--------|----------------|
-| A | **Significant** | No core hook; cloud-only limits Obsidian local files |
-| B | **Moderate** | Can modify core; cloud-only still limits Obsidian without self-hosting |
+| A | **Significant** | Trigger + worker + remote Markdown storage + local sync bridge required |
+| B | **Moderate** | Can modify core; still needs bridge on Supabase or self-hosting for direct file writes |
 | C | **Trivial** | Direct filesystem access; C# domain events natural; best fit |
 | D-C# | **Trivial–Moderate** | Similar to C; Postgres triggers add one option |
 | D-TS | **Moderate** | Reimplements B advantages without OB1 code debt |
@@ -231,13 +231,13 @@ Workload baseline: ≤100K memories, ~50 queries/day, ~10 ingests/day, personal-
 
 ### Storage sizing
 
-100K thoughts at ~10KB each (content + 1536-float32 embedding + metadata) ≈ 1 GB total. Just above the Supabase free tier 500 MB limit but well within the Pro tier 8 GB limit. SQLite file size would be approximately 1 GB on disk.
+100K thoughts at ~10KB each (content + 1536-float32 embedding + metadata) ≈ 1 GB total. That exceeds the Supabase Free tier's 500 MB database limit, but remains well within the Pro tier's 8 GB allowance. Smaller hobby-scale deployments can still fit on Free. SQLite file size would be approximately 1 GB on disk.
 
 ### Monthly cost estimates (as of May 2026)
 
 | Configuration | Option | Monthly Cost | Notes |
 |---------------|--------|-------------|-------|
-| Supabase Free + OpenRouter | A, B (Supabase) | ~$2–5 | Free tier pauses after 7 days of inactivity; 500MB DB limit means upgrade to Pro at ~75K memories. OpenRouter at 1800 calls/month ~$1–3. |
+| Supabase Free + OpenRouter | A, B (Supabase) | ~$2–5 | Viable for hobby-scale usage: 500 MB database, 1 GB file storage, and 500,000 Edge Function invocations are included. Free projects pause after 1 week of inactivity, so this is low-cost but not always-on. |
 | Supabase Pro + OpenRouter | A, B (Supabase) | ~$27–30 | $25 plan + $2–5 OpenRouter. Avoids pause; 8 GB DB limit; sufficient for full workload. |
 | Self-hosted Postgres VPS + OpenRouter | B (self-host), D | ~$8–11 | $6/month Hetzner CX11 or similar for Postgres + $2–5 OpenRouter. Unlocks AGE. Adds operational overhead. |
 | SQLite local + Ollama | C, D-C# (local) | **$0** | SQLite file on local machine; Ollama runs LLMs locally on existing hardware. Battery + electricity negligible. Zero cloud dependency. |
@@ -245,7 +245,7 @@ Workload baseline: ≤100K memories, ~50 queries/day, ~10 ingests/day, personal-
 
 ### Key insight
 
-Options C and D-C# with SQLite can operate at $0/month with Ollama, or $1–3/month with OpenRouter for quality synthesis LLMs. Options A and B require at minimum the Supabase service ($0 free with caveats, or $25 Pro). For personal use at the stated workload, the free Supabase tier is technically sufficient until ~75K memories, but the 7-day inactivity pause makes production use unreliable without a Pro subscription.
+Options A and B have a real hobby-scale floor of roughly $2–5/month, not $25/month, because Supabase Free includes enough database, storage, and Edge Function capacity for a small active knowledge base plus a synthesis worker. The tradeoff is reliability and headroom: the Free tier pauses after 1 week of inactivity and cannot hold the full 100K-memory upper-bound workload. Options C and D-C# with SQLite still have the strongest cost profile at the full stated baseline because they can operate at $0/month with Ollama, or $1–3/month with OpenRouter, with no pause behavior and no cloud dependency.
 
 ---
 
@@ -258,12 +258,12 @@ Scoring rubric: 1 = poor / 2 = below average / 3 = average / 4 = good / 5 = exce
 | Per-ingest synthesis feasibility | 30% | 2 | 3 | **5** | 4 |
 | Graph/structural similarity feasibility | 25% | 2 | 3 | 3 | **4** |
 | Stack fit for current solo C# developer | 20% | 2 | 2 | **5** | 3 |
-| Local-first / zero cost potential | 15% | 1 | 2 | **5** | 3 |
+| Local-first / zero cost potential | 15% | 2 | 2 | **5** | 3 |
 | Adoption friction | 10% | 3 | 2 | **5** | 3 |
-| **Weighted score** | | **1.95** | **2.55** | **4.50** | **3.55** |
+| **Weighted score** | | **2.10** | **2.55** | **4.50** | **3.55** |
 
 **Scoring notes:**
-- Option A scores 1 on Local-first because the Supabase free tier's inactivity pause makes it unusable for irregular personal use without paying.
+- Option A now scores 2, not 1, on Local-first / zero cost potential because Supabase Free can support hobby-scale use and a remote synthesis worker at near-zero hosting cost. It remains low because it is still cloud-first and inherits the 1-week inactivity pause.
 - Option C scores 3 on graph because structural fingerprints are a viable pragmatic approach even without full AGE; the migration path to Postgres + AGE is documented.
 - Option D-C# scores 4 on graph because it can use self-hosted Postgres + AGE, and 3 on stack fit (keep C# but must set up Postgres infrastructure from scratch vs. SQLite simplicity).
 - Option B scores 2 on forking adoption because maintaining divergence from upstream is high friction for a solo developer.
@@ -272,13 +272,15 @@ Scoring rubric: 1 = poor / 2 = below average / 3 = average / 4 = good / 5 = exce
 
 ## §9 Recommendation
 
-**Recommend Option C — Stay Current — because it is the only option that makes per-ingest synthesis trivial, requires no stack switch, costs $0/month, and produces local Obsidian-compatible files directly, despite not providing Apache AGE graph traversal natively.**
+**Recommend Option C — Stay Current — because it still provides the simplest path to per-ingest synthesis, requires no stack switch, preserves direct local Obsidian writes, and keeps the lowest operational complexity, even after accounting for OB1's viable cloud-side synthesis path and lower hobby-scale cost floor.**
 
-The investigation reveals that OB1 provides neither target capability:
+The revised investigation shows that OB1-based options are more viable than the first draft suggested, but still not strong enough to displace the current architecture.
 
-- **Per-ingest synthesis**: OB1's philosophy is explicitly query-time. The `capture_thought` tool calls `upsert_thought` and returns — no synthesis occurs. Adding synthesis requires building an async worker from scratch in TypeScript, running it in a new Edge Function, and working around the cloud-only constraint to write local Obsidian files. On C#, the same capability is a single domain event and a `FileWriter` — trivially composable with the already-designed `IMemoryService`.
+- **Per-ingest synthesis**: OB1 can support this through the trigger pattern already present in `entity-extraction`: queue on insert/update, process in an Edge Function worker, write Markdown-compatible output remotely, then sync to the local Obsidian vault. That answers the PO's open question positively. The reason Option C still wins is not that OB1 is incapable, but that OB1 needs more moving parts: worker, remote compiled-view storage, and local sync bridge. On C#, the same capability is a single application-level event plus direct file output.
 
 - **Graph/structural similarity**: OB1's `entity-extraction` schema provides an `edges` table and a PostgreSQL trigger that queues thoughts. But the actual extraction worker is missing from the repo. Supabase does not support Apache AGE. On SQLite, structural fingerprinting (embedding graph topology as vectors via sqlite-vec, already planned) covers the primary use case, with a documented migration path to Postgres + AGE if full graph traversal is later required.
+
+- **Cost**: The OB1 cost floor is closer to ~$2–5/month for hobby-scale use on Supabase Free + OpenRouter, not automatically $25+/month. The reason Option C still wins is that the full stated workload pushes A/B toward Pro, while C remains fully local and can still run at $0–3/month without any pause behavior.
 
 **Runner-up:** Option D-C# (adopt Postgres + pgvector approach but build fresh in C#) is the strongest alternative. It provides the best graph path (AGE via self-hosted Postgres) and would be recommended if the PO later decides: (a) graph traversal via openCypher is a hard requirement, AND (b) $6–11/month for a VPS is acceptable. The OB1 `entity-extraction` schema and `typed-reasoning-edges` schema are valuable reference material for designing the graph layer under any option.
 

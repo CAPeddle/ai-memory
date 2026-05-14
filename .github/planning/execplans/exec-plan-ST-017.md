@@ -674,10 +674,10 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.7 — all tasks complete, but PO review returned with feedback |
-| **Last successful command** | git commit `4efaaec` |
-| **Expected outputs produced** | `docs/investigations/openbrain-pivot-evaluation.md` (needs revision), board updated, §1b populated |
-| **Next task** | Revise investigation doc §4 (Options A/B synthesis) and §7 (free-tier costs), then re-evaluate §8 scores and §9 recommendation |
+| **Last completed task** | Task 4.6 — investigation doc revised after PO review |
+| **Last successful command** | `Select-String` verification on `docs/investigations/openbrain-pivot-evaluation.md` |
+| **Expected outputs produced** | Revised `docs/investigations/openbrain-pivot-evaluation.md` with updated §4, §7, §8, §9 and consistent summary text |
+| **Next task** | Task 4.7 — refresh ExecPlan outcomes, board note, and FollowUpSessionLog based on the revised recommendation |
 | **Known blockers** | None — revision is straightforward desk work |
 | **Last updated** | 2026-05-14 |
 
@@ -693,6 +693,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-05-13T00:00Z | Task 4.6 | ✅ Complete | `docs/investigations/openbrain-pivot-evaluation.md` created with 11 sections; all R1–R7 requirements met | Task 4.7 |
 | 2026-05-13T00:00Z | Task 4.7 | ✅ Complete | Board updated; §1b populated; session log refreshed; committed | — |
 | 2026-05-14T00:00Z | PO Review | ⚠️ Feedback | Two analytical gaps identified: (1) cloud-side synthesis hybrid workflow not evaluated for Options A/B, (2) free-tier cost analysis missing from scoring. See §1b PO Review Feedback. | Revise §4, §7 in investigation doc; re-evaluate §8/§9 |
+| 2026-05-14T21:49:00.1414037+02:00 | Task 4.6 (revision) | ✅ Complete | Revised `openbrain-pivot-evaluation.md`: A/B synthesis now explicitly supports trigger → worker → remote Markdown → local sync; Supabase Free hobby-scale costs added; Option A score changed 1.95 → 2.10; recommendation remains Option C | Task 4.7 |
 
 ### Avoidance
 
@@ -754,6 +755,18 @@ PO verbatim:
 
 Failure mode: **Wrong approach (partial)** — analysis completed but reached conclusions based on incomplete evaluation of two scenarios the PO cares about. Investigation doc needs targeted revision, not rewrite.
 
+**2026-05-14 — Task 4.6 (revision): Investigation document updated**
+
+Revised `docs/investigations/openbrain-pivot-evaluation.md` in four places plus summary consistency text:
+
+- **§4 Per-Ingest Synthesis Analysis:** Options A and B now explicitly evaluate the viable OB1 hybrid workflow: PostgreSQL trigger/queue → Edge Function worker → Markdown-compatible remote storage → local Obsidian sync bridge. The open question is now answered directly: OB1 can support per-ingest synthesis if remote storage plus local sync is acceptable.
+- **§7 Hosting Cost Comparison:** Added the hobby-scale floor for Supabase Free using published limits (500 MB database, 1 GB file storage, 500,000 Edge Function invocations) and clarified that Pro is required only once the workload approaches the full 100K-memory target or always-on behavior is required.
+- **§8 Option Scoring Matrix:** Option A Local-first / zero-cost score increased from 1 to 2, raising its weighted score from 1.95 to 2.10. No rank changes.
+- **§9 Recommendation:** Recommendation remains Option C, but rationale now states that A/B are viable with more moving parts rather than impossible.
+
+Verification run:
+`Select-String -Path docs\investigations\openbrain-pivot-evaluation.md -Pattern Executive Summary, Recommendation, Impact Assessment, Option Scoring Matrix, ST-002`
+
 ---
 
 ## §6b. Surprises & Discoveries
@@ -769,6 +782,14 @@ Failure mode: **Wrong approach (partial)** — analysis completed but reached co
 - **Observation:** The OB1 entity extraction worker — the service that reads `entity_extraction_queue` and fires LLM calls to populate `entities` and `edges` — is entirely absent from the repository. The schema and trigger exist but the fulfillment side is missing.
   **Evidence:** No files in `server/`, `integrations/`, `primitives/`, or any other directory with code that processes `entity_extraction_queue`.
   **Impact:** Graph capability on OB1-based options requires building this worker from scratch, same as building it on current C# architecture.
+
+- **Observation:** Supabase Free includes enough storage and Edge Function capacity to make hobby-scale remote synthesis plausible for Options A/B: 500 MB database, 1 GB file storage, and 500,000 Edge Function invocations per month.
+   **Evidence:** Supabase pricing page reviewed on 2026-05-14.
+   **Impact:** The first-pass analysis overstated the minimum operating cost for OB1-based options. The cost floor is closer to ~$2–5/month at hobby scale, though the free tier still does not support the full 100K-memory upper-bound workload and still pauses after 1 week of inactivity.
+
+- **Observation:** The decisive difference between Option C and OB1-based options is now clearly architectural simplicity, not raw capability.
+   **Evidence:** After revising §4, the doc now states that A/B can perform per-ingest synthesis through trigger + worker + bridge, yet still ranks C highest because it avoids the bridge entirely.
+   **Impact:** Recommendation remains stable, but the rationale is stronger and less biased toward local-first assumptions.
 
 ---
 
