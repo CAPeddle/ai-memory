@@ -1,6 +1,6 @@
 # ExecPlan — ST-017: Evaluate Open Brain as base layer vs current architecture
 
-> Status: ⚠️ Review feedback — revision required
+> Status: ✅ Complete (revised after PO review)
 > Story: ST-017
 > Created: 2025-07-17
 > Parent: docs/investigations/memory-architecture-design.md
@@ -58,7 +58,7 @@ Since both extensions must be built regardless of platform, the question is: whi
 
 ### Known gaps in OB1 for PO requirements
 
-1. **No per-ingest synthesis** — OB1 is explicitly query-time. No ingest-time hooks, triggers, or compiled views exist.
+1. **No built-in per-ingest synthesis** — OB1 is explicitly query-time and has no compiled views. The core `capture_thought` flow has no middleware hook, though the optional `entity-extraction` schema demonstrates that trigger-based ingest processing is possible.
 2. **No graph/structural similarity** — Basic `relation` sidecars exist but no graph database, structural fingerprinting, or subgraph matching.
 3. **Stack mismatch** — OB1 is TypeScript/Python; current ai-memory is C#/.NET.
 
@@ -92,20 +92,17 @@ Since both extensions must be built regardless of platform, the question is: whi
 
 ## §1b. Outcomes & Conclusions
 
-**Completion status:** Revision required — PO review identified two analytical gaps
+**Completion status:** Full — revised after PO review
 
 **Key findings/achievements:**
-- Investigation document written at `docs/investigations/openbrain-pivot-evaluation.md` with all 11 required sections
-- OB1 source analysed directly via GitHub API (repo, `server/index.ts`, `docs/01-getting-started.md`, entity-extraction schema, agent-memory schema)
-- All 4 options rated across 5 weighted dimensions; Option C (Stay Current) wins with weighted score 4.50 vs next-best 3.55 (Option D-C#)
-- **Recommendation: Stay Current on C#/.NET 8 + SQLite** — confirmed by source evidence, not assumption
-- Two follow-on implementation stories identified: ST-018 (graph schema + structural fingerprints) and ST-019 (ISynthesisService + Markdown writer)
+- Investigation document revised to resolve the PO's two review gaps: OB1 cloud-side synthesis workflow now evaluated explicitly, and Supabase Free hobby-scale costs are now included in the analysis.
+- All 4 options remain rated across 5 weighted dimensions. Option A improved from 1.95 to 2.10 after adding the viable Free-tier + sync-bridge path, but rankings did not change: Option C remains strongest at 4.50, ahead of Option D-C# at 3.55.
+- **Recommendation remains: Stay Current on C#/.NET 8 + SQLite.** The reason is now more precise: OB1 A/B are viable, but they still require more moving parts (queue worker, remote compiled-view storage, local sync bridge) than the direct C# filesystem path.
+- Two follow-on implementation stories remain appropriate and unchanged: ST-018 (graph schema + structural fingerprints) and ST-019 (ISynthesisService + Markdown writer).
 
-**PO Review Feedback (2026-05-14) — two gaps identified:**
-1. **Cloud-side synthesis workflow not evaluated.** The investigation dismissed OB1 per-ingest synthesis partly because "Edge Functions cannot write to local filesystems." The PO described a viable hybrid workflow: ingest via OB1 → trigger cloud-side extraction + LLM synthesis (Edge Function worker) → write compiled Markdown to Supabase Storage or table → sync/download to local Obsidian vault via polling daemon. This separates synthesis (cloud) from delivery (local sync) and makes the OB1 entity-extraction trigger pattern (`trg_queue_entity_extraction`) directly usable. Answers the open question: "Can OB1's Supabase edge functions + schemas support per-ingest synthesis?" — yes, if a bridge to local files is accepted.
-2. **Free-tier cost gap overstated.** The document's primary cost comparison ($25–30/month vs $0) uses Supabase Pro pricing. At personal-use scale, the Free tier ($0 Supabase + $2–5 OpenRouter) might suffice, reducing the cost advantage of Option C significantly. The 7-day inactivity pause caveat was noted but not weighted into the scoring.
-
-**Next action:** Revise `docs/investigations/openbrain-pivot-evaluation.md` §4 (per-ingest synthesis — Options A & B) and §7 (hosting costs — free-tier analysis). Then re-evaluate whether §8 scores and §9 recommendation change. If recommendation holds, explain why despite the narrower gaps. If it changes, update follow-on stories.
+**PO review resolution (2026-05-14):**
+- The open question "Can OB1's Supabase edge functions + schemas support per-ingest synthesis?" is now answered **yes**, provided remote Markdown storage plus a local sync bridge is acceptable.
+- The cost floor for OB1-based options is now stated as ~$2–5/month at hobby scale on Supabase Free + OpenRouter, with Pro still required near the full 100K-memory target or when always-on behavior is required.
 
 **Requirements met vs unmet:**
 - R1 Documented OB1 platform assessment ✅ — doc §3 Options + §4, §5 analyses
@@ -116,19 +113,19 @@ Since both extensions must be built regardless of platform, the question is: whi
 - R6 Clear recommendation with named option and rationale ✅ — doc §9 names Option C with evidence
 - R7 Impact assessment on ST-002–ST-010 ✅ — doc §10 with per-option consequences
 
-**Architectural impact:** Existing architecture decisions **supported**. The investigation confirms that the C#/.NET 8 + SQLite design documented in investigation docs is the correct base for both target capabilities. No redesign required.
+**Architectural impact:** Existing architecture decisions **supported**. The investigation still confirms that the C#/.NET 8 + SQLite design is the best base for the target capabilities. The only material refinement is that a cloud-first mode remains possible later via trigger + worker + sync-bridge patterns if the PO ever wants a remote-hosted variant.
 
 **Supporting evidence:**
-```
-Test-Path docs\investigations\openbrain-pivot-evaluation.md → True
-Select-String patterns → Executive Summary (L19), Recommendation (L273), Impact Assessment (L293), Option Scoring (L252), ST-002 (L301)
-```
+- `docs/investigations/openbrain-pivot-evaluation.md` §4 now evaluates OB1 trigger → worker → remote Markdown → local sync.
+- `docs/investigations/openbrain-pivot-evaluation.md` §7 now distinguishes hobby-scale Supabase Free from full-baseline Pro costs.
+- `docs/investigations/openbrain-pivot-evaluation.md` §8 shows Option A score revised from 1.95 to 2.10 while Option C remains 4.50.
+- `docs/investigations/openbrain-pivot-evaluation.md` §9 keeps Option C as the recommendation with updated rationale.
 
 **Downstream changes:**
-- ST-017 moved from Refined to Review on the board
-- ST-018 and ST-019 added to Backlog (per-ingest synthesis capability stories)
-- `FollowUpSessionLog.txt` updated
-- No existing story invalidated; all ST-002–ST-010 proceed as designed
+- ST-017 remains in Review with a revised note reflecting the PO feedback resolution.
+- ST-018 and ST-019 remain in Backlog as the correct downstream stories.
+- `FollowUpSessionLog.txt` refreshed for renewed PO review.
+- No existing story invalidated; all ST-002–ST-010 still proceed as designed.
 
 ---
 
@@ -674,11 +671,11 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.6 — investigation doc revised after PO review |
-| **Last successful command** | `Select-String` verification on `docs/investigations/openbrain-pivot-evaluation.md` |
-| **Expected outputs produced** | Revised `docs/investigations/openbrain-pivot-evaluation.md` with updated §4, §7, §8, §9 and consistent summary text |
-| **Next task** | Task 4.7 — refresh ExecPlan outcomes, board note, and FollowUpSessionLog based on the revised recommendation |
-| **Known blockers** | None — revision is straightforward desk work |
+| **Last completed task** | Task 4.7 — governance artifacts refreshed after doc revision |
+| **Last successful command** | `Select-String` verification on `.github/planning/story-board.md` and `FollowUpSessionLog.txt` |
+| **Expected outputs produced** | Revised investigation doc, refreshed §1b outcomes, updated ST-017 board note, refreshed `FollowUpSessionLog.txt` |
+| **Next task** | — (story ready for renewed PO review) |
+| **Known blockers** | None |
 | **Last updated** | 2026-05-14 |
 
 ### Progress History
@@ -694,6 +691,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-05-13T00:00Z | Task 4.7 | ✅ Complete | Board updated; §1b populated; session log refreshed; committed | — |
 | 2026-05-14T00:00Z | PO Review | ⚠️ Feedback | Two analytical gaps identified: (1) cloud-side synthesis hybrid workflow not evaluated for Options A/B, (2) free-tier cost analysis missing from scoring. See §1b PO Review Feedback. | Revise §4, §7 in investigation doc; re-evaluate §8/§9 |
 | 2026-05-14T21:49:00.1414037+02:00 | Task 4.6 (revision) | ✅ Complete | Revised `openbrain-pivot-evaluation.md`: A/B synthesis now explicitly supports trigger → worker → remote Markdown → local sync; Supabase Free hobby-scale costs added; Option A score changed 1.95 → 2.10; recommendation remains Option C | Task 4.7 |
+| 2026-05-14T21:50:55.1851042+02:00 | Task 4.7 (revision) | ✅ Complete | Refreshed §1b outcomes, corrected OB1 trigger note in background, updated ST-017 board note, refreshed `FollowUpSessionLog.txt`; verification passed | — |
 
 ### Avoidance
 
@@ -766,6 +764,18 @@ Revised `docs/investigations/openbrain-pivot-evaluation.md` in four places plus 
 
 Verification run:
 `Select-String -Path docs\investigations\openbrain-pivot-evaluation.md -Pattern Executive Summary, Recommendation, Impact Assessment, Option Scoring Matrix, ST-002`
+
+**2026-05-14 — Task 4.7 (revision): Governance closeout refreshed**
+
+Updated the closeout artifacts to match the revised investigation:
+
+- **ExecPlan §1b:** now reports final completion, the resolved PO review gaps, stable recommendation, and unchanged downstream stories.
+- **Story board:** ST-017 remains in Review, but its note now reflects the revised reasoning: OB1 synthesis is viable with a bridge, yet Option C still wins.
+- **FollowUpSessionLog:** refreshed so the next session starts at PO review instead of recovery.
+
+Verification run:
+`Select-String -Path .github\planning\story-board.md -Pattern "### ST-017","Spike revised after PO feedback","## Review"`
+`Select-String -Path FollowUpSessionLog.txt -Pattern "Recommendation remains Option C","Status: ✅ Complete","PO review and accept"`
 
 ---
 

@@ -2,27 +2,28 @@
 
 ## Last Session: 2026-05-14
 
-### What Happened
-- ST-017 (Open Brain Pivot Evaluation) was in Review with all tasks completed (commit `4efaaec`).
-- PO provided review feedback challenging two analytical conclusions in `docs/investigations/openbrain-pivot-evaluation.md`.
-- `/recover` performed: annotated ExecPlan §5b (Recovery Ledger, Avoidance) and §6 (Execution Log) with PO feedback. No work re-executed.
+### Accomplished
+- Resumed ST-017 from the recovery state and executed the revision pass for Task 4.6 and Task 4.7.
+- Revised `docs/investigations/openbrain-pivot-evaluation.md` to evaluate OB1's trigger → worker → remote Markdown → local sync path and to include Supabase Free hobby-scale costs.
+- Re-scored options: Option A rose from 1.95 to 2.10; Option C remained 4.50 and stayed the recommendation.
+- Updated the ST-017 ExecPlan outcomes, Recovery Ledger, board note, and this handoff log.
 
-### PO Feedback (two gaps)
-1. **Cloud-side synthesis not evaluated** — Investigation dismissed OB1 per-ingest synthesis because "Edge Functions cannot write to local filesystems." PO described a viable hybrid: ingest → cloud synthesis (trigger + Edge Function worker) → Supabase Storage → local Obsidian sync. This was not evaluated.
-2. **Free-tier costs overstated** — Cost comparison used $25+/month Pro pricing. At personal-use scale, Supabase Free ($0 + $2–5 OpenRouter) might suffice, narrowing the cost gap significantly.
+### Key Finding
+- **Recommendation remains Option C — Stay Current on C#/.NET 8 + SQLite.**
+- OB1 can support per-ingest synthesis if remote Markdown storage plus a local sync bridge is acceptable.
+- Supabase Free narrows the hobby-scale cost gap, but the full stated workload still pushes A/B toward Pro and leaves them with more operational complexity than Option C.
 
 ### Resume Point
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-017.md`
-- Status: ⚠️ Review feedback — revision required
-- Next action: `/continue` should revise investigation doc §4 (Options A/B per-ingest synthesis) and §7 (free-tier cost analysis), then re-evaluate §8 scores and §9 recommendation. Read §5b Avoidance section first.
+- Status: ✅ Complete (revised after PO review)
+- Next action: PO review and accept or challenge the revised ST-017 recommendation.
 
 ### Board State
 - In Progress: none
-- Review: ST-015, ST-016, ST-017 (revision needed)
+- Review: ST-015, ST-016, ST-017
 - Done: ST-012, ST-001, ST-014, ST-011
 - Backlog: ST-018, ST-019, ST-013, ST-002 onward
 
-### Avoidance (MUST READ before next /continue)
-- DO NOT dismiss cloud-hosted synthesis because Edge Functions can't write local files — evaluate the cloud→local sync pipeline as a whole.
-- DO NOT use production-tier pricing as the sole cost comparison — always include free-tier analysis.
-- Read ExecPlan §5b Avoidance section dated 2026-05-14 for full guidance.
+### Avoidance
+- Evaluate cloud-hosted workflows end-to-end, including the sync bridge back to local tools.
+- Present both hobby-scale and full-baseline cost ranges when comparing hosting models.

@@ -2,7 +2,7 @@
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
 > Next planning target: ST-013 — split investigation docs into landing pages and focused fragments.
-> Last updated: 2026-05-13
+> Last updated: 2026-05-14
 
 ---
 
@@ -240,7 +240,7 @@
   - [x] Impact assessment on existing backlog stories ST-002 through ST-010 if pivot is recommended
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-017.md`
 - Docs: `docs/investigations/openbrain-pivot-evaluation.md`
-- Notes: Spike complete. Recommendation: Stay Current on C#/.NET 8 + SQLite (Option C, score 4.50). ST-018 and ST-019 added to Backlog for per-ingest synthesis capability.
+- Notes: Spike revised after PO feedback. Recommendation remains Stay Current on C#/.NET 8 + SQLite (Option C, score 4.50). OB1 per-ingest synthesis is viable via trigger + worker + remote Markdown + local sync, but adds bridge complexity. ST-018 and ST-019 remain the downstream stories.
 
 ---
 
