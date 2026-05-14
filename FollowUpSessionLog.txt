@@ -15,12 +15,12 @@
 
 ### Resume Point
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-017.md`
-- Status: ✅ Complete (revised after PO review)
-- Next action: PO review and accept or challenge the revised ST-017 recommendation.
+- Status: ⚠️ Blocked by `plan-review` after revised review pass
+- Next action: PO requested further changes after review. Story is now blocked by `plan-review`; run `/plan` for ST-017 before any more edits.
 
 ### Board State
 - In Progress: none
-- Review: ST-015, ST-016, ST-017
+- Review: ST-015, ST-016, ST-017 (blocked by `plan-review`)
 - Done: ST-012, ST-001, ST-014, ST-011
 - Backlog: ST-018, ST-019, ST-013, ST-002 onward
 

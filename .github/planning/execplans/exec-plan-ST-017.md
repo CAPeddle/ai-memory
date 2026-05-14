@@ -1,6 +1,6 @@
 # ExecPlan — ST-017: Evaluate Open Brain as base layer vs current architecture
 
-> Status: ✅ Complete (revised after PO review)
+> Status: ⚠️ Blocked by plan-review after revised review pass
 > Story: ST-017
 > Created: 2025-07-17
 > Parent: docs/investigations/memory-architecture-design.md
@@ -163,7 +163,9 @@ Status: ✅ Ready for /continue
 
 ## §2c. Plan Review Notes
 
-_(Empty — populated by /continue when escalating issues)_
+- **2026-05-14 escalation:** The revised ST-017 spike outcome was presented for PO acceptance after Tasks 4.6 and 4.7 completed. The PO selected **"Further changes needed"** but did not specify the requested changes in the approval round.
+- **Why this is a plan-review blocker:** The current ExecPlan fully covers the completed revision pass (cloud-side synthesis analysis and free-tier cost re-evaluation). Any additional changes would be new scope not defined in §4 task steps.
+- **Required next step:** Run `/plan` for ST-017 to capture the new requested changes explicitly before any further execution.
 
 ---
 
@@ -674,8 +676,8 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | **Last completed task** | Task 4.7 — governance artifacts refreshed after doc revision |
 | **Last successful command** | `Select-String` verification on `.github/planning/story-board.md` and `FollowUpSessionLog.txt` |
 | **Expected outputs produced** | Revised investigation doc, refreshed §1b outcomes, updated ST-017 board note, refreshed `FollowUpSessionLog.txt` |
-| **Next task** | — (story ready for renewed PO review) |
-| **Known blockers** | None |
+| **Next task** | `/plan` for ST-017 to define the newly requested changes |
+| **Known blockers** | `plan-review` — PO requested further changes without specifying scope during the acceptance round |
 | **Last updated** | 2026-05-14 |
 
 ### Progress History
@@ -692,6 +694,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-05-14T00:00Z | PO Review | ⚠️ Feedback | Two analytical gaps identified: (1) cloud-side synthesis hybrid workflow not evaluated for Options A/B, (2) free-tier cost analysis missing from scoring. See §1b PO Review Feedback. | Revise §4, §7 in investigation doc; re-evaluate §8/§9 |
 | 2026-05-14T21:49:00.1414037+02:00 | Task 4.6 (revision) | ✅ Complete | Revised `openbrain-pivot-evaluation.md`: A/B synthesis now explicitly supports trigger → worker → remote Markdown → local sync; Supabase Free hobby-scale costs added; Option A score changed 1.95 → 2.10; recommendation remains Option C | Task 4.7 |
 | 2026-05-14T21:50:55.1851042+02:00 | Task 4.7 (revision) | ✅ Complete | Refreshed §1b outcomes, corrected OB1 trigger note in background, updated ST-017 board note, refreshed `FollowUpSessionLog.txt`; verification passed | — |
+| 2026-05-14T21:56:02.6745627+02:00 | Revised PO review | ⚠️ Blocked | Revised spike outcome presented for acceptance. PO selected "Further changes needed" without specifying the requested changes. This exceeds the current ExecPlan scope. | Block story by `plan-review`; run `/plan` |
 
 ### Avoidance
 
@@ -776,6 +779,16 @@ Updated the closeout artifacts to match the revised investigation:
 Verification run:
 `Select-String -Path .github\planning\story-board.md -Pattern "### ST-017","Spike revised after PO feedback","## Review"`
 `Select-String -Path FollowUpSessionLog.txt -Pattern "Recommendation remains Option C","Status: ✅ Complete","PO review and accept"`
+
+**2026-05-14 — Post-closeout review: plan-review required**
+
+After the revised spike outcome was presented for PO acceptance, the PO selected **"Further changes needed"** without specifying the requested changes. Because those changes are not defined in §4, execution must stop and return to planning.
+
+Actions taken:
+
+- Added a §2c Plan Review Notes entry describing the blocker.
+- Marked ST-017 as `Blocked by: plan-review` on the board.
+- Updated `FollowUpSessionLog.txt` so the next session starts with `/plan`, not `/continue`.
 
 ---
 

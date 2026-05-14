@@ -228,7 +228,7 @@
 - Type: spike
 - Source: PO
 - Value: 5
-- Blocked by: none
+- Blocked by: plan-review
 - Touches: `docs/investigations/`, `.github/planning/`
 - Acceptance criteria:
   - [x] Documented assessment of Open Brain (OB1) as a platform for ai-memory's use cases — can it be used directly with plugins/recipes/schemas?
@@ -240,7 +240,7 @@
   - [x] Impact assessment on existing backlog stories ST-002 through ST-010 if pivot is recommended
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-017.md`
 - Docs: `docs/investigations/openbrain-pivot-evaluation.md`
-- Notes: Spike revised after PO feedback. Recommendation remains Stay Current on C#/.NET 8 + SQLite (Option C, score 4.50). OB1 per-ingest synthesis is viable via trigger + worker + remote Markdown + local sync, but adds bridge complexity. ST-018 and ST-019 remain the downstream stories.
+- Notes: Spike revised after PO feedback. Recommendation remains Stay Current on C#/.NET 8 + SQLite (Option C, score 4.50). OB1 per-ingest synthesis is viable via trigger + worker + remote Markdown + local sync, but adds bridge complexity. ST-018 and ST-019 remain the downstream stories. PO requested further changes after the revised review pass; blocked pending `/plan`.
 
 ---
 
