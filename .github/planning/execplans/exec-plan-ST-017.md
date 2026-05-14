@@ -1,6 +1,6 @@
 # ExecPlan — ST-017: Evaluate Open Brain as base layer vs current architecture
 
-> Status: ✅ Ready for /continue — OpenRouter revision planned
+> Status: ✅ Complete — OpenRouter revision incorporated; awaiting renewed PO review
 > Story: ST-017
 > Created: 2025-07-17
 > Parent: docs/investigations/memory-architecture-design.md
@@ -93,37 +93,39 @@ Since both extensions must be built regardless of platform, the question is: whi
 
 ## §1b. Outcomes & Conclusions
 
-**Completion status:** Full — revised after PO review
+**Completion status:** Full — OpenRouter revision executed; awaiting renewed PO review
 
 **Key findings/achievements:**
-- Investigation document revised to resolve the PO's two review gaps: OB1 cloud-side synthesis workflow now evaluated explicitly, and Supabase Free hobby-scale costs are now included in the analysis.
-- All 4 options remain rated across 5 weighted dimensions. Option A improved from 1.95 to 2.10 after adding the viable Free-tier + sync-bridge path, but rankings did not change: Option C remains strongest at 4.50, ahead of Option D-C# at 3.55.
-- **Recommendation remains: Stay Current on C#/.NET 8 + SQLite.** The reason is now more precise: OB1 A/B are viable, but they still require more moving parts (queue worker, remote compiled-view storage, local sync bridge) than the direct C# filesystem path.
+- Investigation document now resolves all PO-raised review gaps across the two revision passes: OB1 cloud-side synthesis workflow, hobby-scale Supabase Free costs, and OpenRouter as a first-class part of the OB1 hosted value proposition.
+- All 4 options remain rated across 5 weighted dimensions. Option A remains at 2.10 after the earlier Free-tier revision, and the OpenRouter revision did **not** change the A/B scores; rankings still hold with Option C strongest at 4.50, ahead of Option D-C# at 3.55.
+- **Recommendation remains: Stay Current on C#/.NET 8 + SQLite.** The OpenRouter analysis strengthened the case that OB1-based Options A/B have real hosted-stack advantages around provider switching, fallback, and experimentation speed, but those benefits still do not outweigh the extra moving parts relative to the direct C# filesystem path.
 - Two follow-on implementation stories remain appropriate and unchanged: ST-018 (graph schema + structural fingerprints) and ST-019 (ISynthesisService + Markdown writer).
 
 **PO review resolution (2026-05-14):**
-- The open question "Can OB1's Supabase edge functions + schemas support per-ingest synthesis?" is now answered **yes**, provided remote Markdown storage plus a local sync bridge is acceptable.
-- The cost floor for OB1-based options is now stated as ~$2–5/month at hobby scale on Supabase Free + OpenRouter, with Pro still required near the full 100K-memory target or when always-on behavior is required.
+- The earlier open question "Can OB1's Supabase edge functions + schemas support per-ingest synthesis?" remains answered **yes**, provided remote Markdown storage plus a local sync bridge is acceptable. The remaining objection is operational shape, not capability.
+- The cost floor for OB1-based options remains stated as ~$2–5/month at hobby scale on Supabase Free + OpenRouter. The earlier $25+/month shorthand now explicitly refers to the Pro-tier or full-baseline case near the full 100K-memory target or when always-on behavior is required.
+- The OpenRouter-focused revision now explicitly documents that OpenRouter is portable in theory, but that its practical leverage in this spike is concentrated on Options A/B because OB1 already assumes hosted async workers plus OpenRouter in its default operating model.
 
 **Requirements met vs unmet:**
-- R1 Documented OB1 platform assessment ✅ — doc §3 Options + §4, §5 analyses
-- R2 Per-ingest synthesis feasibility rated for all 4 options ✅ — doc §4 with trivial/moderate/significant ratings
+- R1 Documented OB1 platform assessment ✅ — doc §3 Options + §6 Stack & Ecosystem Analysis
+- R2 Per-ingest synthesis feasibility rated for all 4 options ✅ — doc §4
 - R3 Graph/structural similarity feasibility rated for all 4 options ✅ — doc §5
-- R4 Stack tradeoff analysis with 6 dimensions ✅ — doc §6
-- R5 Hosting cost comparison ✅ — doc §7 with monthly estimates
+- R4 Stack tradeoff analysis with 6 dimensions ✅ — doc §6 comparison table
+- R5 Hosting cost comparison ✅ — doc §7 with hobby-scale and production-scale estimates
+- R5a OpenRouter-specific platform-value analysis ✅ — doc §6 dedicated subsection with portability note, concrete provider/model examples, and stated score impact
 - R6 Clear recommendation with named option and rationale ✅ — doc §9 names Option C with evidence
 - R7 Impact assessment on ST-002–ST-010 ✅ — doc §10 with per-option consequences
 
-**Architectural impact:** Existing architecture decisions **supported**. The investigation still confirms that the C#/.NET 8 + SQLite design is the best base for the target capabilities. The only material refinement is that a cloud-first mode remains possible later via trigger + worker + sync-bridge patterns if the PO ever wants a remote-hosted variant.
+**Architectural impact:** Existing architecture decisions **supported**. The final investigation still confirms that the C#/.NET 8 + SQLite design is the best base for the target capabilities. The OpenRouter revision clarifies that OB1's strongest hosted-stack upside is real, but it still does not justify a platform pivot away from the simpler C# local-first path.
 
 **Supporting evidence:**
-- `docs/investigations/openbrain-pivot-evaluation.md` §4 now evaluates OB1 trigger → worker → remote Markdown → local sync.
-- `docs/investigations/openbrain-pivot-evaluation.md` §7 now distinguishes hobby-scale Supabase Free from full-baseline Pro costs.
-- `docs/investigations/openbrain-pivot-evaluation.md` §8 shows Option A score revised from 1.95 to 2.10 while Option C remains 4.50.
-- `docs/investigations/openbrain-pivot-evaluation.md` §9 keeps Option C as the recommendation with updated rationale.
+- `docs/investigations/openbrain-pivot-evaluation.md` §6 now contains `### OpenRouter-specific leverage for OB1-based options` using `openai/gpt-4o-mini`, `anthropic/claude-sonnet-4`, and `google/gemini-2.5-flash`.
+- `docs/investigations/openbrain-pivot-evaluation.md` §7 now separates direct infrastructure + token costs from OpenRouter's strategic upside.
+- `docs/investigations/openbrain-pivot-evaluation.md` §8 explicitly states that the OpenRouter revision did not move A/B scores; Option C remains 4.50.
+- `docs/investigations/openbrain-pivot-evaluation.md` §9 keeps Option C as the recommendation while addressing OpenRouter directly.
 
 **Downstream changes:**
-- ST-017 remains in Review with a revised note reflecting the PO feedback resolution.
+- ST-017 returned to Review with the blocker cleared and a refreshed note reflecting the OpenRouter revision outcome.
 - ST-018 and ST-019 remain in Backlog as the correct downstream stories.
 - `FollowUpSessionLog.txt` refreshed for renewed PO review.
 - No existing story invalidated; all ST-002–ST-010 still proceed as designed.
@@ -166,10 +168,10 @@ Status: ✅ Ready for /continue
 ## §2c. Plan Review Notes
 
 - **2026-05-14 escalation:** The revised ST-017 spike outcome was presented for PO acceptance after Tasks 4.6 and 4.7 completed. The PO selected **"Further changes needed"** but did not specify the requested changes in the approval round.
-- **Why this is a plan-review blocker:** The current ExecPlan fully covers the completed revision pass (cloud-side synthesis analysis and free-tier cost re-evaluation). Any additional changes would be new scope not defined in §4 task steps.
-- **Required next step:** Run `/plan` for ST-017 to capture the new requested changes explicitly before any further execution.
-- **2026-05-14 scope resolution (draft):** The PO has now specified the missing scope. Add a dedicated OpenRouter subsection, use 2–3 concrete model/provider examples, state OpenRouter portability explicitly, re-score A/B if warranted, and allow the recommendation to change if evidence supports it.
-- **2026-05-14 approval:** The PO approved the revised plan. The blocker is resolved. `/continue` should resume at Task 4.8 and then Task 4.9.
+- **Why this became a plan-review blocker:** The completed revision pass only covered cloud-side synthesis analysis and free-tier cost re-evaluation. The additional OpenRouter request was new scope not defined in the original §4 task steps.
+- **2026-05-14 scope resolution:** The PO specified the missing scope: add a dedicated OpenRouter subsection, use 2–3 concrete model/provider examples, state OpenRouter portability explicitly, re-score A/B if warranted, and allow the recommendation to change if evidence supports it.
+- **2026-05-14 execution result:** Tasks 4.8 and 4.9 completed. The investigation now contains the required OpenRouter analysis with concrete provider/model examples, explicit portability framing, unchanged A/B scores, and a recommendation that remains Option C.
+- **Current state:** The blocker is cleared. ST-017 is back in Review and awaiting renewed PO acceptance.
 
 ---
 
@@ -791,10 +793,10 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.8 — OpenRouter analysis added to the investigation |
-| **Last successful command** | `Select-String` verification on `docs/investigations/openbrain-pivot-evaluation.md` |
-| **Expected outputs produced** | Revised investigation doc with dedicated OpenRouter subsection, concrete examples, and updated recommendation rationale |
-| **Next task** | Task 4.9 — Refresh Governance Artifacts After the OpenRouter Revision |
+| **Last completed task** | Task 4.9 — Governance artifacts refreshed after the OpenRouter revision |
+| **Last successful command** | `Select-String` verification across `.github/planning/story-board.md`, `FollowUpSessionLog.txt`, and `.github/planning/execplans/exec-plan-ST-017.md` |
+| **Expected outputs produced** | Refreshed ExecPlan §1b/§2c, ST-017 moved back to Review with blocker cleared, and FollowUpSessionLog updated for renewed PO review |
+| **Next task** | PO review — renewed acceptance round for ST-017 |
 | **Known blockers** | None |
 | **Last updated** | 2026-05-14 |
 
@@ -815,6 +817,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-05-14T21:56:02.6745627+02:00 | Revised PO review | ⚠️ Blocked | Revised spike outcome presented for acceptance. PO selected "Further changes needed" without specifying the requested changes. This exceeds the current ExecPlan scope. | Block story by `plan-review`; run `/plan` |
 | 2026-05-14T23:01:38.6567170+02:00 | /plan revision approved | ✅ Planned | QP-017 updated with OpenRouter scope; ExecPlan extended with Tasks 4.8/4.9; blocker resolved by PO approval | Task 4.8 |
 | 2026-05-14T23:18:24.8091399+02:00 | Task 4.8 | ✅ Complete | Added `OpenRouter-specific leverage for OB1-based options` subsection with `openai/gpt-4o-mini`, `anthropic/claude-sonnet-4`, and `google/gemini-2.5-flash`; clarified portability; recommendation remained Option C; scores unchanged | Task 4.9 |
+| 2026-05-14T23:22:43.7690556+02:00 | Task 4.9 | ✅ Complete | Refreshed §1b + §2c, returned ST-017 to Review with blocker cleared, refreshed `FollowUpSessionLog.txt` for renewed PO review | PO review |
 
 ### Avoidance
 
@@ -924,6 +927,20 @@ Revised only the affected sections of `docs/investigations/openbrain-pivot-evalu
 Verification run:
 `Select-String -Path docs\investigations\openbrain-pivot-evaluation.md -Pattern "OpenRouter-specific leverage for OB1-based options","portable in theory","OpenAI|Anthropic|Gemini"`
 
+**2026-05-14 — Task 4.9: Governance artifacts refreshed**
+
+Refreshed the closeout artifacts to match the completed OpenRouter revision:
+
+- **ExecPlan §1b:** now states that the recommendation remains Option C after the OpenRouter revision, that A/B scores stayed unchanged, and that OpenRouter adds real hosted-stack upside without changing the final ranking.
+- **ExecPlan §2c:** now records that the missing scope was captured, executed, and closed out.
+- **Story board:** ST-017 moved from Refined back to Review with `Blocked by: none` and a note that the OpenRouter revision executed without changing the recommendation.
+- **FollowUpSessionLog:** refreshed so the next session resumes at renewed PO review instead of execution or plan-review.
+
+Verification run:
+`Select-String -Path .github\planning\story-board.md -Pattern "### ST-017","Blocked by: none","OpenRouter"`
+`Select-String -Path FollowUpSessionLog.txt -Pattern "OpenRouter","PO review"`
+`Select-String -Path .github\planning\execplans\exec-plan-ST-017.md -Pattern "OpenRouter"`
+
 ---
 
 ## §6b. Surprises & Discoveries
@@ -956,6 +973,10 @@ Verification run:
 
 ## §6c. Decision Log
 
+- **Decision:** Returned ST-017 to Review after Task 4.9 rather than reopening planning.
+   **Rationale:** The missing plan-review scope was explicitly captured, executed, and verified through Tasks 4.8 and 4.9. The next governance step is renewed PO review, not further execution.
+   **Date:** 2026-05-14
+
 - **Decision:** Kept the numeric Option Scoring Matrix unchanged after the OpenRouter revision.
    **Rationale:** OpenRouter's benefits are real, but in the existing matrix they strengthen A/B mainly through narrative operational leverage rather than enough change in the weighted categories to justify a score move. The strongest weights still sit on per-ingest synthesis simplicity, graph path, local-first behavior, and stack fit for the current solo C# developer.
    **Date:** 2026-05-14
@@ -986,7 +1007,7 @@ At story completion:
 
 ## §7b. Outcomes & Retrospective
 
-**Achieved:** Full investigation spike. OB1 source analysed from GitHub. All 4 platform options scored across 5 weighted dimensions. Investigation document written with recommendation, scoring matrix, and impact assessment. Two follow-on stories drafted (ST-018, ST-019). Board updated. Governance closed.
+**Achieved:** Full investigation spike, including two PO-driven revision passes. OB1 source analysed from GitHub. All 4 platform options scored across 5 weighted dimensions. Investigation document updated to cover cloud-side synthesis viability, hobby-scale Supabase Free costs, and OpenRouter's hosted-stack leverage. Recommendation remains Option C. Two follow-on stories drafted (ST-018, ST-019). Board updated. Governance refreshed for renewed PO review.
 
 **Remains:** PO review of recommendation. New story planning for ST-018 and ST-019 when the recommendation is accepted.
 
@@ -999,3 +1020,6 @@ At story completion:
 - 2025-07-17: Reserved — shell created during /plan-new session
 - 2026-05-13: Full ExecPlan authored during /plan session. PO confirmed: desk research only, 4 options (Adopt/Fork/Stay/Build Fresh), balanced evidence, executor writes draft recommendation, investigation doc + board update as deliverables.
 - 2026-05-13: Spike executed via /continue. All 7 tasks complete. Recommendation: Stay Current (Option C). Investigation doc at docs/investigations/openbrain-pivot-evaluation.md. ST-017 moved to Review.
+- 2026-05-14: First PO review surfaced two analytical gaps: cloud-side synthesis viability for A/B and hobby-scale Free-tier costs. Investigation and governance artifacts were revised; recommendation remained Option C.
+- 2026-05-14: Second PO review requested explicit OpenRouter analysis. `/plan` added Tasks 4.8 and 4.9 and returned ST-017 to Refined for execution.
+- 2026-05-14: OpenRouter revision executed and closed out. Dedicated subsection added, A/B scores unchanged, recommendation remained Option C, and ST-017 returned to Review for renewed PO acceptance.

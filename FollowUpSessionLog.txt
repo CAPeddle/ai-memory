@@ -3,22 +3,23 @@
 ## Last Session: 2026-05-14
 
 ### Accomplished
-- Resolved the ST-017 `plan-review` blocker through `/plan`.
-- Updated QP-017 and the ST-017 ExecPlan to add an explicit OpenRouter-focused revision pass.
-- Added Task 4.8 (dedicated OpenRouter subsection, concrete examples, A/B re-score if warranted) and Task 4.9 (refresh closeout artifacts and unblock renewed review).
+- Completed ST-017 Task 4.8 by adding a dedicated OpenRouter analysis to `docs/investigations/openbrain-pivot-evaluation.md`.
+- Completed ST-017 Task 4.9 by refreshing the ExecPlan, moving ST-017 back to Review, and clearing the `plan-review` blocker.
+- Recommendation remains Option C. OpenRouter strengthens the hosted OB1 story, but A/B scores stayed unchanged and did not overcome the extra moving parts versus C# + SQLite.
 
 ### Resume Point
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-017.md`
-- Status: ✅ Ready for `/continue`
-- Next action: Execute Task 4.8, then Task 4.9.
+- Status: ✅ Complete — awaiting renewed PO review
+- Next action: Present the revised ST-017 outcome for PO review and acceptance.
 
 ### Board State
 - In Progress: none
-- Refined: ST-017
-- Review: ST-015, ST-016
+- Refined: none
+- Review: ST-015, ST-016, ST-017
 - Done: ST-012, ST-001, ST-014, ST-011
 - Backlog: ST-018, ST-019, ST-013, ST-002 onward
 
 ### Avoidance
-- State OpenRouter portability explicitly; do not treat it as magically exclusive to OB1.
-- Still weight the practical OpenRouter benefit mainly toward A/B unless direct evidence supports broader score changes.
+- Keep OpenRouter portability explicit; do not describe it as exclusive to OB1.
+- Do not claim score changes unless the matrix actually moved; the final OpenRouter revision left A/B scores unchanged.
+- If the PO requests further changes, capture them as explicit scope before resuming execution.

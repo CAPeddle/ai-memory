@@ -22,7 +22,7 @@ This spike evaluates whether the ai-memory project should pivot its foundational
 
 **Recommendation: Stay Current (Option C) — continue building on C#/.NET 8 + SQLite.**
 
-The revised analysis confirms that OB1 still does not provide either target capability out of the box, but it can support a remote per-ingest synthesis workflow through its existing trigger pattern, a queue-processing Edge Function worker, and a Markdown sync bridge back to a local Obsidian vault. Supabase Free also narrows the hobby-scale cost gap. Even with those adjustments, both target capabilities still require substantial custom development, and the decisive factors remain stack fit, direct filesystem access, operational simplicity, and codebase continuity — all of which still favour Option C. The OB1 codebase remains a valuable reference: its entity-extraction schema's trigger pattern, relation sidecars, and schema-based extension model are design inspirations worth borrowing.
+The revised analysis confirms that OB1 still does not provide either target capability out of the box, but it can support a remote per-ingest synthesis workflow through its existing trigger pattern, a queue-processing Edge Function worker, remote compiled-view storage, and a Markdown sync bridge back to a local Obsidian vault. That means the limiting factor is not whether OB1 can perform extraction-time synthesis at all; it is that the workflow stays cloud-shaped and adds more moving parts than the current local-first design. Supabase Free also narrows the hobby-scale cost gap. The earlier $25+/month framing applies to the full stated 100K-memory or always-on baseline, not the hobby-scale entry point. Even with those adjustments, both target capabilities still require substantial custom development, and the decisive factors remain stack fit, direct filesystem access, operational simplicity, and codebase continuity — all of which still favour Option C. The OB1 codebase remains a valuable reference: its entity-extraction schema's trigger pattern, relation sidecars, and schema-based extension model are design inspirations worth borrowing.
 
 **Scores (1–5 scale):**
 
@@ -109,7 +109,7 @@ The four aspects evaluated per option:
 | Output format | Edge Functions cannot write directly to local filesystems, but they can write Markdown-compatible output to Supabase Storage or a `compiled_views` table. A local sync daemon or pull step can then materialize that content into an Obsidian vault. This is a bridge cost, not a hard blocker. |
 | Incremental update | Add a `compiled_views` table keyed by view name with `last_compiled_thought_id` or `last_compiled_at`. Worker processes only queued changes and updates the affected view payloads. |
 
-**Feasibility rating: Significant** — viable, but still requires a new queue-processing worker, remote compiled-view storage, and a local sync bridge for Obsidian. **Answer to the PO's open question:** yes, OB1's Supabase schemas + Edge Functions can support per-ingest synthesis if remotely stored Markdown and a sync bridge are acceptable.
+**Feasibility rating: Significant** — viable, but still requires a new queue-processing worker, remote compiled-view storage, and a local sync bridge for Obsidian. **Answer to the PO's open question:** yes, OB1's Supabase schemas + Edge Functions can support per-ingest synthesis if remotely stored Markdown and a sync bridge are acceptable. The constraint is workflow shape and operational overhead, not core capability.
 
 ### Option B — Fork OB1
 
@@ -253,7 +253,7 @@ Workload baseline: ≤100K memories, ~50 queries/day, ~10 ingests/day, personal-
 
 ### Key insight
 
-Options A and B have a real hobby-scale floor of roughly $2–5/month, not $25/month, because Supabase Free includes enough database, storage, and Edge Function capacity for a small active knowledge base plus a synthesis worker. The tradeoff is reliability and headroom: the Free tier pauses after 1 week of inactivity and cannot hold the full 100K-memory upper-bound workload. Options C and D-C# with SQLite still have the strongest cost profile at the full stated baseline because they can operate at $0/month with Ollama, or $1–3/month with OpenRouter, with no pause behavior and no cloud dependency. This section isolates direct infrastructure + token spend; OpenRouter's strategic upside from routing, fallback, and model switching is evaluated in §6 rather than treated as cost savings.
+The earlier $25+/month figure should be read as the Pro-tier or full-baseline case, not as the minimum viable entry point. Options A and B have a real hobby-scale floor of roughly $2–5/month because Supabase Free includes enough database, storage, and Edge Function capacity for a small active knowledge base plus a synthesis worker. The tradeoff is reliability and headroom: the Free tier pauses after 1 week of inactivity and cannot hold the full 100K-memory upper-bound workload. Options C and D-C# with SQLite still have the strongest cost profile at the full stated baseline because they can operate at $0/month with Ollama, or $1–3/month with OpenRouter, with no pause behavior and no cloud dependency. This section isolates direct infrastructure + token spend; OpenRouter's strategic upside from routing, fallback, and model switching is evaluated in §6 rather than treated as cost savings.
 
 ---
 
@@ -291,7 +291,7 @@ The revised investigation shows that OB1-based options are more viable than the 
 
 - **Graph/structural similarity**: OB1's `entity-extraction` schema provides an `edges` table and a PostgreSQL trigger that queues thoughts. But the actual extraction worker is missing from the repo. Supabase does not support Apache AGE. On SQLite, structural fingerprinting (embedding graph topology as vectors via sqlite-vec, already planned) covers the primary use case, with a documented migration path to Postgres + AGE if full graph traversal is later required.
 
-- **Cost**: The OB1 cost floor is closer to ~$2–5/month for hobby-scale use on Supabase Free + OpenRouter, not automatically $25+/month. The reason Option C still wins is that the full stated workload pushes A/B toward Pro, while C remains fully local and can still run at $0–3/month without any pause behavior.
+- **Cost**: The OB1 cost floor is closer to ~$2–5/month for hobby-scale use on Supabase Free + OpenRouter. The earlier $25+/month shorthand applies to the Pro-tier or full-baseline case, where the workload approaches the stated 100K-memory target or requires always-on behavior. Option C still wins because it remains fully local and can still run at $0–3/month without any pause behavior.
 
 **Runner-up:** Option D-C# (adopt Postgres + pgvector approach but build fresh in C#) is the strongest alternative. It provides the best graph path (AGE via self-hosted Postgres) and would be recommended if the PO later decides: (a) graph traversal via openCypher is a hard requirement, AND (b) $6–11/month for a VPS is acceptable. The OB1 `entity-extraction` schema and `typed-reasoning-edges` schema are valuable reference material for designing the graph layer under any option.
 
