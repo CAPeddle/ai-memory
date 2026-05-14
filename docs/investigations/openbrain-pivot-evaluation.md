@@ -221,7 +221,15 @@ Evaluated across six dimensions relevant to a solo developer building a local-fi
 | **Local-first + zero cost** | TypeScript in Deno requires Supabase or self-hosted Postgres. No SQLite option in the standard Deno edge runtime. Node.js can use `better-sqlite3` but that abandons the OB1 Deno pattern. | SQLite + sqlite-vec = zero cloud dependency, portable single .db file, fully offline, $0/month. This is the existing design. Local Ollama removes the last API cost. | **C#/.NET 8** |
 | **Existing codebase value** | No existing TypeScript codebase in this repo. A switch would mean full rewrite. | `IMemoryService` interface, `AiMemory.Core`, `AiMemory.Server` scaffold, `GovernanceAssetValidator`, `Directory.Build.props`, 9 investigation docs, this planning system. Low code sunk cost (scaffold only) but high design investment from discussions, investigation docs, and planning sessions. | **C#/.NET 8** |
 
-**Summary:** TypeScript has a meaningful edge in LLM SDK currency; C#/.NET 8 dominates on local-first capability and existing work. For a solo developer who prefers C# and needs offline-capable, zero-cost hosting, the stack tradeoff firmly favors staying on C#.
+### OpenRouter-specific leverage for OB1-based options
+
+OpenRouter gives developers a unified API to hundreds of models through a single endpoint, with OpenAI-compatible request shapes, standard HTTP access from any language or framework, and routing features that can automatically select cost-effective providers and fall back across providers when allowed by request policy. That means it is **portable in theory** to any HTTP-capable application, including a future C# path using `HttpClient` or an OpenAI-compatible client.
+
+For **this spike's platform comparison**, the practical benefit is concentrated on Options A and B because OB1 already assumes Supabase-hosted async workers calling remote models. In that operating model, OpenRouter reduces model-lock-in and experimentation friction immediately: the worker can keep one API shape while switching among models such as `openai/gpt-4o-mini` (128K context, $0.15/$0.60 per 1M tokens), `anthropic/claude-sonnet-4` (1M context, $3/$15 per 1M tokens), and `google/gemini-2.5-flash` (1M context, $0.30/$2.50 per 1M tokens). The same OB1 synthesis worker can start with a cheaper OpenAI-class small model, move to a stronger Claude Sonnet-class model for harder synthesis, or use a Gemini Flash-class model for large-context throughput without rewriting the surrounding worker contract.
+
+OpenRouter also improves resilience for A/B because model pages expose multiple upstream providers and explicitly describe routing requests to the best providers able to handle prompt size and parameters, with fallbacks to maximize uptime. On OpenRouter's current public pages, `gpt-4o-mini` is routed across OpenAI and Azure, `claude-sonnet-4` across Anthropic, Amazon Bedrock, and Google Vertex, and `gemini-2.5-flash` across Google AI Studio and Vertex variants. That is a real operational benefit for OB1-based options. It does **not** shift the same amount of value to Option C, because the current C# path is intentionally local-first and differentiates on SQLite + direct filesystem writes + optional local Ollama, not on managed multi-provider routing.
+
+**Summary:** TypeScript has a meaningful edge in LLM SDK currency, and OpenRouter strengthens that edge for OB1-based options by bundling multi-provider model access, fallback, and experimentation speed into the default hosted workflow. C#/.NET 8 still dominates on local-first capability and existing work. For a solo developer who prefers C# and needs offline-capable, zero-cost hosting, the overall stack tradeoff still favors staying on C#.
 
 ---
 
@@ -245,7 +253,7 @@ Workload baseline: ≤100K memories, ~50 queries/day, ~10 ingests/day, personal-
 
 ### Key insight
 
-Options A and B have a real hobby-scale floor of roughly $2–5/month, not $25/month, because Supabase Free includes enough database, storage, and Edge Function capacity for a small active knowledge base plus a synthesis worker. The tradeoff is reliability and headroom: the Free tier pauses after 1 week of inactivity and cannot hold the full 100K-memory upper-bound workload. Options C and D-C# with SQLite still have the strongest cost profile at the full stated baseline because they can operate at $0/month with Ollama, or $1–3/month with OpenRouter, with no pause behavior and no cloud dependency.
+Options A and B have a real hobby-scale floor of roughly $2–5/month, not $25/month, because Supabase Free includes enough database, storage, and Edge Function capacity for a small active knowledge base plus a synthesis worker. The tradeoff is reliability and headroom: the Free tier pauses after 1 week of inactivity and cannot hold the full 100K-memory upper-bound workload. Options C and D-C# with SQLite still have the strongest cost profile at the full stated baseline because they can operate at $0/month with Ollama, or $1–3/month with OpenRouter, with no pause behavior and no cloud dependency. This section isolates direct infrastructure + token spend; OpenRouter's strategic upside from routing, fallback, and model switching is evaluated in §6 rather than treated as cost savings.
 
 ---
 
@@ -264,6 +272,7 @@ Scoring rubric: 1 = poor / 2 = below average / 3 = average / 4 = good / 5 = exce
 
 **Scoring notes:**
 - Option A now scores 2, not 1, on Local-first / zero cost potential because Supabase Free can support hobby-scale use and a remote synthesis worker at near-zero hosting cost. It remains low because it is still cloud-first and inherits the 1-week inactivity pause.
+- No scores moved in the OpenRouter revision. OpenRouter materially improves the narrative for A/B by reducing model-lock-in and improving hosted-worker resilience, but those benefits were not strong enough to change the weighted dimensions that still drive this matrix: stack fit for a solo C# developer, local-first behavior, and adoption complexity.
 - Option C scores 3 on graph because structural fingerprints are a viable pragmatic approach even without full AGE; the migration path to Postgres + AGE is documented.
 - Option D-C# scores 4 on graph because it can use self-hosted Postgres + AGE, and 3 on stack fit (keep C# but must set up Postgres infrastructure from scratch vs. SQLite simplicity).
 - Option B scores 2 on forking adoption because maintaining divergence from upstream is high friction for a solo developer.
@@ -272,11 +281,13 @@ Scoring rubric: 1 = poor / 2 = below average / 3 = average / 4 = good / 5 = exce
 
 ## §9 Recommendation
 
-**Recommend Option C — Stay Current — because it still provides the simplest path to per-ingest synthesis, requires no stack switch, preserves direct local Obsidian writes, and keeps the lowest operational complexity, even after accounting for OB1's viable cloud-side synthesis path and lower hobby-scale cost floor.**
+**Recommend Option C — Stay Current — because it still provides the simplest path to per-ingest synthesis, requires no stack switch, preserves direct local Obsidian writes, and keeps the lowest operational complexity, even after accounting for OB1's viable cloud-side synthesis path, lower hobby-scale cost floor, and real OpenRouter leverage.**
 
 The revised investigation shows that OB1-based options are more viable than the first draft suggested, but still not strong enough to displace the current architecture.
 
 - **Per-ingest synthesis**: OB1 can support this through the trigger pattern already present in `entity-extraction`: queue on insert/update, process in an Edge Function worker, write Markdown-compatible output remotely, then sync to the local Obsidian vault. That answers the PO's open question positively. The reason Option C still wins is not that OB1 is incapable, but that OB1 needs more moving parts: worker, remote compiled-view storage, and local sync bridge. On C#, the same capability is a single application-level event plus direct file output.
+
+- **OpenRouter leverage**: OpenRouter makes A/B better than the earlier versions of this spike gave them credit for. It offers a single OpenAI-compatible API, 400+ models, 60+ providers, provider routing, and fallback behavior that fit OB1's cloud-worker shape well. Concrete current examples on OpenRouter include `openai/gpt-4o-mini`, `anthropic/claude-sonnet-4`, and `google/gemini-2.5-flash`. That improves model switching, resilience, and experimentation speed for OB1-based options. It still does not overturn the recommendation, because Option C's main edge is not model access breadth; it is direct local execution with fewer moving parts.
 
 - **Graph/structural similarity**: OB1's `entity-extraction` schema provides an `edges` table and a PostgreSQL trigger that queues thoughts. But the actual extraction worker is missing from the repo. Supabase does not support Apache AGE. On SQLite, structural fingerprinting (embedding graph topology as vectors via sqlite-vec, already planned) covers the primary use case, with a documented migration path to Postgres + AGE if full graph traversal is later required.
 

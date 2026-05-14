@@ -791,10 +791,10 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Planning revision approved for Tasks 4.8 and 4.9 |
-| **Last successful command** | `/plan` scope lock + PO approval for the OpenRouter revision |
-| **Expected outputs produced** | Revised query packet, revised ExecPlan with Tasks 4.8/4.9, board returned to Refined, refreshed handoff log |
-| **Next task** | Task 4.8 — Evaluate OpenRouter as Part of the OB1 Platform Value |
+| **Last completed task** | Task 4.8 — OpenRouter analysis added to the investigation |
+| **Last successful command** | `Select-String` verification on `docs/investigations/openbrain-pivot-evaluation.md` |
+| **Expected outputs produced** | Revised investigation doc with dedicated OpenRouter subsection, concrete examples, and updated recommendation rationale |
+| **Next task** | Task 4.9 — Refresh Governance Artifacts After the OpenRouter Revision |
 | **Known blockers** | None |
 | **Last updated** | 2026-05-14 |
 
@@ -814,6 +814,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-05-14T21:50:55.1851042+02:00 | Task 4.7 (revision) | ✅ Complete | Refreshed §1b outcomes, corrected OB1 trigger note in background, updated ST-017 board note, refreshed `FollowUpSessionLog.txt`; verification passed | — |
 | 2026-05-14T21:56:02.6745627+02:00 | Revised PO review | ⚠️ Blocked | Revised spike outcome presented for acceptance. PO selected "Further changes needed" without specifying the requested changes. This exceeds the current ExecPlan scope. | Block story by `plan-review`; run `/plan` |
 | 2026-05-14T23:01:38.6567170+02:00 | /plan revision approved | ✅ Planned | QP-017 updated with OpenRouter scope; ExecPlan extended with Tasks 4.8/4.9; blocker resolved by PO approval | Task 4.8 |
+| 2026-05-14T23:18:24.8091399+02:00 | Task 4.8 | ✅ Complete | Added `OpenRouter-specific leverage for OB1-based options` subsection with `openai/gpt-4o-mini`, `anthropic/claude-sonnet-4`, and `google/gemini-2.5-flash`; clarified portability; recommendation remained Option C; scores unchanged | Task 4.9 |
 
 ### Avoidance
 
@@ -909,6 +910,20 @@ Actions taken:
 - Marked ST-017 as `Blocked by: plan-review` on the board.
 - Updated `FollowUpSessionLog.txt` so the next session starts with `/plan`, not `/continue`.
 
+**2026-05-14 — Task 4.8: OpenRouter analysis added**
+
+Revised only the affected sections of `docs/investigations/openbrain-pivot-evaluation.md`:
+
+- Added the required subsection `### OpenRouter-specific leverage for OB1-based options` under Stack & Ecosystem Analysis.
+- Explicitly stated that OpenRouter is portable in theory to any HTTP-capable application, including a future C# path.
+- Used 3 concrete current examples: `openai/gpt-4o-mini`, `anthropic/claude-sonnet-4`, and `google/gemini-2.5-flash`.
+- Clarified that OpenRouter's strategic upside is concentrated on A/B in this spike because OB1 already assumes hosted remote workers.
+- Left the Option Scoring Matrix unchanged after re-evaluation; added a scoring note that the OpenRouter upside improves the A/B narrative but not the weighted dimensions enough to move totals.
+- Updated the recommendation narrative to address OpenRouter directly while keeping Option C.
+
+Verification run:
+`Select-String -Path docs\investigations\openbrain-pivot-evaluation.md -Pattern "OpenRouter-specific leverage for OB1-based options","portable in theory","OpenAI|Anthropic|Gemini"`
+
 ---
 
 ## §6b. Surprises & Discoveries
@@ -925,6 +940,10 @@ Actions taken:
   **Evidence:** No files in `server/`, `integrations/`, `primitives/`, or any other directory with code that processes `entity_extraction_queue`.
   **Impact:** Graph capability on OB1-based options requires building this worker from scratch, same as building it on current C# architecture.
 
+- **Observation:** OpenRouter's current public docs and model pages make the hosted OB1 value proposition more concrete than the previous draft captured: one API surface, 400+ models, 60+ providers, explicit provider routing, and per-model fallback/uptime views.
+   **Evidence:** `https://openrouter.ai/docs`, `https://openrouter.ai/pricing`, and the model pages for `openai/gpt-4o-mini`, `anthropic/claude-sonnet-4`, and `google/gemini-2.5-flash`.
+   **Impact:** Options A and B gain a clearer operational upside for remote-worker scenarios, but not enough to overcome the local-first and stack-fit advantages of Option C.
+
 - **Observation:** Supabase Free includes enough storage and Edge Function capacity to make hobby-scale remote synthesis plausible for Options A/B: 500 MB database, 1 GB file storage, and 500,000 Edge Function invocations per month.
    **Evidence:** Supabase pricing page reviewed on 2026-05-14.
    **Impact:** The first-pass analysis overstated the minimum operating cost for OB1-based options. The cost floor is closer to ~$2–5/month at hobby scale, though the free tier still does not support the full 100K-memory upper-bound workload and still pauses after 1 week of inactivity.
@@ -936,6 +955,10 @@ Actions taken:
 ---
 
 ## §6c. Decision Log
+
+- **Decision:** Kept the numeric Option Scoring Matrix unchanged after the OpenRouter revision.
+   **Rationale:** OpenRouter's benefits are real, but in the existing matrix they strengthen A/B mainly through narrative operational leverage rather than enough change in the weighted categories to justify a score move. The strongest weights still sit on per-ingest synthesis simplicity, graph path, local-first behavior, and stack fit for the current solo C# developer.
+   **Date:** 2026-05-14
 
 - **Decision:** Performed all research tasks (4.1–4.5) in a single session rather than separate atomic commits per task.
   **Rationale:** Research tasks are read-only and interdependent (each task's findings inform the next). The risk of interruption is low compared to the cost of artificial session breaks between read operations.
