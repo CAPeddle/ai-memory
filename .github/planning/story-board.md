@@ -2,15 +2,177 @@
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
 > Next planning target: ST-013 — split investigation docs into landing pages and focused fragments.
-> Last updated: 2026-05-14
+> Last updated: 2026-05-15
 
 ---
 
 ## Backlog
 
+<!-- Phase 1 — Persistence Layer -->
+
+### ST-002: Implement SQLite schema + FTS5 + migrations
+- Type: infrastructure
+- Source: PO
+- phase: 1
+- Value: 5
+- Blocked by: ST-001
+- Touches: `src/AiMemory.Core/`, database migrations
+- Acceptance criteria:
+  - [ ] SQLite database created on first run with all tables
+  - [ ] FTS5 virtual table with triggers for auto-sync
+  - [ ] Migration system applies schema changes idempotently
+  - [ ] Schema matches design in memory-architecture-design.md §6
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-002.md`
+- Docs: `docs/investigations/sqlite-vs-postgresql.md`, `docs/investigations/memory-architecture-design.md`
+
+### ST-003: Implement IMemoryRepository (SQLite)
+- Type: feature
+- Source: PO
+- phase: 1
+- Value: 4
+- Blocked by: ST-002
+- Touches: `src/AiMemory.Core/`
+- Acceptance criteria:
+  - [ ] CRUD operations for semantic and episodic memories
+  - [ ] Recall event logging on every retrieval
+  - [ ] Content-hash deduplication on insert
+  - [ ] Soft-delete via `active` flag
+  - [ ] Unit tests with in-memory SQLite
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-003.md`
+- Docs: `docs/investigations/memory-architecture-design.md`
+
+<!-- Phase 2 — Retrieval Core -->
+
+### ST-004: Implement embedding service (OpenAI)
+- Type: feature
+- Source: PO
+- phase: 2
+- Value: 4
+- Blocked by: ST-001
+- Touches: `src/AiMemory.Core/`
+- Acceptance criteria:
+  - [ ] IEmbeddingService interface with OpenAI implementation
+  - [ ] Configurable model (default: text-embedding-3-small)
+  - [ ] Batch embedding support
+  - [ ] Graceful fallback when API unavailable (search degrades to FTS-only)
+  - [ ] Unit tests with mocked HTTP responses
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-004.md`
+- Docs: `docs/investigations/memory-architecture-design.md`
+
+### ST-005: Implement hybrid search (FTS5 + vector + RRF + MMR)
+- Type: feature
+- Source: PO
+- phase: 2
+- Value: 5
+- Blocked by: ST-003, ST-004
+- Touches: `src/AiMemory.Core/`
+- Acceptance criteria:
+  - [ ] FTS5 BM25 search returns ranked results
+  - [ ] Vector cosine similarity search returns ranked results
+  - [ ] RRF fusion combines both result sets
+  - [ ] MMR diversity re-ranking (λ = 0.7) reduces redundancy
+  - [ ] Project boosting (1.2× same-project)
+  - [ ] Default limit = 10, configurable up to 100
+  - [ ] Recall events logged for every search
+  - [ ] Integration test with seeded data achieves >80% recall on test queries
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-005.md`
+- Docs: `docs/investigations/memory-architecture-design.md`, `docs/investigations/openclaw-memory-architecture-analysis.md`
+
+<!-- Phase 3 — API Layer -->
+
+### ST-006: Implement REST API endpoints
+- Type: feature
+- Source: PO
+- phase: 3
+- Value: 4
+- Blocked by: ST-003, ST-005
+- Touches: `src/AiMemory.Server/`
+- Acceptance criteria:
+  - [ ] All endpoints from interface-design-mcp-rest.md implemented
+  - [ ] Response envelope with consistent error format
+  - [ ] Input validation with problem details (RFC 7807)
+  - [ ] Swagger/OpenAPI spec generated
+  - [ ] Integration tests for happy path + error cases
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-006.md`
+- Docs: `docs/investigations/interface-design-mcp-rest.md`
+
+### ST-007: Implement MCP server (facade over service layer)
+- Type: feature
+- Source: PO
+- phase: 3
+- Value: 5
+- Blocked by: ST-006
+- Touches: `src/AiMemory.Server/`
+- Acceptance criteria:
+  - [ ] MCP tools: memory_search, memory_log_episode, memory_log_semantic, memory_inspect, memory_feedback
+  - [ ] MCP resources: memory://facts/{project}, memory://recent-episodes
+  - [ ] MCP prompts: recall_context
+  - [ ] `memory_search` returns token-efficient formatted results with score and provenance
+  - [ ] Dual transport: stdio + HTTP (StreamableHTTP)
+  - [ ] Integration test: MCP client round-trip
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-007.md`
+- Docs: `docs/investigations/interface-design-mcp-rest.md`
+
+### ST-020: Implement request-scoped ambient context (contextual scoping)
+- Type: feature
+- Source: PO (contextual scoping investigation 2026-05-15)
+- phase: 3
+- Value: 4
+- Blocked by: ST-006, ST-007
+- Touches: `src/AiMemory.Server/`, `src/AiMemory.Core/`
+- Acceptance criteria:
+  - [ ] `AmbientContextScope` (AsyncLocal) implemented in `AiMemory.Core`
+  - [ ] ASP.NET Core middleware extracts `X-AI-Memory-Context` header and sets ambient scope per request
+  - [ ] `IMemoryService.HybridSearchAsync()` resolves project/profile from: (1) explicit parameter → (2) ambient context → (3) null
+  - [ ] MCP `memory_search` accepts optional `context` parameter (e.g., `"project:zoom"`, `"project:zoom,profile:professional"`)
+  - [ ] MCP `story_list`, `memory_teach`, `memory_log_episode` accept optional `context` parameter
+  - [ ] `story_claim` response includes resolved context string (`project:{slug},profile:{profile}`) per FR-B-009
+  - [ ] Requests without context header/parameter behave identically to v1.0 (backward compatible)
+  - [ ] Unit tests: ambient scope correctly overridden by explicit parameter; ambient scope correctly cleaned up after request
+  - [ ] Integration test: search with `X-AI-Memory-Context: project=zoom` returns project-boosted results without explicit `?project=zoom` query parameter
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-020.md` (to be created)
+- Docs: `docs/design/adr/ADR-008-context-scoping.md`, `docs/requirements/SRS.md` (FR-R-016, FR-API-013, FR-MCP-007, FR-B-009)
+
+<!-- Phase 4 — Intelligence -->
+
+### ST-008: Implement consolidation pipeline
+- Type: feature
+- Source: PO
+- phase: 4
+- Value: 3
+- Blocked by: ST-005
+- Touches: `src/AiMemory.Core/`
+- Acceptance criteria:
+  - [ ] Consolidation scoring (frequency, recency, relevance, diversity)
+  - [ ] Promotion: episodic → semantic when score threshold met
+  - [ ] Content-hash deduplication prevents duplicate promotions
+  - [ ] Background service runs consolidation on configurable schedule
+  - [ ] Dry-run mode shows what would be promoted without acting
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-008.md`
+- Docs: `docs/investigations/memory-architecture-design.md`
+
+### ST-010: Integration testing (E2E round-trip)
+- Type: debt
+- Source: PO
+- phase: 4
+- Value: 4
+- Blocked by: ST-007
+- Touches: `tests/`
+- Acceptance criteria:
+  - [ ] E2E test: log episode via REST → search via MCP → verify result
+  - [ ] E2E test: log semantic via MCP → search via REST → verify result
+  - [ ] E2E test: search returns diverse results (MMR verification)
+  - [ ] E2E test: recall events tracked correctly
+  - [ ] CI pipeline runs tests on push
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-010.md`
+- Docs: `docs/investigations/interface-design-mcp-rest.md`
+
+<!-- Phase 5 — Views and Graph -->
+
 ### ST-018: Graph schema + structural fingerprints for SQLite
 - Type: feature
 - Source: ST-017 spike outcome
+- phase: 5
 - Value: 4
 - Blocked by: ST-002, ST-003
 - Touches: `src/AiMemory.Core/`, database migrations
@@ -27,6 +189,7 @@
 ### ST-019: ISynthesisService + Obsidian-compatible Markdown view writer
 - Type: feature
 - Source: ST-017 spike outcome
+- phase: 5
 - Value: 4
 - Blocked by: ST-003, ST-004
 - Touches: `src/AiMemory.Core/`
@@ -41,9 +204,12 @@
 - Docs: `docs/investigations/openbrain-pivot-evaluation.md`, `docs/investigations/memory-architecture-design.md`
 - Notes: Downstream from ST-017. Per-ingest synthesis with direct filesystem writes — the key advantage of C# over OB1 cloud-hosted approaches. Can use Ollama for $0 synthesis cost.
 
+<!-- Phase 6 — Documentation and Governance -->
+
 ### ST-013: Split investigation docs into landing pages and focused fragments
 - Type: infrastructure
 - Source: PO
+- phase: 6
 - Value: 4
 - Blocked by: none
 - Touches: `.github/copilot-instructions.md`, `.github/prompts/`, `.github/planning/`, `docs/investigations/`
@@ -55,129 +221,6 @@
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-013.md`
 - Docs: `docs/investigations/memory-architecture-design.md`, `docs/investigations/language-stack-recommendation.md`, `docs/investigations/sqlite-vs-postgresql.md`, `docs/investigations/interface-design-mcp-rest.md`, `docs/investigations/workflow-and-prompt-design.md`, `docs/investigations/context-engineering-principles.md`, `docs/investigations/openclaw-official-docs-review.md`, `docs/investigations/openclaw-memory-architecture-analysis.md`
 - Notes: Split the current investigation monoliths into per-topic folders while keeping the top-level files as compact landing pages. Seed query packet: `.github/planning/query-packets/QP-013-split-investigation-docs.md`. Keep behind ST-011 so governance-review workflow changes land before broader doc-structure refactoring.
-
-### ST-002: Implement SQLite schema + FTS5 + migrations
-- Type: infrastructure
-- Source: PO
-- Value: 5
-- Blocked by: ST-001
-- Touches: `src/AiMemory.Core/`, database migrations
-- Acceptance criteria:
-  - [ ] SQLite database created on first run with all tables
-  - [ ] FTS5 virtual table with triggers for auto-sync
-  - [ ] Migration system applies schema changes idempotently
-  - [ ] Schema matches design in memory-architecture-design.md §6
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-002.md`
-- Docs: `docs/investigations/sqlite-vs-postgresql.md`, `docs/investigations/memory-architecture-design.md`
-
-### ST-003: Implement IMemoryRepository (SQLite)
-- Type: feature
-- Source: PO
-- Value: 4
-- Blocked by: ST-002
-- Touches: `src/AiMemory.Core/`
-- Acceptance criteria:
-  - [ ] CRUD operations for semantic and episodic memories
-  - [ ] Recall event logging on every retrieval
-  - [ ] Content-hash deduplication on insert
-  - [ ] Soft-delete via `active` flag
-  - [ ] Unit tests with in-memory SQLite
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-003.md`
-- Docs: `docs/investigations/memory-architecture-design.md`
-
-### ST-004: Implement embedding service (OpenAI)
-- Type: feature
-- Source: PO
-- Value: 4
-- Blocked by: ST-001
-- Touches: `src/AiMemory.Core/`
-- Acceptance criteria:
-  - [ ] IEmbeddingService interface with OpenAI implementation
-  - [ ] Configurable model (default: text-embedding-3-small)
-  - [ ] Batch embedding support
-  - [ ] Graceful fallback when API unavailable (search degrades to FTS-only)
-  - [ ] Unit tests with mocked HTTP responses
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-004.md`
-- Docs: `docs/investigations/memory-architecture-design.md`
-
-### ST-005: Implement hybrid search (FTS5 + vector + RRF + MMR)
-- Type: feature
-- Source: PO
-- Value: 5
-- Blocked by: ST-003, ST-004
-- Touches: `src/AiMemory.Core/`
-- Acceptance criteria:
-  - [ ] FTS5 BM25 search returns ranked results
-  - [ ] Vector cosine similarity search returns ranked results
-  - [ ] RRF fusion combines both result sets
-  - [ ] MMR diversity re-ranking (λ = 0.7) reduces redundancy
-  - [ ] Project boosting (1.2× same-project)
-  - [ ] Default limit = 10, configurable up to 100
-  - [ ] Recall events logged for every search
-  - [ ] Integration test with seeded data achieves >80% recall on test queries
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-005.md`
-- Docs: `docs/investigations/memory-architecture-design.md`, `docs/investigations/openclaw-memory-architecture-analysis.md`
-
-### ST-006: Implement REST API endpoints
-- Type: feature
-- Source: PO
-- Value: 4
-- Blocked by: ST-003, ST-005
-- Touches: `src/AiMemory.Server/`
-- Acceptance criteria:
-  - [ ] All endpoints from interface-design-mcp-rest.md implemented
-  - [ ] Response envelope with consistent error format
-  - [ ] Input validation with problem details (RFC 7807)
-  - [ ] Swagger/OpenAPI spec generated
-  - [ ] Integration tests for happy path + error cases
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-006.md`
-- Docs: `docs/investigations/interface-design-mcp-rest.md`
-
-### ST-007: Implement MCP server (facade over service layer)
-- Type: feature
-- Source: PO
-- Value: 5
-- Blocked by: ST-006
-- Touches: `src/AiMemory.Server/`
-- Acceptance criteria:
-  - [ ] MCP tools: memory_search, memory_log_episode, memory_log_semantic, memory_inspect, memory_feedback
-  - [ ] MCP resources: memory://facts/{project}, memory://recent-episodes
-  - [ ] MCP prompts: recall_context
-  - [ ] `memory_search` returns token-efficient formatted results with score and provenance
-  - [ ] Dual transport: stdio + HTTP (StreamableHTTP)
-  - [ ] Integration test: MCP client round-trip
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-007.md`
-- Docs: `docs/investigations/interface-design-mcp-rest.md`
-
-### ST-008: Implement consolidation pipeline
-- Type: feature
-- Source: PO
-- Value: 3
-- Blocked by: ST-005
-- Touches: `src/AiMemory.Core/`
-- Acceptance criteria:
-  - [ ] Consolidation scoring (frequency, recency, relevance, diversity)
-  - [ ] Promotion: episodic → semantic when score threshold met
-  - [ ] Content-hash deduplication prevents duplicate promotions
-  - [ ] Background service runs consolidation on configurable schedule
-  - [ ] Dry-run mode shows what would be promoted without acting
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-008.md`
-- Docs: `docs/investigations/memory-architecture-design.md`
-
-### ST-010: Integration testing (E2E round-trip)
-- Type: debt
-- Source: PO
-- Value: 4
-- Blocked by: ST-007
-- Touches: `tests/`
-- Acceptance criteria:
-  - [ ] E2E test: log episode via REST → search via MCP → verify result
-  - [ ] E2E test: log semantic via MCP → search via REST → verify result
-  - [ ] E2E test: search returns diverse results (MMR verification)
-  - [ ] E2E test: recall events tracked correctly
-  - [ ] CI pipeline runs tests on push
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-010.md`
-- Docs: `docs/investigations/interface-design-mcp-rest.md`
 
 ---
 
@@ -198,6 +241,7 @@
 
 ### ST-015: Improve ExecPlan template to show outcomes up front
 - Type: infrastructure
+- phase: 0
 - Source: PO
 - Value: 3
 - Blocked by: none
@@ -214,6 +258,7 @@
 
 ### ST-016: Research software engineering best practices for governance adoption
 - Type: infrastructure
+- phase: 0
 - Source: PO
 - Value: 5
 - Blocked by: none
@@ -229,6 +274,7 @@
 
 ### ST-017: Evaluate Open Brain as base layer vs current architecture
 - Type: spike
+- phase: 0
 - Source: PO
 - Value: 5
 - Blocked by: none
@@ -249,6 +295,7 @@
 
 ### ST-012: Add discoverable AI-governance asset catalog and validation
 - Type: infrastructure
+- phase: 0
 - Source: PO
 - Value: 4
 - Completed: 2026-05-05
@@ -265,6 +312,7 @@
 
 ### ST-001: Scaffold .NET solution and project structure
 - Type: infrastructure
+- phase: 0
 - Source: PO
 - Value: 5
 - Completed: 2026-05-05
@@ -282,6 +330,7 @@
 
 ### ST-014: Investigate memsearch (zilliztech) for architectural learnings
 - Type: spike
+- phase: 0
 - Source: PO
 - Value: 4
 - Completed: 2026-05-04
@@ -299,6 +348,7 @@
 
 ### ST-011: Institutionalize recurring governance review and remediation
 - Type: debt
+- phase: 0
 - Source: PO
 - Value: 5
 - Completed: 2026-05-04
@@ -306,6 +356,7 @@
 
 ### ST-009: Create workflow governance files (.github/)
 - Type: infrastructure
+- phase: 0
 - Source: PO
 - Value: 5
 - Completed: 2025-05-02
