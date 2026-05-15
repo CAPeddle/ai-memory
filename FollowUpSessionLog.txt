@@ -3,79 +3,32 @@
 ## Last Session: 2026-05-15
 
 ### Accomplished
-- Created full SE document body: SRS v1.0, 7 ADRs (001–007), SystemDesign.md, delivery-plan.md, story-board.md phase tags + reorder (prior session, same day).
-- Ran 3 parallel investigation agents on: (1) MicrosoftCopilotProjectOverview.md deviation check, (2) FTS5/SQLite scoping, (3) contextual scoping design options.
-- Applied Q1 wording recommendations to MicrosoftCopilotProjectOverview.md (3 clarifications; no deviations found).
-- Created ADR-008-context-scoping.md: Option C accepted — AsyncLocal ambient context + ASP.NET Core middleware.
-- Updated SRS to v1.1: FR-R-016, FR-API-013, FR-MCP-007, FR-B-009, FR-C-008 added; traceability matrix updated.
-- Added ST-020 (ambient context scoping, phase: 3, blocked by ST-006+ST-007) to story-board.md and delivery-plan.md.
-- Committed all changes: `33b742e` (docs: apply investigation findings — Q1 wording, ADR-008 contextual scoping, SRS v1.1, ST-020).
+- Created SE document body: SRS v1.0→v1.1, ADR-001–008, SystemDesign.md, delivery-plan.md.
+- Applied 3 wording clarifications to MicrosoftCopilotProjectOverview.md (no deviations found).
+- ADR-008 accepted: AsyncLocal ambient context + middleware (Option C).
+- SRS v1.1: FR-R-016, FR-API-013, FR-MCP-007, FR-B-009, FR-C-008 added.
+- ST-020 (ambient context, phase 3) added to board and delivery plan.
+- Governance review: promoted design-authority hierarchy in copilot-instructions.md; extracted Supabase evaluation into query packet.
 
-### Pending Evaluation — New Topic for Next Session
-**Topic: Supabase as a hosted MCP server platform for chat integration.**
-The PO wants to evaluate the benefit of hosting the ai-memory MCP server on Supabase as an additive deployment option (not a replacement for local-first), enabling integration into SaaS chat platforms (Claude.ai, GitHub Copilot, Zed, etc.) as a managed online MCP endpoint.
-
-See §Supabase Evaluation Package below for full context.
+### Pending Evaluation
+PO wants to evaluate Supabase as a hosted MCP platform for chat integration.
+Query packet: `.github/planning/query-packets/QP-Supabase-Hosted-MCP.md`
 
 ### Resume Point
-- No story currently In Progress.
-- Stories in Review: ST-015, ST-016, ST-017 (all Phase 0, awaiting PO acceptance).
-- Next action: PO to review ST-015, ST-016, ST-017 for acceptance, then begin Phase 1 (ST-002).
-- Alternatively: open the Supabase evaluation as a new spike story before starting Phase 1.
+- No story In Progress. Stories in Review: ST-015, ST-016, ST-017 (Phase 0).
+- Next: PO to accept ST-015/016/017, then begin Phase 1 (ST-002).
+- Alternative: open Supabase evaluation as spike before Phase 1.
 
 ### Board State
 - In Progress: none
 - Review: ST-015, ST-016, ST-017
-- Backlog: ST-002 (P1), ST-003 (P1), ST-004 (P2), ST-005 (P2), ST-006 (P3), ST-007 (P3), ST-020 (P3), ST-008 (P4), ST-010 (P4), ST-018 (P5), ST-019 (P5), ST-013 (P6)
 - Done: ST-001, ST-009, ST-011, ST-012, ST-014
+- Backlog: ST-002–ST-020 (Phases 1–6)
 
 ### Avoidance
-- FTS5 schema references in SystemDesign.md are correct and intentional — they document SqliteMemoryStore. Do not treat them as lock-in; IMemoryStore abstraction is the architectural boundary.
-- "No memory tiers" in MicrosoftCopilotProjectOverview.md is now revised — do not revert.
-- ADR-008 selects Option C (stateless ambient context). Do not substitute with Option B (server-side session) without a new ADR and PO approval.
-- SRS is now v1.1; do not reference it as v1.0 in new documents.
-
----
-
-## §Supabase Evaluation Package
-
-### Background
-The current design is local-first (localhost REST + stdio/HTTP MCP, SQLite storage). ADR-002 documents PostgreSQL/Supabase as a first-class upgrade path for storage. However, a separate but related question has emerged: could the MCP server itself be deployed to Supabase (or a Supabase-adjacent platform) to provide a hosted online endpoint accessible to SaaS AI chat platforms?
-
-### Why This Matters
-Chat platforms (Claude.ai, GitHub Copilot chat, Zed AI, Cursor) support "remote MCP servers" accessed via HTTP. If ai-memory's MCP server is only reachable at localhost, it cannot be connected to these platforms. A hosted deployment would enable:
-- Agent memory persistence across different machines and chat sessions
-- Team-shared memory contexts (multi-user scenario)
-- Zero-install AI agent integration (no local server required)
-- Obsidian-style "brain in the cloud" accessible from any device
-
-### What "Supabase MCP hosting" could mean (three interpretations)
-1. **Storage-on-Supabase + MCP server elsewhere:** Supabase provides PostgreSQL + pgvector (storage backend switch from SQLite per ADR-002), while the C#/.NET MCP server is deployed to Azure Container Apps / Fly.io / Render with a public HTTPS endpoint. Supabase = database only.
-2. **Supabase Edge Functions as MCP handler:** MCP tool handlers are implemented as Supabase Edge Functions (Deno/TypeScript). This would require a TypeScript rewrite of the MCP facade; Core service logic would need porting or a JSON-over-HTTP bridge to a C# backend.
-3. **Supabase Realtime + Row-Level Security:** Use Supabase's built-in auth (JWT/anon keys), RLS policies for multi-user memory isolation, and Realtime for view push notifications. The C# server connects to Supabase PostgreSQL; Supabase handles auth and multi-tenancy.
-
-### Key Evaluation Dimensions
-The next session should evaluate this across:
-
-| Dimension | Questions to answer |
-|-----------|-------------------|
-| **Architecture fit** | Does option 1, 2, or 3 (above) align with ADR-002 (IMemoryStore), ADR-004 (MCP facade over C# service), and ADR-008 (ambient context)? Which requires fewest ADR revisions? |
-| **MCP transport compatibility** | Supabase Edge Functions support HTTP. Does the ModelContextProtocol C# SDK's HTTP/StreamableHTTP transport work as a public HTTPS endpoint? What changes are needed for public-internet MCP (auth headers, CORS, rate limiting)? |
-| **Authentication** | NFR-L4 says no auth in v1.0 single-user local mode. A hosted MCP server needs auth. Supabase provides anon/JWT keys. How does this interact with per-project memory isolation and WIP-limit-per-profile? What auth model (API key per user, OAuth, Supabase anon key) is lowest friction for chat platform MCP integration? |
-| **Cost** | NFR-C2 hard ceiling is €10/month. Supabase free tier: 500 MB database, 1 GB storage, 2 million Edge Function invocations/month. Supabase Pro: $25/month (over NFR-C2 ceiling for cloud-only users). How does this interact with the cost model? Does the ceiling need renegotiation for a hosted deployment profile? |
-| **Multi-tenancy** | Hosted MCP = multiple users potentially sharing one server. Current design has no user identity. How would memories be isolated per user? (Options: one Supabase project per user; RLS policies with user_id column on memories; separate schema per user.) |
-| **Local-first + hosted hybrid** | Could both exist simultaneously? (Local SQLite for $0/month offline + optional Supabase mirror for online access.) How would sync work? Is this overcomplicated for v1.0? |
-| **Chat platform integration mechanics** | How do Claude.ai, GitHub Copilot, and Cursor actually connect to remote MCP servers? What URL/handshake format is required? Does ai-memory's HTTP transport (StreamableHTTP) already satisfy these platform requirements, or are there protocol differences? |
-| **Delivery impact** | Would hosted MCP need a new story (ST-021?) and new ADR (ADR-009?)? Would it be additive to Phase 3 (after ST-007) or a Phase 6+ item? |
-
-### Useful starting material for the investigation
-- ADR-002: `docs/design/adr/ADR-002-storage-backend.md` — PostgreSQL/Supabase upgrade path
-- ADR-004: `docs/design/adr/ADR-004-interface-design.md` — MCP facade + transport design
-- SRS NFR-L3, NFR-L4: localhost binding, no auth in v1.0
-- SRS NFR-C1, NFR-C2: €0 baseline, €10/month ceiling
-- SystemDesign.md §1: transport layer diagram (MCP HTTP/StreamableHTTP shown)
-- Supabase docs: https://supabase.com/docs/guides/functions (Edge Functions, Deno)
-- Supabase MCP: https://supabase.com/docs/guides/getting-started/mcp (Supabase's own MCP server — note: this exposes Supabase features, not ai-memory; reference only)
-- MCP specification StreamableHTTP: https://modelcontextprotocol.io/docs/concepts/transports
-- GitHub Copilot remote MCP: https://docs.github.com/en/copilot/using-github-copilot/using-extensions/using-github-copilot-extensions#adding-mcp-servers
+- FTS5 in SystemDesign.md is correct — it documents SqliteMemoryStore only.
+- "No memory tiers" in ProjectOverview.md is revised — do not revert.
+- ADR-008 = Option C (stateless ambient). Do not substitute Option B without new ADR + PO.
+- SRS is v1.1; do not reference as v1.0.
+- 3 stories in Review exceeds WIP limit of 1. Next session must resolve Review before starting new implementation work.
 
