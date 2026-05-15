@@ -9,26 +9,55 @@
 - SRS v1.1: FR-R-016, FR-API-013, FR-MCP-007, FR-B-009, FR-C-008 added.
 - ST-020 (ambient context, phase 3) added to board and delivery plan.
 - Governance review: promoted design-authority hierarchy in copilot-instructions.md; extracted Supabase evaluation into query packet.
+- **Accepted ST-015, ST-016, ST-017** — moved to Done.
+- **Created ST-021** — Supabase hosted-first architecture spike (critical, blocks Phase 1).
 
-### Pending Evaluation
-PO wants to evaluate Supabase as a hosted MCP platform for chat integration.
-Query packet: `.github/planning/query-packets/QP-Supabase-Hosted-MCP.md`
+### Supabase Hosted-First Evaluation (ST-021)
+PO directed a major architectural evaluation:
+- **Hosted-first pivot**: Supabase Postgres replaces SQLite as primary storage (supersedes ADR-002).
+- **Hybrid architecture**: Supabase Edge Functions (Deno/TS) for remote MCP front-door + C# local tooling for views/pipelines.
+- **Multi-AI access**: Claude Desktop, ChatGPT, Cursor, Claude Code — all connect to same hosted MCP.
+- **OB1 pattern**: `thoughts` table + entity-extraction schema + Edge Function MCP server.
+- **Always-connected**: No offline sync. Local tooling calls remote hosted MCP.
+- **Markdown views preserved**: Git-tracked local Markdown files (ADR-006 unchanged).
+- **Spike scope**: Broad — evaluate C# vs Deno per layer, schema mapping, cost, ADR impact.
+- **Spike output**: Investigation doc + updated ADRs + revised storyboard.
+- **No hard timebox**.
+
+### PO Decisions Captured
+1. Deployment model: **Hosted-first pivot** (not hybrid/additive).
+2. Raw shards: Memory records (semantic + episodic) AND Open Brain Thoughts.
+3. Chat platforms: Whatever OB1 already supports (Claude Desktop, ChatGPT, Cursor, Claude Code).
+4. Offline: **Always-connected** (simpler, no sync).
+5. ADR-002: **Supersede with Postgres**.
+6. Priority: **Before Phase 1 as spike** (critical — blocks all implementation).
+7. Spike scope: Broad, including hybrid C#+TS evaluation.
+8. ST-017: Not reopened — new story ST-021 created.
+9. WIP: Accepted ST-015/016/017 first, then ST-021.
+
+### Impact Assessment (from evaluation)
+- ~60% of ADR decisions (001-005, 007-008) need review if pivot confirmed.
+- ~80% of investigation docs remain reusable (concepts transfer regardless of stack).
+- C# scaffold (ST-001) at risk if Deno chosen for all layers.
+- Phase 1-5 stories need replanning based on spike outcome.
+- ADR-006 (Markdown views) and ADR-003 (search algorithm) core logic preserved.
 
 ### Resume Point
-- No story In Progress. Stories in Review: ST-015, ST-016, ST-017 (Phase 0).
-- Next: PO to accept ST-015/016/017, then begin Phase 1 (ST-002).
-- Alternative: open Supabase evaluation as spike before Phase 1.
+- No story In Progress. Review: empty.
+- **Next: Execute ST-021 spike** — Supabase hosted-first architecture evaluation.
+- Query packet: `.github/planning/query-packets/QP-Supabase-Hosted-MCP.md`
 
 ### Board State
 - In Progress: none
-- Review: ST-015, ST-016, ST-017
-- Done: ST-001, ST-009, ST-011, ST-012, ST-014
-- Backlog: ST-002–ST-020 (Phases 1–6)
+- Review: empty
+- Done: ST-001, ST-009, ST-011, ST-012, ST-014, ST-015, ST-016, ST-017
+- Backlog: ST-021 (Phase 0.5, critical), ST-002–ST-020 (Phases 1–6)
 
 ### Avoidance
 - FTS5 in SystemDesign.md is correct — it documents SqliteMemoryStore only.
 - "No memory tiers" in ProjectOverview.md is revised — do not revert.
 - ADR-008 = Option C (stateless ambient). Do not substitute Option B without new ADR + PO.
 - SRS is v1.1; do not reference as v1.0.
-- 3 stories in Review exceeds WIP limit of 1. Next session must resolve Review before starting new implementation work.
+- ST-017 recommended "Stay Current" (4.50/5.0) — do not treat as binding; ST-021 explicitly re-evaluates.
+- ST-021 blocks Phase 1 implementation — do NOT start ST-002/ST-003 until spike is resolved.
 

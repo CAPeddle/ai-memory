@@ -263,11 +263,14 @@
   - `docker/postgres-age/Dockerfile`, `docker-compose.yml`
 - Notes: 7/8 acceptance criteria met. Docker Compose artefact is complete pending local build confirmation. Key discovery: OB1 already has `search_thoughts_text()` with two-phase BM25 — implementation story should extend it. Downstream stories needed: entity extraction worker, consolidation worker, cloud deployment.
 
+## Done
+
 ### ST-015: Improve ExecPlan template to show outcomes up front
 - Type: infrastructure
 - phase: 0
 - Source: PO
 - Value: 3
+- Completed: 2026-05-15
 - Blocked by: none
 - Touches: `.github/planning/execplans/_TEMPLATE.md`, `.github/planning/execplans/`
 - Acceptance criteria:
@@ -278,13 +281,14 @@
   - [x] The narrative flow makes it clear at a glance: intent → requirements → what was actually delivered
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-015.md`
 - Docs: `.github/planning/execplans/_TEMPLATE.md`, `.github/planning/execplans/supporting_material/exec-plan-ST-014-outcomes-worked-example.md`
-- Notes: Tasks 4.1-4.4 executed with atomic commits; awaiting PO acceptance.
+- Notes: Accepted by PO.
 
 ### ST-016: Research software engineering best practices for governance adoption
 - Type: infrastructure
 - phase: 0
 - Source: PO
 - Value: 5
+- Completed: 2026-05-15
 - Blocked by: none
 - Touches: `.github/instructions/`, `.github/prompts/`, `.github/planning/`, `docs/investigations/`
 - Acceptance criteria:
@@ -294,13 +298,14 @@
   - [x] Adoption guidance identifies what to introduce now vs defer, including rationale and risk
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-016.md`
 - Docs: `docs/investigations/se-best-practices.md`, `.github/instructions/coding-standards.instructions.md`, `.github/instructions/ways-of-working.instructions.md`
-- Notes: All 6 tasks executed and verified. Build clean, tests pass, 4 analyzers active.
+- Notes: Accepted by PO. All 6 tasks executed and verified. Build clean, tests pass, 4 analyzers active.
 
 ### ST-017: Evaluate Open Brain as base layer vs current architecture
 - Type: spike
 - phase: 0
 - Source: PO
 - Value: 5
+- Completed: 2026-05-15
 - Blocked by: none
 - Touches: `docs/investigations/`, `.github/planning/`
 - Acceptance criteria:
@@ -313,9 +318,7 @@
   - [x] Impact assessment on existing backlog stories ST-002 through ST-010 if pivot is recommended
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-017.md`
 - Docs: `docs/investigations/openbrain-pivot-evaluation.md`
-- Notes: OpenRouter revision executed. Dedicated subsection and concrete provider/model examples added; recommendation remains Option C and A/B scores remain unchanged.
-
-## Done
+- Notes: Accepted by PO. Recommendation was Option C (Stay Current, 4.50/5.0). ST-021 opens a new evaluation with hybrid architecture lens.
 
 ### ST-012: Add discoverable AI-governance asset catalog and validation
 - Type: infrastructure
