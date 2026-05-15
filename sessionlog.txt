@@ -1,0 +1,659 @@
+User: /Plan-New A research spike is required to validate a pivot I am considering. That the base layer of the memory model should be as in the Open Brain project (https://github.com/NateBJones-Projects/OB1)
+
+But with two changes/additions or extensions:
+ As per the final recommendation in docs\investigations\Youtube\Nate B Jones on Open Brain vs LLM Wiki.md I want to have a per injest synthesis ability which creates the Obsidian (or other viewer) updated view of some aspect. For instance as per the discussion in docs\investigations\Discussions\Gemini Agile MD Storyboard.md
+
+GitHub Copilot:
+
+User: /Plan-New A research spike is required to validate a pivot I am considering. That the base layer of the memory model should be as in the Open Brain project (https://github.com/NateBJones-Projects/OB1). I like that it pursues hosting online using openrouter and supabase
+
+But with extensions:
+ - As per the final recommendation in docs\investigations\Youtube\Nate B Jones on Open Brain vs LLM Wiki.md I want to have a per injest synthesis ability which creates the Obsidian (or other viewer) updated view of some aspect/view. For instance as per the discussion in "docs\investigations\Discussions\Gemini Agile MD Storyboard.md" i would want a storyboard that is tracking professional and personal todo items in a board format.
+ - In addition to the vector search and searches on text similarlity i want  structural similarity. I want a graph view of the data, i pursued aspects of this conversation in  docs\investigations\Discussions\Open Brain Project Overview and Implementation.html  . Is it then better to add a graph layer?
+
+ Work back and forth with me using the VS Code question tool to define the actual requirements. Tease out the indended use cases and how the Open Brain project can if possible be extended to support these usecases. I recognise that they are not one solution or a best of both worlds. Therefore challenge any assumptions
+
+GitHub Copilot: Read [](file:///c%3A/projects/ai-memory/.github/planning/story-board.md#1-1), lines 1 to 120
+
+Read [](file:///c%3A/projects/ai-memory/docs/investigations/memory-architecture-design.md#1-1), lines 1 to 80
+
+Read [](file:///c%3A/projects/ai-memory/.github/planning/story-board.md#121-121), lines 121 to 200
+
+Read [](file:///c%3A/projects/ai-memory/docs/investigations/Discussions/Open%20Brain%20Project%20Overview%20and%20Implementation.html)
+
+I've read the board and the current architecture. The current ai-memory design is built around **SQLite + FTS5 + vector search** in **C#/.NET 8**, with stories ST-001 through ST-010 forming the core implementation backlog. This proposed spike represents a potentially significant architectural pivot.
+
+Let me understand the intent and scope better before we frame this as a story.
+
+Context: The current board at story-board.md has the **existing architecture** grounded in memory-architecture-design.md — SQLite, local-first, C#/.NET, with hybrid FTS5+vector retrieval. Your proposed pivot references Open Brain (Postgres/Supabase + pgvector + OpenRouter + MCP, Python-based) with two extensions: per-ingest synthesis and graph/structural similarity.
+
+Analyzing your answers...
+
+Good — this is a full replacement evaluation. Let me do targeted research to understand the gap between what Open Brain provides and what the investigation docs require, so I can frame the right questions about scope, type, and value.
+
+Read [](file:///c%3A/projects/ai-memory/docs/investigations/memory-architecture-design.md#80-80), lines 80 to 180
+
+Read [](file:///c%3A/projects/ai-memory/docs/investigations/interface-design-mcp-rest.md#1-1), lines 1 to 80
+
+Read [](file:///c%3A/projects/ai-memory/docs/investigations/sqlite-vs-postgresql.md#1-1), lines 1 to 60
+
+Let me look at what Open Brain actually provides in its repo to understand the fork-vs-build question properly.
+
+
+
+Fetched https://github.com/NateBJones-Projects/OB1
+
+Research complete. Here's what I've found — summarizing key tensions before asking scoping questions:
+
+**Open Brain (OB1) key findings:**
+- **Stack**: TypeScript (53%) + Python (14%) + PLpgSQL (9%) — *not* C#/.NET
+- **Storage**: Supabase (PostgreSQL + pgvector)
+- **License**: **FSL-1.1-MIT** (Functional Source License) — restricts competing commercial use for 2 years after each release
+- **Core model**: Flat `thoughts` table + vector embeddings + Agent Memory schema extensions (relation sidecars, provenance, recall-trace)
+- **Neither of your extensions exists** in Open Brain currently: no per-ingest synthesis, no graph/structural similarity search
+- It's explicitly a "query-time system" — synthesis happens at retrieval, not at ingest
+
+**Alignment with current ai-memory design:**
+- Our `IMemoryRepository` interface was designed for backend swappability (SQLite → Postgres)
+- Our architecture already has a consolidation pipeline (promotion from episodic → semantic) which is *conceptually similar* to Open Brain's long-term memory but with more structure
+- Our hybrid search (FTS5 + vector + RRF) maps well to what Open Brain does with pgvector
+
+**Gaps if forking:**
+- Open Brain has no ingest-time synthesis — you'd build this extension from scratch either way
+- Open Brain has no graph layer — you'd build this from scratch either way
+- The FSL-1.1-MIT license may restrict how you can use a fork if ai-memory is considered a competing service
+
+Context for impact/priority: The board at story-board.md shows ST-002 through ST-010 form the core implementation chain. This spike could invalidate or redirect that entire chain.
+
+Analyzing your answers...
+
+Clear — this spike evaluates whether OB1 can serve as a platform (used directly with custom extensions) vs rebuilding from our current foundation. Let me now ask about story placement and shape.
+
+Context: Current board backlog story-board.md — stories ST-002 through ST-010 form the core implementation chain. If this spike concludes "use OB1", those stories would be invalidated or heavily reworked.
+
+Analyzing your answers...
+
+Read [](file:///c%3A/projects/ai-memory/.github/planning/story-board.md#200-200), lines 200 to 263
+
+Read [](file:///c%3A/projects/ai-memory/.github/planning/query-packets)
+
+Good — I now have everything needed. The next story ID is **ST-017**. Let me create the board entry, seed query packet, and reserve the ExecPlan path.
+
+Created 3 todos
+
+Replacing 7 lines with 23 lines in [](file:///c%3A/projects/ai-memory/.github/planning/story-board.md)
+
+
+```
+
+```
+
+
+Starting: *Create seed query packet QP-017* (2/3)
+
+Created [](file:///c%3A/projects/ai-memory/.github/planning/query-packets/QP-017-openbrain-pivot-evaluation.md)
+
+Compacted conversationNow I'll reserve the ExecPlan path:
+
+Searched for files matching `**/.github/planning/execplans/*`, 8 matches
+
+Read [](file:///c%3A/projects/ai-memory/.github/planning/execplans/_TEMPLATE.md#1-1), lines 1 to 30
+
+Created [](file:///c%3A/projects/ai-memory/.github/planning/execplans/exec-plan-ST-017.md)
+
+Completed: *Create seed query packet QP-017* (2/3)
+
+`/plan-new` workflow complete. All three deliverables are in place:
+
+1. **Board entry** — ST-017 added to Refined in story-board.md
+2. **Seed query packet** — QP-017-openbrain-pivot-evaluation.md with research findings, gaps, open questions, and recommended next steps
+3. **ExecPlan path reserved** — exec-plan-ST-017.md (placeholder, awaiting `/plan`)
+
+**Next action:** When ready, run `/plan` for ST-017 to develop the full ExecPlan from the seed query packet. The spike is structured around: OB1 extension model deep-dive, per-ingest synthesis prototype feasibility, graph querying options, and a comparative go/no-go recommendation.
+
+Made changes.
+
+User: /compact
+
+GitHub Copilot: Compacted conversation.
+
+User: /plan for .github\planning\execplans\exec-plan-ST-017.md
+
+Ask clarifying questions with the VS Code Tool
+
+GitHub Copilot: Read [](file:///c%3A/Users/cpeddle/.vscode/extensions/github.copilot-chat-0.42.3/assets/prompts/plan.prompt.md)
+
+Read [](file:///c%3A/projects/ai-memory/.github/instructions/coding-standards.instructions.md#1-1), lines 1 to 100
+
+Read [](file:///c%3A/projects/ai-memory/.github/instructions/session-resilience.instructions.md)
+
+Searched for files matching `**/*QP-017*`, 1 match
+
+Searched for files matching `**/_TEMPLATE.md`, 2 matches
+
+Read [](file:///c%3A/projects/ai-memory/.github/instructions/ways-of-working.instructions.md)
+
+Read [](file:///c%3A/projects/ai-memory/.github/planning/query-packets/QP-017-openbrain-pivot-evaluation.md#1-1), lines 1 to 120
+
+Read [](file:///c%3A/projects/ai-memory/.github/planning/execplans/_TEMPLATE.md#1-1), lines 1 to 150
+
+Read [](file:///c%3A/projects/ai-memory/.github/planning/execplans/_TEMPLATE.md#150-150), lines 150 to 235
+
+Now let me gather the key investigation documents and the story board entry to understand the full scope of ST-017.
+
+Research architecture docs for ST-017
+
+Read [](file:///c%3A/projects/ai-memory/.github/planning/story-board.md#1-1), lines 1 to 200
+
+Read [](file:///c%3A/projects/ai-memory/docs/investigations/memory-architecture-design.md#1-1), lines 1 to 150
+
+Read [](file:///c%3A/projects/ai-memory/docs/investigations/sqlite-vs-postgresql.md#1-1), lines 1 to 100
+
+Read [](file:///c%3A/projects/ai-memory/docs/investigations/interface-design-mcp-rest.md#1-1), lines 1 to 100
+
+Read [](file:///c%3A/projects/ai-memory/docs/investigations/memory-architecture-design.md#150-150), lines 150 to 200
+
+Read [](file:///c%3A/projects/ai-memory/docs/investigations/sqlite-vs-postgresql.md#100-100), lines 100 to 200
+
+Read [](file:///c%3A/projects/ai-memory/docs/investigations/interface-design-mcp-rest.md#100-100), lines 100 to 200
+
+Read [](file:///c%3A/projects/ai-memory/docs/investigations/Youtube/Nate%20B%20Jones%20on%20Open%20Brain%20vs%20LLM%20Wiki.md#1-1), lines 1 to 100
+
+Read [](file:///c%3A/projects/ai-memory/docs/investigations/memory-architecture-design.md#200-200), lines 200 to 300
+
+Read [](file:///c%3A/projects/ai-memory/docs/investigations/Youtube/Nate%20B%20Jones%20on%20Open%20Brain%20vs%20LLM%20Wiki.md#100-100), lines 100 to 250
+
+Read [](file:///c%3A/projects/ai-memory/docs/investigations/Discussions)
+
+Read [](file:///c%3A/projects/ai-memory/docs/investigations/memory-architecture-design.md#300-300), lines 300 to 300
+
+Read [](file:///c%3A/projects/ai-memory/docs/investigations/Discussions/Open%20Brain%20Project%20Overview%20and%20Implementation.html)
+
+Read [](file:///c%3A/projects/ai-memory/docs/investigations/interface-design-mcp-rest.md#200-200), lines 200 to 200
+
+Read [](file:///c%3A/projects/ai-memory/docs/investigations/memory-architecture-design.md#300-300), lines 300 to 400
+
+Read [](file:///c%3A/projects/ai-memory/docs/investigations/Youtube/Nate%20B%20Jones%20on%20Open%20Brain%20vs%20LLM%20Wiki.md#200-200), lines 200 to 300
+
+Read [](file:///c%3A/projects/ai-memory/docs/investigations/Discussions/Gemini%20Agile%20MD%20Storyboard.md#1-1), lines 1 to 150
+
+Read [](file:///c%3A/Users/cpeddle/AppData/Roaming/Code/User/workspaceStorage/32559cedf1cca91ff93b7afd5d69b25b/GitHub.copilot-chat/chat-session-resources/87f4cfe5-921f-4663-9100-07095e8b103f/toolu_bdrk_01C7wqtUazzdLqnEVK9jy3Vu__vscode-1778660539157/content.txt)
+
+Excellent. Now I have comprehensive context. Let me check what the plan.prompt.md workflow expects — specifically the `/plan` process in the governance files.
+
+Read [](file:///c%3A/projects/ai-memory/.github/prompts/plan.prompt.md)
+
+I have the full context. ST-017 has a well-developed query packet (QP-017-openbrain-pivot-evaluation.md) from prior collaborative scoping rounds. I'm now in **Phase 2 resume** — ready to author the ExecPlan.
+
+Before I draft the full plan, I need to confirm the spike's execution approach with you. Key context:
+- Story ST-017 on the board — Value 5 spike, unblocked
+- Query Packet QP-017 — 6 open questions, 7 acceptance criteria
+- ExecPlan (reserved) — currently empty shell
+
+Analyzing your answers...
+
+Good. Desk research producing an investigation doc + recommendation PR, with balanced evidence. One more focused round:
+
+Relevant docs for context:
+- Current hybrid search design — RRF + MMR approach
+- Query packet open Q#5) — hosting costs question
+
+Analyzing your answers...
+
+Scope is locked. Let me now draft the full plan.
+
+Created memory file [](file:///c%3A/Users/cpeddle/AppData/Roaming/Code/User/workspaceStorage/32559cedf1cca91ff93b7afd5d69b25b/GitHub.copilot-chat/memory-tool/memories/ODdmNGNmZTUtOTIxZi00NjYzLTkxMDAtMDcwOTVlOGIxMDNm/plan.md)
+
+Here's the full plan for your review:
+
+---
+
+## Plan: ST-017 Open Brain Pivot Evaluation
+
+Desk-research spike evaluating 4+ platform options for ai-memory. Produces a scored investigation doc at docs/investigations/openbrain-pivot-evaluation.md plus board updates with follow-on stories if a pivot is recommended.
+
+---
+
+**Steps**
+
+### Phase A: Research & Analysis
+
+1. **Map OB1 Extension Model from Source** — Read OB1's GitHub repo (extension-model focus): schema structure, MCP server wiring, recipes/skills/integrations directories, ingest-time hooks. Document extension points or their absence.
+
+2. **Evaluate Per-Ingest Synthesis Feasibility** *(parallel with 3)* — For each option (Adopt OB1 / Fork OB1 / Stay Current / Adopt Approach Build Fresh), assess how auto-generating compiled Markdown views on ingest would work. Rate each: trivial / moderate / significant / impractical.
+
+3. **Evaluate Graph/Structural Similarity Feasibility** *(parallel with 2)* — For each option, assess graph layer options (Apache AGE, pg relation tables, structural fingerprint vectors, Neo4j sidecar). Rate each.
+
+4. **Stack & Ecosystem Tradeoff Analysis** *(depends on 1)* — Compare TypeScript/Python vs C#/.NET across: developer velocity (solo dev), AI/LLM ecosystem maturity, type safety, community, hosting simplicity, existing codebase value.
+
+5. **Hosting Cost Comparison** *(parallel with 4)* — Monthly estimates at personal-use scale (≤100K memories, ~50 queries/day): Supabase free/pro tiers, OpenRouter API, self-hosted Postgres + Ollama, SQLite local-first (zero cost), hybrid options.
+
+### Phase B: Synthesis & Recommendation
+
+6. **Score Options & Write Investigation Doc** *(depends on 1–5)* — Produce `docs/investigations/openbrain-pivot-evaluation.md` with 7 sections: Executive Summary, Background, Options Defined, Analysis (4 sub-sections), Scoring Matrix, Narrative Recommendation, Impact Assessment (ST-002–ST-010).
+
+7. **Update Board & Follow-on Stories** *(depends on 6)* — Move ST-017 to Review. If pivot recommended: draft new stories. If stay current: confirm ST-002–ST-010 remain valid. Update ExecPlan §1b.
+
+---
+
+**Relevant files**
+- QP-017-openbrain-pivot-evaluation.md — seed context (PO intent, research, open Qs)
+- exec-plan-ST-017.md — target ExecPlan to populate
+- story-board.md — board updates on completion
+- memory-architecture-design.md — comparison baseline
+- sqlite-vs-postgresql.md — existing Postgres migration analysis
+- Nate B Jones on Open Brain vs LLM Wiki.md — write-time vs query-time
+
+---
+
+**Verification**
+1. `docs/investigations/openbrain-pivot-evaluation.md` exists with all 7 sections
+2. Each of 4+ options rated on: per-ingest synthesis, graph search, stack fit, hosting cost
+3. Recommendation names a specific option with evidence-backed rationale
+4. Impact on ST-002–ST-010 explicitly stated per option
+5. ExecPlan §1b captures outcome summary with supporting evidence
+6. Board updated: ST-017 → Review; follow-on stories created if pivot recommended
+7. FollowUpSessionLog.txt updated with session outcomes
+
+---
+
+**Decisions**
+- Desk research only — no local deployment or prototyping
+- 4 platform options minimum: Adopt OB1, Fork OB1, Stay Current, Adopt Approach Build Fresh
+- Balanced evidence — no predetermined outcome
+- OB1 source analysis: extension model + schema only (skip internals)
+- Hosting cost included as full section
+- Follow-on stories created only if recommendation changes project direction
+
+---
+
+**Further Considerations**
+1. OB1 repo URL is `https://github.com/NateBJones-Projects/OB1` — if this is inaccessible during execution, the executor should fall back to the existing notes in the query packet and investigation docs (no blocker).
+2. The "Adopt Approach Build Fresh" option may split into sub-variants (e.g., keep C# vs switch to TypeScript). Should these be separate rows in the matrix, or treated as a single option with noted variants?
+
+User: #createFile the plan as is into an untitled file (`untitled:plan-${camelCaseName}.prompt.md` without frontmatter) for further refinement.
+
+GitHub Copilot: Created [](untitled:plan-openBrainPivotEvaluation.prompt.md)
+
+Created the plan in `untitled:plan-openBrainPivotEvaluation.prompt.md` — it's open in your editor for refinement. No frontmatter included.
+
+Made changes.
+
+User: /Plan .github\planning\execplans\exec-plan-ST-017.md and docs\investigations\plan-openBrainPivotEvaluation.prompt.md
+
+Ask clarifying questions with the VS Code Tool
+
+Answers for questrions:
+- If OB1 repo URL is https://github.com/NateBJones-Projects/OB1  is inaccessible during execution  then the user should be requested to resolve this.
+
+- The "Adopt Approach Build Fresh" option may split into sub-variants (e.g., keep C# vs switch to TypeScript). Treated as a single option with noted variants.
+
+GitHub Copilot: Read [](file:///c%3A/projects/ai-memory/docs/investigations/plan-openBrainPivotEvaluation.prompt.md#1-1), lines 1 to 150
+
+Read [](file:///c%3A/projects/ai-memory/.github/planning/execplans/exec-plan-ST-017.md)
+
+Read [](file:///c%3A/projects/ai-memory/.github/planning/query-packets/QP-017-openbrain-pivot-evaluation.md)
+
+Searched for text `ST-017` (`**/.github/planning/story-board.md`), 2 results
+
+Read [](file:///c%3A/projects/ai-memory/.github/planning/story-board.md#150-150), lines 150 to 175
+
+Good — I have the full picture. Phase 2: ExecPlan authoring. Before writing, one focused confirmation round.
+
+Context for review: story-board.md, QP-017 query packet, refined plan draft
+
+Analyzing your answers...
+
+Approved. Writing the full ExecPlan now.
+
+Created 3 todos
+
+Replacing 11 lines with 724 lines in [](file:///c%3A/projects/ai-memory/.github/planning/execplans/exec-plan-ST-017.md)
+
+
+```
+
+```
+
+
+Starting: *Verify §2b Definition of Ready* (2/3)
+
+Now let me verify the §2b Definition of Ready checklist against the actual content:
+
+Verify ExecPlan quality gate
+
+Read [](file:///c%3A/projects/ai-memory/.github/planning/execplans/exec-plan-ST-017.md#1-1), lines 1 to 500
+
+Read [](file:///c%3A/projects/ai-memory/.github/planning/execplans/exec-plan-ST-017.md#500-500), lines 500 to 725
+
+Read memory
+
+Read memory [](file:///c%3A/Users/cpeddle/AppData/Roaming/Code/User/workspaceStorage/32559cedf1cca91ff93b7afd5d69b25b/GitHub.copilot-chat/memory-tool/memories/ODdmNGNmZTUtOTIxZi00NjYzLTkxMDAtMDcwOTVlOGIxMDNm/plan.md)
+
+Read [](file:///c%3A/Users/cpeddle/AppData/Roaming/Code/User/workspaceStorage/32559cedf1cca91ff93b7afd5d69b25b/GitHub.copilot-chat/chat-session-resources/87f4cfe5-921f-4663-9100-07095e8b103f/toolu_bdrk_01KXKZmeVv43q8eUNxTWc2RS__vscode-1778660539190/content.txt#1-1), lines 1 to 80
+
+Read [](file:///c%3A/Users/cpeddle/AppData/Roaming/Code/User/workspaceStorage/32559cedf1cca91ff93b7afd5d69b25b/GitHub.copilot-chat/chat-session-resources/87f4cfe5-921f-4663-9100-07095e8b103f/toolu_bdrk_01KXKZmeVv43q8eUNxTWc2RS__vscode-1778660539190/content.txt#80-80), lines 80 to 160
+
+Read [](file:///c%3A/Users/cpeddle/AppData/Roaming/Code/User/workspaceStorage/32559cedf1cca91ff93b7afd5d69b25b/GitHub.copilot-chat/chat-session-resources/87f4cfe5-921f-4663-9100-07095e8b103f/toolu_bdrk_01KXKZmeVv43q8eUNxTWc2RS__vscode-1778660539190/content.txt#160-160), lines 160 to 220
+
+Read [](file:///c%3A/Users/cpeddle/AppData/Roaming/Code/User/workspaceStorage/32559cedf1cca91ff93b7afd5d69b25b/GitHub.copilot-chat/chat-session-resources/87f4cfe5-921f-4663-9100-07095e8b103f/toolu_bdrk_01KXKZmeVv43q8eUNxTWc2RS__vscode-1778660539190/content.txt#220-220), lines 220 to 256
+
+All 9 checklist items **PASS**. The audit identified 3 minor non-blocking suggestions. Let me address the strongest one (prerequisite file check) since it's a simple addition, then confirm with you.
+
+Starting: *Update query packet with final decisions* (3/3)
+
+Now let me update the query packet with the final decisions from this session, and apply the one minor improvement (prerequisite verification instruction in Task 4.1):
+
+Replacing 11 lines with 34 lines in [](file:///c%3A/projects/ai-memory/.github/planning/execplans/exec-plan-ST-017.md), [](file:///c%3A/projects/ai-memory/.github/planning/query-packets/QP-017-openbrain-pivot-evaluation.md)
+
+
+```
+
+```
+
+```
+
+```
+
+
+Completed: *Update query packet with final decisions* (3/3)
+
+ExecPlan is complete and verified. Here's the summary:
+
+---
+
+**ST-017 ExecPlan is ✅ Ready for /continue**
+
+Written to exec-plan-ST-017.md:
+- **7 tasks** across 2 phases (Research → Synthesis)
+- **§2b quality gate:** All 9 checklist items pass (audited by sub-agent)
+- **§2d traceability:** All 7 acceptance criteria (R1–R7) mapped to tasks with verification steps
+- **Self-contained:** 13 terms defined, both architectures embedded, 4 options fully characterised
+
+Updated QP-017 with planning decisions from this session.
+
+The plan file at plan-openBrainPivotEvaluation.prompt.md is retained as supplementary context per your preference.
+
+Made changes.
+
+User: /compact
+
+GitHub Copilot: Compacted conversation.
+
+User: /Continue .github\planning\execplans\exec-plan-ST-017.md
+
+GitHub Copilot: Read [](file:///c%3A/projects/ai-memory/.github/planning/story-board.md#1-1), lines 1 to 80
+
+Read [](file:///c%3A/projects/ai-memory/FollowUpSessionLog.txt)
+
+Searched for text `ST-017` (`ai-memory` · `.github/planning/story-board.md`), 2 results
+
+Read [](file:///c%3A/projects/ai-memory/.github/planning/story-board.md#140-140), lines 140 to 195
+
+**Board & ExecPlan state confirmed:**
+- ST-017 is in story-board.md — no WIP, eligible for execution
+- ExecPlan exec-plan-ST-017.md — Status: ✅ Ready for /continue
+- §2b Definition of Ready: all boxes `[x]`
+- §5b Recovery Ledger: no prior progress, starting at Task 4.1, no blockers
+
+**Execution plan — 7 tasks:**
+
+| Task | Description | Deliverable |
+|------|-------------|-------------|
+| 4.1 | Map OB1 extension model from GitHub source | §6 execution log entries |
+| 4.2 | Evaluate per-ingest synthesis feasibility (A/B/C/D) | 4-option analysis |
+| 4.3 | Evaluate graph/structural similarity feasibility (A/B/C/D) | 4-option analysis |
+| 4.4 | Stack & ecosystem tradeoff analysis | 6-dimension comparison table |
+| 4.5 | Hosting cost comparison | Monthly cost estimates table |
+| 4.6 | Score options & write investigation document | `docs/investigations/openbrain-pivot-evaluation.md` |
+| 4.7 | Update board, ExecPlan §1b outcomes & session log | Board moved to Review; governance closed out |
+
+Analyzing your answers...
+
+Created 7 todos
+
+Ran terminal command: @(".github/planning/query-packets/QP-017-openbrain-pivot-evaluation.md", "docs/investigations/memory-architecture-design.md", "docs/investigations/sqlite-vs-postgresql.md", "docs/investigations/interface-design-mcp-rest.md") | ForEach-Object { if (!(Test-Path $_)) { Write-Warning "Missing: $_" } else { Write-Host "OK: $_" } }
+
+All prerequisites present. Now reading the OB1 repo structure.
+
+Ran Get file or directory contents
+Completed with input: {
+  "owner": "NateBJones-Projects",
+  "repo": "OB1",
+  "path": "/"
+}
+
+Read [](file:///c%3A/Users/cpeddle/AppData/Roaming/Code/User/workspaceStorage/32559cedf1cca91ff93b7afd5d69b25b/GitHub.copilot-chat/chat-session-resources/87f4cfe5-921f-4663-9100-07095e8b103f/toolu_bdrk_015XPccvcWadtHEWBPAsemr6__vscode-1778660539210/content.json#1-1), lines 1 to 100
+
+Read [](file:///c%3A/Users/cpeddle/AppData/Roaming/Code/User/workspaceStorage/32559cedf1cca91ff93b7afd5d69b25b/GitHub.copilot-chat/chat-session-resources/87f4cfe5-921f-4663-9100-07095e8b103f/toolu_bdrk_015XPccvcWadtHEWBPAsemr6__vscode-1778660539210/content.json#100-100), lines 100 to 220
+
+Good — repo accessible. Key directories: `.claude`, `dashboards`, docs, `extensions`, `integrations`, `primitives`, `recipes`, `resources`, `schemas`, `server`, `skills`. Now reading extension-relevant dirs in parallel.
+
+Ran Get file or directory contents
+Completed with input: {
+  "owner": "NateBJones-Projects",
+  "path": "extensions",
+  "repo": "OB1"
+}
+
+Ran Get file or directory contents
+Completed with input: {
+  "owner": "NateBJones-Projects",
+  "path": "extensions/README.md",
+  "repo": "OB1"
+}
+
+
+
+Fetched https://raw.githubusercontent.com/NateBJones-Projects/OB1/151a8d1c922ffadad08399508efe46b207a5894e/extensions/README.md
+
+Ran Get file or directory contents
+Completed with input: {
+  "owner": "NateBJones-Projects",
+  "path": "extensions/_template",
+  "repo": "OB1"
+}
+
+
+
+Fetched 2 resources
+
+Ran Get file or directory contents
+Completed with input: {
+  "owner": "NateBJones-Projects",
+  "path": "server",
+  "repo": "OB1"
+}
+
+
+
+Fetched https://raw.githubusercontent.com/NateBJones-Projects/OB1/151a8d1c922ffadad08399508efe46b207a5894e/server/index.ts
+
+Good — I can see the full `server/index.ts`. It's a Deno Edge Function with 6 tools: `search`, `fetch`, `search_thoughts`, `list_thoughts`, `thought_stats`, `capture_thought`. The `capture_thought` tool calls `upsert_thought` RPC — let me check the schema for triggers and the schemas directory to see the `thoughts` table definition.
+
+Ran Get file or directory contents
+Completed with input: {
+  "owner": "NateBJones-Projects",
+  "path": "schemas",
+  "repo": "OB1"
+}
+
+Key schema directories: `agent-memory`, `enhanced-thoughts`, `entity-extraction`, `typed-reasoning-edges`, `workflow-status`. Let me read the entity-extraction and agent-memory schemas, and also find the core thoughts table schema.
+
+Ran Get file or directory contents
+Completed with input: {
+  "owner": "NateBJones-Projects",
+  "path": "schemas/entity-extraction",
+  "repo": "OB1"
+}
+
+
+
+Fetched 2 resources
+
+Now let me find the core `thoughts` table schema and also check for any mention of Supabase extension restrictions on Apache AGE.
+
+Ran Get file or directory contents
+Completed with input: {
+  "owner": "NateBJones-Projects",
+  "path": "docs",
+  "repo": "OB1"
+}
+
+Read [](file:///c%3A/Users/cpeddle/AppData/Roaming/Code/User/workspaceStorage/32559cedf1cca91ff93b7afd5d69b25b/GitHub.copilot-chat/chat-session-resources/87f4cfe5-921f-4663-9100-07095e8b103f/toolu_bdrk_01767ixWyJyPmW2ewUiq3MuJ__vscode-1778660539223/content.json#1-1), lines 1 to 80
+
+
+
+Fetched https://raw.githubusercontent.com/NateBJones-Projects/OB1/151a8d1c922ffadad08399508efe46b207a5894e/docs/01-getting-started.md
+
+I have enough data from OB1 source. Let me now do the cost research and check Supabase extension availability in parallel.
+
+
+
+Fetched https://supabase.com/pricing
+
+I now have all the research needed. Let me compile into the investigation document. First, let me verify an important fact — whether Apache AGE is available on Supabase's managed service — and check OpenRouter pricing, then write all artifacts.
+
+
+
+Fetched https://supabase.com/docs/guides/database/extensions
+
+Confirmed: Apache AGE is **not** in Supabase's extension list. I now have all research needed for all 5 analysis tasks. Writing the investigation document and then doing the governance closeout.
+
+Created [](file:///c%3A/projects/ai-memory/docs/investigations/openbrain-pivot-evaluation.md)
+
+Ran terminal command: Test-Path "docs\investigations\openbrain-pivot-evaluation.md"; Select-String -Path "docs\investigations\openbrain-pivot-evaluation.md" -Pattern "Executive Summary","Recommendation","Impact Assessment","Option Scoring Matrix","ST-002" | Select-Object -Property LineNumber, Line
+
+All required sections verified. Now updating the ExecPlan §6 execution log and §1b outcomes, then the board and session log.
+
+Read [](file:///c%3A/projects/ai-memory/.github/planning/execplans/exec-plan-ST-017.md#1-1), lines 1 to 50
+
+Searched for text `§1b. Outcomes & Conclusions` (`ai-memory` · `.github/planning/execplans/exec-plan-ST-017.md`), 1 result
+
+Read [](file:///c%3A/projects/ai-memory/.github/planning/execplans/exec-plan-ST-017.md#93-93), lines 93 to 115
+
+Searched for text `§6. Execution Log` (`ai-memory` · `.github/planning/execplans/exec-plan-ST-017.md`), 1 result
+
+Read [](file:///c%3A/projects/ai-memory/.github/planning/execplans/exec-plan-ST-017.md#685-685), lines 685 to 735
+
+Searched for text `§5b. Recovery Ledger` (`ai-memory` · `.github/planning/execplans/exec-plan-ST-017.md`), 1 result
+
+Read [](file:///c%3A/projects/ai-memory/.github/planning/execplans/exec-plan-ST-017.md#643-643), lines 643 to 683
+
+Now updating the ExecPlan with all completed-state fields in one multi-replace operation.
+
+Replacing 53 lines with 109 lines in [](file:///c%3A/projects/ai-memory/.github/planning/execplans/exec-plan-ST-017.md)
+
+
+```
+
+```
+Now updating the story board — moving ST-017 from Refined to Review, and adding ST-018 and ST-019 to Backlog.
+
+Read [](file:///c%3A/projects/ai-memory/.github/planning/story-board.md#150-150), lines 150 to 200
+
+Read [](file:///c%3A/projects/ai-memory/.github/planning/story-board.md#200-200), lines 200 to 215
+
+Replacing 37 lines with 37 lines in [](file:///c%3A/projects/ai-memory/.github/planning/story-board.md)
+
+
+```
+
+```
+Now adding ST-018 and ST-019 to the Backlog.
+
+Read [](file:///c%3A/projects/ai-memory/.github/planning/story-board.md#1-1), lines 1 to 40
+
+Replacing 7 lines with 40 lines in [](file:///c%3A/projects/ai-memory/.github/planning/story-board.md)
+
+
+```
+
+```
+Now update FollowUpSessionLog.txt.
+
+Created [](file:///c%3A/projects/ai-memory/FollowUpSessionLog.txt)
+
+Replacing 25 lines with 32 lines in [](file:///c%3A/projects/ai-memory/FollowUpSessionLog.txt)
+
+
+```
+
+```
+Now run the final verification checks and commit.
+
+Ran terminal command: Set-Location c:\projects\ai-memory
+
+# DoD 1: investigation doc has all required sections
+Write-Host "=== DoD 1: Investigation doc sections ==="
+Select-String -Path "docs\investigations\openbrain-pivot-evaluation.md" -Pattern "Executive Summary","Recommendation","Impact Assessment","Option Scoring Matrix","ST-002" | Select-Object LineNumber, Line
+
+# DoD 2: all 4 options rated
+Write-Host "`n=== DoD 2: All 4 options in scoring matrix ==="
+Select-String -Path "docs\investigations\openbrain-pivot-evaluation.md" -Pattern "Adopt OB1","Fork OB1","Stay Current","Build Fresh" | Select-Object LineNumber
+
+# DoD 6: ST-017 under Review
+Write-Host "`n=== DoD 6: ST-017 in Review section ==="
+Select-String -Path ".github\planning\story-board.md" -Pattern "ST-017" | Select-Object LineNumber, Line
+
+Checked background terminal output
+
+Ran terminal command: Select-String -Path "docs\investigations\openbrain-pivot-evaluation.md" -Pattern "Executive Summary","Recommendation","Impact Assessment","Option Scoring Matrix","ST-002" | Select-Object LineNumber, Line
+
+Ran terminal command: Select-String -Path ".github\planning\story-board.md" -Pattern "ST-017" | Select-Object LineNumber, Line
+
+Ran terminal command: Select-String -Path ".github\planning\story-board.md" -Pattern "## Review" | Select-Object LineNumber, Line; Select-String -Path ".github\planning\story-board.md" -Pattern "## Refined" | Select-Object LineNumber, Line
+
+ST-017 is at line 227, after `## Review` (line 194) — confirmed in Review section. `## Refined` at line 184 is now empty. Now atomic commit.
+
+Ran terminal command: git add docs/investigations/openbrain-pivot-evaluation.md .github/planning/execplans/exec-plan-ST-017.md .github/planning/story-board.md FollowUpSessionLog.txt; git status
+
+Ran terminal command: git commit -m "docs(spike): complete ST-017 Open Brain pivot evaluation
+
+Recommendation: Stay Current on C#/.NET 8 + SQLite (Option C, score 4.50).
+OB1 provides neither per-ingest synthesis nor graph similarity out of the box.
+
+Story: ST-017
+Task: §4.1-4.7"
+
+Completed: *Task 4.1: Map OB1 extension model* (1/7)
+
+ST-017 is complete. Here's the summary for your review:
+
+---
+
+**ST-017 — Spike complete. Moved to Review.**
+
+**Deliverable:** openbrain-pivot-evaluation.md (340 lines, 11 sections)
+
+**Recommendation: Stay Current — Option C (C#/.NET 8 + SQLite), score 4.50/5**
+
+**Scoring:**
+| Option | Score |
+|--------|-------|
+| C — Stay Current | **4.50** |
+| D — Adopt Approach Build Fresh (C#) | 3.55 |
+| B — Fork OB1 | 2.55 |
+| A — Adopt OB1 | 1.95 |
+
+**Key findings from OB1 source analysis:**
+- OB1's `capture_thought` has no ingest hooks — it writes and returns. The entity-extraction schema *does* have a PostgreSQL `AFTER INSERT` trigger, but the worker that processes the queue is not in the repo.
+- Apache AGE is not available on Supabase managed service — graph traversal on OB1 without self-hosting is limited to recursive CTEs.
+- Both target capabilities (per-ingest synthesis + graph similarity) must be built from scratch on every platform.
+
+**Why Option C wins:** Per-ingest synthesis is trivial in C# (domain event → `ISynthesisService` → direct Obsidian file writes), costs $0/month (SQLite + Ollama), no stack switch. OB1 requires a new async worker, costs $25+/month for production Supabase, and cannot easily write local Obsidian files.
+
+**Two new Backlog stories added:**
+- **ST-018**: Graph schema + structural fingerprints for SQLite (entities, edges, tuple-level triggers)
+- **ST-019**: `ISynthesisService` + Obsidian-compatible Markdown view writer
+
+Made changes.
+
+User: Using the Open Brain, remote access would allow the synthesis to happen at extraction. Therefore the work flow would be that the ingestion is as per Open Brain WoW - direct in with some processing to enable structural similarity and FTS5 + vector + RRF + MMR. Then this would trigger some extraction processing to create the synthesis into a local obsidian file.
+This would then answer the following open question:
+Can OB1's Supabase edge functions + schemas support per-ingest synthesis (e.g., a Postgres trigger or edge function that calls an LLM and writes to a Markdown-compatible table)?
+
+The following statement assumes the full production cost is required, if we stay within low usage it could be lower cost?
+ Per-ingest synthesis is trivial in C# (domain event → ISynthesisService → direct Obsidian file writes), costs $0/month (SQLite + Ollama), no stack switch. OB1 requires a new async worker, costs $25+/month for production Supabase, and cannot easily write local Obsidian files.
+
+GitHub Copilot:
