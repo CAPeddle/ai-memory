@@ -1,0 +1,39 @@
+services:
+  db:
+    build:
+      context: .
+      dockerfile: docker/postgres-age/Dockerfile
+    environment:
+      POSTGRES_DB: ai_memory
+      POSTGRES_USER: ai_memory
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai_memory -d ai_memory"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mcp:
+    build: ./server
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://ai_memory:${DB_PASSWORD}@db:5432/ai_memory
+      MEMORY_API_KEY: ${MEMORY_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  db_data:
