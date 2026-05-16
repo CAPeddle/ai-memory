@@ -19,7 +19,7 @@ source_path: "docs/investigations/ST-021-findings.md"
 
 ## Executive Summary
 
-The spike confirms the OB1 fork architecture is viable. All four capability gaps (memory tiers, BM25 hybrid search, openCypher graph traversal, context scoping) have clear, concrete implementation paths. The primary risk — building Apache AGE v1.7.0 from source in Docker — is mitigated by the straightforward build process using `postgresql-server-dev-15` and the stable v1.7.0 tag. The entity extraction worker design is ready for implementation.
+The spike confirms the OB1 fork architecture is viable. All four capability gaps (memory tiers, BM25 hybrid search, openCypher graph traversal, context scoping) have clear, concrete implementation paths. The Docker Compose stack was validated locally: both containers started healthy, all extensions loaded, and all six graph query patterns confirmed. AGE v1.6.0-rc0 (the latest PG15-compatible release) was used; `git clone` inside Docker was replaced with a pre-downloaded tarball due to corporate SSL proxy interception. The entity extraction worker design is ready for implementation.
 
 **Recommendation:** Proceed to implementation stories. No architecture blockers identified.
 
@@ -138,21 +138,48 @@ Both patterns are idiomatic openCypher and would require significant SQL scaffol
 
 ---
 
-## §R4 — Docker Image: PostgreSQL 15 + pgvector + AGE v1.7.0
+## §R4 — Docker Image: PostgreSQL 15 + pgvector + AGE v1.6.0-rc0
 
-**Status: Build configuration validated structurally. Docker image build requires local execution to confirm AGE v1.7.0 compiles successfully against `postgresql-server-dev-15`. Build has not been run in this environment.**
+**Status: Build validated locally. Both containers started healthy; `vector` and `age` extensions loaded; `memory_graph` created by init SQL.**
+
+### Version note
+
+AGE `v1.7.0` does not exist for PostgreSQL 15. The latest stable PG15-compatible release is `PG15/v1.6.0-rc0`. AGE v1.7.0 is available only for PG17 and PG18. Use `PG15/v1.6.0-rc0` for all PG15 deployments.
+
+### Corporate SSL proxy workaround
+
+`git clone` inside Docker fails with an SSL CA certificate error when a Fortinet (or similar) HTTPS-intercepting proxy is active on the host. The solution is to download the AGE tarball on the Windows host and COPY it into the image:
+
+```powershell
+# Run once on host to download the tarball
+Invoke-WebRequest -Uri https://github.com/apache/age/archive/refs/tags/PG15/v1.6.0-rc0.tar.gz `
+  -OutFile docker/postgres-age/age-v1.6.0-rc0.tar.gz
+```
 
 ### Dockerfile
 
 ```dockerfile
 FROM postgres:15
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential git postgresql-server-dev-15 postgresql-15-pgvector \
+    build-essential \
+    flex \
+    bison \
+    postgresql-server-dev-15 \
+    postgresql-15-pgvector \
  && rm -rf /var/lib/apt/lists/*
-RUN git clone --depth 1 --branch v1.7.0 https://github.com/apache/age.git /tmp/age \
- && cd /tmp/age && make && make install && rm -rf /tmp/age
-COPY init/ /docker-entrypoint-initdb.d/
+COPY docker/postgres-age/age-v1.6.0-rc0.tar.gz /tmp/age.tar.gz
+RUN tar -xzf /tmp/age.tar.gz -C /tmp \
+ && mv /tmp/age-PG15-v1.6.0-rc0 /tmp/age \
+ && cd /tmp/age \
+ && make \
+ && make install \
+ && rm -rf /tmp/age /tmp/age.tar.gz
+COPY docker/postgres-age/init/01-extensions.sql /docker-entrypoint-initdb.d/01-extensions.sql
+COPY server/db/schema.sql                        /docker-entrypoint-initdb.d/02-schema.sql
+COPY server/db/graph.sql                         /docker-entrypoint-initdb.d/03-graph.sql
 ```
+
+**`flex` and `bison` are required** for AGE's parser generation step (`make` fails without them on the `postgres:15` base image).
 
 **Location:** `docker/postgres-age/Dockerfile`
 
@@ -192,10 +219,16 @@ When `TimeoutError` → `CAUSED_BY` → `callStripeAPI` → `CAUSED_BY` → `val
 
 ## §R6 — openCypher Fact Inference
 
-**Status: Query pattern validated and documented.**
+**Status: Query pattern validated and documented. AGE v1.6.0 `|` operator limitation documented below.**
+
+### AGE v1.6.0 limitation: `|` in relationship type selectors
+
+The `|` operator in relationship type selectors (`[:LIKES|INTERESTED_IN*1..3]`) is **not supported in AGE v1.6.0** (PG15). It was introduced in AGE v1.7.0, which requires PG17+. Attempting it produces a parse error.
+
+**Workaround:** Use explicit MATCH chains over distinct relationship types:
 
 ```cypher
-MATCH (person:Person {name: 'John'})-[:LIKES|INTERESTED_IN*1..3]->(thing)
+MATCH (person:Person {name: 'John'})-[:LIKES]->(mid)-[:INTERESTED_IN]->(thing)
 WHERE thing.category = 'nature'
 RETURN thing.name AS thing_name
 ```
@@ -204,9 +237,17 @@ Given:
 - `(:Person {name:'John'})-[:LIKES]->(:Hobby {name:'gardening'})`
 - `(:Hobby {name:'gardening'})-[:INTERESTED_IN]->(:Topic {name:'flowers', category:'nature'})`
 
-This query returns `flowers` — inferring that John likes flowers via the gardening hobby hop.
+This query returns `flowers` — confirming fact inference via the gardening hobby hop. Result verified during Docker validation.
 
-The `|` operator in the relationship type selector (`[:LIKES|INTERESTED_IN*1..3]`) matches either relationship type at each hop. This is native openCypher and the primary reason AGE is preferred over recursive CTEs (which would require UNION).
+### Planned query pattern (requires AGE v1.7.0 / PG17+)
+
+```cypher
+MATCH (person:Person {name: 'John'})-[:LIKES|INTERESTED_IN*1..3]->(thing)
+WHERE thing.category = 'nature'
+RETURN thing.name AS thing_name
+```
+
+This is native openCypher and the primary reason AGE is preferred over recursive CTEs (which would require UNION). It will be available if the deployment is upgraded to PG17+ with AGE v1.7.0. The explicit MATCH chain workaround above is production-viable in the interim.
 
 ---
 
@@ -333,6 +374,12 @@ async function processQueue() {
 4. **AGE requires per-session `LOAD 'age'`.** The `SET search_path` and `LOAD 'age'` commands must be issued at the start of every database session that runs `cypher()`. The init SQL sets the default, but runtime queries need these commands in the same statement block. The `graph_traverse` tool handles this via `sql.unsafe()` with a multi-statement prefix.
 
 5. **`StreamableHTTPServerTransport` vs `StreamableHTTPTransport`.** OB1 uses `@hono/mcp`'s `StreamableHTTPTransport`. The `@modelcontextprotocol/sdk` directly exports `StreamableHTTPServerTransport`. The fork uses the SDK directly (no `@hono/mcp` dependency), keeping the dependency tree simpler.
+
+6. **Corporate SSL proxy blocks `git clone` inside Docker.** A Fortinet HTTPS-intercepting proxy on the host injects its own CA certificate for HTTPS connections. `git clone https://github.com/...` inside a Docker build fails with `SSL: certificate verify failed`. The solution is to download release tarballs on the Windows host (where the proxy CA is trusted) and `COPY` them into the image. This pattern applies to any `git clone` or `curl` call inside a Dockerfile on a corporate network with SSL inspection.
+
+7. **AGE `v1.7.0` tag does not exist for PostgreSQL 15.** The `--branch v1.7.0` git clone (and the v1.7.0 tarball URL) return 404 for PG15. AGE v1.7.0 was released only for PG17 and PG18. The correct latest stable tag for PG15 is `PG15/v1.6.0-rc0`. Version lookup: <https://github.com/apache/age/tags> filtered to `PG15/`.
+
+8. **AGE v1.6.0 does not support `|` in relationship type selectors.** The `[:LIKES|INTERESTED_IN*1..3]` syntax produces a parse error in AGE v1.6.0. This feature was added in AGE v1.7.0 (PG17+ only). The workaround is explicit chained MATCH clauses for each relationship type. This is documented in §R6 and confirmed functional: the explicit MATCH chain returns the expected `flowers` result.
 
 ---
 

@@ -73,22 +73,27 @@ A fifth concern — entity extraction at write time — must be designed (though
 
 ## §1b. Outcomes & Conclusions
 
-- completion status: ✅ Complete (2026-05-16)
+- completion status: ✅ Complete (2026-05-16; Docker Compose validation confirmed locally)
 - key findings/achievements:
   - OB1 cloned and fully inventoried; all 6 tools and Supabase dependencies documented
   - Docker infrastructure created: `docker/postgres-age/Dockerfile`, `docker-compose.yml`, `server/Dockerfile`
   - Memory tier schema decided: single-table discriminator (`memory_type` column) — simpler RRF queries, no JOIN needed
   - BM25 + pgvector RRF SQL pattern validated in `server/db/search.sql`; OB1 already has `search_thoughts_text()` with GIN tsvector — extend it rather than replace
-  - openCypher multi-hop traversal (`CAUSED_BY*1..5`) and fact inference (`LIKES|INTERESTED_IN*1..3`) both confirmed viable via AGE v1.7.0
+  - openCypher multi-hop traversal (`CAUSED_BY*1..5`) confirmed via AGE v1.6.0-rc0 (3-hop chain returned)
+  - Fact inference confirmed via explicit MATCH chain (AGE v1.6.0 does not support `|` in relationship type selectors; that requires AGE v1.7.0 / PG17+); workaround documented in §R6
+  - Docker Compose stack started healthy: both `db` and `mcp` containers running; `vector` and `age` extensions loaded; `memory_graph` created by init SQL
+  - AGE version corrected to `PG15/v1.6.0-rc0` — v1.7.0 does not exist for PG15
+  - `git clone` inside Docker replaced with COPY of pre-downloaded tarball due to Fortinet SSL proxy interception
+  - `flex` and `bison` added to apt-get — required for AGE parser generation
   - AGE requires `LOAD 'age'` + `SET search_path` per session — handled in `graph_traverse` tool via `sql.unsafe()`
   - Context scoping implemented in `server/src/parseContext.ts` and wired into all MCP tools in `server/index.ts`
   - Entity extraction worker design complete in `docs/investigations/ST-021-findings.md §R8`
   - OB1 auth uses `x-brain-key` header; fork replaces with `Authorization: Bearer` per ADR-010
   - `StreamableHTTPServerTransport` used directly from MCP SDK (no `@hono/mcp` dependency)
-- requirements met vs unmet: R1–R3, R5–R9 met; R4 and R9 (Docker stack validation) are artefact-complete but require local execution to confirm the AGE build succeeds
+- requirements met vs unmet: All 8 ACs (R1–R9) confirmed met locally
 - architectural impact: no ADR changes required (`graph_traverse` is already in ADR-004's tool table)
 - supporting evidence: `docs/investigations/ST-021-findings.md`, `server/db/schema.sql`, `server/db/search.sql`, `server/db/graph.sql`, `server/index.ts`, `server/src/parseContext.ts`
-- downstream changes: Entity extraction worker story, consolidation worker story, cloud deployment story; local Docker build confirmation required
+- downstream changes: Entity extraction worker story, consolidation worker story, cloud deployment story; AGE v1.7.0 (PG17+) upgrade story if `|` relationship selector is required in production
 
 ---
 

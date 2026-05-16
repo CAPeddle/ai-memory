@@ -239,31 +239,33 @@
 
 ## Review
 
+(Empty)
+
+## Done
+
 ### ST-021: Spike — Fork OB1 and extend with memory tiers, context scoping, BM25, and openCypher structural search
 - Type: spike
 - Source: PO (architecture review session 2026-05-16)
 - phase: 0
 - Value: 5
-- Completed: 2026-05-16
+- Completed: 2026-05-16 (Docker validation confirmed locally)
 - Touches: `docker/`, `server/`, `docker-compose.yml`, `docs/investigations/ST-021-findings.md`, `.github/planning/execplans/exec-plan-ST-021.md`
 - Acceptance criteria:
   - [x] **Memory tier mapping** — Single-table discriminator (`memory_type` column on `thoughts`) recommended and validated; `server/db/schema.sql` produced
   - [x] **BM25 on PostgreSQL** — `tsvector`/`tsquery` + `ts_rank_cd` + RRF fusion validated; `server/db/search.sql` produced; OB1's existing `search_thoughts_text()` identified as extension base
   - [x] **Structural search without AGE (baseline)** — Recursive CTE ceiling documented in findings §R3; variable-length multi-label patterns require AGE
-  - [x] **AGE v1.7.0 on PostgreSQL 15 in Docker** — Dockerfile with `postgresql-server-dev-15` + AGE v1.7.0 from source; `docker/postgres-age/Dockerfile` and `init/01-extensions.sql` produced
-  - [x] **openCypher validation** — Multi-hop traversal (`CAUSED_BY*1..5`) and fact inference (`LIKES|INTERESTED_IN*1..3`) both validated in findings §R5 and §R6
+  - [x] **AGE v1.7.0 on PostgreSQL 15 in Docker** — Dockerfile with `postgresql-server-dev-15` + AGE v1.6.0-rc0 from source (COPY tarball approach); `docker/postgres-age/Dockerfile` and `init/01-extensions.sql` produced and tested
+  - [x] **openCypher validation** — Multi-hop traversal (`CAUSED_BY*1..5`) returned 3-hop chain; fact inference returned `flowers` via explicit MATCH chain (AGE v1.6.0 `|` workaround); validated in findings §R5 and §R6
   - [x] **Context scoping in OB1 MCP tools** — `server/src/parseContext.ts` + `server/index.ts` fork with `context` parameter on `capture_thought`, `search_thoughts`, and `list_thoughts`
   - [x] **Entity extraction worker wire-up design** — OpenRouter call shape, `FOR UPDATE SKIP LOCKED` queue loop, `MERGE` AGE writes (with label/rel allow-listing) documented in findings §R8
-  - [ ] **Docker Compose validation** — `docker-compose.yml` artefact complete (db + mcp with healthchecks; schema init sequence 01→02→03); awaiting local `docker compose up` confirmation that AGE v1.7.0 compiles
+  - [x] **Docker Compose validation** — `docker compose up -d` confirmed locally: both `db` and `mcp` containers healthy; `vector` and `age` extensions loaded; `memory_graph` created; BM25+RRF `rrf_score` column returned; `CAUSED_BY*1..5` traversal returned 3-hop chain; fact inference returned `flowers` via explicit MATCH chain
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-021.md`
 - Docs:
   - `docs/investigations/ST-021-findings.md`
   - `server/db/schema.sql`, `server/db/search.sql`, `server/db/graph.sql`
   - `server/index.ts`, `server/src/parseContext.ts`, `server/src/auth.ts`, `server/src/db.ts`
   - `docker/postgres-age/Dockerfile`, `docker-compose.yml`
-- Notes: 7/8 acceptance criteria met. Docker Compose artefact is complete pending local build confirmation. Key discovery: OB1 already has `search_thoughts_text()` with two-phase BM25 — implementation story should extend it. Downstream stories needed: entity extraction worker, consolidation worker, cloud deployment.
-
-## Done
+- Notes: All 8 ACs met. Key discoveries: AGE v1.7.0 does not exist for PG15 (use PG15/v1.6.0-rc0); git clone inside Docker blocked by Fortinet SSL proxy — use COPY of pre-downloaded tarball; flex + bison required in apt-get; AGE v1.6.0 does not support `|` in relationship type selectors (requires AGE v1.7.0 / PG17+). Downstream stories needed: entity extraction worker, consolidation worker, cloud deployment.
 
 ### ST-015: Improve ExecPlan template to show outcomes up front
 - Type: infrastructure

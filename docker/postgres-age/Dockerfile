@@ -2,16 +2,19 @@ FROM postgres:15
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    git \
+    flex \
+    bison \
     postgresql-server-dev-15 \
     postgresql-15-pgvector \
  && rm -rf /var/lib/apt/lists/*
 
-RUN git clone --depth 1 --branch v1.7.0 https://github.com/apache/age.git /tmp/age \
+COPY docker/postgres-age/age-v1.6.0-rc0.tar.gz /tmp/age.tar.gz
+RUN tar -xzf /tmp/age.tar.gz -C /tmp \
+ && mv /tmp/age-PG15-v1.6.0-rc0 /tmp/age \
  && cd /tmp/age \
  && make \
  && make install \
- && rm -rf /tmp/age
+ && rm -rf /tmp/age /tmp/age.tar.gz
 
 # Init scripts run in lexicographic order:
 # 01 — create extensions (vector, age)
