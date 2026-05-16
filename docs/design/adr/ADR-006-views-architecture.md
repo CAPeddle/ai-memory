@@ -1,74 +1,91 @@
 ---
 name: "ADR-006: Views Architecture — Storyboard and Wiki"
 asset_type: "adr"
-status: "accepted"
+status: "revised"
 owners:
   - "ai-memory-maintainers"
 source_path: "docs/design/adr/ADR-006-views-architecture.md"
 created: "2026-05-15"
+revised: "2026-05-16"
 investigation: "docs/investigations/openbrain-pivot-evaluation.md"
 ---
 
-# ADR-006: Views Architecture — Storyboard and Wiki as Projections over The Brain
+# ADR-006: Views Architecture — Storyboard and Wiki as Local Projections
 
-**Status:** Accepted  
-**Date:** 2026-05-15  
+**Status:** Revised  
+**Date:** 2026-05-15 | **Revised:** 2026-05-16  
 **Deciders:** PO (sole maintainer)  
-**Source investigations:** [openbrain-pivot-evaluation.md](../../investigations/openbrain-pivot-evaluation.md), [MicrosoftCopilotProjectOverview.md](../Discussions/MicrosoftCopilotProjectOverview.md), [MicrosoftCopilotStorageBasedADR.md](../Discussions/MicrosoftCopilotStorageBasedADR.md), [Gemini Agile MD Storyboard.md](../Discussions/Gemini%20Agile%20MD%20Storyboard.md)
+**Source investigations:** [openbrain-pivot-evaluation.md](../../investigations/openbrain-pivot-evaluation.md)
 
 ---
 
 ## Context
 
-The system must produce two derived "views" over The Brain:
+The original design assumed the synthesis trigger was a server-side domain event (C# `ISynthesisService` called after `IMemoryRepository.StoreAsync()`). The architecture has changed:
 
-1. **Wiki view** — a synthesised, curated Markdown document per project or domain, generated from semantic memories. Equivalent to an always-current project reference sheet.
+- The cloud MCP server is a TypeScript/Deno process (OB1 fork). It has no direct filesystem access to the local Obsidian vault and no C# domain event system.
+- The local synthesis service is a C# client that connects to the cloud MCP server via StreamableHTTP.
+- Synthesis is therefore a **pull model** — the local service queries the cloud for memories and synthesises views locally — rather than a push model triggered by server-side writes.
 
-2. **Storyboard view** — a stateful task board showing stories (professional and personal) with their execution state. Used by agents to pick up work and by the developer to manage goals.
-
-Two design questions were open:
-1. Are views separate storage systems, or projections over The Brain?
-2. What is the canonical interface — Markdown files, or REST/MCP API?
-
-An earlier design (influenced by Open Brain / Supabase) considered edge function workers writing Markdown to cloud storage with a local sync bridge. The C# local-first architecture was evaluated as a direct alternative.
+The conceptual view model is unchanged: Wiki and Storyboard views are projections over The Brain, not separate storage systems. The canonical memory store is the cloud PostgreSQL database; Markdown files are optional local renderings.
 
 ---
 
 ## Decision
 
-### Views are stateful projections over The Brain, not separate storage systems
+### Views are local projections — synthesis is a pull model
 
-The Brain (SQLite) is the single source of truth. Views are derived representations generated on demand or via synthesis trigger.
-
-**Wiki view:** Synthesised Markdown document generated from Tier 2 (semantic) memories for a specified project. Updated incrementally when new memories are ingested.
-
-**Storyboard view:** A task board rendered from a dedicated `stories` table in The Brain. The `stories` table holds story state (todo | in-progress | review | done); the view is a query-time projection over it.
-
-### Canonical interface is REST/MCP API
-
-Agents and tools interact with views via REST endpoints and MCP tools. Markdown file output is an **optional rendering format**, not the canonical data store.
+The C# local synthesis service is responsible for generating and writing view files. It connects to the cloud MCP server, retrieves relevant memories, calls an LLM, and writes Obsidian-compatible Markdown to the local filesystem.
 
 ```
-REST/MCP (canonical)
-       ↓
-IMemoryService / IStoryboardService
-       ↓
-The Brain (SQLite: memories + stories tables)
-       ↓
-ISynthesisService  (optional trigger)
-       ↓
-Markdown file write (optional; Obsidian-compatible)
+CLOUD (PostgreSQL + Deno MCP server)
+  │
+  │  StreamableHTTP + API key
+  │  (MCP tools: search_thoughts, list_thoughts, story_list)
+  ▼
+LOCAL — C# Synthesis Service (WSL2)
+  │
+  ├── Pull: fetch memories since last synthesis point
+  ├── LLM call: Ollama (local, $0) or OpenRouter (remote, configurable)
+  ├── Write: Obsidian-compatible Markdown to configured vault path
+  └── Track: last synthesised thought ID per view (local state file)
+        │
+        ▼
+  Local Obsidian Vault
+  ├── wiki/{project}.md
+  └── storyboard/{profile}.md
 ```
 
-### Synthesis trigger pattern
+### Synthesis trigger
 
-After `IMemoryRepository.StoreAsync()` completes successfully, a domain event fires. `ISynthesisService.UpdateViewsAsync(newMemory)` is invoked asynchronously. The synthesis service:
-1. Identifies which views are affected by the new memory (project match, tag match)
-2. Fetches the delta since the last synthesis point (tracked by `last_synthesised_memory_id` per view)
-3. Calls `ILlmClient` with the delta memories as context
-4. Writes the updated Markdown file to the configured output directory
+Synthesis is triggered by:
+1. **WSL2 cron schedule** — configurable interval (e.g., every 30 minutes, hourly)
+2. **Manual trigger** — developer or agent calls the synthesis service directly
+3. **Agent-initiated** — an MCP-capable agent with local access can request a synthesis run
 
-### Storyboard state machine
+The cloud server does not push synthesis events. This is a pull-on-demand model.
+
+### Incremental update
+
+The synthesis service tracks the last synthesised thought ID per view in a local state file. On each run it fetches only thoughts created or updated since that checkpoint, reducing LLM token cost and synthesis latency.
+
+```
+State file: ~/.ai-memory/synthesis-state.json
+{
+  "wiki/zoom": { "last_thought_id": "uuid-xyz", "last_run": "2026-05-16T10:00:00Z" },
+  "storyboard/professional": { "last_thought_id": "uuid-abc", "last_run": "2026-05-16T09:30:00Z" }
+}
+```
+
+### LLM provider — configurable
+
+The synthesis service supports two LLM backends, configurable per environment:
+- **Ollama** (default for local runs): `http://localhost:11434` — $0/month, no data leaves the machine
+- **OpenRouter** (remote): configured API key — model flexibility, stronger synthesis quality
+
+Both are called via `Microsoft.Extensions.AI`'s provider-agnostic interface. Switching providers requires only a configuration change.
+
+### Storyboard state machine (unchanged)
 
 Stories follow a controlled state machine:
 
@@ -78,42 +95,24 @@ todo → in-progress → review → done
           ← ← ← ← ← ← ← ←  (back-transition permitted)
 ```
 
-WIP limit: 1 story per profile (professional | personal) may be `in-progress` at a time.
+WIP limit: 1 story per profile (`professional` | `personal`) may be `in-progress` at a time. State is enforced by the cloud MCP server (`story_claim`, `story_update` tools).
 
-### Layered context for story pickup
-
-Agents use a two-step pattern:
-1. **Summary view** (`memory://storyboard/{profile}`) — story IDs, titles, statuses (~500 tokens)
-2. **Full detail** (`GET /api/v1/stories/:id`) — description, acceptance criteria, linked memories
-
-This prevents context flooding when scanning for available work.
-
-### Obsidian-compatible Markdown output format
+### Obsidian-compatible Markdown output (unchanged)
 
 View files use YAML frontmatter with Dataview-queryable properties:
 
 ```markdown
 ---
-type: storyboard
-profile: professional
-generated_at: 2026-05-15T10:00:00Z
+type: wiki
+project: zoom
+generated_at: 2026-05-16T10:00:00Z
 memory_count: 42
+last_thought_id: uuid-xyz
 ---
 
-## To Do
+## Key Facts
 
-\`\`\`dataview
-TABLE priority, project FROM "stories" WHERE status = "todo" SORT priority DESC
-\`\`\`
-
-<!-- Story file format -->
----
-id: 01HXY...
-title: Implement SQLite schema
-status: todo
-priority: high
-project: ai-memory
----
+...synthesised content...
 ```
 
 ---
@@ -121,36 +120,43 @@ project: ai-memory
 ## Consequences
 
 ### Positive
-- Single source of truth: The Brain (no sync bridges, no divergence)
-- Synthesis within the C# process writes directly to the local filesystem (< 100 ms latency, no cloud round-trip)
-- Storyboard state is fully transactional (SQLite) — no partial updates
-- Layered context model prevents agent token flooding
-- Obsidian Markdown is an optional rendering bonus, not a dependency
-- WIP limit is enforced by the system, not by convention
+- The local synthesis service retains **direct filesystem access** — writes go straight to the Obsidian vault with no cloud storage bridge or sync daemon
+- Pull model is simpler than push: no server-side event system, no webhook infrastructure
+- Cron-triggered synthesis is transparent and controllable; the developer sees exactly when synthesis runs and can trigger it manually
+- LLM provider is configurable: free local synthesis (Ollama) or high-quality remote synthesis (OpenRouter) with no code change
+- The cloud server has zero synthesis responsibility; it only stores and retrieves memories
 
 ### Negative / Trade-offs
-- LLM synthesis is async (view is not updated synchronously with memory write)
-- Obsidian-compatible Markdown requires Dataview plugin for live board rendering; plain Markdown is the fallback
-- ISynthesisService must handle concurrent synthesis requests gracefully (queue or lock per view)
+- Views are not updated immediately on memory write; there is a lag between capture and synthesis equal to the cron interval (acceptable for a personal tool)
+- The local synthesis service must be running (or cron must be active) for views to update; on a machine that is off or suspended, synthesis is paused
+- Local state file introduces a lightweight dependency; loss of the state file causes full re-synthesis on the next run (correct result, higher token cost)
 
-### Open Brain comparison
+### Comparison with server-side synthesis (OB1 pattern)
 
-Open Brain's synthesis approach (Supabase edge functions + remote Markdown storage + local sync daemon) introduces:
-- 1–30 second synthesis latency (vs < 100 ms for direct file write)
+OB1's approach (Supabase Edge Function worker + remote Markdown storage + local sync bridge) introduces:
+- 1–30 second synthesis latency (network round-trips to OpenRouter + storage)
 - A local sync bridge process (extra maintenance)
-- Cloud dependency for synthesis (breaks local-first NFR)
+- Cloud dependency for every synthesis run
+- Remote storage cost
 
-These costs outweigh OB1's advantages at personal scale. **The C# direct-write approach is chosen.**  
-Source: openbrain-pivot-evaluation.md §9 — Option C weighted score 4.50 vs 2.10–3.55 for alternatives.
+The local pull model eliminates all of these costs. The trade-off is that synthesis does not happen on the cloud server; it happens on the developer's machine. For a single-user personal tool, this is the correct trade-off.
 
 ---
 
 ## Alternatives Considered
 
-| Alternative | Why Rejected |
-|-------------|-------------|
-| **Views as separate storage systems (Supabase edge)** | Cloud dependency; 1–30s synthesis latency; local sync bridge complexity; violates local-first NFR |
-| **Markdown files as canonical storage (file-as-truth)** | Weakens atomic updates, recall-event logging, consolidation pipelines; per memsearch-applicability-review.md |
-| **Single storyboard (no profile split)** | Professional and personal tasks have different audiences and WIP limits; profile separation is first-class |
-| **Storyboard as pure Markdown with no REST/MCP API** | Agents cannot programmatically update state without parsing and writing Markdown; REST/MCP is canonical |
-| **Full synthesis on every write (synchronous)** | Blocks memory write response; violates NFR-P3 |
+| Alternative | Why Not Chosen |
+|-------------|---------------|
+| **Server-side synthesis (OB1 Edge Function + remote Markdown)** | Network latency, sync bridge complexity, cloud dependency for Markdown writes; pull model is simpler and cheaper |
+| **Supabase Storage + local sync daemon** | Adds a second service (sync daemon) and a cloud storage dependency for files that live on the local machine anyway |
+| **Views as cloud API endpoints only (no Markdown)** | Obsidian-compatible Markdown is a primary deliverable for the storyboard and wiki use cases; API-only removes the Obsidian vault integration |
+| **Synchronous synthesis on every memory capture** | Cloud server cannot write to local filesystem; local synthesis service is not called synchronously during cloud capture |
+
+---
+
+## Revision History
+
+| Version | Date | Summary |
+|---------|------|---------|
+| 1.0 | 2026-05-15 | Initial — server-side domain event triggers ISynthesisService; C# direct filesystem write; SQLite as canonical store |
+| 2.0 | 2026-05-16 | Revised — pull model: local C# synthesis service queries cloud MCP, writes Markdown locally; trigger is WSL2 cron or manual; LLM configurable (Ollama / OpenRouter); canonical store is cloud PostgreSQL |

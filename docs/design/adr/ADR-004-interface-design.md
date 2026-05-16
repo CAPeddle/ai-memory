@@ -1,121 +1,130 @@
 ---
-name: "ADR-004: Interface Design — MCP and REST"
+name: "ADR-004: Interface Design — MCP"
 asset_type: "adr"
-status: "accepted"
+status: "revised"
 owners:
   - "ai-memory-maintainers"
 source_path: "docs/design/adr/ADR-004-interface-design.md"
 created: "2026-05-15"
+revised: "2026-05-16"
 investigation: "docs/investigations/interface-design-mcp-rest.md"
 ---
 
-# ADR-004: Interface Design — MCP and REST
+# ADR-004: Interface Design — MCP
 
-**Status:** Accepted  
-**Date:** 2026-05-15  
+**Status:** Revised  
+**Date:** 2026-05-15 | **Revised:** 2026-05-16  
 **Deciders:** PO (sole maintainer)  
-**Source investigation:** [interface-design-mcp-rest.md](../../investigations/interface-design-mcp-rest.md), [context-engineering-principles.md](../../investigations/context-engineering-principles.md)
+**Source investigations:** [interface-design-mcp-rest.md](../../investigations/interface-design-mcp-rest.md), [openbrain-pivot-evaluation.md](../../investigations/openbrain-pivot-evaluation.md)
 
 ---
 
 ## Context
 
-The memory service must be accessible to:
-1. **AI agents** (GitHub Copilot, Claude, Claude Desktop, etc.) via MCP protocol
-2. **Developer tooling and automation** via standard REST HTTP
-3. **Both simultaneously** from the same running process
+The original design co-hosted a REST API and an MCP server in a single ASP.NET Core process, with MCP as a thin facade over a shared service layer. Both the language stack (ADR-001 revised) and the deployment model (ADR-009) have changed:
 
-Two design questions were open:
-1. Should MCP be a peer of REST, or a facade over a shared service layer?
-2. Should MCP and REST run in separate processes?
+1. **The cloud MCP server is now a forked OB1 TypeScript/Deno process** — it is not an ASP.NET Core host. The C# service layer abstraction (`IMemoryService`) does not apply to the server component.
+
+2. **The cloud component serves AI chat platforms exclusively** — Claude.ai, ChatGPT, Gemini, GitHub Copilot, Cursor. All of these connect via MCP. None require a REST API at the cloud layer.
+
+3. **REST is a local concern** — if a local tool, script, or the C# synthesis service needs to call the memory server programmatically, it connects via the MCP StreamableHTTP transport. A REST wrapper, if ever needed, would be a local adapter, not part of the cloud server.
+
+4. **stdio transport is dropped** — stdio is used for local process-to-process MCP connections (e.g., Claude Desktop spawning a local server). The cloud server is accessed over the public internet; stdio is not relevant.
 
 ---
 
 ## Decision
 
-### MCP is a thin facade over the REST/service layer
+### MCP is the sole interface for the cloud server
 
-Both REST controllers and MCP tool handlers call the same `IMemoryService` interface. Business logic lives **only** in the service layer — not in transport handlers.
+The cloud MCP server exposes one transport: **StreamableHTTP over HTTPS** with API key authentication (ADR-010). All callers — AI chat platforms, the local synthesis service, developer tools — use this single endpoint.
 
 ```
-┌─────────────────────────────────────┐
-│        TRANSPORT LAYER              │
-│  REST endpoints  │  MCP tool handlers│
-└────────┬─────────┴────────┬──────────┘
-         │                  │
-         └──────┬───────────┘
-                ▼
-┌───────────────────────────────────────┐
-│         SERVICE LAYER                 │
-│  IMemoryService  │  ISearchEngine     │
-└───────────────────────────────────────┘
-                ▼
-┌───────────────────────────────────────┐
-│         DATA LAYER                    │
-│  IMemoryRepository  │  IMemoryStore   │
-└───────────────────────────────────────┘
+Claude.ai │ ChatGPT │ Gemini │ Copilot │ C# Synthesis Service
+          │         │        │         │
+          └─────────┴────────┴─────────┘
+                         │
+              StreamableHTTP (HTTPS + Bearer API key)
+                         │
+          ┌──────────────▼──────────────┐
+          │  Deno MCP Server            │
+          │  (OB1 fork, TypeScript)     │
+          │                             │
+          │  tool handlers              │
+          │       │                     │
+          │  service functions          │
+          │       │                     │
+          │  PostgreSQL + AGE           │
+          └─────────────────────────────┘
 ```
 
-### Single-process hosting
+### MCP tool set (OB1 fork, extended)
 
-Both REST and MCP run in the same ASP.NET Core process. Shared DI container, zero IPC overhead.
+Core tools inherited from OB1 and extended:
+
+| Tool | Description |
+|------|-------------|
+| `capture_thought` | Store a memory (shard or wiki, per `memory_type` parameter) |
+| `search_thoughts` | Hybrid BM25 + vector search (Mode 1, ADR-003) with optional `context` parameter |
+| `graph_traverse` | openCypher graph traversal (Mode 2, ADR-003) |
+| `list_thoughts` | Paginated list with optional project/type filter |
+| `thought_stats` | Count and recency stats per project/type |
+| `story_list` | List storyboard stories with status filter |
+| `story_claim` | Transition story to in-progress; returns resolved context |
+| `story_update` | Update story status via state machine |
+| `consolidate` | Trigger consolidation pipeline; supports `dry_run` |
 
 ### MCP response format
 
-MCP tools return **formatted text/Markdown** (not raw JSON). Agents interpret natural language prose better than structured data.
+Tools return **formatted text / Markdown**, not raw JSON. AI agents interpret natural language prose better than structured data for memory content.
 
-Format: `[Score: 0.92] (type, project) content — ID: <ulid>`
+Format: `[Score: 0.92] (shard · zoom) Implemented conan integration using find_package — ID: <uuid>`
 
-### Transport
+### Context layers (adjusted)
 
-Both stdio and HTTP (StreamableHTTP) transports are supported simultaneously. HTTP is prioritised for GitHub Copilot and Claude Desktop; stdio is provided for CLI clients.
-
-### Context layers
-
-The MCP interface implements a three-layer context model:
-- **Layer 0** (passive, always available): MCP Resources (`memory://facts/{project}`, `memory://recent-episodes`, `memory://stats`, `memory://storyboard/{profile}`) — max ~500 tokens each
-- **Layer 1** (active pull): MCP Tools (`memory_search`, `memory_inspect`, story tools)
-- **Layer 1.5** (guided retrieval): MCP Prompts (`recall_context`, `session_summary`)
+- **Layer 0** (passive): MCP Resources — `memory://thoughts/{project}`, `memory://stats`, `memory://storyboard/{profile}` — max ~500 tokens each
+- **Layer 1** (active pull): MCP Tools — search, capture, graph, story management
+- **Layer 1.5** (guided retrieval): MCP Prompts — `recall_context`, `session_summary`
 
 ### Pagination
 
-Cursor-based pagination on all list endpoints (not offset-based) to avoid drift on concurrent inserts.
+Cursor-based on all list tools (not offset-based). Offset pagination drifts on concurrent inserts.
 
-### Swagger / OpenAPI
+### REST (not in cloud server scope)
 
-Enabled in development mode; disabled in background/service mode.
+A REST adapter may be added as a local-only wrapper in a future story if programmatic non-MCP access is needed. It is not part of the cloud server and not planned for the spike.
 
 ---
 
 ## Consequences
 
 ### Positive
-- Single source of truth for business logic: `IMemoryService`
-- Consistent validation across both interfaces (REST and MCP call the same validators)
-- Testing is straightforward: service layer tested once; transport handlers are thin
-- Single process = simpler deployment, no IPC, shared health/ready signals
-- `recall_event_id` in search results enables the feedback loop from both REST and MCP callers
-- Layer 0 Resources provide passive context injection without agent effort (token-efficient)
+- Single interface eliminates the REST/MCP duality and the associated "MCP as facade" pattern complexity
+- All callers use the same transport; no per-caller protocol negotiation
+- OB1's MCP tool signatures are the starting point; the fork extends rather than replaces
+- StreamableHTTP over HTTPS works with all target chat platforms (Claude.ai, ChatGPT custom GPTs, Gemini plugins, Copilot extensions, Cursor)
 
 ### Negative / Trade-offs
-- MCP response format (formatted text) is not directly machine-parseable by non-agent consumers; REST is the right channel for programmatic consumers
-- Both transports running simultaneously means any service degradation affects all consumers; no isolation between MCP and REST traffic
-
-### Acceptance criteria for implementation
-
-After `GET /health` returns 200:
-1. `POST /api/v1/memories` accepts a valid body and returns 201 with an ID
-2. An MCP `memory_teach` call returns a formatted confirmation
-3. `GET /api/v1/memories/search?q=test` returns an envelope with `data` array and `took_ms`
+- No REST API means no Swagger/OpenAPI documentation at the cloud layer; MCP schema serves that role
+- The local synthesis service must speak MCP (StreamableHTTP client) rather than REST; this is acceptable — the C# `HttpClient` can call MCP StreamableHTTP directly
+- stdio transport is removed; any future local-process use case would need to connect via the HTTPS endpoint with the API key
 
 ---
 
 ## Alternatives Considered
 
-| Alternative | Why Rejected |
-|-------------|-------------|
-| **MCP as peer (not facade)** | Would require duplicating service logic; violates DRY; testing doubles; rejected |
-| **Separate REST and MCP processes** | Added IPC complexity; no user benefit at personal scale |
-| **MCP returns raw JSON** | Agent consumption tested as worse with structured JSON than with natural language formatted text |
-| **Offset-based pagination** | Drifts on concurrent inserts; cursor-based is safer and stateless |
-| **Swagger in production mode** | Removed from service/background mode to reduce attack surface on localhost binding |
+| Alternative | Why Not Chosen |
+|-------------|---------------|
+| **REST + MCP in same server (original design)** | Requires ASP.NET Core + C# MCP SDK; superseded by TypeScript/Deno OB1 fork |
+| **MCP as facade over REST service layer** | The OB1 architecture is service functions called directly by tool handlers; no REST intermediary layer is present or needed |
+| **stdio transport** | Cloud-hosted server is not spawned as a child process; stdio irrelevant for remote MCP access |
+| **REST-only** | Chat platforms connect via MCP; REST would require each platform to use a custom integration rather than the standard MCP handshake |
+
+---
+
+## Revision History
+
+| Version | Date | Summary |
+|---------|------|---------|
+| 1.0 | 2026-05-15 | Initial — REST + MCP in single ASP.NET Core process; MCP as facade; stdio + HTTP dual transport |
+| 2.0 | 2026-05-16 | Revised — MCP-only; OB1 fork TypeScript/Deno server; StreamableHTTP over HTTPS only; stdio dropped; REST deferred as local-only concern; graph_traverse tool added |
