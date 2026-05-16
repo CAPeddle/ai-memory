@@ -1,116 +1,163 @@
 ---
 name: "ADR-003: Hybrid Search Architecture"
 asset_type: "adr"
-status: "accepted"
+status: "revised"
 owners:
   - "ai-memory-maintainers"
 source_path: "docs/design/adr/ADR-003-hybrid-search.md"
 created: "2026-05-15"
+revised: "2026-05-16"
 investigation: "docs/investigations/memory-architecture-design.md"
 ---
 
 # ADR-003: Hybrid Search Architecture
 
-**Status:** Accepted  
-**Date:** 2026-05-15  
+**Status:** Revised  
+**Date:** 2026-05-15 | **Revised:** 2026-05-16  
 **Deciders:** PO (sole maintainer)  
-**Source investigations:** [memory-architecture-design.md](../../investigations/memory-architecture-design.md), [MicrosoftCopilotStorage.md](../Discussions/MicrosoftCopilotStorage.md), [MicrosoftCopilotStorageBasedADR.md](../Discussions/MicrosoftCopilotStorageBasedADR.md), [openclaw-official-docs-review.md](../../investigations/openclaw-official-docs-review.md)
+**Source investigations:** [memory-architecture-design.md](../../investigations/memory-architecture-design.md), [openbrain-pivot-evaluation.md](../../investigations/openbrain-pivot-evaluation.md)
 
 ---
 
 ## Context
 
-A memory retrieval system must handle three types of queries:
-1. **Lexical** — exact keyword, symbol, API name (e.g., "include_directories", "IsNullOrEmpty")
-2. **Semantic** — natural language concept queries (e.g., "how do I handle conan dependencies?")
-3. **Structural** — entity/project/relationship scoping (e.g., "memories about cmake in the zoom project")
+The storage backend moved from SQLite (FTS5 + sqlite-vec) to PostgreSQL 15 with pgvector and Apache AGE v1.7.0 (ADR-011). The search architecture must be re-expressed in PostgreSQL terms.
 
-Single-mode search is insufficient:
-- FTS5-only (BM25): excellent for exact lexical matches; poor for synonyms and paraphrases
-- Vector-only: excellent for semantic similarity; poor for exact symbol/ID lookups
-- Both are needed; combined retrieval achieves ~100% recall (validated by OpenClaw analysis)
+Additionally, the move to PostgreSQL + AGE unlocks a capability that was explicitly deferred in v1.0: **graph traversal as a first-class retrieval mode**. Two confirmed use cases drive this:
 
-A third dimension — structural — needs to be incorporated without adding excessive complexity or ranking normalisation challenges.
+1. **Coding agent debugging** — tracing why an implementation is not working requires multi-hop traversal through code entities, dependencies, and error chains. Variable-length relationship patterns (e.g., `CAUSED_BY*1..5`) are native to openCypher and painful in recursive CTEs at depth.
+
+2. **Fact inference** — "Does John like flowers?" requires chaining through entity relationships (`LIKES → INTERESTED_IN → category:flowers`). This is a graph query, not a keyword or vector query.
+
+Three query types must be handled:
+1. **Lexical** — exact keyword, symbol, API name: `tsvector`/`tsquery` (BM25 approximation)
+2. **Semantic** — natural language concept queries: pgvector HNSW cosine similarity
+3. **Structural / graph** — entity relationships, multi-hop traversal: openCypher via AGE
 
 ---
 
 ## Decision
 
-### Two-lane hybrid search with structural pre-filter
+### Three retrieval modes
 
-The retrieval pipeline is:
+**Mode 1 — Lexical + Semantic Hybrid (standard memory retrieval)**
+
+The default retrieval pipeline for `search_thoughts`:
 
 ```
 Query
   │
-  ├── Structural pre-filter (entity / project scope)
-  │      ↓ constrained candidate set
-  ├── BM25 lane (FTS5 MATCH query)       ───┐
-  │                                          ├── RRF → MMR → Top-K results
-  └── Vector lane (sqlite-vec KNN query) ───┘
+  ├── Structural pre-filter (project / entity scope via WHERE clause)
+  │          ↓ constrained candidate set
+  ├── BM25 lane   (tsvector/tsquery, ranked by ts_rank_cd)   ──┐
+  │                                                              ├── RRF → MMR → Top-K
+  └── Vector lane (pgvector HNSW cosine, <=> operator)       ──┘
 ```
 
-**Structural search operates as a pre-filter, not a ranking signal.**
+BM25 implementation:
+```sql
+SELECT id, content, ts_rank_cd(search_vector, query) AS bm25_rank
+FROM thoughts, plainto_tsquery('english', $1) query
+WHERE search_vector @@ query
+ORDER BY bm25_rank DESC
+LIMIT 60;
+```
 
-This means RRF fuses exactly **two lanes** (BM25 + Vector). Structural data constrains the search space before ranking begins.
+Vector implementation:
+```sql
+SELECT id, content, embedding <=> $1 AS vector_distance
+FROM thoughts
+ORDER BY vector_distance
+LIMIT 60;
+```
 
-### RRF formula
-
+RRF fusion (k=60, rank-independent normalisation):
 ```
 RRF_score(d) = Σ 1 / (k + rank_i),   k = 60
 ```
 
-k=60 eliminates the need to normalise FTS5 BM25 scores and vector cosine similarity scores.
+MMR re-ranking after fusion (λ=0.7 relevance, 0.3 diversity).
 
-### MMR re-ranking
+**Mode 2 — Graph Traversal (openCypher via AGE)**
 
-After RRF fusion, Maximal Marginal Relevance re-ranks the result list to reduce near-duplicate results:
+For structural queries — debugging, fact inference, entity relationship exploration:
+
+```cypher
+-- Coding agent: trace error causation chain
+MATCH path = (error:Error {id: $errorId})-[:CAUSED_BY*1..5]->(root)
+RETURN path
+
+-- Fact inference: multi-hop relationship query
+MATCH (person:Person {name: $name})-[:LIKES|INTERESTED_IN*1..3]->(thing)
+WHERE thing.category = $category
+RETURN thing
+```
+
+Graph queries are invoked via a dedicated MCP tool (`graph_traverse`) or as a post-retrieval expansion step after Mode 1. They are not fused into the BM25+vector RRF pipeline — the two retrieval modes serve different query intents and are selected at the tool level.
+
+**Mode 3 — Structural Pre-filter (scope constraint)**
+
+Project and entity scoping continues to operate as a WHERE-clause pre-filter on all Mode 1 queries. This constrains the candidate set before BM25 and vector ranking begin.
+
+### Embedding dimensions
+
+512-dimension embeddings using `text-embedding-3-small` with OpenAI's native truncation support. This retains ~95% of retrieval quality at 1536 dimensions while keeping vector storage within the Supabase-free / Docker volume budget (100K × 2KB = ~200MB vs 100K × 6KB = ~600MB at full dimensions).
+
+### RRF parameters (unchanged)
+
+`k = 60` eliminates the need to normalise tsvector BM25 scores against pgvector cosine distances.
+
+### MMR re-ranking (unchanged)
 
 ```
 MMR = argmax[ λ · sim(d, q) − (1−λ) · max(sim(d, selected)) ]
-     λ = 0.7  (relevance weight; 0.3 diversity weight)
+     λ = 0.7
 ```
 
-### Recency handling
+### Recency and project boosting (unchanged)
 
-Recency is a **tiebreaker only** (within ε=0.01 score threshold). It is never used as a decay factor. Stored memories do not lose weight over time.
-
-### Project boosting
-
-Same-project results receive a **1.2× relevance multiplier**. Cross-project results are not penalised but are not boosted.
+- Recency: tiebreaker only within ε=0.01 score threshold. No decay.
+- Project boosting: 1.2× multiplier for same-project results in Mode 1.
 
 ---
 
 ## Consequences
 
 ### Positive
-- Two-lane RRF is proven to achieve ~100% recall at personal knowledge graph scale
-- No score normalisation required between BM25 and cosine similarity (RRF formula is rank-independent)
-- Structural pre-filter (a fast SQL/CTE query) adds < 10 ms overhead
-- MMR prevents near-duplicate results from dominating the result window
-- "No-decay" philosophy matches the use case: development knowledge does not expire
+- `tsvector`/`tsquery` is a mature, production-grade BM25 approximation; no extension required
+- pgvector HNSW indexes provide sub-10ms vector search at 100K+ embeddings (superior to sqlite-vec at this scale)
+- AGE v1.7.0 supports PostgreSQL 15; openCypher graph traversal is now first-class, not a deferred capability
+- Two distinct retrieval modes (hybrid BM25+vector vs graph traversal) serve different query intents cleanly; no forced fusion of semantically different result types
+- 512-dim embeddings fit the storage budget while retaining quality
 
 ### Negative / Trade-offs
-- Structural similarity cannot influence ranking in v1.0 — it can only constrain scope
-- If a query benefits from structural ranking (e.g., "find memories structurally similar to this planning document"), it cannot be expressed as a pre-filter; this use case is deferred to a future evolution
-- The chunk ↔ entity mapping layer adds schema complexity (managed in ST-018)
+- `tsvector`/`tsquery` is a BM25 approximation, not a true BM25 implementation; `ts_rank_cd` normalises by document length but does not expose raw IDF scores. Acceptable at personal scale.
+- Graph queries (Mode 2) require the entity extraction pipeline (entity extraction worker, ADR-007) to have populated the AGE graph. Empty graph = no graph results. Mode 1 is always available regardless.
+- Structural pre-filter (Mode 3) cannot influence ranking within Mode 1; it remains a scope constraint only. Full structural ranking fusion deferred to a future evolution.
 
-### Future evolution (explicitly supported)
+### Future evolution (supported)
 
-The design allows evolution toward:
-1. **Structural as a ranking signal** — add a third RRF lane once structural fingerprints are validated
-2. **Graph-based retrieval** — dedicated graph store, topology-based similarity (requires PostgreSQL + AGE)
-3. **Hybrid structural strategies** — structure as filter + score booster
+1. **Structural as a fourth RRF lane** — once entity extraction is validated and graph density is sufficient, structural fingerprint vectors could be added as a third BM25/vector fusion lane
+2. **Graph-guided re-ranking** — use graph proximity (hop distance from query entity) as a post-RRF booster in Mode 1
 
 ---
 
 ## Alternatives Considered
 
-| Alternative | Why Rejected |
-|-------------|-------------|
-| **FTS5-only (BM25)** | ~46.7% recall on semantic queries per OpenClaw benchmarks; insufficient |
-| **Vector-only** | Poor performance on exact symbol/ID lookups; insufficient for coding memory use case |
-| **Structural as RRF ranking signal** | Requires normalising graph topology scores against BM25 and cosine; complex tuning problem; MicrosoftCopilotStorageBasedADR.md recommends pre-filter model |
-| **Elasticsearch BM25** | $29+/month minimum; heavyweight; overkill for ≤500K records |
-| **Polyglot BM25 + separate vector store** | Multiple processes, complex sync; retrieval quality equivalent to SQLite embedded approach at this scale |
-| **Temporal decay (cognitive science model)** | Explicitly rejected: development knowledge does not expire; recency as tiebreaker captures the needed ranking nuance |
+| Alternative | Why Not Chosen |
+|-------------|---------------|
+| **FTS5 (SQLite)** | Superseded by ADR-002 → ADR-011; PostgreSQL tsvector/tsquery is the equivalent |
+| **sqlite-vec** | Superseded; pgvector HNSW is superior at 100K+ embeddings |
+| **Elasticsearch BM25** | $29+/month minimum; heavyweight; unjustified at personal scale |
+| **Fusing graph results into BM25+vector RRF** | Different query intents should not be force-fused; graph traversal returns relationship paths, not scored documents; Mode 2 separation is cleaner |
+| **Recursive CTEs for graph traversal** | Manageable for 2-hop queries; becomes unwieldy at 3–5 hops and for variable-length patterns; openCypher via AGE is purpose-built |
+| **1536-dim embeddings** | 100K × 6KB = ~614MB; exceeds free-tier storage budget; 512-dim retains ~95% quality |
+
+---
+
+## Revision History
+
+| Version | Date | Summary |
+|---------|------|---------|
+| 1.0 | 2026-05-15 | Initial — FTS5 + sqlite-vec + RRF + MMR; structural as pre-filter only; graph deferred |
+| 2.0 | 2026-05-16 | Revised — tsvector/tsquery replaces FTS5; pgvector replaces sqlite-vec; openCypher via AGE added as first-class Mode 2 retrieval; 512-dim embeddings adopted |

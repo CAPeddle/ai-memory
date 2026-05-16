@@ -1,19 +1,20 @@
 ---
-name: "ADR-008: Request-Scoped Ambient Context Propagation"
-summary: "Introduce request-scoped ambient context (AsyncLocal + ASP.NET Core middleware) to flow project/profile/entity scope through the service pipeline without per-parameter repetition"
+name: "ADR-008: Request-Scoped Context Propagation"
+summary: "Introduce request-scoped context (Deno request lifecycle) to flow project/profile/entity scope through MCP tool handlers without per-parameter repetition"
 asset_type: "adr"
-status: "accepted"
-version: "1.0"
+status: "revised"
+version: "2.0"
 owners:
   - "ai-memory-maintainers"
 source_path: "docs/design/adr/ADR-008-context-scoping.md"
 created: "2026-05-15"
+revised: "2026-05-16"
 ---
 
-# ADR-008: Request-Scoped Ambient Context Propagation
+# ADR-008: Request-Scoped Context Propagation
 
-**Date:** 2026-05-15  
-**Status:** Accepted  
+**Date:** 2026-05-15 | **Revised:** 2026-05-16  
+**Status:** Revised  
 **Deciders:** PO  
 **Category:** Interface Design / Service Architecture
 
@@ -21,217 +22,146 @@ created: "2026-05-15"
 
 ## Context
 
-The current design exposes search and retrieval operations that optionally accept `project`, `profile`, and entity scope parameters. Every call must specify these parameters independently; there is no mechanism to establish a session-level or request-level default scope.
+The original decision (v1.0) introduced request-scoped ambient context via `AsyncLocal<T>` and ASP.NET Core middleware in C#. The cloud server is now a TypeScript/Deno process (ADR-001); `AsyncLocal` and ASP.NET Core do not apply.
 
-This creates two problems identified in the contextual scoping investigation:
+The conceptual model is identical:
+- An optional `context` parameter on MCP tools carries scope metadata (project, profile, entity)
+- Tool handlers propagate this context to service functions before delegating
+- Requests without context behave identically to requests with no scope constraint (backward compatible)
 
-1. **Verbosity** — An agent operating in "zoom project / professional profile" context must repeat these parameters in every `memory_search`, `story_list`, memory ingest, and consolidation call. This violates the context-engineering principle of "Point, don't dump."
-
-2. **No story → search context inheritance** — When an agent claims a story (transitioning it to `in-progress`), the story's `project` field is not automatically applied to subsequent searches. The agent must explicitly re-supply the project context.
-
-Three statelessness-preserving options were evaluated:
-
-| Option | Notes |
-|--------|-------|
-| A — Explicit per-request context parameter | Stateless; backward-compatible; but verbose and error-prone |
-| B — Server-side MCP session state | Low token overhead; but requires session affinity and server-side state tracking |
-| **C — Request-scoped ambient context (chosen)** | Stateless, backward-compatible, low token overhead, traceable via middleware |
-| D — Entity-cluster scope | Semantically rich; but requires entity extraction pipeline; deferred to Phase 5 |
+The implementation changes to use Deno's request lifecycle and TypeScript parameter passing in place of `AsyncLocal`.
 
 ---
 
 ## Decision
 
-Introduce **request-scoped ambient context** propagated via `AsyncLocal<T>` and ASP.NET Core middleware.
+### Context is an explicit parameter propagated through tool handlers
 
-- **REST:** An optional `X-AI-Memory-Context` header carries scope metadata (project, profile, entity). Middleware extracts it and sets an `AsyncLocal` scope for the lifetime of that request.
-- **MCP:** An optional `context` parameter on tools accepts a short scope string (e.g., `"project:zoom"`, `"profile:professional"`). Tool handlers set the ambient scope before delegating to the service layer.
-- **Service layer:** All `IMemoryService`, `ISearchEngine`, and `IStoryboardService` methods resolve scope by priority: (1) explicit parameter override → (2) `AmbientContextScope.Current` → (3) null/global.
+In Deno, there is no built-in `AsyncLocal` equivalent for HTTP request handlers. Context scope is propagated explicitly as a parameter from the MCP tool handler down to service functions. This is simpler than the C# ambient scope pattern and equally effective for a single-process server.
 
-Context is request-scoped: it is created at request start and automatically cleaned up when the request completes. No server-side session tracking is required.
+```typescript
+// Context type (TypeScript equivalent of C# ContextScope)
+interface ContextScope {
+  projects?: string[];          // project slugs; first entry is primary for boosting
+  profile?: 'professional' | 'personal';
+  entities?: string[];          // entity pre-filter hints
+  visibility?: 'prefer' | 'exclusive' | 'cross-only';  // default: 'prefer'
+  sourceStoryId?: string;       // story that established this context
+}
 
----
-
-## Context Model
-
-```csharp
-/// <summary>
-/// Scope context for a request or tool call. All fields are optional;
-/// null means "no constraint" for that dimension.
-/// </summary>
-public record ContextScope
-{
-    /// <summary>
-    /// Project slugs to constrain search and filtering toward.
-    /// First entry is treated as "primary" project for boosting purposes.
-    /// </summary>
-    public string[]? Projects { get; init; }
-
-    /// <summary>
-    /// Profile to scope storyboard operations (professional | personal).
-    /// </summary>
-    public string? Profile { get; init; }
-
-    /// <summary>
-    /// Entity names or slugs to add as structural pre-filter candidates.
-    /// </summary>
-    public string[]? Entities { get; init; }
-
-    /// <summary>
-    /// Visibility policy for multi-project results.
-    /// "prefer" = boost in-scope (default), "exclusive" = only in-scope, "cross-only" = exclude in-scope.
-    /// </summary>
-    public string Visibility { get; init; } = "prefer";
-
-    /// <summary>
-    /// Optional story ID that established this context. Used for story → search inheritance.
-    /// </summary>
-    public string? SourceStoryId { get; init; }
+function parseContext(raw: string | undefined): ContextScope | null {
+  if (!raw) return null;
+  // "project:zoom,profile:professional" → { projects: ['zoom'], profile: 'professional' }
+  // "project:zoom;bcf-managers,entity:CMake" → { projects: ['zoom','bcf-managers'], entities: ['CMake'] }
+  const scope: Partial<ContextScope> = {};
+  for (const pair of raw.split(',')) {
+    const colonIdx = pair.indexOf(':');
+    if (colonIdx === -1) continue;
+    const k = pair.slice(0, colonIdx).trim();
+    const v = pair.slice(colonIdx + 1).trim();
+    if (k === 'project')    scope.projects   = v.split(';');
+    else if (k === 'entity')     scope.entities   = v.split(';');
+    else if (k === 'profile')    scope.profile    = v as ContextScope['profile'];
+    else if (k === 'visibility') scope.visibility = v as ContextScope['visibility'];
+  }
+  return scope as ContextScope;
 }
 ```
 
----
+### MCP tool integration
 
-## Implementation Sketch
+```typescript
+server.tool(
+  'search_thoughts',
+  { query: z.string(), context: z.string().optional(), limit: z.number().default(10) },
+  async ({ query, context, limit }) => {
+    const scope = parseContext(context);
+    const results = await searchThoughts(query, scope, limit);
+    return { content: [{ type: 'text', text: formatResults(results) }] };
+  }
+);
+```
 
-### Ambient Scope Manager
+### Service function signature
 
-```csharp
-public static class AmbientContextScope
-{
-    private static readonly AsyncLocal<ContextScope?> _current = new();
-
-    public static ContextScope? Current => _current.Value;
-
-    public static IDisposable Push(ContextScope scope)
-    {
-        var previous = _current.Value;
-        _current.Value = scope;
-        return new RestoreOnDispose(() => _current.Value = previous);
-    }
-
-    private sealed class RestoreOnDispose(Action restore) : IDisposable
-    {
-        public void Dispose() => restore();
-    }
+```typescript
+async function searchThoughts(
+  query: string,
+  scope: ContextScope | null,
+  limit: number
+): Promise<ThoughtResult[]> {
+  const project = scope?.projects?.[0] ?? null;
+  const profile = scope?.profile ?? null;
+  // BM25 + vector search with optional WHERE project = $project
 }
 ```
 
-### REST Middleware (Program.cs)
+### Priority precedence (unchanged)
 
-```csharp
-app.Use(async (context, next) =>
-{
-    if (context.Request.Headers.TryGetValue(
-            "X-AI-Memory-Context", out var headerValue))
-    {
-        var scope = ContextHeaderParser.Parse(headerValue.ToString());
-        using (AmbientContextScope.Push(scope))
-            await next();
-    }
-    else
-    {
-        await next();
-    }
+1. Explicit parameter override (passed directly to service function)
+2. Context parameter on MCP tool call
+3. Null / global (no constraint)
+
+### Tools that accept `context` parameter
+
+| Tool | Context use |
+|------|------------|
+| `search_thoughts` | Project boost + entity pre-filter |
+| `capture_thought` | Project/profile assignment on write |
+| `list_thoughts` | Project filter |
+| `story_list` | Profile filter |
+| `story_claim` | Returns resolved context in response |
+| `consolidate` | Project-scoped consolidation run |
+
+### `story_claim` context inheritance
+
+When a story is claimed, the response includes the resolved context string so the agent can pass it forward to subsequent tool calls:
+
+```typescript
+server.tool('story_claim', { storyId: z.string() }, async ({ storyId }) => {
+  const story = await claimStory(storyId);
+  const ctx = `project:${story.project},profile:${story.profile}`;
+  return {
+    content: [{
+      type: 'text',
+      text: `Story claimed: ${story.title}\ncontext: ${ctx}`
+    }]
+  };
 });
 ```
 
-**Header format:** `project=zoom,profile=professional` or `project=zoom&profile=professional`
+### Context header format (unchanged for cross-platform compatibility)
 
-### Service Layer Integration
-
-```csharp
-public class MemoryService : IMemoryService
-{
-    public async Task<SearchResult> HybridSearchAsync(
-        string query,
-        string? projectOverride = null,
-        int limit = 10)
-    {
-        // Precedence: explicit parameter > ambient context > null (global)
-        var project = projectOverride
-            ?? AmbientContextScope.Current?.Projects?[0]
-            ?? null;
-
-        return await _searchEngine.HybridSearchAsync(query, project, limit);
-    }
-}
-```
-
-### MCP Tool Integration (ADR-004 facade preserved)
-
-```csharp
-[McpServerTool("memory_search")]
-[Description("Hybrid search across memories")]
-public async Task<string> Search(
-    [Description("Search query")] string query,
-    [Description("Optional context: 'project:slug', 'profile:professional', or 'project:slug,profile:professional'")] 
-    string? context = null,
-    [Description("Maximum results to return")] int limit = 10)
-{
-    var scope = context is not null ? ContextHeaderParser.Parse(context) : null;
-    using (scope is not null ? AmbientContextScope.Push(scope) : new NoOpDisposable())
-    {
-        var results = await _memoryService.HybridSearchAsync(query, limit: limit);
-        return FormatSearchResults(results);
-    }
-}
-```
-
-### Story → Search Context Inheritance (Phase 3 extension)
-
-```csharp
-[McpServerTool("story_claim")]
-public async Task<string> ClaimStory(string storyId)
-{
-    var story = await _storyboardService.ClaimAsync(storyId);
-
-    // Side-effect: publish story context for the caller's next operations
-    // (This sets an ambient scope for the claim response; the agent is expected
-    //  to pass context="project:{story.Project}" in subsequent memory_search calls
-    //  or the MCP host can inject it via connection-level metadata.)
-    return $"Story claimed: {story.Title} | context: project:{story.Project},profile:{story.Profile}";
-}
-```
-
----
-
-## Context Header Format
-
-| Format | Example | Notes |
-|--------|---------|-------|
-| Comma-delimited key=value | `project=zoom,profile=professional` | Simple single-project context |
-| Multiple projects | `projects=zoom;bcf-managers,profile=professional` | Semicolon-delimited project list |
-| Entity scope | `project=zoom,entity=CMake` | Entity-scoped structural pre-filter hint |
+| Format | Example | Parsed result |
+|--------|---------|---------------|
+| Single project | `project:zoom,profile:professional` | `projects: ['zoom'], profile: 'professional'` |
+| Multiple projects | `project:zoom;bcf-managers,profile:professional` | `projects: ['zoom','bcf-managers']` — semicolon-delimited |
+| Entity scope | `project:zoom,entity:CMake` | `entities: ['CMake']` — `entity` key maps to `entities[]`; semicolon-delimited for multiple |
 
 ---
 
 ## Consequences
 
 ### Positive
+- Explicit parameter propagation is idiomatic in Deno/TypeScript; no hidden ambient scope surprises
+- Simpler than `AsyncLocal` — no scope stack, no disposal pattern, no thread-safety considerations
+- All context propagation is visible in the call chain; easier to trace and test
+- Backward compatible: tools without `context` parameter behave identically (scope = null = global)
 
-- **Low token overhead** — Agents set context once per logical session block rather than per call
-- **Stateless server** — No session affinity requirements; scales horizontally
-- **Backward compatible** — Requests without context headers behave identically to v1.0
-- **Traceable** — Ambient context propagates through the async pipeline; correlates with OpenTelemetry traces and structured logs
-- **Middleware-natural** — Follows established ASP.NET Core pattern consistent with auth, correlation ID, and request logging middleware
-- **ADR-004 preserved** — MCP facade remains a thin parameter pass-through; no service logic in tools
-
-### Negative
-
-- **Implicit behaviour** — Context is injected outside the parameter list; may be surprising to developers unfamiliar with the pattern
-- **MCP transport limitation** — Stdio transport does not carry HTTP headers; MCP context must be passed as an explicit `context` parameter rather than ambient header injection
-- **Request-scoped only** — Session-level persistence across multiple separate HTTP requests (e.g., a long-running agent session) requires the agent or hosting layer to re-supply context on each request batch. For stdio MCP sessions, the agent should call `memory_search` with an explicit context parameter.
+### Negative / Trade-offs
+- Service functions carry an extra `scope` parameter in every signature; slightly more verbose than ambient injection
+- No automatic propagation across async boundaries — each nested service call must receive scope explicitly. Acceptable given the shallow call depth of MCP tool handlers.
 
 ---
 
-## Alternatives Considered and Rejected
+## Alternatives Considered
 
-| Alternative | Reason Rejected |
+| Alternative | Reason Not Chosen |
 |-------------|-----------------|
-| Option B — Server-side session state (`ISessionContextManager`) | Requires server-side state, session TTL management, session affinity for load-balanced deployments, and additional `CREATE TABLE sessions` schema changes. Not worth the operational complexity at personal-scale single-user deployment. |
-| Option D — Entity-cluster scope only | Requires entity extraction pipeline to be running for scoping to work; entity extraction is Phase 5. Deferred as an additive overlay on top of Option C once ST-018/ST-019 are complete. |
-| Context in MCP Resource meta | MCP Resources provide passive context injection (Layer 0). Adding scope to resources would mix concerns; scope is a query-time concept, not a resource content concept. |
+| **AsyncLocal + middleware (original C# design)** | Superseded by TypeScript/Deno server; no equivalent built-in in Deno |
+| **Deno `AsyncLocalStorage`** | Available in Deno's Node.js compatibility layer but adds complexity for minimal benefit over explicit parameter passing at this call depth |
+| **Server-side session state** | Requires session affinity and TTL management; stateless design preferred |
+| **Context in MCP Resource metadata** | Resources provide passive context injection; scope is a query-time concept, not resource content |
 
 ---
 
@@ -239,29 +169,16 @@ public async Task<string> ClaimStory(string storyId)
 
 | ADR | Relationship |
 |-----|-------------|
-| [ADR-004](ADR-004-interface-design.md) | Extended — REST middleware pattern and MCP optional `context` parameter added. Facade design preserved. |
-| [ADR-003](ADR-003-hybrid-search.md) | Compatible — Ambient context is resolved before calling `ISearchEngine.HybridSearchAsync()`; no change to search algorithm. |
-| [ADR-005](ADR-005-memory-model.md) | Compatible — No schema changes required. Context is query-time, not stored. |
-| [ADR-006](ADR-006-views-architecture.md) | Compatible — Story claim flow returns context metadata to caller; no view layer changes. Entity-cluster scoping (Option D) is deferred to Phase 5 alongside ST-018/ST-019. |
-
----
-
-## SRS Requirements
-
-This ADR introduces the following new requirements (SRS v1.1):
-
-| Req ID | Description |
-|--------|-------------|
-| FR-R-016 | Request-scoped ambient context: when a request includes context metadata, all operations within that request shall implicitly use that context unless explicitly overridden. |
-| FR-API-013 | REST API shall accept optional `X-AI-Memory-Context` header (`project=slug,profile=professional`). Middleware shall extract and set ambient scope. |
-| FR-MCP-007 | MCP tools `memory_search`, `memory_teach`, `memory_log_episode`, `story_list` shall accept an optional `context` parameter. When provided, ambient scope is set for that tool call and any nested operations. |
-| FR-B-009 | When `story_claim(storyId)` is called, the response shall include the story's resolved context string (`project:{slug},profile:{profile}`) so the calling agent can pass it forward. |
-| FR-C-008 | The consolidation pipeline shall accept an optional `context` scope to consolidate within a specific project only (Phase 4 extension, not required in v1.0). |
+| [ADR-004](ADR-004-interface-design.md) | Extended — `context` parameter added to all relevant MCP tools |
+| [ADR-003](ADR-003-hybrid-search.md) | Compatible — scope is resolved before calling search functions; no change to search algorithm |
+| [ADR-005](ADR-005-memory-model.md) | Compatible — context is query-time only; no schema changes required |
+| [ADR-006](ADR-006-views-architecture.md) | Compatible — `story_claim` returns context metadata; no view layer changes |
 
 ---
 
 ## Revision History
 
-| Version | Date | Author | Summary |
-|---------|------|--------|---------|
-| 1.0 | 2026-05-15 | ai-memory-maintainers | Initial — accepted following contextual scoping investigation; Option C selected over session-state and entity-only approaches |
+| Version | Date | Summary |
+|---------|------|---------|
+| 1.0 | 2026-05-15 | Initial — AsyncLocal + ASP.NET Core middleware; C# ContextScope record; X-AI-Memory-Context HTTP header |
+| 2.0 | 2026-05-16 | Revised — Explicit parameter propagation in TypeScript/Deno; AsyncLocal replaced by explicit scope passing; C# implementation samples replaced by TypeScript; concept and tool surface unchanged |

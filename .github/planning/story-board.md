@@ -8,6 +8,38 @@
 
 ## Backlog
 
+<!-- Phase 0 — Spike: OB1 Fork Investigation -->
+
+### ST-021: Spike — Fork OB1 and extend with memory tiers, context scoping, BM25, and openCypher structural search
+- Type: spike
+- Source: PO (architecture review session 2026-05-16)
+- phase: 0
+- Value: 5
+- Blocked by: none
+- Touches: `docs/design/adr/`, `docs/investigations/`, new `server/` directory (OB1 fork scaffold)
+- Acceptance criteria:
+  - [ ] **Memory tier mapping** — Recommend and validate a schema mechanism for Shard/Wiki distinction on OB1's `thoughts` table (single table + `memory_type` discriminator vs separate tables); document trade-offs and rationale; produce a concrete `CREATE TABLE` / `ALTER TABLE` script
+  - [ ] **BM25 on PostgreSQL** — Validate that `tsvector`/`tsquery` + `ts_rank_cd` can be added to OB1's search pipeline and fused with pgvector results via RRF; produce a working SQL query demonstrating combined BM25 + vector search with RRF normalisation
+  - [ ] **Structural search without AGE (baseline)** — Document what recursive CTEs on OB1's `entity-extraction` schema can and cannot do; establish the ceiling before AGE is added
+  - [ ] **AGE v1.7.0 on PostgreSQL 15 in Docker** — Build and validate the custom Docker image (PG15 + pgvector + AGE v1.7.0); confirm AGE installs cleanly and `CREATE GRAPH` succeeds; document any build-time issues
+  - [ ] **openCypher validation** — Prove at least two target query patterns work in AGE: (a) multi-hop causation traversal (`CAUSED_BY*1..5`); (b) fact inference (`LIKES|INTERESTED_IN*1..3`)
+  - [ ] **Context scoping in OB1 MCP tools** — Demonstrate adding an optional `context` parameter to `capture_thought` and `search_thoughts` in the forked `server/index.ts`; validate it threads through to the PostgreSQL query WHERE clause
+  - [ ] **Entity extraction worker wire-up design** — Describe the OpenRouter call shape, queue-processing pattern, and AGE graph write for entity extraction; produce a concrete design doc or working prototype
+  - [ ] **Docker Compose validation** — Confirm the two-container `docker-compose.yml` (db + mcp) starts cleanly, passes healthchecks, and is reachable at `http://localhost:3000/mcp`
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-021.md` (to be created)
+- Docs:
+  - `docs/design/adr/ADR-001-language-stack.md` (revised)
+  - `docs/design/adr/ADR-003-hybrid-search.md` (revised)
+  - `docs/design/adr/ADR-005-memory-model.md` (revised)
+  - `docs/design/adr/ADR-009-deployment-model.md` (new)
+  - `docs/design/adr/ADR-011-storage-strategy.md` (new)
+  - `docs/investigations/openbrain-pivot-evaluation.md`
+- Notes: |
+    The spike validates the OB1 fork path before any production implementation begins.
+    Investigation sequence: Docker image → memory tier schema → BM25 → AGE install → openCypher queries → context scoping → entity extraction design.
+    Deliverables are concrete artefacts (SQL scripts, Docker files, working TypeScript snippets), not just written recommendations.
+    All eight deliverables must pass before the spike is considered done. Partial completion extends the spike; it does not trigger promotion to implementation.
+
 <!-- Phase 1 — Persistence Layer -->
 
 ### ST-002: Implement SQLite schema + FTS5 + migrations
