@@ -1,16 +1,22 @@
 -- AGE graph setup and entity extraction schema
--- Run after 01-extensions.sql has loaded the AGE extension.
--- Safe to run multiple times (idempotent via IF NOT EXISTS / ON CONFLICT).
+-- Depends on: 02-schema.sql (public.thoughts must exist before this runs)
+-- Safe to run multiple times (idempotent via IF NOT EXISTS and existence checks).
 
 -- ============================================================
--- 1. CREATE THE MEMORY GRAPH
+-- 1. CREATE THE MEMORY GRAPH (idempotent)
 --    All entity nodes and relationship edges live in this AGE graph.
 -- ============================================================
 
 LOAD 'age';
 SET search_path = ag_catalog, "$user", public;
 
-SELECT create_graph('memory_graph');
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM ag_catalog.ag_graph WHERE name = 'memory_graph') THEN
+    PERFORM create_graph('memory_graph');
+  END IF;
+END;
+$$;
 
 -- ============================================================
 -- 2. ENTITY EXTRACTION QUEUE (PostgreSQL side)
@@ -37,7 +43,10 @@ CREATE INDEX IF NOT EXISTS idx_extraction_queue_status
 
 -- ============================================================
 -- 3. AUTO-QUEUE TRIGGER FOR ENTITY EXTRACTION
---    Fires on insert or content/metadata change.
+--    Fires on insert or content change only. The requeue condition
+--    guards on source_fingerprint (derived from content), so firing
+--    on metadata-only changes would be a no-op. Matching the trigger
+--    to content changes keeps it consistent with the queue condition.
 --    Skips system-generated artifacts (e.g. consolidation outputs).
 -- ============================================================
 
@@ -71,7 +80,7 @@ $$;
 
 DROP TRIGGER IF EXISTS trg_queue_entity_extraction ON public.thoughts;
 CREATE TRIGGER trg_queue_entity_extraction
-  AFTER INSERT OR UPDATE OF content, metadata ON public.thoughts
+  AFTER INSERT OR UPDATE OF content ON public.thoughts
   FOR EACH ROW
   EXECUTE FUNCTION public.queue_entity_extraction();
 
@@ -88,21 +97,26 @@ CREATE TRIGGER trg_queue_entity_extraction
 --     "messages": [
 --       {
 --         "role": "system",
---         "content": "Extract entities and relationships from the thought below. Return JSON: { \"nodes\": [{\"label\": \"Person|Function|Error|Topic|Project\", \"name\": \"...\", \"props\": {}}], \"edges\": [{\"from\": \"...\", \"to\": \"...\", \"rel\": \"CAUSED_BY|LIKES|WORKS_ON|USES|RELATED_TO\"}] }"
+--         "content": "Extract entities and relationships from the thought below.
+--           Return JSON: { \"nodes\": [{\"label\": \"Person|Function|Error|Topic|Project\",
+--           \"name\": \"...\", \"props\": {}}],
+--           \"edges\": [{\"from\": \"...\", \"to\": \"...\",
+--           \"rel\": \"CAUSED_BY|LIKES|WORKS_ON|USES|RELATED_TO\"}] }"
 --       },
 --       { "role": "user", "content": "<thought content>" }
 --     ]
 --   }
 --
+-- IMPORTANT: The implementation must sanitize LLM output before writing to AGE:
+--   - Allow-list node labels against the known set (Person, Function, Error, Topic, Project)
+--   - Allow-list relationship types against the known set (CAUSED_BY, LIKES, WORKS_ON, USES, RELATED_TO)
+--   - Escape string property values (replace single quotes with \')
+--   - Strip any $$ sequences to prevent dollar-quote injection in sql.unsafe() blocks
+--
 -- After receiving the response, the worker writes nodes and edges into
--- the memory_graph AGE graph using cypher() calls:
+-- the memory_graph AGE graph using MERGE (idempotent):
 --
 --   SELECT * FROM cypher('memory_graph', $$
 --     MERGE (:Person {name: 'John'})
---   $$) AS t(v agtype);
---
---   SELECT * FROM cypher('memory_graph', $$
---     MATCH (a:Person {name:'John'}), (b:Topic {name:'flowers'})
---     MERGE (a)-[:LIKES]->(b)
 --   $$) AS t(v agtype);
 -- ============================================================

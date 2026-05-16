@@ -252,16 +252,16 @@
   - [x] **Structural search without AGE (baseline)** — Recursive CTE ceiling documented in findings §R3; variable-length multi-label patterns require AGE
   - [x] **AGE v1.7.0 on PostgreSQL 15 in Docker** — Dockerfile with `postgresql-server-dev-15` + AGE v1.7.0 from source; `docker/postgres-age/Dockerfile` and `init/01-extensions.sql` produced
   - [x] **openCypher validation** — Multi-hop traversal (`CAUSED_BY*1..5`) and fact inference (`LIKES|INTERESTED_IN*1..3`) both validated in findings §R5 and §R6
-  - [x] **Context scoping in OB1 MCP tools** — `server/src/parseContext.ts` + `server/index.ts` fork with `context` parameter on `capture_thought` and `search_thoughts`
-  - [x] **Entity extraction worker wire-up design** — OpenRouter call shape, `FOR UPDATE SKIP LOCKED` queue loop, `MERGE` AGE writes documented in findings §R8
-  - [x] **Docker Compose validation** — `docker-compose.yml` with `db` (PG15+pgvector+AGE) and `mcp` (Deno) services + healthcheck
+  - [x] **Context scoping in OB1 MCP tools** — `server/src/parseContext.ts` + `server/index.ts` fork with `context` parameter on `capture_thought`, `search_thoughts`, and `list_thoughts`
+  - [x] **Entity extraction worker wire-up design** — OpenRouter call shape, `FOR UPDATE SKIP LOCKED` queue loop, `MERGE` AGE writes (with label/rel allow-listing) documented in findings §R8
+  - [ ] **Docker Compose validation** — `docker-compose.yml` artefact complete (db + mcp with healthchecks; schema init sequence 01→02→03); awaiting local `docker compose up` confirmation that AGE v1.7.0 compiles
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-021.md`
 - Docs:
   - `docs/investigations/ST-021-findings.md`
   - `server/db/schema.sql`, `server/db/search.sql`, `server/db/graph.sql`
   - `server/index.ts`, `server/src/parseContext.ts`, `server/src/auth.ts`, `server/src/db.ts`
   - `docker/postgres-age/Dockerfile`, `docker-compose.yml`
-- Notes: All 8 acceptance criteria met. Key discovery: OB1 already has `search_thoughts_text()` with two-phase BM25 — implementation story should extend it. Three downstream stories needed: entity extraction worker, consolidation worker, cloud deployment.
+- Notes: 7/8 acceptance criteria met. Docker Compose artefact is complete pending local build confirmation. Key discovery: OB1 already has `search_thoughts_text()` with two-phase BM25 — implementation story should extend it. Downstream stories needed: entity extraction worker, consolidation worker, cloud deployment.
 
 ### ST-015: Improve ExecPlan template to show outcomes up front
 - Type: infrastructure

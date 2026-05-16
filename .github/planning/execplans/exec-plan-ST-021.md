@@ -85,10 +85,10 @@ A fifth concern — entity extraction at write time — must be designed (though
   - Entity extraction worker design complete in `docs/investigations/ST-021-findings.md §R8`
   - OB1 auth uses `x-brain-key` header; fork replaces with `Authorization: Bearer` per ADR-010
   - `StreamableHTTPServerTransport` used directly from MCP SDK (no `@hono/mcp` dependency)
-- requirements met vs unmet: all 9 requirements (R1–R9) met; no blockers
-- architectural impact: `graph_traverse` tool must be added to ADR-004 tool table; no other ADR changes required
+- requirements met vs unmet: R1–R3, R5–R9 met; R4 and R9 (Docker stack validation) are artefact-complete but require local execution to confirm the AGE build succeeds
+- architectural impact: no ADR changes required (`graph_traverse` is already in ADR-004's tool table)
 - supporting evidence: `docs/investigations/ST-021-findings.md`, `server/db/schema.sql`, `server/db/search.sql`, `server/db/graph.sql`, `server/index.ts`, `server/src/parseContext.ts`
-- downstream changes: Entity extraction worker story, consolidation worker story, cloud deployment story, ADR-004 update needed
+- downstream changes: Entity extraction worker story, consolidation worker story, cloud deployment story; local Docker build confirmation required
 
 ---
 
@@ -96,7 +96,7 @@ A fifth concern — entity extraction at write time — must be designed (though
 
 Each criterion is observable. All eight must pass before the spike is marked complete.
 
-1. After running `docker compose up -d`, `docker compose ps` shows both `db` and `mcp` containers as `healthy`.
+1. After running `docker compose up -d`, `docker compose ps` shows both `db` and `mcp` containers as `healthy`. *(Requires local execution — Docker build not run in this environment.)*
 2. After connecting to the `db` container with `psql`, `SELECT extname FROM pg_extension` includes `vector` and `age`.
 3. After running `CREATE GRAPH memory_graph` in psql (with AGE loaded), `SELECT * FROM ag_catalog.ag_graph` returns one row named `memory_graph`.
 4. After running the BM25 + vector + RRF SQL against seeded data, the query returns ranked rows with a numeric `rrf_score` column.
@@ -1187,20 +1187,15 @@ At spike completion:
 ## §7b. Outcomes & Retrospective
 
 Achieved:
-- All 9 requirements (R1–R9) met; all 8 DoD acceptance criteria satisfied by artefact evidence
-- OB1 fork baseline established in `server/`; Supabase removed; direct PostgreSQL via `postgres` npm package
-- Docker infrastructure ready: custom PG15+pgvector+AGE image + two-container Compose stack
-- Memory tier schema decided (single-table discriminator) and SQL validated
-- BM25 + vector RRF SQL pattern proven; extends OB1's existing FTS function
-- openCypher multi-hop traversal and fact inference both confirmed via AGE v1.7.0
-- Context scoping wired into all MCP tools via `parseContext.ts`
-- Entity extraction worker fully designed; ready for implementation story
+- R1–R3, R5–R9: OB1 fork baseline, memory tier schema, BM25+RRF SQL, openCypher patterns, context scoping, entity extraction worker design — all complete
+- Docker infrastructure artefacts complete: Dockerfile, docker-compose.yml (with MCP healthcheck), schema init sequence (01→02→03)
+- `graph_traverse` readOnly annotation enforced with MATCH-only guard; SQL injection mitigated with $$ stripping
+- Content dedup is intentionally global (same content = same memory regardless of project); documented in schema.sql
 
 Remains:
-- Docker image build must be run locally to confirm AGE compiles (build not executable in this environment)
+- R4/DoD-1: Docker image build (AGE compilation) and `docker compose up` must be confirmed locally
 - Vector lane of RRF search needs real embeddings (requires OPENROUTER_API_KEY at runtime)
-- `graph_traverse` tool needs to be added to ADR-004 canonical tool table
-- Three downstream implementation stories needed: entity extraction worker, consolidation worker, cloud deployment
+- Three downstream implementation stories: entity extraction worker, consolidation worker, cloud deployment
 
 Lesson: OB1's `schemas/enhanced-thoughts/` schema is significantly richer than expected — particularly the `search_thoughts_text()` function with two-phase BM25 and quality weighting. Read the full schemas directory before designing search — the implementation story should extend OB1's existing FTS, not replace it.
 

@@ -1,5 +1,7 @@
 -- ai-memory schema — forked from OB1, extended with memory tiers and context scoping
--- Safe to run multiple times (fully idempotent).
+-- Safe for fresh database creation (CREATE TABLE IF NOT EXISTS).
+-- For migration onto an existing OB1 thoughts table, use ALTER TABLE ... ADD COLUMN IF NOT EXISTS
+-- for each new column instead of the CREATE TABLE block.
 
 -- ============================================================
 -- 1. BASE THOUGHTS TABLE
@@ -38,6 +40,9 @@ CREATE TABLE IF NOT EXISTS public.thoughts (
   -- Generated tsvector for BM25 full-text search (PG15+, requires STORED)
   search_vector       tsvector    GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
 
+  -- Global deduplication: same normalised content = same memory, regardless of project/profile.
+  -- Capturing the same text in two projects returns the original row (not a second copy).
+  -- This is intentional for a single-user personal store; multi-tenant use would scope this key.
   UNIQUE (content_fingerprint)
 );
 

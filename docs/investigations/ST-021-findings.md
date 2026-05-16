@@ -34,7 +34,7 @@ OB1's `thoughts` table is extended with a `memory_type TEXT NOT NULL DEFAULT 'sh
 **Rationale:**
 - Keeps BM25 + vector RRF fusion in a single query (no JOIN across tables)
 - OB1's existing `upsert_thought()` pattern only needs `memory_type` added to its INSERT
-- Wiki promotion is a simple `UPDATE thoughts SET memory_type = 'wiki', active = false WHERE id = $shard_id` plus an INSERT of the new wiki row — no cross-table foreign key gymnastics
+- Wiki promotion is a simple `UPDATE thoughts SET active = false WHERE id = $shard_id` (shard stays `memory_type = 'shard'`, just deactivated) plus an INSERT of the new wiki row with `memory_type = 'wiki'` — no cross-table foreign key gymnastics
 - Indexes on `memory_type`, `project`, and `active` keep queries fast
 
 **Rejected alternative: Separate `shards` and `wiki` tables.**
@@ -140,7 +140,7 @@ Both patterns are idiomatic openCypher and would require significant SQL scaffol
 
 ## §R4 — Docker Image: PostgreSQL 15 + pgvector + AGE v1.7.0
 
-**Status: Build configuration validated. Docker image is buildable.**
+**Status: Build configuration validated structurally. Docker image build requires local execution to confirm AGE v1.7.0 compiles successfully against `postgresql-server-dev-15`. Build has not been run in this environment.**
 
 ### Dockerfile
 
@@ -164,7 +164,7 @@ LOAD 'age';
 SET search_path = ag_catalog, "$user", public;
 ```
 
-**Key note on AGE session setup:** AGE requires `LOAD 'age'` and `SET search_path = ag_catalog, "$user", public` at the start of every session that uses `cypher()`. The init SQL sets this for the database default, but application-level queries must also issue these commands. The `graph_traverse` MCP tool does this via `sql.unsafe()` with a multi-statement block.
+**Key note on AGE session setup:** AGE requires `LOAD 'age'` and `SET search_path = ag_catalog, "$user", public` at the start of every **database session** that uses `cypher()`. `SET search_path` in the init SQL is session-local and does not persist as a database default — it applies only for the duration of the init script's session. To make the search_path permanent, add `ALTER DATABASE ai_memory SET search_path = ag_catalog, "$user", public` to the init SQL. Application-level queries must issue `LOAD 'age'` regardless. The `graph_traverse` MCP tool handles this in the `sql.unsafe()` block.
 
 **Memory graph creation:**
 ```sql
@@ -222,7 +222,7 @@ The `|` operator in the relationship type selector (`[:LIKES|INTERESTED_IN*1..3]
 parseContext("project:zoom,profile:professional")
 ```
 
-All write and read tools accept an optional `context` parameter. The first entry of `scope.projects` is used as the project filter/assignment. Both `capture_thought` and `search_thoughts` were validated with context scoping.
+The `context` parameter is wired into `capture_thought`, `search_thoughts`, and `list_thoughts`. The `fetch`, `search`, `thought_stats`, and `graph_traverse` tools do not accept `context` — `fetch` and `search` are ChatGPT compatibility shims (lookup by ID/embedding), and `thought_stats` and `graph_traverse` are global views by design. Both `capture_thought` and `search_thoughts` were validated with context scoping.
 
 **Verification query for capture_thought with context:**
 ```
@@ -270,19 +270,28 @@ const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
 After parsing the LLM response, the worker writes nodes and edges using `MERGE` (idempotent):
 
 ```typescript
+// IMPORTANT: Allow-list labels and relationship types before interpolation.
+// Escape string values (replace single quotes). Strip $$ sequences.
+// LLM output must never be interpolated directly into sql.unsafe() blocks.
+const ALLOWED_LABELS = new Set(["Person", "Function", "Error", "Topic", "Project"]);
+const ALLOWED_RELS   = new Set(["CAUSED_BY", "LIKES", "WORKS_ON", "USES", "RELATED_TO"]);
+const escape = (s: string) => s.replace(/'/g, "\\'").replace(/\$\$/g, "");
+
 for (const node of nodes) {
+  if (!ALLOWED_LABELS.has(node.label)) continue;
   await sql.unsafe(`
     LOAD 'age'; SET search_path = ag_catalog, "$user", public;
     SELECT * FROM cypher('memory_graph', $$
-      MERGE (:${node.label} {name: '${node.name}'})
+      MERGE (:${node.label} {name: '${escape(node.name)}'})
     $$) AS t(v agtype);
   `);
 }
 for (const edge of edges) {
+  if (!ALLOWED_RELS.has(edge.rel)) continue;
   await sql.unsafe(`
     LOAD 'age'; SET search_path = ag_catalog, "$user", public;
     SELECT * FROM cypher('memory_graph', $$
-      MATCH (a {name: '${edge.from}'}), (b {name: '${edge.to}'})
+      MATCH (a {name: '${escape(edge.from)}'}), (b {name: '${escape(edge.to)}'})
       MERGE (a)-[:${edge.rel}]->(b)
     $$) AS t(v agtype);
   `);
@@ -343,8 +352,8 @@ async function processQueue() {
 
 ## Downstream Changes Required
 
-1. **ADR-004** (Interface Design): Add `graph_traverse` tool to the canonical tool list. The spike produced a working implementation; the ADR's tool table needs updating.
-2. **ADR-007** (Consolidation Pipeline): The `consolidation_queue` table schema is defined in `server/db/schema.sql`. The Deno consolidation worker implementation is a separate story.
-3. **ST-XXX** (Entity Extraction Worker): The design in §R8 is ready. Create an implementation story for the Deno entity extraction worker process.
-4. **ST-XXX** (Consolidation Worker): Implement the Deno consolidation worker using the queue pattern in `server/db/schema.sql`.
-5. **ST-XXX** (Cloud Deployment): After local Docker validation, evaluate Fly.io / Railway / DigitalOcean per ADR-009.
+1. **ADR-007** (Consolidation Pipeline): The `consolidation_queue` table schema is defined in `server/db/schema.sql`. The Deno consolidation worker implementation is a separate story.
+2. **ST-XXX** (Entity Extraction Worker): The design in §R8 is ready. Create an implementation story for the Deno entity extraction worker process.
+3. **ST-XXX** (Consolidation Worker): Implement the Deno consolidation worker using the queue pattern in `server/db/schema.sql`.
+4. **ST-XXX** (Cloud Deployment): After local Docker validation, evaluate Fly.io / Railway / DigitalOcean per ADR-009.
+5. **Local validation**: Docker image build (AGE compilation) and `docker compose up` full stack test must be confirmed locally before the Docker-related DoD criteria are fully signed off.

@@ -1,5 +1,5 @@
 import { McpServer } from "npm:@modelcontextprotocol/sdk@1.24.3/server/mcp.js";
-import { StreamableHTTPServerTransport } from "npm:@modelcontextprotocol/sdk@1.24.3/server/streamableHttp.js";
+import { StreamableHTTPTransport } from "npm:@hono/mcp@0.1.1";
 import { Hono } from "npm:hono@4.9.2";
 import { z } from "npm:zod@4.1.13";
 
@@ -8,6 +8,9 @@ import { parseContext } from "./src/parseContext.ts";
 import { sql } from "./src/db.ts";
 
 const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY") ?? "";
+if (!OPENROUTER_API_KEY) {
+  console.warn("OPENROUTER_API_KEY is not set — embedding generation will fail; vector search lane will be skipped");
+}
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 const CITATION_BASE_URL = Deno.env.get("AI_MEMORY_CITATION_BASE_URL") ?? "https://ai-memory.local/thoughts";
 
@@ -82,15 +85,19 @@ server.registerTool(
   "fetch",
   {
     title: "Fetch AI Memory Thought",
-    description: "Fetch a thought by ID (ChatGPT compatibility tool).",
+    description: "Fetch an active thought by ID (ChatGPT compatibility tool).",
     annotations: { readOnlyHint: true },
     inputSchema: {
-      id: z.string().describe("Thought UUID"),
+      id: z.string().uuid().describe("Thought UUID"),
     },
   },
   async ({ id }) => {
     try {
-      const rows = await sql`SELECT id, content, metadata, memory_type, project, created_at, updated_at FROM thoughts WHERE id = ${id}`;
+      const rows = await sql`
+        SELECT id, content, metadata, memory_type, project, created_at, updated_at
+        FROM thoughts
+        WHERE id = ${id} AND active = true
+      `;
       if (!rows.length) return { content: [{ type: "text" as const, text: "Not found." }], isError: true };
       const t = rows[0];
       return {
@@ -122,13 +129,14 @@ server.registerTool(
     inputSchema: {
       query: z.string().describe("What to search for"),
       context: z.string().optional().describe("Scope: e.g. 'project:zoom,profile:professional'"),
-      limit: z.number().optional().default(10),
+      limit: z.number().int().min(1).max(100).optional().default(10),
     },
   },
   async ({ query, context, limit }) => {
     try {
       const scope = parseContext(context);
       const project = scope?.projects?.[0] ?? null;
+      const n = limit ?? 10;
 
       const qEmb = await getEmbedding(query).catch(() => null);
 
@@ -152,12 +160,12 @@ server.registerTool(
           `
         : [];
 
-      // RRF fusion
+      // RRF fusion in application layer
       const scores = new Map<string, number>();
       for (const r of bm25) scores.set(r.id as string, (scores.get(r.id as string) ?? 0) + 1 / (60 + Number(r.bm25_rank)));
       for (const r of vector) scores.set(r.id as string, (scores.get(r.id as string) ?? 0) + 1 / (60 + Number(r.vector_rank)));
 
-      const ranked = [...scores.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit ?? 10);
+      const ranked = [...scores.entries()].sort((a, b) => b[1] - a[1]).slice(0, n);
       if (!ranked.length) return { content: [{ type: "text" as const, text: `No thoughts found matching "${query}".` }] };
 
       const ids = ranked.map(([id]) => id);
@@ -167,7 +175,7 @@ server.registerTool(
       const lines = ranked.map(([id, score], i) => {
         const t = rowMap.get(id);
         if (!t) return "";
-        return `--- Result ${i + 1} (rrf: ${score.toFixed(4)}) [${t.memory_type}${t.project ? " / " + t.project : ""}] ---\n${t.content}`;
+        return `--- Result ${i + 1} (rrf: ${score.toFixed(4)}) [${t.memory_type}${t.project ? " / " + t.project : ""}] ---\nID: ${t.id}\n${t.content}`;
       }).filter(Boolean);
 
       return { content: [{ type: "text" as const, text: lines.join("\n\n") }] };
@@ -204,14 +212,15 @@ server.registerTool(
         INSERT INTO thoughts (content, memory_type, project, profile, content_fingerprint, source)
         VALUES (${content}, ${memory_type ?? "shard"}, ${project}, ${profile}, ${fingerprint}, 'user-taught')
         ON CONFLICT (content_fingerprint) DO UPDATE
-          SET updated_at = now()
+          SET updated_at = now(),
+              active     = true
         RETURNING id, memory_type, project
       `;
 
-      // Fire-and-forget embedding update
+      // Fire-and-forget embedding update; log failure so misconfigured deployments surface the issue
       getEmbedding(content).then((emb) =>
         sql`UPDATE thoughts SET embedding = ${sql.unsafe(`'[${emb.join(",")}]'`)}::vector WHERE id = ${insertResult.id}`
-      ).catch(() => {});
+      ).catch((err) => console.error(`[capture_thought] embedding update failed for ${insertResult.id}:`, err));
 
       return {
         content: [{
@@ -234,10 +243,10 @@ server.registerTool(
     description: "List recently captured thoughts with optional filters.",
     annotations: { readOnlyHint: true },
     inputSchema: {
-      limit: z.number().optional().default(10),
+      limit: z.number().int().min(1).max(100).optional().default(10),
       memory_type: z.enum(["shard", "wiki"]).optional(),
       context: z.string().optional().describe("Scope filter: e.g. 'project:zoom'"),
-      days: z.number().optional().describe("Only thoughts from the last N days"),
+      days: z.number().int().min(1).max(365).optional().describe("Only thoughts from the last N days"),
     },
   },
   async ({ limit, memory_type, context, days }) => {
@@ -245,6 +254,7 @@ server.registerTool(
       const scope = parseContext(context);
       const project = scope?.projects?.[0] ?? null;
       const since = days ? new Date(Date.now() - days * 86_400_000).toISOString() : null;
+      const n = limit ?? 10;
 
       const rows = await sql`
         SELECT id, content, memory_type, project, created_at
@@ -254,7 +264,7 @@ server.registerTool(
           AND (${project}::text IS NULL OR project = ${project})
           AND (${since}::timestamptz IS NULL OR created_at >= ${since}::timestamptz)
         ORDER BY created_at DESC
-        LIMIT ${limit ?? 10}
+        LIMIT ${n}
       `;
 
       if (!rows.length) return { content: [{ type: "text" as const, text: "No thoughts found." }] };
@@ -303,22 +313,32 @@ server.registerTool(
 
 // --- Tool 5: graph_traverse (AGE / openCypher) ------------------------------
 
+const ALLOWED_MATCH_RE = /^match\s/i;
+const DOLLAR_QUOTE_RE = /\$\$/g;
+
 server.registerTool(
   "graph_traverse",
   {
     title: "Graph Traverse",
-    description: "Run an openCypher query against the memory_graph (Apache AGE). Use for multi-hop entity traversal, causation chains, and fact inference.",
+    description: "Run a read-only openCypher MATCH query against the memory_graph (Apache AGE). Use for multi-hop entity traversal, causation chains, and fact inference. Only MATCH queries are accepted.",
     annotations: { readOnlyHint: true },
     inputSchema: {
-      cypher: z.string().describe("openCypher MATCH query. The graph name is 'memory_graph'."),
+      cypher: z.string().describe("openCypher MATCH query. Must start with MATCH. The graph name is 'memory_graph'."),
     },
   },
   async ({ cypher }) => {
     try {
+      const trimmed = cypher.trim();
+      if (!ALLOWED_MATCH_RE.test(trimmed)) {
+        return { content: [{ type: "text" as const, text: "Only MATCH queries are accepted. Mutating statements (CREATE, MERGE, SET, DELETE) are not allowed." }], isError: true };
+      }
+      // Strip $$ to prevent dollar-quote injection in the sql.unsafe block
+      const safeCypher = trimmed.replace(DOLLAR_QUOTE_RE, "");
+
       const rows = await sql.unsafe(`
         LOAD 'age';
         SET search_path = ag_catalog, "$user", public;
-        SELECT * FROM cypher('memory_graph', $$ ${cypher} $$) AS t(result agtype);
+        SELECT * FROM cypher('memory_graph', $$ ${safeCypher} $$) AS t(result agtype);
       `);
       const results = rows.map((r) => String(r.result));
       return { content: [{ type: "text" as const, text: results.length ? results.join("\n") : "No results." }] };
@@ -340,23 +360,25 @@ const corsHeaders = {
 
 const app = new Hono();
 
-app.options("*", (c) => c.text("ok", 200, corsHeaders));
+// Apply CORS headers to every response
+app.use("*", async (c, next) => {
+  await next();
+  for (const [k, v] of Object.entries(corsHeaders)) c.res.headers.set(k, v);
+});
+
+app.options("*", (c) => c.text("ok", 200));
+
+// Health endpoint for Docker Compose healthcheck
+app.get("/health", (c) => c.text("ok"));
 
 app.all("/mcp", async (c) => {
   const denied = requireApiKey(c.req.raw);
-  if (denied) return new Response(denied.body, { status: 401, headers: corsHeaders });
+  if (denied) return c.text("Unauthorized", 401);
 
-  // Claude Desktop / some connectors omit the Accept header; patch it in.
-  let req = c.req.raw;
-  if (!req.headers.get("accept")?.includes("text/event-stream")) {
-    const headers = new Headers(req.headers);
-    headers.set("Accept", "application/json, text/event-stream");
-    req = new Request(req.url, { method: req.method, headers, body: req.body, duplex: "half" } as RequestInit);
-  }
-
-  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => crypto.randomUUID() });
+  // @hono/mcp's StreamableHTTPTransport is Fetch/Hono-compatible (unlike the SDK's Node-style transport)
+  const transport = new StreamableHTTPTransport();
   await server.connect(transport);
-  return transport.handleRequest(req, new Response());
+  return transport.handleRequest(c);
 });
 
 Deno.serve({ port: 3000 }, app.fetch);
