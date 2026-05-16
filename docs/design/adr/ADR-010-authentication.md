@@ -39,8 +39,13 @@ A single API key is generated at deployment time and configured as a Bearer toke
 
 ```typescript
 function requireApiKey(req: Request): Response | null {
-  const auth = req.headers.get('Authorization');
   const key = Deno.env.get('MEMORY_API_KEY');
+  if (!key) {
+    // Fail closed: missing env var is a startup configuration error.
+    // Reject all requests rather than accepting 'Bearer undefined'.
+    throw new Error('MEMORY_API_KEY environment variable is not set');
+  }
+  const auth = req.headers.get('Authorization');
   if (!auth || auth !== `Bearer ${key}`) {
     return new Response('Unauthorized', { status: 401 });
   }
@@ -69,7 +74,7 @@ openssl rand -hex 32
 deno eval "console.log(crypto.randomUUID().replace(/-/g,''))"
 ```
 
-Stored as `MEMORY_API_KEY` in the Docker environment (`.env` file on the host, never committed to the repository).
+Stored as `MEMORY_API_KEY` in the Docker environment (`.env` file on the host). `.env` and `.env.*` are listed in `.gitignore`; never commit them to the repository. A committed `.env.example` with placeholder values documents the required variables.
 
 ### Rotation
 

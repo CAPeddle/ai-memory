@@ -63,8 +63,9 @@ FOR EACH ROW EXECUTE FUNCTION queue_for_entity_extraction();
 -- Consolidation equivalent
 CREATE TRIGGER trg_queue_consolidation
 AFTER INSERT ON thoughts
-WHERE NEW.memory_type = 'shard'
-FOR EACH ROW EXECUTE FUNCTION queue_for_consolidation();
+FOR EACH ROW
+WHEN (NEW.memory_type = 'shard')
+EXECUTE FUNCTION queue_for_consolidation();
 ```
 
 Entity extraction calls **OpenRouter** to identify entities and relationships, then writes nodes and edges into the AGE graph. Consolidation uses OpenRouter for content normalisation of near-threshold candidates.

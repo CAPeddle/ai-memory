@@ -36,3 +36,8 @@ env/
 # NuGet
 packages/
 *.nupkg
+
+# Secrets — never commit environment files containing API keys or passwords
+.env
+.env.*
+!.env.example

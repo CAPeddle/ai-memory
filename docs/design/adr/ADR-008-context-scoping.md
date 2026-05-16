@@ -52,12 +52,19 @@ interface ContextScope {
 function parseContext(raw: string | undefined): ContextScope | null {
   if (!raw) return null;
   // "project:zoom,profile:professional" → { projects: ['zoom'], profile: 'professional' }
-  return Object.fromEntries(
-    raw.split(',').map(pair => {
-      const [k, v] = pair.split(':');
-      return k === 'project' ? ['projects', [v]] : [k, v];
-    })
-  );
+  // "project:zoom;bcf-managers,entity:CMake" → { projects: ['zoom','bcf-managers'], entities: ['CMake'] }
+  const scope: Partial<ContextScope> = {};
+  for (const pair of raw.split(',')) {
+    const colonIdx = pair.indexOf(':');
+    if (colonIdx === -1) continue;
+    const k = pair.slice(0, colonIdx).trim();
+    const v = pair.slice(colonIdx + 1).trim();
+    if (k === 'project')    scope.projects   = v.split(';');
+    else if (k === 'entity')     scope.entities   = v.split(';');
+    else if (k === 'profile')    scope.profile    = v as ContextScope['profile'];
+    else if (k === 'visibility') scope.visibility = v as ContextScope['visibility'];
+  }
+  return scope as ContextScope;
 }
 ```
 
@@ -125,11 +132,11 @@ server.tool('story_claim', { storyId: z.string() }, async ({ storyId }) => {
 
 ### Context header format (unchanged for cross-platform compatibility)
 
-| Format | Example |
-|--------|---------|
-| Comma-delimited key:value | `project:zoom,profile:professional` |
-| Multiple projects | `project:zoom;bcf-managers,profile:professional` |
-| Entity scope | `project:zoom,entity:CMake` |
+| Format | Example | Parsed result |
+|--------|---------|---------------|
+| Single project | `project:zoom,profile:professional` | `projects: ['zoom'], profile: 'professional'` |
+| Multiple projects | `project:zoom;bcf-managers,profile:professional` | `projects: ['zoom','bcf-managers']` — semicolon-delimited |
+| Entity scope | `project:zoom,entity:CMake` | `entities: ['CMake']` — `entity` key maps to `entities[]`; semicolon-delimited for multiple |
 
 ---
 
