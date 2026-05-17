@@ -19,7 +19,7 @@
 4. **`Nate B Jones on Open Brain vs LLM Wiki.md` (831 lines)** has no `##` headings — treated as a single-fragment transcript. Decision logged in exec-plan §6c.
 
 ### Resume Point
-- **In Progress: none. Review: ST-013.** Present AC evidence to PO.
+- **In Progress: none. Review: empty. ST-013 is Done.**
 - **Next work options:**
   - PO accepts ST-013 → move to Done → plan next story from Backlog
   - PO requests fixes → make corrections → re-present
@@ -27,7 +27,7 @@
 ### Board State
 - In Progress: none
 - Review: **ST-013** (completed 2026-05-18, all ACs verified)
-- Done: ST-001, ST-009, ST-011, ST-012, ST-014, ST-015, ST-016, ST-017, ST-021
+- Done: ST-001, ST-009, ST-011, ST-012, ST-013, ST-014, ST-015, ST-016, ST-017, ST-021
 - Backlog: ST-002–ST-020 (Phases 1–6)
 
 ### Avoidance

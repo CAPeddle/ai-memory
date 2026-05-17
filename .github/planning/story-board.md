@@ -223,12 +223,16 @@
 
 ## Review
 
+(Empty)
+
+## Done
+
 ### ST-013: Split investigation docs into landing pages and focused fragments
 - Type: infrastructure
 - Source: PO
 - phase: 6
 - Value: 4
-- Blocked by: ST-011 (Done)
+- Completed: 2026-05-18
 - Touches: `.github/copilot-instructions.md`, `.github/prompts/`, `.github/planning/`, `docs/investigations/`
 - Acceptance criteria:
   - [x] Each current top-level investigation file remains in place as a compact landing page that links to focused fragment docs
@@ -236,10 +240,8 @@
   - [x] Governance consumers reference either the retained landing pages or precise fragment docs instead of broad monolith assumptions
   - [x] A section mapping matrix proves every original major section has a destination and no design-authority content was dropped during the split
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-013.md`
-- Docs: `docs/investigations/memory-architecture-design.md`, `docs/investigations/language-stack-recommendation.md`, `docs/investigations/sqlite-vs-postgresql.md`, `docs/investigations/interface-design-mcp-rest.md`, `docs/investigations/workflow-and-prompt-design.md`, `docs/investigations/context-engineering-principles.md`, `docs/investigations/openclaw-official-docs-review.md`, `docs/investigations/openclaw-memory-architecture-analysis.md`
-- Notes: Completed 2026-05-18. All 5 tasks executed, all ACs verified PASS. Pending PO acceptance review.
-
-## Done
+- Docs: `docs/investigations/split-section-mapping-matrix.md`, `docs/investigations/split-manifest.md`
+- Notes: Accepted by PO 2026-05-18. 14 top-level landing pages + 174 fragments (top-level) + 45 Discussions + 3 Youtube = 437 total .md files. 222/222 matrix rows mapped. Zero content dropped.
 
 ### ST-021: Spike — Fork OB1 and extend with memory tiers, context scoping, BM25, and openCypher structural search
 - Type: spike
