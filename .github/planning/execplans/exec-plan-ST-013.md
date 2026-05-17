@@ -49,7 +49,7 @@ Scope for this revision is expanded by PO decision to include all investigation 
 Acceptance criteria phrased as observable behaviour:
 - After running `rg --files docs/investigations`, every original top-level investigation file still exists and has a same-name fragment folder.
 - After opening each retained top-level investigation file, the first screen is compact and contains summary, `Read This When`, `Fragment Map`, and design-authority note.
-- After running `rg "docs/investigations/" .github docs`, governance references are landing-page-first and use fragment-level links where precision is explicitly required.
+- After running `rg "docs/investigations/" .github docs`, governance references are landing-page-first, and fragment-level links are used for board/query-packet references that target a specific section destination.
 - After generating `docs/investigations/split-section-mapping-matrix.md`, every original major section from all scoped investigation sources has exactly one destination path.
 - After review, no scoped content is dropped; omissions are zero in the matrix verification report.
 
@@ -69,7 +69,7 @@ All checks must be `[x]` before `/continue` can execute:
 - [x] Every task ends with a verification step (command or assertion)
 - [x] Acceptance criteria phrased as observable behaviour
 
-Status: ⬜ Not ready for execution until PO approves this draft and ST-011 dependency is cleared or explicitly overridden.
+Status: ⬜ Plan-quality ready, execution-gated until PO approval and ST-011 dependency clearance (or explicit override).
 
 ---
 
@@ -83,7 +83,7 @@ Status: ⬜ Not ready for execution until PO approves this draft and ST-011 depe
 
 | Requirement (source) | Must appear in output artifact(s) | Implemented by task(s) | Verification evidence |
 |---|---|---|---|
-| Keep retained top-level investigations as compact landing pages (ST-013, QP-013) | Top-level files with compact landing-page sections | Task 4.2, Task 4.3 | `rg "Read This When|Fragment Map" docs/investigations/*.md` + manual spot checks |
+| Keep retained top-level investigations as compact landing pages (ST-013, QP-013) | Top-level files with compact landing-page sections | Task 4.2, Task 4.3 | Per-file PowerShell verification in Task 4.2 plus spot checks |
 | Split detailed content into focused fragments with hybrid granularity (PO 2026-05-17) | Fragment folders/files and mapped destinations | Task 4.1, Task 4.2, Task 4.3 | Manifest and matrix paths exist; file counts match |
 | Include all investigation content under `docs/investigations/` including nested trees (PO 2026-05-17) | Inventory includes top-level + nested markdown sources | Task 4.1, Task 4.3 | Inventory report + zero-unmapped rows |
 | Governance references should be landing-page-first with targeted fragments where needed (PO 2026-05-17) | Updated governance consumer links | Task 4.4 | `rg "docs/investigations/" .github docs` review |
@@ -178,7 +178,15 @@ Expected result: all files exist and matrix contains mapped source rows.
 **Verification:**
 ```powershell
 rg --files docs/investigations -g "*.md"
-rg "Read This When|Fragment Map|Design Authority Note" docs/investigations/*.md
+$topLevel = Get-ChildItem docs/investigations -File -Filter *.md | Select-Object -ExpandProperty FullName
+$missing = @()
+foreach ($file in $topLevel) {
+  $content = Get-Content $file -Raw
+  if ($content -notmatch "Read This When" -or $content -notmatch "Fragment Map" -or $content -notmatch "Design Authority Note") {
+    $missing += $file
+  }
+}
+if ($missing.Count -gt 0) { Write-Error ("Missing required landing-page sections in: " + ($missing -join ", ")) } else { Write-Output "PASS: all top-level investigation docs contain required landing-page sections." }
 ```
 Expected result: landing-page sections exist in all top-level docs and fragment folders exist.
 
@@ -196,7 +204,7 @@ Expected result: landing-page sections exist in all top-level docs and fragment 
 
 **Steps:**
 1. For each first-level subtree under `docs/investigations/` that contains markdown, create or update an index landing file at subtree root named `_index.md`.
-2. For nested markdown files already focused enough, keep file content but add standardized front sections (`When To Read This`, `Related Links`) if missing.
+2. For each nested markdown file, treat the file as already focused only when both conditions are true: file length is 250 lines or fewer, and it contains at most 3 `###` headings; otherwise split it into sibling fragments and convert the original file into a compact landing page.
 3. For oversized nested markdown files (same threshold as Task 4.2), split into sibling fragment files and keep original file as a compact landing page.
 4. Add links from each subtree `_index.md` to all nested files/fragments.
 5. Update manifest and matrix rows for all nested-source mappings.
@@ -268,7 +276,9 @@ Expected result: references resolve and follow landing-page-first policy.
 **Verification:**
 ```powershell
 rg "\| mapped \|" docs/investigations/split-section-mapping-matrix.md
-rg "\|  \|$" docs/investigations/split-section-mapping-matrix.md
+$matrix = "docs/investigations/split-section-mapping-matrix.md"
+$emptyRows = (Get-Content $matrix) | Where-Object { $_ -match "^\|" -and $_ -match "\|\s*\|\s*$" }
+if ($emptyRows.Count -gt 0) { Write-Error ("Found matrix rows with empty trailing field count=" + $emptyRows.Count) } else { Write-Output "PASS: no rows with empty trailing field." }
 git diff --stat
 ```
 Expected result: mapped rows present, no empty destination/status rows, and diff reflects planned split artifacts.
