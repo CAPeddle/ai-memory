@@ -101,5 +101,5 @@ Only the LE edits the board. When creating a new story:
 - Board: `.github/planning/story-board.md`
 - ExecPlan template: `.github/planning/execplans/_TEMPLATE.md`
 - Query packets: `.github/planning/query-packets/`
-- Investigation docs: `docs/investigations/`
+- Investigation docs: `docs/investigations/` — each top-level `.md` file is a compact landing page; detailed content is in same-name fragment folders. Reference the landing page by default; link to a specific fragment only when citing a precise section.
 - Session log: `FollowUpSessionLog.txt`

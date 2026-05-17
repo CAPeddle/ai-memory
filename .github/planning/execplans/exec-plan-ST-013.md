@@ -299,12 +299,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.3 — normalize nested investigation trees |
-| **Last successful command** | Verification: Discussions/_index.md and Youtube/_index.md exist; 50 Discussions files, 6 Youtube files |
-| **Expected outputs produced** | Discussions/_index.md, Youtube/_index.md, 45 sibling fragments, 4 nested landing pages |
-| **Next task** | Task 4.4 — Apply Landing-Page-First Governance Reference Updates |
+| **Last completed task** | Task 4.4 — Apply Landing-Page-First Governance Reference Updates |
+| **Last successful command** | Repo-wide scan for broken docs/investigations/ references — result: zero real broken paths (only false-positive example.md placeholder in ExecPlan template text) |
+| **Expected outputs produced** | copilot-instructions.md, plan.prompt.md, plan-new.prompt.md updated with landing-page-first policy and fragment navigation guidance |
+| **Next task** | Task 4.5 — Final Completeness Audit and Signoff Evidence |
 | **Known blockers** | None |
-| **Last updated** | 2026-05-17 |
+| **Last updated** | 2026-05-18 |
 
 ### Progress History
 
@@ -315,6 +315,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-05-17T00:02:00Z | Task 4.1 | completed | `_inventory-all-md.txt` (20 files), `split-manifest.md` (222 rows), `split-section-mapping-matrix.md` (222 rows); verification PASS | Task 4.2 |
 | 2026-05-17T00:03:00Z | Task 4.2 | completed | 14 landing pages rewritten; 174 fragment files in 14 folders; all landing pages contain required sections; verification PASS | Task 4.3 |
 | 2026-05-17T00:04:00Z | Task 4.3 | completed | Discussions/_index.md + Youtube/_index.md created; 45 sibling fragments for Discussions (6+13+12+14); 2 Youtube fragments + 1 single transcript; verification PASS | Task 4.4 |
+| 2026-05-18T00:00:00Z | Task 4.4 | completed | copilot-instructions.md, plan.prompt.md, plan-new.prompt.md updated with landing-page-first policy; repo-wide reference scan: zero broken paths (only template example.md false-positive in ExecPlan) | Task 4.5 |
 
 ### Avoidance
 

@@ -135,5 +135,5 @@ This prompt is complete when:
 - Query packets: `.github/planning/query-packets/`
 - ExecPlan template: `.github/planning/execplans/_TEMPLATE.md`
 - Planning prompt: `.github/prompts/plan.prompt.md`
-- Investigations: `docs/investigations/`
+- Investigations: `docs/investigations/` — each top-level `.md` is a compact landing page with Fragment Map; navigate to fragment files for detailed section content.
 - Session handoff: `FollowUpSessionLog.txt`

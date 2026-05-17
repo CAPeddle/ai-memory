@@ -19,8 +19,13 @@ These synthesise and formalise the investigation findings into binding requireme
 
 ### Tier 2 — Investigation Documents (Reference)
 
-These are the original research and analysis that informed the Tier 1 documents. Consult them for context and rationale when the Tier 1 documents do not address a specific question:
+These are the original research and analysis that informed the Tier 1 documents. Consult them for context and rationale when the Tier 1 documents do not address a specific question.
 
+Each investigation document is now a **compact landing page** at its original path, with detailed content split into focused fragment files in a same-name folder (e.g., `docs/investigations/memory-architecture-design/01-executive-summary.md`). Navigate via the Fragment Map in each landing page.
+- Use the **top-level landing page path** as the default reference (stable, compact).
+- Link to a **specific fragment** only when referencing a precise section.
+
+Investigation landing pages:
 - `docs/investigations/memory-architecture-design.md`
 - `docs/investigations/language-stack-recommendation.md`
 - `docs/investigations/sqlite-vs-postgresql.md`
