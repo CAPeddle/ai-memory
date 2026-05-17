@@ -42,7 +42,7 @@ foreach ($file in $topLevel) {
     $base = $file.BaseName
     $folder = "docs\investigations\$base"
 
-    if (-not (Test-Path $folder)) { 
+    if (-not (Test-Path $folder)) {
         Write-Warning "Fragment folder missing for: $base"
         continue
     }
@@ -70,8 +70,8 @@ foreach ($file in $topLevel) {
 
     # Step 4: Extract preamble from current landing page (content before "---\n## Read This When")
     $landingContent = Get-Content $file.FullName -Raw
-    
-    # Extract preamble: everything before "## Read This When"  
+
+    # Extract preamble: everything before "## Read This When"
     $preambleMatch = [regex]::Match($landingContent, "(?s)^(.*?)\n---\n\n## Read This When")
     if ($preambleMatch.Success) {
         $preamble = $preambleMatch.Groups[1].Value.TrimEnd()
@@ -85,11 +85,11 @@ foreach ($file in $topLevel) {
 
     $newContent = [System.Collections.Generic.List[string]]::new()
     $preamble.Split("`n") | ForEach-Object { $newContent.Add($_) }
-    
+
     # Ensure exactly one ---
     while ($newContent.Count -gt 0 -and [string]::IsNullOrWhiteSpace($newContent[-1])) { $newContent.RemoveAt($newContent.Count - 1) }
     if ($newContent.Count -eq 0 -or $newContent[-1] -ne "---") { $newContent.Add("---") }
-    
+
     $newContent.Add("")
     $newContent.Add("## Read This When")
     $newContent.Add("")
