@@ -1,8 +1,8 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
-> Next planning target: ST-013 — split investigation docs into landing pages and focused fragments.
-> Last updated: 2026-05-17
+> Next planning target: TBD
+> Last updated: 2026-05-18
 
 ---
 
@@ -217,6 +217,12 @@
 
 ## In Progress
 
+(Empty)
+
+---
+
+## Review
+
 ### ST-013: Split investigation docs into landing pages and focused fragments
 - Type: infrastructure
 - Source: PO
@@ -225,19 +231,13 @@
 - Blocked by: ST-011 (Done)
 - Touches: `.github/copilot-instructions.md`, `.github/prompts/`, `.github/planning/`, `docs/investigations/`
 - Acceptance criteria:
-  - [ ] Each current top-level investigation file remains in place as a compact landing page that links to focused fragment docs
-  - [ ] All investigation content under `docs/investigations/` (including nested research trees) is covered by per-topic fragment sets that preserve approved design decisions
-  - [ ] Governance consumers reference either the retained landing pages or precise fragment docs instead of broad monolith assumptions
-  - [ ] A section mapping matrix proves every original major section has a destination and no design-authority content was dropped during the split
+  - [x] Each current top-level investigation file remains in place as a compact landing page that links to focused fragment docs
+  - [x] All investigation content under `docs/investigations/` (including nested research trees) is covered by per-topic fragment sets that preserve approved design decisions
+  - [x] Governance consumers reference either the retained landing pages or precise fragment docs instead of broad monolith assumptions
+  - [x] A section mapping matrix proves every original major section has a destination and no design-authority content was dropped during the split
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-013.md`
 - Docs: `docs/investigations/memory-architecture-design.md`, `docs/investigations/language-stack-recommendation.md`, `docs/investigations/sqlite-vs-postgresql.md`, `docs/investigations/interface-design-mcp-rest.md`, `docs/investigations/workflow-and-prompt-design.md`, `docs/investigations/context-engineering-principles.md`, `docs/investigations/openclaw-official-docs-review.md`, `docs/investigations/openclaw-memory-architecture-analysis.md`
-- Notes: PO approved 2026-05-17. Split the current investigation monoliths into per-topic folders while keeping the top-level files as compact landing pages.
-
----
-
-## Review
-
-(Empty)
+- Notes: Completed 2026-05-18. All 5 tasks executed, all ACs verified PASS. Pending PO acceptance review.
 
 ## Done
 

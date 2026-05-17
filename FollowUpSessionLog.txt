@@ -1,6 +1,45 @@
 # FollowUpSessionLog — ai-memory
 
-## Last Session: 2026-05-16 (Docker Compose validation and ST-021 closeout)
+## Last Session: 2026-05-18 (ST-013 execution complete — investigation doc split)
+
+### Accomplished
+- **ST-013 (5 tasks, all complete) — Split investigation docs into landing pages and focused fragments:**
+  - **Task 4.1:** Built `_inventory-all-md.txt` (20 source files), `split-manifest.md` (222 rows), `split-section-mapping-matrix.md` (222 rows). Commit 90ebc6a.
+  - **Task 4.2:** Split 14 top-level investigation docs into compact landing pages + 174 fragment files across 14 folders. Hybrid granularity: one fragment per `##` section; subsection fragments if section >250 lines or 4+ `###` blocks. Commit 1a4c242.
+  - **Task 4.3:** Normalized nested Discussions/ (4 docs → 45 sibling fragments) and Youtube/ (2 docs → 3 sibling fragments). Created `_index.md` for each subtree. Commit b4df44a.
+  - **Task 4.4:** Updated `copilot-instructions.md`, `plan.prompt.md`, `plan-new.prompt.md` with landing-page-first policy and fragment navigation guidance. Repo-wide reference scan: zero broken real paths. Commit 64c68ff.
+  - **Task 4.5:** Validated matrix 222/222 mapped. Repaired 54 stale placeholder paths (45 Discussions, 6 WAP duplicates, 3 Youtube) using `tools/fix-matrix-paths.ps1`. All ACs verified PASS. Commit 5b6e94a.
+- **Moved ST-013 to Review** on story board. All 4 ACs checked off. Awaiting PO acceptance.
+- **Updated board header**: Next planning target TBD.
+
+### Key Discoveries
+1. **split-investigations.ps1 is NOT idempotent.** Running it twice on already-rewritten landing pages parses the new `## Read This When`, `## Fragment Map`, `## Design Authority Note` headings as source sections and creates wrong fragment files. Always restore originals from git before re-running. Rule added to exec-plan §5b Avoidance.
+2. **Task 4.3 adopted sibling-flat convention** (all fragments for a nested doc go as siblings in the parent folder with source-prefix in the filename), but **Task 4.1 matrix placeholders assumed sub-folder convention** (separate subfolder per nested source). Required matrix path repair in Task 4.5.
+3. **Duplicate `##` headings** in `workflow-and-prompt-design.md` (§6b, §6c, §7b, §2b, §5b, §5c each appear twice) caused the split script to create `-2` suffix files for the second occurrence. Matrix had unsuffixed paths for these rows.
+4. **`Nate B Jones on Open Brain vs LLM Wiki.md` (831 lines)** has no `##` headings — treated as a single-fragment transcript. Decision logged in exec-plan §6c.
+
+### Resume Point
+- **In Progress: none. Review: ST-013.** Present AC evidence to PO.
+- **Next work options:**
+  - PO accepts ST-013 → move to Done → plan next story from Backlog
+  - PO requests fixes → make corrections → re-present
+
+### Board State
+- In Progress: none
+- Review: **ST-013** (completed 2026-05-18, all ACs verified)
+- Done: ST-001, ST-009, ST-011, ST-012, ST-014, ST-015, ST-016, ST-017, ST-021
+- Backlog: ST-002–ST-020 (Phases 1–6)
+
+### Avoidance
+- Do NOT re-run `tools/split-investigations.ps1` on already-rewritten landing pages. Restore originals from git first.
+- FTS5 in SystemDesign.md is correct — it documents SqliteMemoryStore only.
+- ADR-008 = Option C (stateless ambient). Do not substitute Option B without new ADR + PO.
+- SRS is v1.1; do not reference as v1.0.
+- Do NOT use `git clone` inside Dockerfiles — Fortinet SSL proxy will block it.
+- AGE `v1.7.0` tag does not exist for PG15 — use `PG15/v1.6.0-rc0`.
+- AGE v1.6.0 `|` operator limitation: `[:A|B*1..n]` fails until PG17 + AGE v1.7.0.
+
+
 
 ### Accomplished
 - Validated Docker Compose stack locally: both `db` (PostgreSQL 15 + pgvector + AGE v1.6.0-rc0) and `mcp` (Deno MCP server) containers started and healthy.
