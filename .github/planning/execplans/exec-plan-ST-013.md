@@ -27,20 +27,24 @@ Scope for this revision is expanded by PO decision to include all investigation 
 
 ## §1b. Outcomes & Conclusions
 
-- completion status: not completed (planning draft only)
+- completion status: **completed** (all 5 tasks executed; all acceptance criteria verified PASS)
 - key findings/achievements:
-  - Scope, granularity policy, link policy, and completeness proof method were locked with PO.
-  - Plan converted to inventory-driven execution to handle all investigation content deterministically.
+  - 20 investigation source files inventoried; 222 major sections mapped with zero content dropped.
+  - 14 top-level investigation docs rewritten as compact landing pages; 14 same-name fragment folders created with 174 fragment files.
+  - Nested Discussions/ (4 docs, 45 fragments) and Youtube/ (2 docs, 3 fragments) normalised into the same model.
+  - Governance consumers (copilot-instructions.md, plan.prompt.md, plan-new.prompt.md) updated with landing-page-first policy.
+  - 54 stale matrix placeholder paths repaired in Task 4.5 (45 Discussions sub-folder vs sibling, 6 WAP duplicate slugs, 3 Youtube sub-folder vs sibling).
 - requirements met vs unmet:
-  - met: planning scope decisions captured in QP-013 and this draft.
-  - unmet: no implementation execution performed (by design).
-- architectural impact: unchanged architecture decisions; documentation structure/workflow guidance only.
+  - met: all 5 requirements in §2d, all 5 §2 acceptance criteria.
+  - unmet: none.
+- architectural impact: documentation structure only; no C# source or schema changes.
 - supporting evidence:
-  - Updated query packet: `.github/planning/query-packets/QP-013-split-investigation-docs.md`
-  - This plan draft: `.github/planning/execplans/exec-plan-ST-013.md`
+  - `docs/investigations/split-section-mapping-matrix.md` — 222 rows, all mapped, all destinations verified.
+  - `tools/fix-matrix-paths.ps1` — matrix repair script (encodes both fix patterns for reference).
+  - §7b Audit Summary — counts and AC evidence.
 - downstream changes:
-  - Story metadata alignment in board (blocked-by state)
-  - After PO approval, run `/continue` only when ST-011 is cleared or explicit unblock is granted.
+  - ST-013 moves to Review.
+  - No immediate downstream stories blocked by this story.
 
 ---
 
@@ -299,10 +303,10 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.4 — Apply Landing-Page-First Governance Reference Updates |
-| **Last successful command** | Repo-wide scan for broken docs/investigations/ references — result: zero real broken paths (only false-positive example.md placeholder in ExecPlan template text) |
-| **Expected outputs produced** | copilot-instructions.md, plan.prompt.md, plan-new.prompt.md updated with landing-page-first policy and fragment navigation guidance |
-| **Next task** | Task 4.5 — Final Completeness Audit and Signoff Evidence |
+| **Last completed task** | Task 4.5 — Final Completeness Audit and Signoff Evidence |
+| **Last successful command** | All acceptance criteria verified PASS; matrix 222/222 mapped, all destination paths exist |
+| **Expected outputs produced** | Audit summary in §7b; tools/fix-matrix-paths.ps1 created; split-section-mapping-matrix.md fully repaired |
+| **Next task** | Story closeout — move ST-013 to Review |
 | **Known blockers** | None |
 | **Last updated** | 2026-05-18 |
 
@@ -316,6 +320,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-05-17T00:03:00Z | Task 4.2 | completed | 14 landing pages rewritten; 174 fragment files in 14 folders; all landing pages contain required sections; verification PASS | Task 4.3 |
 | 2026-05-17T00:04:00Z | Task 4.3 | completed | Discussions/_index.md + Youtube/_index.md created; 45 sibling fragments for Discussions (6+13+12+14); 2 Youtube fragments + 1 single transcript; verification PASS | Task 4.4 |
 | 2026-05-18T00:00:00Z | Task 4.4 | completed | copilot-instructions.md, plan.prompt.md, plan-new.prompt.md updated with landing-page-first policy; repo-wide reference scan: zero broken paths (only template example.md false-positive in ExecPlan) | Task 4.5 |
+| 2026-05-18T00:01:00Z | Task 4.5 | completed | Matrix 222/222 mapped; all 54 stale placeholder paths repaired (45 Discussions, 6 WAP duplicates, 3 Youtube); all ACs verified PASS; audit summary in §7b | Story closeout |
 
 ### Avoidance
 
@@ -365,7 +370,34 @@ At story completion:
 
 ## §7b. Outcomes & Retrospective
 
-(Reserved for execution)
+### Audit Summary (Task 4.5)
+
+| Metric | Count |
+|---|---|
+| Source files in inventory | 20 |
+| Matrix total data rows | 222 |
+| Matrix mapped rows | 222 |
+| Unmapped rows | 0 |
+| Top-level landing pages rewritten | 14 |
+| Top-level fragment folders created | 14 |
+| Fragment files created (top-level docs) | 174 |
+| Discussions sibling fragments | 45 |
+| Youtube sibling fragments | 3 |
+| Total .md files in docs/investigations/ tree | 437 |
+
+### Acceptance Criteria Evidence
+
+- **AC 1:** `rg --files docs/investigations` — every original top-level file exists with a same-name fragment folder. Verified: 14 of 14 top-level docs have matching fragment folders.
+- **AC 2:** `Get-Content` check on all top-level .md files — all 14 contain "Read This When", "Fragment Map", and "Design Authority Note" sections. PASS.
+- **AC 3:** `rg "docs/investigations/" .github docs` — 204 references in governance files, all resolve to landing-page paths; zero broken real paths (only template `example.md` placeholder in ExecPlan).
+- **AC 4:** `split-section-mapping-matrix.md` — 222 rows, 222 mapped, 0 unmapped. All destination paths verified to exist on disk after matrix repair in Task 4.5.
+- **AC 5:** Matrix path repair script (`tools/fix-matrix-paths.ps1`) corrected 54 stale placeholder paths (45 Discussions sub-folder → sibling, 6 workflow-and-prompt-design duplicate slugs, 3 Youtube sub-folder → sibling). Final `Test-Path` verification: zero missing destinations.
+
+### Retrospective Notes
+
+- Matrix placeholder paths in Task 4.1 used a sub-folder convention for nested Discussions/Youtube content that differed from the sibling-flat convention adopted in Task 4.3. Required repair in Task 4.5.
+- Duplicate `##` headings in `workflow-and-prompt-design.md` produced `-2` suffix files in Task 4.2. Matrix placeholder didn't predict the suffix. Repaired in Task 4.5.
+- `tools/fix-matrix-paths.ps1` (created in Task 4.5) documents and encodes both repair patterns for future reference.
 
 ---
 
