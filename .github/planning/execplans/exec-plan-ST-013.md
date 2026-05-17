@@ -299,10 +299,10 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.1 — inventory, manifest, matrix skeleton |
-| **Last successful command** | Verification: all 3 output files exist; 222 mapped rows in matrix |
-| **Expected outputs produced** | `_inventory-all-md.txt`, `split-manifest.md`, `split-section-mapping-matrix.md` (222 rows) |
-| **Next task** | Task 4.2 — Split and Rewrite Top-Level Investigation Documents |
+| **Last completed task** | Task 4.2 — split top-level investigation docs into landing pages + fragments |
+| **Last successful command** | Verification PASS: all 14 landing pages have Read This When / Fragment Map / Design Authority Note |
+| **Expected outputs produced** | 14 landing pages rewritten; 174 fragment files across 14 fragment folders |
+| **Next task** | Task 4.3 — Normalize Nested Investigation Trees |
 | **Known blockers** | None |
 | **Last updated** | 2026-05-17 |
 
@@ -313,11 +313,13 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-05-17T00:00:00Z | /plan scoping refresh | completed | Updated QP-013 and ExecPlan draft | PO review and approval |
 | 2026-05-17T00:01:00Z | PO approval | completed | ST-011 confirmed Done; PO approved ST-013 for execution; ExecPlan set to ✅ Ready; story moved to In Progress | Task 4.1 |
 | 2026-05-17T00:02:00Z | Task 4.1 | completed | `_inventory-all-md.txt` (20 files), `split-manifest.md` (222 rows), `split-section-mapping-matrix.md` (222 rows); verification PASS | Task 4.2 |
+| 2026-05-17T00:03:00Z | Task 4.2 | completed | 14 landing pages rewritten; 174 fragment files in 14 folders; all landing pages contain required sections; verification PASS | Task 4.3 |
 
 ### Avoidance
 
 - Do not delete or rename retained top-level investigation paths.
 - Do not mark completion without zero-unmapped matrix rows.
+- Do not re-run split-investigations.ps1 on already-rewritten landing pages — it will parse the new ## headings and create wrong fragment files. Always restore originals from git before re-running.
 
 ---
 
@@ -329,7 +331,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 ## §6b. Surprises & Discoveries
 
-(Empty)
+- **Double-run idempotence failure (Task 4.2):** Running split-investigations.ps1 a second time on already-rewritten landing pages parsed "Read This When", "Fragment Map", and "Design Authority Note" as source sections and created wrong fragment files. Recovery: deleted bad fragments, restored originals from git, re-ran script once. Avoidance rule added to §5b.
 
 ---
 
