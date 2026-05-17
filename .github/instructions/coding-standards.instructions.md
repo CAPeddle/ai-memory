@@ -120,6 +120,18 @@ tests/
 - Document any package with a non-MIT/Apache license in this file when added.
 - Major version upgrades: create a dedicated story rather than inlining during feature work.
 
+## Docker and Infrastructure
+
+**No `git clone` inside Dockerfiles.** A corporate SSL proxy (Fortinet or similar) intercepts HTTPS connections inside Docker containers and terminates them with an untrusted CA certificate. `git clone https://github.com/...` inside a `RUN` step will fail. The mandated pattern is:
+
+1. Download the release tarball or binary on the Windows host (where the proxy CA is trusted).
+2. Commit the tarball to the repository under the relevant `docker/` subdirectory.
+3. Use `COPY` to bring it into the image, then extract with `tar`.
+
+Evidence: ST-021 Docker validation — `docker/postgres-age/Dockerfile` + `docs/investigations/ST-021-findings.md §6b #6`.
+
+**Verify version tags against the target runtime before writing a Dockerfile.** Some libraries (notably Apache AGE) publish separate tag namespaces per PostgreSQL major version (e.g., `PG15/v1.6.0-rc0` vs `PG17/v1.7.0`). Using the wrong tag silently produces a 404 or a build that fails at runtime. Always browse the project's tag list (e.g., `https://github.com/apache/age/tags`) and confirm the tag exists for the exact PostgreSQL version in use before writing or committing a Dockerfile reference. Evidence: ST-021 — original Dockerfile referenced `v1.7.0` which does not exist for PG15; corrected to `PG15/v1.6.0-rc0`.
+
 ---
 
 For rationale behind these practices, see `docs/investigations/se-best-practices.md`.

@@ -45,9 +45,9 @@
 - ADR-008 = Option C (stateless ambient). Do not substitute Option B without new ADR + PO.
 - SRS is v1.1; do not reference as v1.0.
 - ST-017 recommended "Stay Current" (4.50/5.0) — ST-021 has now confirmed OB1 fork is viable and supersedes that evaluation.
-- Do NOT use `git clone` inside Dockerfiles on this machine — Fortinet SSL proxy will block it. Always COPY tarballs.
-- AGE `v1.7.0` tag does not exist for PG15 — never use it; use `PG15/v1.6.0-rc0` or check https://github.com/apache/age/tags for latest.
-- AGE v1.6.0 `|` operator limitation: do not assume `[:A|B*1..n]` works until PG17 with AGE v1.7.0 is deployed.
+- Do NOT use `git clone` inside Dockerfiles — Fortinet SSL proxy will block it. Rule now promoted to `coding-standards.instructions.md §Docker and Infrastructure`.
+- AGE `v1.7.0` tag does not exist for PG15 — never use it; use `PG15/v1.6.0-rc0` or check github.com/apache/age/tags for latest. Rule promoted to `coding-standards.instructions.md §Docker and Infrastructure`.
+- AGE v1.6.0 `|` operator limitation: do not assume `[:A|B*1..n]` works until PG17 with AGE v1.7.0 is deployed. Documented in ST-021-findings.md §R6.
 
 
 
