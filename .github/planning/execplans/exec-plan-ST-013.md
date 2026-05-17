@@ -1,6 +1,6 @@
 # ExecPlan — ST-013: Split investigation docs into landing pages and focused fragments
 
-> Status: ⬜ Not Ready — draft pending PO review, execution blocked by ST-011
+> Status: ✅ Ready — PO approved 2026-05-17; ST-011 dependency cleared
 > Story: ST-013
 > Created: 2026-05-03
 > Updated: 2026-05-17
@@ -69,7 +69,7 @@ All checks must be `[x]` before `/continue` can execute:
 - [x] Every task ends with a verification step (command or assertion)
 - [x] Acceptance criteria phrased as observable behaviour
 
-Status: ⬜ Plan-quality ready, execution-gated until PO approval and ST-011 dependency clearance (or explicit override).
+Status: ✅ Ready for /continue — PO approved 2026-05-17; ST-011 cleared.
 
 ---
 
@@ -299,11 +299,11 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Planning update only (no execution tasks run) |
-| **Last successful command** | n/a |
-| **Expected outputs produced** | Updated query packet + updated ExecPlan draft |
-| **Next task** | PO review, then Task 4.1 |
-| **Known blockers** | ST-011 dependency gate |
+| **Last completed task** | Task 4.1 — inventory, manifest, matrix skeleton |
+| **Last successful command** | Verification: all 3 output files exist; 222 mapped rows in matrix |
+| **Expected outputs produced** | `_inventory-all-md.txt`, `split-manifest.md`, `split-section-mapping-matrix.md` (222 rows) |
+| **Next task** | Task 4.2 — Split and Rewrite Top-Level Investigation Documents |
+| **Known blockers** | None |
 | **Last updated** | 2026-05-17 |
 
 ### Progress History
@@ -311,6 +311,8 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | Timestamp (ISO) | Task | Status | Evidence / outputs | Next step |
 |---|---|---|---|---|
 | 2026-05-17T00:00:00Z | /plan scoping refresh | completed | Updated QP-013 and ExecPlan draft | PO review and approval |
+| 2026-05-17T00:01:00Z | PO approval | completed | ST-011 confirmed Done; PO approved ST-013 for execution; ExecPlan set to ✅ Ready; story moved to In Progress | Task 4.1 |
+| 2026-05-17T00:02:00Z | Task 4.1 | completed | `_inventory-all-md.txt` (20 files), `split-manifest.md` (222 rows), `split-section-mapping-matrix.md` (222 rows); verification PASS | Task 4.2 |
 
 ### Avoidance
 

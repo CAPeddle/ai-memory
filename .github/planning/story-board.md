@@ -206,22 +206,6 @@
 
 <!-- Phase 6 — Documentation and Governance -->
 
-### ST-013: Split investigation docs into landing pages and focused fragments
-- Type: infrastructure
-- Source: PO
-- phase: 6
-- Value: 4
-- Blocked by: ST-011
-- Touches: `.github/copilot-instructions.md`, `.github/prompts/`, `.github/planning/`, `docs/investigations/`
-- Acceptance criteria:
-  - [ ] Each current top-level investigation file remains in place as a compact landing page that links to focused fragment docs
-  - [ ] All investigation content under `docs/investigations/` (including nested research trees) is covered by per-topic fragment sets that preserve approved design decisions
-  - [ ] Governance consumers reference either the retained landing pages or precise fragment docs instead of broad monolith assumptions
-  - [ ] A section mapping matrix proves every original major section has a destination and no design-authority content was dropped during the split
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-013.md`
-- Docs: `docs/investigations/memory-architecture-design.md`, `docs/investigations/language-stack-recommendation.md`, `docs/investigations/sqlite-vs-postgresql.md`, `docs/investigations/interface-design-mcp-rest.md`, `docs/investigations/workflow-and-prompt-design.md`, `docs/investigations/context-engineering-principles.md`, `docs/investigations/openclaw-official-docs-review.md`, `docs/investigations/openclaw-memory-architecture-analysis.md`
-- Notes: Split the current investigation monoliths into per-topic folders while keeping the top-level files as compact landing pages. Use hybrid granularity (section-level default; subsection splits for oversized sections) and landing-page-first governance links. Seed query packet: `.github/planning/query-packets/QP-013-split-investigation-docs.md`. Keep behind ST-011 so governance-review workflow changes land before broader doc-structure refactoring.
-
 ---
 
 ## Refined
@@ -233,7 +217,21 @@
 
 ## In Progress
 
-(Empty)
+### ST-013: Split investigation docs into landing pages and focused fragments
+- Type: infrastructure
+- Source: PO
+- phase: 6
+- Value: 4
+- Blocked by: ST-011 (Done)
+- Touches: `.github/copilot-instructions.md`, `.github/prompts/`, `.github/planning/`, `docs/investigations/`
+- Acceptance criteria:
+  - [ ] Each current top-level investigation file remains in place as a compact landing page that links to focused fragment docs
+  - [ ] All investigation content under `docs/investigations/` (including nested research trees) is covered by per-topic fragment sets that preserve approved design decisions
+  - [ ] Governance consumers reference either the retained landing pages or precise fragment docs instead of broad monolith assumptions
+  - [ ] A section mapping matrix proves every original major section has a destination and no design-authority content was dropped during the split
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-013.md`
+- Docs: `docs/investigations/memory-architecture-design.md`, `docs/investigations/language-stack-recommendation.md`, `docs/investigations/sqlite-vs-postgresql.md`, `docs/investigations/interface-design-mcp-rest.md`, `docs/investigations/workflow-and-prompt-design.md`, `docs/investigations/context-engineering-principles.md`, `docs/investigations/openclaw-official-docs-review.md`, `docs/investigations/openclaw-memory-architecture-analysis.md`
+- Notes: PO approved 2026-05-17. Split the current investigation monoliths into per-topic folders while keeping the top-level files as compact landing pages.
 
 ---
 

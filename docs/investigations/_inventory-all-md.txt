@@ -1,0 +1,20 @@
+docs/investigations\awesome-copilot-applicability-review.md
+docs/investigations\context-engineering-principles.md
+docs/investigations\Discussions\Gemini Agile MD Storyboard.md
+docs/investigations\Discussions\MicrosoftCopilotProjectOverview.md
+docs/investigations\Discussions\MicrosoftCopilotStorage.md
+docs/investigations\Discussions\MicrosoftCopilotStorageBasedADR.md
+docs/investigations\interface-design-mcp-rest.md
+docs/investigations\language-stack-recommendation.md
+docs/investigations\memory-architecture-design.md
+docs/investigations\memsearch-applicability-review.md
+docs/investigations\openbrain-pivot-evaluation.md
+docs/investigations\openclaw-memory-architecture-analysis.md
+docs/investigations\openclaw-official-docs-review.md
+docs/investigations\plan-openBrainPivotEvaluation.prompt.md
+docs/investigations\se-best-practices.md
+docs/investigations\sqlite-vs-postgresql.md
+docs/investigations\ST-021-findings.md
+docs/investigations\workflow-and-prompt-design.md
+docs/investigations\Youtube\Nate B Jones on Open Brain vs LLM Wiki.md
+docs/investigations\Youtube\Simon Scrapes on AI Memory.md
