@@ -73,24 +73,22 @@ A fifth concern — entity extraction at write time — must be designed (though
 
 ## §1b. Outcomes & Conclusions
 
-- completion status: ✅ Complete (2026-05-16; Docker Compose validation confirmed locally)
+- completion status: ✅ Complete (2026-05-16; Docker Compose validation confirmed locally 2026-05-17)
 - key findings/achievements:
   - OB1 cloned and fully inventoried; all 6 tools and Supabase dependencies documented
   - Docker infrastructure created: `docker/postgres-age/Dockerfile`, `docker-compose.yml`, `server/Dockerfile`
   - Memory tier schema decided: single-table discriminator (`memory_type` column) — simpler RRF queries, no JOIN needed
   - BM25 + pgvector RRF SQL pattern validated in `server/db/search.sql`; OB1 already has `search_thoughts_text()` with GIN tsvector — extend it rather than replace
   - openCypher multi-hop traversal (`CAUSED_BY*1..5`) confirmed via AGE v1.6.0-rc0 (3-hop chain returned)
-  - Fact inference confirmed via explicit MATCH chain (AGE v1.6.0 does not support `|` in relationship type selectors; that requires AGE v1.7.0 / PG17+); workaround documented in §R6
+  - Fact inference confirmed via explicit MATCH chain (AGE v1.6.0 does not support `|` in relationship type selectors; requires AGE v1.7.0 / PG17+); workaround documented in §R6
   - Docker Compose stack started healthy: both `db` and `mcp` containers running; `vector` and `age` extensions loaded; `memory_graph` created by init SQL
-  - AGE version corrected to `PG15/v1.6.0-rc0` — v1.7.0 does not exist for PG15
-  - `git clone` inside Docker replaced with COPY of pre-downloaded tarball due to Fortinet SSL proxy interception
-  - `flex` and `bison` added to apt-get — required for AGE parser generation
+  - AGE version corrected to `PG15/v1.6.0-rc0` — v1.7.0 does not exist for PG15; `git clone` in Docker replaced with COPY of pre-downloaded tarball (Fortinet SSL proxy interception); `flex` and `bison` required in apt-get
   - AGE requires `LOAD 'age'` + `SET search_path` per session — handled in `graph_traverse` tool via `sql.unsafe()`
   - Context scoping implemented in `server/src/parseContext.ts` and wired into all MCP tools in `server/index.ts`
   - Entity extraction worker design complete in `docs/investigations/ST-021-findings.md §R8`
   - OB1 auth uses `x-brain-key` header; fork replaces with `Authorization: Bearer` per ADR-010
-  - `StreamableHTTPServerTransport` used directly from MCP SDK (no `@hono/mcp` dependency)
-- requirements met vs unmet: All 8 ACs (R1–R9) confirmed met locally
+  - `StreamableHTTPTransport` from `@hono/mcp` used (SDK's `StreamableHTTPServerTransport` is Node.js-only and incompatible with Deno/Hono)
+- requirements met vs unmet: R1–R9 all met; Docker Compose stack validated locally 2026-05-17 — both containers healthy, AGE v1.6.0-rc0 compiled (v1.7.0 does not exist for PG15), `memory_graph` confirmed, `capture_thought` with context scoping verified end-to-end
 - architectural impact: no ADR changes required (`graph_traverse` is already in ADR-004's tool table)
 - supporting evidence: `docs/investigations/ST-021-findings.md`, `server/db/schema.sql`, `server/db/search.sql`, `server/db/graph.sql`, `server/index.ts`, `server/src/parseContext.ts`
 - downstream changes: Entity extraction worker story, consolidation worker story, cloud deployment story; AGE v1.7.0 (PG17+) upgrade story if `|` relationship selector is required in production
@@ -1159,7 +1157,7 @@ _(Empty — no failures yet)_
 2. **OB1 auth uses `x-brain-key` header**, not `Authorization: Bearer`. The fork replaces this entirely with ADR-010's Bearer pattern.
 3. **OB1 uses `registerTool`, not `server.tool`.** The SDK `@1.24.3` API uses `registerTool(name, definition, handler)` with `inputSchema` as a Zod shape object (not `z.object(...)`). The fork adopts this pattern.
 4. **AGE requires `LOAD 'age'` per session.** Every database session using `cypher()` must issue `LOAD 'age'; SET search_path = ag_catalog, "$user", public` first. The `graph_traverse` tool handles this in the SQL block.
-5. **`StreamableHTTPServerTransport` is in the SDK directly** — no need for `@hono/mcp`. The fork drops this dependency, simplifying the dep tree.
+5. **`StreamableHTTPServerTransport` (SDK) is Node.js-only.** It uses `IncomingMessage`/`ServerResponse` (Node.js API) and is incompatible with Deno's Hono. The fork retains `@hono/mcp`'s `StreamableHTTPTransport` (Fetch-compatible). Do not drop `@hono/mcp` from `deno.json`.
 
 ---
 
@@ -1174,7 +1172,7 @@ _(Empty — no failures yet)_
 | D5 | 2026-05-16 | Use `registerTool` API | OB1's tested SDK pattern; `server.tool` is from a different SDK version |
 | D6 | 2026-05-16 | Fire-and-forget embedding update in `capture_thought` | Keeps tool response latency low; embedding is async non-blocking |
 | D7 | 2026-05-16 | `MERGE` for AGE writes | Idempotent; prevents duplicate nodes/edges on reprocessing |
-| D8 | 2026-05-16 | Drop `@hono/mcp` dependency | `StreamableHTTPServerTransport` is in the SDK directly; simpler dep tree |
+| D8 | 2026-05-17 | Retain `@hono/mcp` dependency | SDK's `StreamableHTTPServerTransport` uses Node.js API (incompatible with Deno); `@hono/mcp`'s `StreamableHTTPTransport` is Fetch-compatible and required |
 
 ---
 
@@ -1198,7 +1196,6 @@ Achieved:
 - Content dedup is intentionally global (same content = same memory regardless of project); documented in schema.sql
 
 Remains:
-- R4/DoD-1: Docker image build (AGE compilation) and `docker compose up` must be confirmed locally
 - Vector lane of RRF search needs real embeddings (requires OPENROUTER_API_KEY at runtime)
 - Three downstream implementation stories: entity extraction worker, consolidation worker, cloud deployment
 

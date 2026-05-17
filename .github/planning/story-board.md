@@ -2,7 +2,7 @@
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
 > Next planning target: ST-013 — split investigation docs into landing pages and focused fragments.
-> Last updated: 2026-05-16
+> Last updated: 2026-05-17
 
 ---
 
@@ -265,7 +265,7 @@
   - `server/db/schema.sql`, `server/db/search.sql`, `server/db/graph.sql`
   - `server/index.ts`, `server/src/parseContext.ts`, `server/src/auth.ts`, `server/src/db.ts`
   - `docker/postgres-age/Dockerfile`, `docker-compose.yml`
-- Notes: All 8 ACs met. Key discoveries: AGE v1.7.0 does not exist for PG15 (use PG15/v1.6.0-rc0); git clone inside Docker blocked by Fortinet SSL proxy — use COPY of pre-downloaded tarball; flex + bison required in apt-get; AGE v1.6.0 does not support `|` in relationship type selectors (requires AGE v1.7.0 / PG17+). Downstream stories needed: entity extraction worker, consolidation worker, cloud deployment.
+- Notes: All 8 ACs met. Key discoveries: AGE v1.7.0 does not exist for PG15 (use PG15/v1.6.0-rc0); git clone inside Docker blocked by Fortinet SSL proxy — use COPY of pre-downloaded tarball; flex + bison required in apt-get; AGE v1.6.0 does not support `|` in relationship type selectors (requires AGE v1.7.0 / PG17+). OB1 already has `search_thoughts_text()` with two-phase BM25 — implementation story should extend it. Downstream stories needed: entity extraction worker, consolidation worker, cloud deployment.
 
 ### ST-015: Improve ExecPlan template to show outcomes up front
 - Type: infrastructure
