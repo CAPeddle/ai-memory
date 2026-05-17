@@ -2,8 +2,9 @@
 
 > Story: ST-013
 > Created: 2026-05-03
+> Updated: 2026-05-17
 > Source: PO-guided planning session
-> Status: Seed packet for `/plan`
+> Status: Scoped packet for ExecPlan drafting
 
 ## Intent
 
@@ -34,13 +35,14 @@ The board changed during scoping: `ST-012` is already reserved for a different g
 7. Main governance consumers are in scope for updates so the new structure is immediately usable.
 8. The split must preserve the existing investigation set as design authority rather than re-litigating or changing approved technical decisions.
 
-## Scope For The Next `/plan` Pass
+## Scope Locked (2026-05-17)
 
 In scope:
-- Define the fragment layout for each of the eight investigations
-- Preserve and relink the current design-authority paths via compact landing pages
-- Update the main governance consumers to point to the retained landing pages or focused fragments
-- Define the completeness review needed to prove no original major section was dropped
+- Include all investigation content under `docs/investigations/`, including top-level investigation files plus nested research trees (for example `Discussions/` and `Youtube/`), in a consistent landing-page-plus-fragments structure
+- Use **hybrid fragment granularity**: section-level fragments by default, with subsection splits only for oversized sections
+- Preserve and relink the current design-authority paths via compact landing pages (landing-page-first reference policy)
+- Update governance consumers so references default to landing pages, and use fragment-level links where precision is clearly beneficial
+- Require a **section mapping matrix** as proof that every original major section has a destination and no approved content is dropped
 - Produce an ExecPlan precise enough for a cost-efficient executor to perform the split mechanically
 
 Out of scope:
@@ -48,12 +50,24 @@ Out of scope:
 - Revising approved architecture decisions, storage choices, or workflow governance decisions beyond structural reorganization
 - Expanding `ST-012` or merging this work into the asset-catalog effort
 
+## Direction Decisions (Locked)
+
+1. **Target story:** Continue with ST-013.
+2. **Session objective:** Complete Phase 1 scoping updates and produce a revised Phase 2 ExecPlan draft.
+3. **Fragment granularity:** Hybrid (section-level default, subsection split when needed).
+4. **Governance-link policy:** Landing-page first; fragment links where precision materially helps.
+5. **Completeness proof:** Section mapping matrix is required.
+6. **Coverage scope:** Include all investigation content under `docs/investigations/`.
+7. **Dependency handling:** Keep execution blocked behind ST-011; planning artifacts may be prepared now.
+8. **Board edits allowed in planning run:** Metadata-only cleanup is permitted.
+
 ## Risks And Watch Points
 
 1. If landing pages become too verbose, the split will recreate the same context-dump problem in a new shape.
 2. If fragment names or links are inconsistent across investigations, planning prompts will become harder to maintain rather than easier.
 3. If section-specific board or prompt references are not updated, the split will leave stale references that imply content still exists in the old monolith locations.
 4. If `ST-011` changes the same governance files first, this packet and its future ExecPlan will need a refresh before execution starts.
+5. The expanded scope (all investigations, including nested trees) increases mechanical workload and verification cost; the plan must rely on inventory-driven steps to prevent omissions.
 
 ## Artifacts To Read First During `/plan`
 
@@ -71,6 +85,10 @@ Out of scope:
 12. `docs/investigations/openclaw-official-docs-review.md`
 13. `docs/investigations/openclaw-memory-architecture-analysis.md`
 
+Inventory-driven scope inputs:
+14. `docs/investigations/Discussions/`
+15. `docs/investigations/Youtube/`
+
 ## Suggested Outcome For ST-013
 
-Produce an ExecPlan that defines a repeatable split contract for the investigation docs, creates focused fragment sets under `docs/investigations/`, preserves the current top-level filenames as entry-point landing pages, and updates governance consumers so future planners can reach the relevant design detail in one or two hops.
+Produce an ExecPlan that defines a repeatable split contract for all investigation content under `docs/investigations/`, creates focused fragment sets with hybrid granularity, preserves the current top-level filenames as entry-point landing pages, applies landing-page-first governance references, and verifies completeness with a section mapping matrix.
