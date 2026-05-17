@@ -299,10 +299,10 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.2 — split top-level investigation docs into landing pages + fragments |
-| **Last successful command** | Verification PASS: all 14 landing pages have Read This When / Fragment Map / Design Authority Note |
-| **Expected outputs produced** | 14 landing pages rewritten; 174 fragment files across 14 fragment folders |
-| **Next task** | Task 4.3 — Normalize Nested Investigation Trees |
+| **Last completed task** | Task 4.3 — normalize nested investigation trees |
+| **Last successful command** | Verification: Discussions/_index.md and Youtube/_index.md exist; 50 Discussions files, 6 Youtube files |
+| **Expected outputs produced** | Discussions/_index.md, Youtube/_index.md, 45 sibling fragments, 4 nested landing pages |
+| **Next task** | Task 4.4 — Apply Landing-Page-First Governance Reference Updates |
 | **Known blockers** | None |
 | **Last updated** | 2026-05-17 |
 
@@ -314,6 +314,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-05-17T00:01:00Z | PO approval | completed | ST-011 confirmed Done; PO approved ST-013 for execution; ExecPlan set to ✅ Ready; story moved to In Progress | Task 4.1 |
 | 2026-05-17T00:02:00Z | Task 4.1 | completed | `_inventory-all-md.txt` (20 files), `split-manifest.md` (222 rows), `split-section-mapping-matrix.md` (222 rows); verification PASS | Task 4.2 |
 | 2026-05-17T00:03:00Z | Task 4.2 | completed | 14 landing pages rewritten; 174 fragment files in 14 folders; all landing pages contain required sections; verification PASS | Task 4.3 |
+| 2026-05-17T00:04:00Z | Task 4.3 | completed | Discussions/_index.md + Youtube/_index.md created; 45 sibling fragments for Discussions (6+13+12+14); 2 Youtube fragments + 1 single transcript; verification PASS | Task 4.4 |
 
 ### Avoidance
 
@@ -345,6 +346,9 @@ If a session is interrupted, the executor reads §5b to determine where to resum
   Date: 2026-05-17
 - Decision: Keep execution blocked behind ST-011.
   Rationale: Prevent concurrent governance churn.
+  Date: 2026-05-17
+- Decision: Youtube/Nate B Jones treated as single-fragment despite 831 lines (0 ## headings).
+  Rationale: No meaningful section structure to split on; creating a single sibling transcript fragment preserves the content while satisfying the "split" requirement.
   Date: 2026-05-17
 
 ---

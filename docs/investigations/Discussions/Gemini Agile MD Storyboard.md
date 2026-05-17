@@ -99,10 +99,10 @@ To make this look like a storyboard for *you*, use the **Dataview** plugin. It c
 > TABLE priority, assignee
 > FROM "Stories"
 > WHERE status = "To Do"
-> 
+>
 > ```
-> 
-> 
+>
+>
 
 ### 4. Implementing Layered Context
 
@@ -189,61 +189,25 @@ For an agent-led agile storyboard, here is how that architecture would look and 
 
 ---
 
-## 1. The Storage Mechanic: Atomic Shards
+## Read This When
 
-Instead of creating a "Story file" with metadata, you treat every input as an **Atomic Shard**.
-
-* **The Input:** A raw transcript of a brainstorming session, a Git diff, a quick note about a bug, or a feature request.
-* **The Storage:** These are saved as individual Markdown files in a flat folder (e.g., `/brain/shards/`).
-* **The Metadata:** Minimal. Just a timestamp and a source tag. No "Status," no "Assignee."
-
-## 2. The Retrieval Mechanic: Synthesis at Recall
-
-When the agent is ready to work, it doesn't "look for a task." It performs a **Synthesis Query**.
-
-### The "Virtual Board" vs. The "Static Board"
-
-* **LLM Wiki (Static):** The agent reads `Stories/Task_01.md`.
-* **Open Brain (Virtual):** The agent runs a query: *"Based on all shards from the last 48 hours and the current state of the Godot project, what are the top 3 high-priority technical debt items?"*
-
-The "Storyboard" doesn't actually exist as a file. It is a **temporary hallucination** (in the positive sense) generated in the agent's context window based on the raw data it just retrieved.
+Reviewing the original discussion or research notes for context behind investigation findings.
 
 ---
 
-## 3. Comparing the Two Architectures
+## Fragment Map
 
-| Feature | LLM Wiki (Curated) | Open Brain (Synthesis at Recall) |
-| --- | --- | --- |
-| **Data Integrity** | High (Human/Agent curated) | Variable (Raw/Noisy) |
-| **Write Friction** | High (Must decide where it fits) | Zero (Just dump the data) |
-| **Recall Method** | Navigation (Follow the links) | Semantic Search + Synthesis |
-| **Agent Role** | Librarian & Editor | Archaeologist & Architect |
-| **Best For** | Stable, long-term projects | Rapidly evolving, messy R&D |
-
----
-
-## 4. How to build "Open Brain" in Obsidian
-
-If you use Obsidian for this, you rely less on the folder structure and more on the **unlinked connections**.
-
-* **The "Librarian" Script:** You would have a script (or a "Manager Agent") that periodically indexes the `/shards/` folder into a vector database (like Chroma or a simple local JSON index).
-* **The "Recall" Prompt:** When you want to see the board, you don't open a folder. You open a "Dashboard" file that runs a dynamic script.
-* *Example:* The dashboard calls the agent: *"Synthesize the current project 'vibe' and identify 5 tasks that need attention."* * The agent returns a Markdown table in your Obsidian preview. This table isn't "real"—it’s a live view of the agent's current synthesis.
+| # | Section | Fragment |
+|---|---|---|
+| 1 | 1. The Storage Mechanic: Atomic Shards | [1. The Storage Mechanic: Atomic Shards](./01-gemini-agile-md-storyboard-the-storage-mechanic-atomic-shards.md) |
+| 2 | 2. The Retrieval Mechanic: Synthesis at Recall | [2. The Retrieval Mechanic: Synthesis at Recall](./02-gemini-agile-md-storyboard-the-retrieval-mechanic-synthesis-at-recall.md) |
+| 3 | 3. Comparing the Two Architectures | [3. Comparing the Two Architectures](./03-gemini-agile-md-storyboard-comparing-the-two-architectures.md) |
+| 4 | 4. How to build "Open Brain" in Obsidian | [4. How to build "Open Brain" in Obsidian](./04-gemini-agile-md-storyboard-how-to-build-open-brain-in-obsidian.md) |
+| 5 | 5. The Layered Context in "Open Brain" | [5. The Layered Context in "Open Brain"](./05-gemini-agile-md-storyboard-the-layered-context-in-open-brain.md) |
+| 6 | The Risk: "Context Drift" | [The Risk: "Context Drift"](./06-gemini-agile-md-storyboard-the-risk-context-drift.md) |
 
 
+## Design Authority Note
 
-## 5. The Layered Context in "Open Brain"
-
-This approach actually handles **Layered Context** more naturally:
-
-1. **Layer 1 (The Vibe):** The agent performs a broad semantic search across all shards to get the "Project Ghost"—the general feeling of what’s happening.
-2. **Layer 2 (The Shards):** Once the agent identifies a potential task (e.g., "Refactor the steering logic"), it performs a deep-dive search for shards specifically containing "steering," "Godot," and "physics."
-3. **Layer 3 (The Synthesis):** It merges these specific shards with the current codebase files to create the "Task Context" right before it starts coding.
-
-## The Risk: "Context Drift"
-
-The danger of the Open Brain approach is that without curation, the agent might synthesize a task based on an old, discarded idea if it doesn't have a way to know that Shard A was "deprecated" by Shard B.
-
-To fix this, you usually need a **"Temporal Decay"** factor—weighting newer shards more heavily than older ones during the recall phase.
-
-Does this "Synthesis at Recall" approach feel more aligned with your workflow, or do you worry about the agent losing the "source of truth" in the noise of the shards?
+This is a **Tier 2 Reference** document. Consult it for context and rationale.
+Binding decisions live in [SRS](../../../requirements/SRS.md), [ADRs](../../../design/adr/), and [SystemDesign.md](../../../design/SystemDesign.md).
