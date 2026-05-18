@@ -3,4 +3,4 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf 
 WORKDIR /app
 COPY . .
 EXPOSE 3000
-CMD ["run", "--allow-net", "--allow-env", "index.ts"]
+CMD ["run", "--allow-net", "--allow-env", "--allow-read", "index.ts"]
