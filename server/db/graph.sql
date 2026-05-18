@@ -120,3 +120,7 @@ CREATE TRIGGER trg_queue_entity_extraction
 --     MERGE (:Person {name: 'John'})
 --   $$) AS t(v agtype);
 -- ============================================================
+
+-- Exponential backoff support (added by ST-022)
+ALTER TABLE public.entity_extraction_queue
+  ADD COLUMN IF NOT EXISTS retry_after timestamptz;

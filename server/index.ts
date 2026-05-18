@@ -6,6 +6,7 @@ import { z } from "npm:zod@4.1.13";
 import { requireApiKey } from "./src/auth.ts";
 import { parseContext } from "./src/parseContext.ts";
 import { sql } from "./src/db.ts";
+import { startEntityWorker } from "./src/entityWorker.ts";
 
 const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY") ?? "";
 if (!OPENROUTER_API_KEY) {
@@ -441,3 +442,6 @@ app.all("/mcp", async (c) => {
 });
 
 Deno.serve({ port: 3000 }, app.fetch);
+
+// Start entity extraction background worker
+startEntityWorker();
