@@ -1,8 +1,8 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
-> Next planning target: ST-022 — entity extraction worker (highest-value post-pivot; unblocks AGE graph utility).
-> Last updated: 2026-05-18
+> Next planning target: ST-005 — recall events / ST-008 — .NET REST host (unblocked by ST-022 completion).
+> Last updated: 2026-05-19
 
 ---
 
@@ -189,14 +189,7 @@
 
 ## Refined
 
-### ST-022: Implement entity extraction worker (OpenRouter → AGE graph)
-- Type: feature
-- Source: ST-021 spike outcome (2026-05-16)
-- phase: 1
-- Value: 5
-- Blocked by: ST-021 (done)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-022.md` ✅ Ready
-- Query packet: `.github/planning/query-packets/QP-022-entity-extraction-worker.md`
+(Empty)
 
 ---
 
@@ -208,7 +201,15 @@
 
 ## Review
 
-(Empty)
+### ST-022: Implement entity extraction worker (OpenRouter → AGE graph)
+- Type: feature
+- Source: ST-021 spike outcome (2026-05-16)
+- phase: 1
+- Value: 5
+- Blocked by: ST-021 (done)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-022.md` ✅ Complete
+- Query packet: `.github/planning/query-packets/QP-022-entity-extraction-worker.md`
+- Completed: 2026-05-19 — 4/4 integration tests pass; graph_search, entity worker, AGE nested-array fix all delivered.
 
 ## Done
 
