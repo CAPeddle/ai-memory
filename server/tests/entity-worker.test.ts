@@ -18,6 +18,7 @@ async function mcpCall(tool: string, args: Record<string, unknown>): Promise<unk
     headers: {
       Authorization: `Bearer ${API_KEY}`,
       "Content-Type": "application/json",
+      "Accept": "application/json, text/event-stream",
     },
     body: JSON.stringify({
       jsonrpc: "2.0",
