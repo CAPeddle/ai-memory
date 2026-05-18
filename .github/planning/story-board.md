@@ -106,6 +106,26 @@
 - Docs: `docs/investigations/interface-design-mcp-rest.md`
 - Notes: Rewritten post-ST-021 pivot for TypeScript/Deno/Docker Compose. CI runs against the same `docker-compose.yml` used locally to keep dev and CI environments in sync.
 
+### ST-028: Worker observability and `stats` MCP tool
+- Type: feature
+- Source: PO assessment of storyboard sufficiency (2026-05-18)
+- phase: 2
+- Value: 3
+- Blocked by: ST-022, ST-008 (workers must exist to be observed); ST-005 (recall_events table powers recall counts)
+- Touches: `server/index.ts` (new `stats` tool), `server/src/entityWorker.ts`, `server/src/consolidationWorker.ts`, `server/db/schema.sql` (new `worker_runs` table)
+- Acceptance criteria:
+  - [ ] Both workers emit structured JSON logs to stdout, one line per event: `{ts, level, worker, run_id, event, duration_ms, items_processed, errors}` where `event` is one of `run_started|item_processed|run_completed|run_failed`
+  - [ ] New `worker_runs` table persists per-run state: `(run_id uuid PK, worker text, started_at, ended_at, items_processed int, errors int, error_summary jsonb)`
+  - [ ] 30-day retention on `worker_runs` via `DELETE FROM worker_runs WHERE ended_at < now() - interval '30 days'` at end of each run
+  - [ ] New `stats` MCP tool returns one JSON object with sections: `queues` (entity_extraction_queue depth), `workers` (last-24h run counts + error counts per worker), `recall` (recall events last 24h), `content` (counts from existing `thought_stats`)
+  - [ ] `stats` subject to existing `requireApiKey` middleware (no new auth surface)
+  - [ ] Failure of either worker visible in `stats` output within one poll cycle of the next run
+  - [ ] Integration test: induce worker failure → `stats` reports `errors > 0`; recover → next run reports success
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-028.md` (to be created)
+- Query packet: `.github/planning/query-packets/QP-028-worker-observability.md`
+- Docs: `docs/design/adr/ADR-007-consolidation-pipeline.md`
+- Notes: Operational closure for the cloud MCP. Without this, worker failures are invisible until users notice missing entity extractions or stale wikis. The `stats` tool also gives the local synthesis service (ST-019) and storyboard view (ST-026) a "is the cloud healthy?" check they can run before synthesis.
+
 <!-- Phase 3 — Local Companion Services -->
 
 ### ST-019: Local Obsidian synthesis service (C# MCP client)
@@ -127,6 +147,27 @@
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-019.md` (to be created)
 - Docs: `docs/investigations/openbrain-pivot-evaluation.md`, `docs/investigations/memory-architecture-design.md`
 - Notes: Rewritten post-ST-021. Originally framed as the "C# core advantage" over OB1 cloud-hosted; now repositioned as a **local companion that consumes the cloud MCP**. Preserves the local-first synthesis + direct filesystem-write benefits (Obsidian vault on disk, $0 LLM cost via Ollama) without competing with the cloud MCP as source of truth. Iterable against either the deployed cloud MCP or a local `docker compose up` stack.
+
+### ST-026: Obsidian storyboard view (C# MCP client storyboard projection)
+- Type: feature
+- Source: PO assessment of storyboard sufficiency (2026-05-18)
+- phase: 3
+- Value: 3
+- Blocked by: ST-019 (reuses C# MCP client scaffolding, Markdown writer, polling loop)
+- Touches: `local-synthesis/` solution (new view type alongside the wiki view)
+- Acceptance criteria:
+  - [ ] Reads `.github/planning/story-board.md` and `.github/planning/execplans/*.md` from a configured local repo path; parses into structured story records
+  - [ ] Renders one Markdown note per story at `storyboard/{profile}/{story-id}.md` with YAML frontmatter (`type: story`, `status`, `value`, `blocked_by`, `touches`, `phase`)
+  - [ ] Renders a kanban-style index note `storyboard/{profile}/index.md` with columns Backlog / Refined / In Progress / Review / Done
+  - [ ] Per-story notes use `[[wiki-link]]` backlinks to `blocked_by` story notes; touches/docs paths render as Obsidian-relative or external links per convention
+  - [ ] Profile partitioning: `professional` and `personal` directories; default profile from config
+  - [ ] Incremental update: per-story checksum (SHA-256 over the story block) tracked in local state; only re-renders changed notes
+  - [ ] Read-only — editing happens via `/plan` and `/continue`, not in Obsidian
+  - [ ] Unit tests: mocked storyboard input → renders expected Markdown structure
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-026.md` (to be created)
+- Query packet: `.github/planning/query-packets/QP-026-obsidian-storyboard-view.md`
+- Docs: `docs/design/adr/ADR-006-views-architecture.md`
+- Notes: Second of the "two views" promised in ADR-006. Reuses ST-019's C# scaffolding (MCP client, Markdown writer, polling loop) — thin extension, not a separate solution. Source of truth is the planning artifacts on disk today; if/when ADR-006's cloud-side `story_*` MCP tools are implemented, migrate to those.
 
 <!-- Deferred — not blocking the production path -->
 
