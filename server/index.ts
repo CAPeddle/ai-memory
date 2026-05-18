@@ -312,6 +312,16 @@ server.registerTool(
   }
 );
 
+// sql.unsafe() with multi-statement SQL (LOAD + SET + SELECT) returns a nested
+// array where each element is the rows from one statement. The actual query
+// result rows are the last element.
+function extractAgeRows(result: Record<string, unknown>[]): Record<string, unknown>[] {
+  if (result.length > 0 && Array.isArray(result[0])) {
+    return (result as unknown as Record<string, unknown>[][])[result.length - 1];
+  }
+  return result;
+}
+
 // --- Tool 5: graph_traverse (AGE / openCypher) ------------------------------
 
 const ALLOWED_MATCH_RE = /^match\s/i;
@@ -336,11 +346,12 @@ server.registerTool(
       // Strip $$ to prevent dollar-quote injection in the sql.unsafe block
       const safeCypher = trimmed.replace(DOLLAR_QUOTE_RE, "");
 
-      const rows = await sql.unsafe(`
+      const rawRows = await sql.unsafe(`
         LOAD 'age';
         SET search_path = ag_catalog, "$user", public;
         SELECT * FROM cypher('memory_graph', $$ ${safeCypher} $$) AS t(result agtype);
       `);
+      const rows = extractAgeRows(rawRows);
       const results = rows.map((r) => String(r.result));
       return { content: [{ type: "text" as const, text: results.length ? results.join("\n") : "No results." }] };
     } catch (err) {
@@ -391,11 +402,12 @@ server.registerTool(
 
       const cypher = `MATCH (start {name: '${escapedName}'})${relPattern}(connected) RETURN DISTINCT connected`;
 
-      const rows = await sql.unsafe(`
+      const rawRows = await sql.unsafe(`
         LOAD 'age';
         SET search_path = ag_catalog, "$user", public;
         SELECT * FROM cypher('memory_graph', $$ ${cypher} $$) AS t(result agtype);
       `);
+      const rows = extractAgeRows(rawRows);
 
       const results = rows.map((r) => String(r.result));
       if (!results.length) {
