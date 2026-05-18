@@ -128,25 +128,6 @@
 - Docs: `docs/investigations/openbrain-pivot-evaluation.md`, `docs/investigations/memory-architecture-design.md`
 - Notes: Rewritten post-ST-021. Originally framed as the "C# core advantage" over OB1 cloud-hosted; now repositioned as a **local companion that consumes the cloud MCP**. Preserves the local-first synthesis + direct filesystem-write benefits (Obsidian vault on disk, $0 LLM cost via Ollama) without competing with the cloud MCP as source of truth. Iterable against either the deployed cloud MCP or a local `docker compose up` stack.
 
-<!-- Phase 4 — Documentation & Governance -->
-
-### ST-013: Split investigation docs into landing pages and focused fragments
-- Type: infrastructure
-- Source: PO
-- phase: 4
-- Value: 4
-- Blocked by: none
-- Touches: `.github/copilot-instructions.md`, `.github/prompts/`, `.github/planning/`, `docs/investigations/`
-- Acceptance criteria:
-  - [ ] Each current top-level investigation file remains in place as a compact landing page that links to focused fragment docs
-  - [ ] All eight investigation docs have per-topic fragment sets under `docs/investigations/` that preserve the current approved design decisions
-  - [ ] Governance consumers reference either the retained landing pages or precise fragment docs instead of broad monolith assumptions
-  - [ ] A completeness review proves every original major section has a destination and no design-authority content was dropped during the split
-  - [ ] Fragments that describe the retired C#/SQLite path are clearly marked as historical (superseded by ST-021)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-013.md`
-- Docs: `docs/investigations/memory-architecture-design.md`, `docs/investigations/language-stack-recommendation.md`, `docs/investigations/sqlite-vs-postgresql.md`, `docs/investigations/interface-design-mcp-rest.md`, `docs/investigations/workflow-and-prompt-design.md`, `docs/investigations/context-engineering-principles.md`, `docs/investigations/openclaw-official-docs-review.md`, `docs/investigations/openclaw-memory-architecture-analysis.md`
-- Notes: Split the current investigation monoliths into per-topic folders while keeping the top-level files as compact landing pages. Post-pivot, the split should also clearly demarcate which historical content (C#/SQLite) is superseded vs which (memsearch, openbrain, context-engineering principles) remains active design authority. Seed query packet: `.github/planning/query-packets/QP-013-split-investigation-docs.md`.
-
 <!-- Deferred — not blocking the production path -->
 
 ### ST-006: Implement REST API endpoints (deferred)
