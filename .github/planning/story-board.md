@@ -10,25 +10,6 @@
 
 <!-- Phase 1 — Cloud MCP Intelligence (extends OB1 fork shipped by ST-021) -->
 
-### ST-022: Implement entity extraction worker (OpenRouter → AGE graph)
-- Type: feature
-- Source: ST-021 spike outcome (2026-05-16)
-- phase: 1
-- Value: 5
-- Blocked by: ST-021 (done — `entity_extraction_queue` schema + trigger and design exist)
-- Touches: `server/src/entityWorker.ts` (new), `server/db/graph.sql`
-- Acceptance criteria:
-  - [ ] Background worker loop polls `entity_extraction_queue` via `FOR UPDATE SKIP LOCKED`
-  - [ ] OpenRouter LLM call with strict JSON `response_format` extracts entities + edges using an allow-list of labels/relationships (Function, Error, Person, Topic, etc.) to prevent openCypher injection
-  - [ ] Writes nodes/edges to `memory_graph` via `MERGE` cypher (idempotent reprocessing)
-  - [ ] Worker runs in the MCP container (or sidecar service in docker-compose)
-  - [ ] Status transitions pending → processing → done|failed with exponential backoff on transient failures
-  - [ ] Per-thought token cap; cost estimated ≤ $0.01/month at 10 thoughts/day on gpt-4o-mini
-  - [ ] Integration test: insert thought → trigger queues → worker processes → AGE graph contains expected nodes
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-022.md` (to be created)
-- Docs: `docs/investigations/ST-021-findings.md` §R8
-- Notes: Design fully specified in ST-021 §R8. Allow-list is the critical SQL/Cypher injection mitigation — entity/relationship labels are interpolated into the cypher string, not parameterised.
-
 ### ST-005: Search quality enhancements (MMR, project boosting, recall logging)
 - Type: feature
 - Source: PO (rewritten post-ST-021 pivot)
@@ -208,8 +189,14 @@
 
 ## Refined
 
-
-(Empty)
+### ST-022: Implement entity extraction worker (OpenRouter → AGE graph)
+- Type: feature
+- Source: ST-021 spike outcome (2026-05-16)
+- phase: 1
+- Value: 5
+- Blocked by: ST-021 (done)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-022.md` ✅ Ready
+- Query packet: `.github/planning/query-packets/QP-022-entity-extraction-worker.md`
 
 ---
 
