@@ -114,9 +114,9 @@
 - Blocked by: ST-022, ST-008 (workers must exist to be observed); ST-005 (recall_events table powers recall counts)
 - Touches: `server/index.ts` (new `stats` tool), `server/src/entityWorker.ts`, `server/src/consolidationWorker.ts`, `server/db/schema.sql` (new `worker_runs` table)
 - Acceptance criteria:
-  - [ ] Both workers emit structured JSON logs to stdout: `{ts, level, worker, run_id, duration_ms, items_processed, errors}`
+  - [ ] Both workers emit structured JSON logs to stdout, one line per event: `{ts, level, worker, run_id, event, duration_ms, items_processed, errors}` where `event` is one of `run_started|item_processed|run_completed|run_failed`
   - [ ] New `worker_runs` table persists per-run state: `(run_id uuid PK, worker text, started_at, ended_at, items_processed int, errors int, error_summary jsonb)`
-  - [ ] 30-day retention on `worker_runs` via `DELETE WHERE ended_at < now() - interval '30 days'` at end of each run
+  - [ ] 30-day retention on `worker_runs` via `DELETE FROM worker_runs WHERE ended_at < now() - interval '30 days'` at end of each run
   - [ ] New `stats` MCP tool returns one JSON object with sections: `queues` (entity_extraction_queue depth), `workers` (last-24h run counts + error counts per worker), `recall` (recall events last 24h), `content` (counts from existing `thought_stats`)
   - [ ] `stats` subject to existing `requireApiKey` middleware (no new auth surface)
   - [ ] Failure of either worker visible in `stats` output within one poll cycle of the next run

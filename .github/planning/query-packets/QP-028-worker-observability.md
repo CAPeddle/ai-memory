@@ -30,8 +30,8 @@ This story adds three things:
 
 ## Research Findings
 
-1. PostgreSQL's `jsonb` type and `gen_random_uuid()` (from `pgcrypto`) are already available in the existing schema, so the new `worker_runs` table needs no extension additions.
-2. The existing `entity_extraction_queue` schema (`server/db/graph.sql`) already supports `FOR UPDATE SKIP LOCKED` queue semantics; queue depth is a simple `COUNT(*) WHERE status = 'pending'`.
+1. PostgreSQL's `jsonb` type and `gen_random_uuid()` are available natively in PostgreSQL 13+ (no extension required — `gen_random_uuid()` was moved from `pgcrypto` into core in PG13); since the stack targets PG15, the `worker_runs` table needs no additional extension.
+2. The existing `entity_extraction_queue` schema (`server/db/graph.sql`) already supports `FOR UPDATE SKIP LOCKED` queue semantics; queue depth is queried as `SELECT COUNT(*) FROM entity_extraction_queue WHERE status = 'pending'`.
 3. Stdout-based structured logging is the de facto contract for container orchestrators (Docker, Fly.io, Railway, DigitalOcean Apps) — no additional log shipper is required in v1.
 4. MCP tools return JSON; a `stats` tool that returns a single nested object is consistent with how `thought_stats` is shaped today.
 
@@ -102,7 +102,7 @@ Out of scope:
 ## Risks And Watch Points
 
 1. **Unbounded growth of `worker_runs`.** Mitigation: 30-day end-of-run DELETE; verified by integration test that runs across simulated time.
-2. **Expensive `stats` queries under load.** Large `recall_events` row counts could spike MCP latency. Mitigation: index on `recall_events.created_at`; use efficient aggregate (`COUNT(*) WHERE created_at > now() - interval '24 hours'`).
+2. **Expensive `stats` queries under load.** Large `recall_events` row counts could spike MCP latency. Mitigation: index on the recall timestamp column (exact column name to be locked in during ST-005's `/plan` session — likely `recalled_at` or `created_at`); use efficient aggregate (`SELECT COUNT(*) FROM recall_events WHERE recalled_at > now() - interval '24 hours'`).
 3. **Log schema drift.** Once an external aggregator depends on the JSON log fields, breaking changes become disruptive. Mitigation: treat the log schema as v1; document the contract explicitly in `docs/runbooks/observability.md`.
 4. **Race between concurrent worker runs.** Each run has its own UUID; no shared row, no locking required. Confirmed safe.
 5. **Confusion between content stats (`thought_stats`) and operational stats (`stats`).** Mitigation: `stats` includes the content section verbatim so callers have one endpoint; `thought_stats` remains for backward compatibility but the README points to `stats` as primary.
