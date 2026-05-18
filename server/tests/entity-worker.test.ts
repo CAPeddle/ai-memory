@@ -28,6 +28,15 @@ async function mcpCall(tool: string, args: Record<string, unknown>): Promise<unk
     }),
   });
   if (!res.ok) throw new Error(`MCP call failed: ${res.status} ${await res.text()}`);
+
+  const contentType = res.headers.get("content-type") ?? "";
+  if (contentType.includes("text/event-stream")) {
+    // Parse SSE: find first data: line and return its JSON
+    const text = await res.text();
+    const dataLine = text.split("\n").find((l) => l.startsWith("data:"));
+    if (!dataLine) throw new Error(`No data line in SSE response: ${text.slice(0, 200)}`);
+    return JSON.parse(dataLine.slice(5).trim());
+  }
   return await res.json();
 }
 
