@@ -348,6 +348,65 @@ server.registerTool(
   }
 );
 
+// --- Tool 6: graph_search (parameterized graph traversal) -------------------
+
+const GRAPH_SEARCH_ALLOWED_RELS = new Set(["CAUSED_BY", "LIKES", "WORKS_ON", "USES", "RELATED_TO"]);
+
+server.registerTool(
+  "graph_search",
+  {
+    title: "Graph Search",
+    description: "Search the knowledge graph by starting from a named entity and traversing relationships up to a specified depth. Safer alternative to graph_traverse — does not require writing openCypher.",
+    annotations: { readOnlyHint: true },
+    inputSchema: {
+      start_node: z.string().describe("Name of the entity to start from (e.g. 'Alice', 'TypeScript')"),
+      relationship_filter: z.string().optional().describe("Limit traversal to this relationship type (e.g. 'CAUSED_BY'). If omitted, all relationship types are traversed."),
+      max_hops: z.number().int().min(1).max(3).optional().default(2).describe("Maximum traversal depth (1-3, default 2)"),
+    },
+  },
+  async ({ start_node, relationship_filter, max_hops }) => {
+    try {
+      // Validate relationship filter against allow-list
+      if (relationship_filter && !GRAPH_SEARCH_ALLOWED_RELS.has(relationship_filter)) {
+        return {
+          content: [{
+            type: "text" as const,
+            text: `Invalid relationship_filter. Allowed: ${[...GRAPH_SEARCH_ALLOWED_RELS].join(", ")}`,
+          }],
+          isError: true,
+        };
+      }
+
+      const escapedName = start_node.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/\$\$/g, "");
+      const hops = max_hops ?? 2;
+
+      // Build the MATCH pattern
+      let relPattern: string;
+      if (relationship_filter) {
+        relPattern = `-[:${relationship_filter}*1..${hops}]-`;
+      } else {
+        relPattern = `-[*1..${hops}]-`;
+      }
+
+      const cypher = `MATCH (start {name: '${escapedName}'})${relPattern}(connected) RETURN DISTINCT connected`;
+
+      const rows = await sql.unsafe(`
+        LOAD 'age';
+        SET search_path = ag_catalog, "$user", public;
+        SELECT * FROM cypher('memory_graph', $$ ${cypher} $$) AS t(result agtype);
+      `);
+
+      const results = rows.map((r) => String(r.result));
+      if (!results.length) {
+        return { content: [{ type: "text" as const, text: `No nodes found connected to "${start_node}" within ${hops} hops.` }] };
+      }
+      return { content: [{ type: "text" as const, text: results.join("\n") }] };
+    } catch (err) {
+      return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }], isError: true };
+    }
+  }
+);
+
 // ---------------------------------------------------------------------------
 // Hono app — Bearer auth + CORS + StreamableHTTP transport
 // ---------------------------------------------------------------------------
