@@ -1,0 +1,42 @@
+[
+  {
+    "query": "zoom meeting rotation",
+    "expected_id": "00000000-0000-4000-8000-000000000001"
+  },
+  {
+    "query": "bcf manager review",
+    "expected_id": "00000000-0000-4000-8000-000000000007"
+  },
+  {
+    "query": "typescript narrow union",
+    "expected_id": "00000000-0000-4000-8000-000000000009"
+  },
+  {
+    "query": "typescript switch exhaustive",
+    "expected_id": "00000000-0000-4000-8000-00000000000a"
+  },
+  {
+    "query": "postgres autovacuum",
+    "expected_id": "00000000-0000-4000-8000-00000000000b"
+  },
+  {
+    "query": "postgres hung queries",
+    "expected_id": "00000000-0000-4000-8000-00000000000c"
+  },
+  {
+    "query": "nullpointerexception init",
+    "expected_id": "00000000-0000-4000-8000-00000000000d"
+  },
+  {
+    "query": "java null pointer constructor",
+    "expected_id": "00000000-0000-4000-8000-00000000000e"
+  },
+  {
+    "query": "zoom recording auto archive",
+    "expected_id": "00000000-0000-4000-8000-000000000004"
+  },
+  {
+    "query": "bcf retention rule",
+    "expected_id": "00000000-0000-4000-8000-000000000011"
+  }
+]
