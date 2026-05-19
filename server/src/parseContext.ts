@@ -4,6 +4,7 @@ export interface ContextScope {
   entities?: string[];
   visibility?: "prefer" | "exclusive" | "cross-only";
   sourceStoryId?: string;
+  strict?: boolean;
 }
 
 /**
@@ -33,6 +34,7 @@ export function parseContext(raw: string | undefined): ContextScope | null {
     else if (k === "profile")    scope.profile    = v as ContextScope["profile"];
     else if (k === "visibility") scope.visibility = v as ContextScope["visibility"];
     else if (k === "story")      scope.sourceStoryId = v;
+    else if (k === "strict")     scope.strict      = v === "true";
   }
 
   return scope as ContextScope;
