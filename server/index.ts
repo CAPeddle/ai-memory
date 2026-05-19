@@ -41,6 +41,69 @@ async function getEmbedding(text: string): Promise<number[]> {
 }
 
 // ---------------------------------------------------------------------------
+// Search-quality helpers (ST-005): cosine similarity, MMR, recall logging.
+// ---------------------------------------------------------------------------
+
+function cosineSim(a: number[], b: number[]): number {
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na  += a[i] * a[i];
+    nb  += b[i] * b[i];
+  }
+  const denom = Math.sqrt(na) * Math.sqrt(nb);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+interface MmrCandidate { id: string; score: number; embedding: number[] | null; }
+
+function mmrRerank(candidates: MmrCandidate[], k: number, lambda = 0.7): { id: string; score: number }[] {
+  const withEmb = candidates.filter((c) => c.embedding !== null);
+  const noEmb   = candidates.filter((c) => c.embedding === null);
+
+  const selected: MmrCandidate[] = [];
+  const remaining = [...withEmb];
+
+  while (selected.length < k && remaining.length > 0) {
+    let bestIdx = 0, bestScore = -Infinity;
+    for (let i = 0; i < remaining.length; i++) {
+      const c = remaining[i];
+      let maxSim = 0;
+      for (const s of selected) {
+        const sim = cosineSim(c.embedding!, s.embedding!);
+        if (sim > maxSim) maxSim = sim;
+      }
+      const mmr = lambda * c.score - (1 - lambda) * maxSim;
+      if (mmr > bestScore) { bestScore = mmr; bestIdx = i; }
+    }
+    selected.push(remaining.splice(bestIdx, 1)[0]);
+  }
+
+  return [
+    ...selected.map((c) => ({ id: c.id, score: c.score })),
+    ...noEmb.sort((a, b) => b.score - a.score).map((c) => ({ id: c.id, score: c.score })),
+  ].slice(0, k);
+}
+
+function logRecall(query: string, project: string | null, results: { id: string; score: number }[]): void {
+  if (!results.length) return;
+  const rows = results.map((r, i) => ({
+    thought_id: r.id, query, rrf_score: r.score, rank: i + 1, project,
+  }));
+  (async () => {
+    await sql`INSERT INTO recall_events ${sql(rows, "thought_id", "query", "rrf_score", "rank", "project")}`;
+    const ids = results.map((r) => r.id);
+    await sql`UPDATE thoughts SET recall_count = recall_count + 1, last_recalled_at = now() WHERE id = ANY(${ids}::uuid[])`;
+  })().catch((err) => console.error("[search_thoughts] recall log failed:", err));
+}
+
+// Postgres `vector(512)` rendered as `[0.1,0.2,…]` text — parse to number[].
+function parseVector(s: string | null): number[] | null {
+  if (s === null) return null;
+  return s.slice(1, -1).split(",").map(Number);
+}
+
+// ---------------------------------------------------------------------------
 // MCP Server
 // ---------------------------------------------------------------------------
 
@@ -137,47 +200,92 @@ server.registerTool(
     try {
       const scope = parseContext(context);
       const project = scope?.projects?.[0] ?? null;
+      const strict = scope?.strict === true;
       const n = limit ?? 10;
 
       const qEmb = await getEmbedding(query).catch(() => null);
 
-      // BM25 lane
-      const bm25 = await sql`
-        SELECT id, row_number() OVER (ORDER BY ts_rank_cd(search_vector, q) DESC) AS bm25_rank
-        FROM thoughts, plainto_tsquery('english', ${query}) AS q
-        WHERE search_vector @@ q AND active = true
-          AND (${project}::text IS NULL OR project = ${project})
-        LIMIT 60
-      `;
-
-      // Vector lane (skipped if no embedding)
-      const vector = qEmb
+      // BM25 lane — drop the hard project filter unless strict
+      const bm25 = strict
         ? await sql`
-            SELECT id, row_number() OVER (ORDER BY embedding <=> ${sql.unsafe(`'[${qEmb.join(",")}]'`)}::vector) AS vector_rank
-            FROM thoughts
-            WHERE active = true AND embedding IS NOT NULL
+            SELECT id, row_number() OVER (ORDER BY ts_rank_cd(search_vector, q) DESC) AS bm25_rank
+            FROM thoughts, plainto_tsquery('english', ${query}) AS q
+            WHERE search_vector @@ q AND active = true
               AND (${project}::text IS NULL OR project = ${project})
             LIMIT 60
           `
+        : await sql`
+            SELECT id, row_number() OVER (ORDER BY ts_rank_cd(search_vector, q) DESC) AS bm25_rank
+            FROM thoughts, plainto_tsquery('english', ${query}) AS q
+            WHERE search_vector @@ q AND active = true
+            LIMIT 60
+          `;
+
+      // Vector lane (skipped if no embedding) — drop hard project filter unless strict
+      const vector = qEmb
+        ? (strict
+            ? await sql`
+                SELECT id, row_number() OVER (ORDER BY embedding <=> ${sql.unsafe(`'[${qEmb.join(",")}]'`)}::vector) AS vector_rank
+                FROM thoughts
+                WHERE active = true AND embedding IS NOT NULL
+                  AND (${project}::text IS NULL OR project = ${project})
+                LIMIT 60
+              `
+            : await sql`
+                SELECT id, row_number() OVER (ORDER BY embedding <=> ${sql.unsafe(`'[${qEmb.join(",")}]'`)}::vector) AS vector_rank
+                FROM thoughts
+                WHERE active = true AND embedding IS NOT NULL
+                LIMIT 60
+              `)
         : [];
 
-      // RRF fusion in application layer
+      // RRF fusion in application layer (unchanged)
       const scores = new Map<string, number>();
-      for (const r of bm25) scores.set(r.id as string, (scores.get(r.id as string) ?? 0) + 1 / (60 + Number(r.bm25_rank)));
+      for (const r of bm25)   scores.set(r.id as string, (scores.get(r.id as string) ?? 0) + 1 / (60 + Number(r.bm25_rank)));
       for (const r of vector) scores.set(r.id as string, (scores.get(r.id as string) ?? 0) + 1 / (60 + Number(r.vector_rank)));
 
-      const ranked = [...scores.entries()].sort((a, b) => b[1] - a[1]).slice(0, n);
-      if (!ranked.length) return { content: [{ type: "text" as const, text: `No thoughts found matching "${query}".` }] };
+      if (!scores.size) return { content: [{ type: "text" as const, text: `No thoughts found matching "${query}".` }] };
 
-      const ids = ranked.map(([id]) => id);
-      const rows = await sql`SELECT id, content, memory_type, project, created_at FROM thoughts WHERE id = ANY(${ids}::uuid[])`;
-      const rowMap = new Map(rows.map((r) => [r.id as string, r]));
+      // Pull top-N (3× requested, capped at 60) for boost + MMR
+      const N = Math.min(60, Math.max(n * 3, n));
+      const topIds = [...scores.entries()].sort((a, b) => b[1] - a[1]).slice(0, N).map(([id]) => id);
 
-      const lines = ranked.map(([id, score], i) => {
-        const t = rowMap.get(id);
+      const rowsAll = await sql`
+        SELECT id, content, memory_type, project, created_at, embedding::text AS embedding
+        FROM thoughts WHERE id = ANY(${topIds}::uuid[])
+      `;
+      const rowMap = new Map<string, { id: string; content: unknown; memory_type: unknown; project: string | null; created_at: unknown; embedding: number[] | null }>();
+      for (const r of rowsAll) {
+        rowMap.set(r.id as string, {
+          id: r.id as string,
+          content: r.content,
+          memory_type: r.memory_type,
+          project: (r.project as string | null) ?? null,
+          created_at: r.created_at,
+          embedding: parseVector(r.embedding as string | null),
+        });
+      }
+
+      // Apply project boost (only when !strict — strict already filtered to in-project only)
+      const boosted: MmrCandidate[] = topIds.map((id) => {
+        const r = rowMap.get(id)!;
+        let score = scores.get(id)!;
+        if (!strict && project && r.project === project) score *= 1.2;
+        return { id, score, embedding: r.embedding };
+      }).sort((a, b) => b.score - a.score);
+
+      // MMR re-rank top-N to final n
+      const reranked = mmrRerank(boosted, n, 0.7);
+
+      // Build response from rowMap
+      const lines = reranked.map((res, i) => {
+        const t = rowMap.get(res.id);
         if (!t) return "";
-        return `--- Result ${i + 1} (rrf: ${score.toFixed(4)}) [${t.memory_type}${t.project ? " / " + t.project : ""}] ---\nID: ${t.id}\n${t.content}`;
+        return `--- Result ${i + 1} (rrf: ${res.score.toFixed(4)}) [${t.memory_type}${t.project ? " / " + t.project : ""}] ---\nID: ${t.id}\n${t.content}`;
       }).filter(Boolean);
+
+      // Fire-and-forget recall log (never awaited)
+      logRecall(query, project, reranked);
 
       return { content: [{ type: "text" as const, text: lines.join("\n\n") }] };
     } catch (err) {
