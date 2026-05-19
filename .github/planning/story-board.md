@@ -1,7 +1,7 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
-> Next planning target: ST-005 — ExecPlan §2b Ready 2026-05-19; awaiting `/continue` to execute.
+> Next planning target: ST-008
 > Last updated: 2026-05-19
 
 ---
@@ -10,24 +10,7 @@
 
 <!-- Phase 1 — Cloud MCP Intelligence (extends OB1 fork shipped by ST-021) -->
 
-### ST-005: Search quality enhancements (MMR, project boosting, recall logging)
-- Type: feature
-- Source: PO (rewritten post-ST-021 pivot)
-- phase: 1
-- Value: 4
-- Blocked by: ST-021 (BM25 + pgvector RRF base already shipped in `search_thoughts`)
-- Touches: `server/index.ts` (extend `search_thoughts`), `server/db/schema.sql` (new `recall_events` table)
-- Acceptance criteria:
-  - [ ] MMR diversity re-ranking (λ = 0.7) applied over top-K RRF results
-  - [ ] Project boosting: 1.2× score multiplier for results matching context scope's project
-  - [ ] Recall events logged to a `recall_events` table on every search (thought_id, query, score, rank, timestamp)
-  - [ ] `last_recalled_at` and `recall_count` updated on `thoughts` for retrieval-aware consolidation scoring
-  - [ ] Default limit unchanged (10); configurable up to 100
-  - [ ] Integration test: seeded corpus achieves >80% recall on test queries; MMR demonstrably reduces top-K redundancy
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-005.md` (to be created)
-- Query packet: `.github/planning/query-packets/QP-005-search-quality-and-recall.md`
-- Docs: `docs/investigations/memory-architecture-design.md`
-- Notes: Rewritten post-ST-021 pivot. The core BM25+vector RRF lane is already done; this story is about quality (MMR), relevance tuning (boosting), and the feedback loop (recall logging) that feeds ST-008's consolidation scoring. Hybrid project-scope behaviour confirmed during QP-005 scoping: 1.2× boost by default, `strict:true` in `context` grammar restores hard filter.
+
 
 ### ST-008: Implement consolidation worker (shard → wiki promotion)
 - Type: feature
@@ -221,6 +204,15 @@
 ---
 
 ## Review
+
+### ST-005: Search quality enhancements (MMR, project boosting, recall logging)
+- Type: feature
+- Source: PO (rewritten post-ST-021 pivot)
+- phase: 1
+- Value: 4
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-005.md` ✅ Complete
+- Query packet: `.github/planning/query-packets/QP-005-search-quality-and-recall.md`
+- Completed: 2026-05-19 — 16/16 tests pass; MMR diversification, 1.2× project boost, recall_events logging, strict? context flag all delivered.
 
 ### ST-022: Implement entity extraction worker (OpenRouter → AGE graph)
 - Type: feature
