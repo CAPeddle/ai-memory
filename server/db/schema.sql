@@ -121,3 +121,22 @@ CREATE TRIGGER trg_queue_consolidation
   FOR EACH ROW
   WHEN (NEW.memory_type = 'shard')
   EXECUTE FUNCTION public.queue_for_consolidation();
+
+-- ============================================================
+-- 6. RECALL EVENTS (added by ST-005)
+--    Every search_thoughts call logs one row per returned result.
+--    Feeds ST-008's consolidation scoring (recall frequency/recency).
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.recall_events (
+  id          bigserial   PRIMARY KEY,
+  thought_id  uuid        NOT NULL REFERENCES public.thoughts(id) ON DELETE CASCADE,
+  query       text        NOT NULL,
+  rrf_score   float       NOT NULL,
+  rank        int         NOT NULL,
+  project     text,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_recall_events_thought_created
+  ON public.recall_events(thought_id, created_at DESC);
