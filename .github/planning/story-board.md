@@ -1,7 +1,7 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
-> Next planning target: ST-005 — recall events / ST-008 — .NET REST host (unblocked by ST-022 completion).
+> Next planning target: ST-005 — ExecPlan §2b Ready 2026-05-19; awaiting `/continue` to execute.
 > Last updated: 2026-05-19
 
 ---
@@ -25,8 +25,9 @@
   - [ ] Default limit unchanged (10); configurable up to 100
   - [ ] Integration test: seeded corpus achieves >80% recall on test queries; MMR demonstrably reduces top-K redundancy
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-005.md` (to be created)
+- Query packet: `.github/planning/query-packets/QP-005-search-quality-and-recall.md`
 - Docs: `docs/investigations/memory-architecture-design.md`
-- Notes: Rewritten post-ST-021 pivot. The core BM25+vector RRF lane is already done; this story is about quality (MMR), relevance tuning (boosting), and the feedback loop (recall logging) that feeds ST-008's consolidation scoring.
+- Notes: Rewritten post-ST-021 pivot. The core BM25+vector RRF lane is already done; this story is about quality (MMR), relevance tuning (boosting), and the feedback loop (recall logging) that feeds ST-008's consolidation scoring. Hybrid project-scope behaviour confirmed during QP-005 scoping: 1.2× boost by default, `strict:true` in `context` grammar restores hard filter.
 
 ### ST-008: Implement consolidation worker (shard → wiki promotion)
 - Type: feature
@@ -149,6 +150,26 @@
 - Query packet: `.github/planning/query-packets/QP-026-obsidian-storyboard-view.md`
 - Docs: `docs/design/adr/ADR-006-views-architecture.md`
 - Notes: Second of the "two views" promised in ADR-006. Reuses ST-019's C# scaffolding (MCP client, Markdown writer, polling loop) — thin extension, not a separate solution. Source of truth is the planning artifacts on disk today; if/when ADR-006's cloud-side `story_*` MCP tools are implemented, migrate to those.
+
+<!-- Phase 1 follow-ups deferred from earlier scoping -->
+
+### ST-029: Feedback API (`report_feedback` tool + `feedback_events`)
+- Type: feature
+- Source: PO scope-lock during QP-005 planning (2026-05-18)
+- phase: 1
+- Value: 3
+- Blocked by: ST-005 (recall_events flow established first)
+- Touches: `server/index.ts` (new MCP tool), `server/db/schema.sql` (new table)
+- Acceptance criteria:
+  - [ ] New MCP tool `report_feedback({ thought_id, query, verdict: 'helpful' | 'irrelevant' })`
+  - [ ] New `feedback_events` table with `(id, thought_id, query, verdict, created_at)`; FK to `thoughts`
+  - [ ] Feedback rows joinable to the originating `recall_events` row (shared `(thought_id, query)` natural key, or an explicit `recall_event_id` FK — decide during planning)
+  - [ ] `requireApiKey` middleware applies; no new auth surface
+  - [ ] Integration test: capture → search → report_feedback → row visible in `feedback_events`
+  - [ ] Out of scope for this story: surfacing feedback in `stats` (owned by ST-028) and rate-limiting (defer to a later story if abuse emerges)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-029.md` (to be created)
+- Docs: `docs/investigations/memory-architecture-design/05-recall-tracking-and-promotion-scoring.md` §5.2
+- Notes: Deferred from ST-005 to keep that story focused on the passive recall feedback loop. ST-029 wires up the active feedback channel. Useful when an agent harness is positioned to call this (e.g., after a code edit attributable to a recalled memory). ST-008's consolidation scoring can read `feedback_events` once available, but doesn't depend on it.
 
 <!-- Deferred — not blocking the production path -->
 
