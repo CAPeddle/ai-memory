@@ -8,6 +8,26 @@
 
 ## Backlog
 
+<!-- Cross-cutting hygiene (Phase 0) -->
+
+### ST-030: Add `.gitattributes` and normalize line endings repo-wide
+- Type: debt
+- Source: PO scope-lock during /plan closeout (2026-05-19)
+- phase: 0
+- Value: 2
+- Blocked by: none
+- Touches: `.gitattributes` (new at repo root); all tracked text files renormalized on commit
+- Acceptance criteria:
+  - [ ] `.gitattributes` created at repo root with policy: `* text=auto eol=lf` baseline + `*.bat`/`*.cmd`/`*.ps1` → `text eol=crlf`
+  - [ ] `git add --renormalize .` applied; renormalized files committed in a single commit titled `build: add .gitattributes and normalize line endings`
+  - [ ] `git status --porcelain` produces zero lines on a clean checkout
+  - [ ] `git ls-files --eol -- server/Dockerfile server/db/graph.sql server/db/schema.sql server/src/parseContext.ts` shows `i/lf w/lf` for each
+  - [ ] `git ls-files --eol -- '*.ps1'` shows `i/crlf w/crlf` for each of the 8 tracked `.ps1` files
+  - [ ] `cd server && deno test --allow-net --allow-env --allow-read` passes
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-030.md`
+- Query packet: `.github/planning/query-packets/QP-030-gitattributes-line-endings.md`
+- Notes: Diagnosed during ST-008 /plan kickoff (2026-05-19): 4 `server/` files had `i/lf w/crlf` drift; no `.gitattributes` exists; `core.autocrlf=false`. PO chose LF-for-source + CRLF-for-Windows-scripts policy. Pure whitespace work — no semantic source changes expected.
+
 <!-- Phase 1 — Cloud MCP Intelligence (extends OB1 fork shipped by ST-021) -->
 
 
@@ -205,26 +225,30 @@
 
 ## Review
 
+(Empty)
+
+## Done
+
 ### ST-005: Search quality enhancements (MMR, project boosting, recall logging)
 - Type: feature
 - Source: PO (rewritten post-ST-021 pivot)
 - phase: 1
 - Value: 4
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-005.md` ✅ Complete
+- Completed: 2026-05-19
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-005.md`
 - Query packet: `.github/planning/query-packets/QP-005-search-quality-and-recall.md`
-- Completed: 2026-05-19 — 16/16 tests pass; MMR diversification, 1.2× project boost, recall_events logging, strict? context flag all delivered.
+- Notes: Accepted by PO 2026-05-19. 16/16 tests pass; MMR diversification, 1.2× project boost, recall_events logging, strict? context flag all delivered.
 
 ### ST-022: Implement entity extraction worker (OpenRouter → AGE graph)
 - Type: feature
 - Source: ST-021 spike outcome (2026-05-16)
 - phase: 1
 - Value: 5
+- Completed: 2026-05-19
 - Blocked by: ST-021 (done)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-022.md` ✅ Complete
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-022.md`
 - Query packet: `.github/planning/query-packets/QP-022-entity-extraction-worker.md`
-- Completed: 2026-05-19 — 4/4 integration tests pass; graph_search, entity worker, AGE nested-array fix all delivered.
-
-## Done
+- Notes: Accepted by PO 2026-05-19. 4/4 integration tests pass; graph_search, entity worker, AGE nested-array fix all delivered.
 
 ### ST-013: Split investigation docs into landing pages and focused fragments
 - Type: infrastructure
