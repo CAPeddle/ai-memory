@@ -15,7 +15,7 @@
 - Source: PO scope-lock during /plan closeout (2026-05-19)
 - phase: 0
 - Value: 2
-- Blocked by: none
+- Blocked by: plan-review
 - Touches: `.gitattributes` (new at repo root); all tracked text files renormalized on commit
 - Acceptance criteria:
   - [ ] `.gitattributes` created at repo root with policy: `* text=auto eol=lf` baseline + `*.bat`/`*.cmd`/`*.ps1` → `text eol=crlf`
@@ -26,7 +26,7 @@
   - [ ] `cd server && deno test --allow-net --allow-env --allow-read` passes
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-030.md`
 - Query packet: `.github/planning/query-packets/QP-030-gitattributes-line-endings.md`
-- Notes: Diagnosed during ST-008 /plan kickoff (2026-05-19): 4 `server/` files had `i/lf w/crlf` drift; no `.gitattributes` exists; `core.autocrlf=false`. PO chose LF-for-source + CRLF-for-Windows-scripts policy. Pure whitespace work — no semantic source changes expected.
+- Notes: Diagnosed during ST-008 /plan kickoff (2026-05-19): 4 `server/` files had `i/lf w/crlf` drift; no `.gitattributes` exists; `core.autocrlf=false`. PO chose LF-for-source + CRLF-for-Windows-scripts policy. Pure whitespace work — no semantic source changes expected. 2026-05-20 execution halted at Task 4.3 after unresolved EOL verification mismatch; /plan review required.
 
 <!-- Phase 1 — Cloud MCP Intelligence (extends OB1 fork shipped by ST-021) -->
 

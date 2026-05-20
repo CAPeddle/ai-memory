@@ -101,7 +101,12 @@ Status: ✅ Ready for /continue (PO-approved 2026-05-19).
 
 ## §2c. Plan Review Notes
 
-(Empty — populated by /continue when escalating issues)
+- 2026-05-20T19:50:37Z — **Execution blocked at Task 4.3 (EOL verification mismatch).**
+   - Task 4.2 completed successfully (`build: add .gitattributes and normalize line endings`, commit `0611109`).
+   - Task 4.3 verification output remained `i/lf w/crlf` for all four required server paths despite `.gitattributes` showing `attr/text=auto eol=lf`.
+   - Applied the Task 4.3 prescribed recovery step once (`git checkout -- server/Dockerfile server/db/graph.sql server/db/schema.sql server/src/parseContext.ts`), then re-ran verification; output remained unchanged.
+   - `.ps1` verification expectation in board/plan is `i/crlf w/crlf`, but observed output is `i/lf w/crlf` under `attr/text eol=crlf`.
+   - This mismatch is not covered by further task guidance. Per /continue escalation rules, execution is stopped and story is marked `blocked_by: plan-review` pending PO direction.
 
 ---
 
@@ -365,22 +370,25 @@ If the executor session is interrupted, read §5b to determine where to resume. 
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.1 — Create `.gitattributes` at repo root |
-| **Last successful command** | `Test-Path .gitattributes; Select-String -Path .gitattributes -Pattern '\* text=auto eol=lf'; Select-String -Path .gitattributes -Pattern 'eol=crlf' | Measure-Object | Select-Object -ExpandProperty Count` |
-| **Expected outputs produced** | `.gitattributes` created at repo root; baseline LF rule matched once; CRLF override rule count = 3 |
-| **Next task** | Task 4.2 — Renormalize the working tree and commit |
-| **Known blockers** | None |
-| **Last updated** | 2026-05-20T19:47:48Z |
+| **Last completed task** | Task 4.2 — Renormalize the working tree and commit |
+| **Last successful command** | `git commit -m "build: add .gitattributes and normalize line endings" -m "Story: ST-030" -m "Task: §4.2"` |
+| **Expected outputs produced** | Renormalization commit created (`0611109`); staged text-file normalization applied repo-wide (540 files changed) |
+| **Next task** | Task 4.3 — Verify clean state and per-extension EOL (**blocked: plan-review required**) |
+| **Known blockers** | Task 4.3 EOL verification mismatch (`w/crlf` persists for required server paths after prescribed retry; `.ps1` index expectation mismatch) |
+| **Last updated** | 2026-05-20T19:50:37Z |
 
 ### Progress History
 
 | Timestamp (ISO) | Task | Status | Evidence / outputs | Next step |
 |---|---|---|---|---|
 | 2026-05-20T19:47:48Z | Task 4.1 | ✅ Completed | `Test-Path` returned `True`; baseline `* text=auto eol=lf` matched once; `eol=crlf` count returned `3` | Execute Task 4.2: stage `.gitattributes`, renormalize with `git add --renormalize .`, and commit |
+| 2026-05-20T19:48:55Z | Task 4.2 | ✅ Completed | Commit `0611109` created with subject `build: add .gitattributes and normalize line endings`; renormalization staged/committed across tracked text files | Run Task 4.3 verification commands |
+| 2026-05-20T19:50:37Z | Task 4.3 | ⛔ Blocked | `git ls-files --eol` reported `i/lf w/crlf` for required server files before and after prescribed `git checkout --` retry; `.ps1` entries remained `i/lf w/crlf` | Escalate to PO via `blocked_by: plan-review` and await updated execution guidance |
 
 ### Avoidance
 
-(Append dated entries here. Do not delete prior guidance.)
+- 2026-05-20 — Validate `git ls-files --eol` expectations on Windows with a sampled file before locking acceptance criteria; `text eol=crlf` currently reports `i/lf w/crlf` in this repo.
+- 2026-05-20 — `git add --renormalize .` can stage hundreds of files at once; capture command output to an artifact file to preserve review evidence when terminal output is truncated.
 
 ---
 
@@ -390,12 +398,12 @@ If the executor session is interrupted, read §5b to determine where to resume. 
 
 | # | Description | Rollback Point | Status |
 |---|---|---|---|
-| 1 | Single-commit renormalize: `.gitattributes` + renormalized files together | Pre-Task 4.1 (no commit yet); `git reset --hard HEAD~1` after Task 4.2 to revert | 🟢 Active |
-| 2 | Two-commit split: commit `.gitattributes` first, then renormalize separately | Pre-Task 4.2 | ⬜ Reserve (only if Approach 1 produces a commit too large to review) |
+| 1 | Single-commit renormalize: `.gitattributes` + renormalized files together | Pre-Task 4.1 (no commit yet); `git reset --hard HEAD~1` after Task 4.2 to revert | 🔴 Inactive (superseded during execution) |
+| 2 | Two-commit split: commit `.gitattributes` first, then renormalize separately | Pre-Task 4.2 | 🟡 Active (selected in execution) |
 
 ### Approach Failure Log
 
-(Empty — no failures yet)
+- 2026-05-20T19:50:37Z — Task 4.3 remained unsatisfied after the prescribed recovery retry (`git checkout -- <server paths>`). No additional recovery steps are defined; execution escalated to plan-review.
 
 **Rollback triggers:**
 - Task 4.4 test failure attributable to renormalize → propose rollback (`git reset --hard HEAD~1`) and re-plan with smaller scope
@@ -408,18 +416,28 @@ If the executor session is interrupted, read §5b to determine where to resume. 
 - 2026-05-20T19:46:58Z — Confirmed baseline drift state with `git status --short`; observed the expected 4 modified files (`server/Dockerfile`, `server/db/graph.sql`, `server/db/schema.sql`, `server/src/parseContext.ts`).
 - 2026-05-20T19:47:24Z — Created `.gitattributes` at repo root with the exact §3 policy block.
 - 2026-05-20T19:47:48Z — Completed Task 4.1 verification commands; all expected outputs matched.
+- 2026-05-20T19:48:15Z — Executed Task 4.2 staging sequence (`git add .gitattributes; git add --renormalize .`); staged output exceeded terminal cap and was captured in an artifact.
+- 2026-05-20T19:48:55Z — Created Task 4.2 commit `0611109` with subject `build: add .gitattributes and normalize line endings`.
+- 2026-05-20T19:49:34Z — Ran Task 4.3 verification commands: status clean, but required server files reported `i/lf w/crlf`; tracked `.ps1` files reported `i/lf w/crlf`.
+- 2026-05-20T19:49:56Z — Applied Task 4.3 failure-handling retry (`git checkout --` on the 4 server paths) and re-ran verification; output unchanged.
+- 2026-05-20T19:50:12Z — Verified `core.autocrlf=false`; mismatch persisted.
+- 2026-05-20T19:50:37Z — Stopped execution and escalated to plan-review per /continue rules.
 
 ---
 
 ## §6b. Surprises & Discoveries
 
-- None in Task 4.1.
+- Task 4.2 renormalization scope was repo-wide and produced a large staged change set (540 files changed in commit `0611109`), with terminal output truncation requiring artifact capture.
+- In this Windows repo state, `git ls-files --eol -- '*.ps1'` currently reports `i/lf w/crlf` under `attr/text eol=crlf`, which conflicts with the plan's expected `i/crlf w/crlf` assertion.
+- Required server files remained `w/crlf` under `attr/text=auto eol=lf` even after the prescribed `git checkout -- <path>` retry in Task 4.3.
 
 ---
 
 ## §6c. Decision Log
 
 - 2026-05-20T19:47:24Z — Used direct file patching for `.gitattributes` to preserve exact policy content and avoid command-escaping mistakes in multiline shell writes.
+- 2026-05-20T19:48:55Z — Followed per-task atomic commit workflow by committing Task 4.2 separately after Task 4.1 commit.
+- 2026-05-20T19:50:37Z — Stopped at Task 4.3 and escalated instead of attempting undocumented workarounds, per /continue escalation rules.
 
 ---
 
