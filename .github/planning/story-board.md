@@ -34,22 +34,25 @@
 
 ### ST-008: Implement consolidation worker (shard → wiki promotion)
 - Type: feature
-- Source: PO (rewritten post-ST-021 pivot)
+- Source: PO (rewritten post-ST-021 pivot; scope locked 2026-05-20 in QP-008)
 - phase: 1
 - Value: 3
-- Blocked by: ST-005 (recall events needed for scoring)
-- Touches: `server/src/consolidationWorker.ts` (new), `server/db/`
+- Blocked by: none (ST-005 Done; ST-030 recommended-but-not-required)
+- Touches: `server/src/consolidationWorker.ts` (new), `server/src/consolidationScoring.ts` (new), `server/src/consolidationLLM.ts` (new), `server/index.ts` (modify), `server/db/schema.sql` (modify), `server/tests/consolidation-worker.test.ts` (new), `server/tests/fixtures/consolidation-corpus.sql` (new)
 - Acceptance criteria:
-  - [ ] Scheduled background loop scores active shards on frequency (`recall_count`), recency (`last_recalled_at`), and `confidence`
-  - [ ] Promotion: when composite score ≥ threshold, INSERT a new `memory_type='wiki'` row with `supersedes` pointing at the shard
-  - [ ] Original shard set to `active = false`; `memory_type` unchanged (preserves provenance)
-  - [ ] Content fingerprint dedup prevents duplicate wiki promotions
-  - [ ] Dry-run mode logs candidates without committing
-  - [ ] Configurable schedule (default: daily); runs separately from MCP request path
-  - [ ] Integration test: seed high-recall shards → run consolidation → verify wiki row exists with `supersedes` link and shard.active=false
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-008.md` (to be created)
-- Docs: `docs/investigations/memory-architecture-design.md`
-- Notes: Rewritten for TypeScript/Deno/PostgreSQL stack post-ST-021. Promotion preserves shard provenance via `supersedes` FK; soft-deleted shards remain queryable as historical context when the `active = true` filter is relaxed.
+  - [ ] Event-driven worker: triggers on `thoughts` INSERT and `recall_events` INSERT call `pg_notify('consolidation_event', thought_id::text)`; worker holds a `sql.listen('consolidation_event', ...)` connection and processes pending queue rows on each notification
+  - [ ] On worker startup, pending queue is drained once (miss recovery); MCP `consolidate({dry_run?, limit?})` tool exposes manual full-sweep as fallback
+  - [ ] Three-factor scoring per ADR-007: `0.40 × frequency_norm + 0.35 × diversity_norm + 0.25 × relevance`; frequency = recall_event count; diversity = distinct projects; relevance = `helpful` proportion in `feedback_events` OR `thoughts.confidence` as fallback when no feedback rows exist
+  - [ ] Threshold bands: ≥0.7 auto-promote; 0.5–0.69 flag (log only, no `thoughts` write); <0.5 skip
+  - [ ] Eligibility: `memory_type='shard'`, `active=true`, ≥2 recall events, `content_fingerprint` not already in a wiki row (dedup)
+  - [ ] Promotion: INSERT new `thoughts` row with `memory_type='wiki'`, `source='auto-promoted'`, `supersedes=NULL`, `confidence=score`, `content`=LLM-normalised; UPDATE original shard `active=false`; INSERT `consolidation_log` row
+  - [ ] LLM normalisation: OpenRouter `openai/gpt-4o-mini` call for every ≥0.5 candidate produces `normalised_content`; on call failure mark queue `status='llm_error'`, set `retry_after = now() + interval '1 hour'`
+  - [ ] 1:1 promotion model (one shard → one wiki). N:1 cluster-based promotion deferred to ST-031
+  - [ ] Integration tests: 7 cases — promote happy path, flag band, skip band, dry-run, dedup, relevance fallback, LLM failure defer
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-008.md`
+- Query packet: `.github/planning/query-packets/QP-008-consolidation-worker.md`
+- Docs: `docs/design/adr/ADR-007-consolidation-pipeline.md`, `docs/investigations/memory-architecture-design.md`
+- Notes: Scope locked across 4 /plan rounds 2026-05-19/20. Wiki.supersedes=NULL per ADR-007 (board's earlier supersedes→shard contradicted ADR and was reconciled). Relevance fallback to `thoughts.confidence` avoids blocking on ST-029 (feedback API). Event-driven LISTEN/NOTIFY replaces the earlier "Configurable schedule (default: daily)" wording.
 
 <!-- Phase 2 — Production Deployment & Hardening -->
 
@@ -155,6 +158,22 @@
 - Notes: Second of the "two views" promised in ADR-006. Reuses ST-019's C# scaffolding (MCP client, Markdown writer, polling loop) — thin extension, not a separate solution. Source of truth is the planning artifacts on disk today; if/when ADR-006's cloud-side `story_*` MCP tools are implemented, migrate to those.
 
 <!-- Phase 1 follow-ups deferred from earlier scoping -->
+
+### ST-031: N:1 cluster-based consolidation (multi-shard → one wiki)
+- Type: feature
+- Source: PO deferred during ST-008 scope-lock (2026-05-20)
+- phase: 2 (post-v1 consolidation maturity)
+- Value: 2 (reassess once v1 consolidation has run in production)
+- Blocked by: ST-008 (1:1 consolidation must ship first)
+- Touches: `server/src/consolidationWorker.ts` (extend), possibly `server/db/schema.sql` (cluster bookkeeping)
+- Acceptance criteria:
+  - [ ] Worker clusters eligible shards by embedding cosine similarity > 0.85 (the §4.2 fragment value)
+  - [ ] N:1 promotion: cluster contents merged via LLM call into one wiki row; each cluster-source shard receives `active=false`
+  - [ ] `consolidation_log` records the N→1 mapping (multiple `thought_id`s associate to one `wiki_id` via a new linking table or jsonb array — decide during scoping)
+  - [ ] Integration test: seed 3+ similar shards → run consolidation → verify one wiki row, all source shards inactive
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-031.md` (to be created)
+- Notes: Deferred from ST-008 (2026-05-20). v1 is 1:1 only. N:1 requires maturity data from v1 — do we actually see clusters worth merging? — before investing in the more complex logic.
+
 
 ### ST-029: Feedback API (`report_feedback` tool + `feedback_events`)
 - Type: feature
