@@ -365,18 +365,18 @@ If the executor session is interrupted, read §5b to determine where to resume. 
 
 | Field | Value |
 |---|---|
-| **Last completed task** | — |
-| **Last successful command** | — |
-| **Expected outputs produced** | — |
-| **Next task** | Task 4.1 — Create `.gitattributes` at repo root |
+| **Last completed task** | Task 4.1 — Create `.gitattributes` at repo root |
+| **Last successful command** | `Test-Path .gitattributes; Select-String -Path .gitattributes -Pattern '\* text=auto eol=lf'; Select-String -Path .gitattributes -Pattern 'eol=crlf' | Measure-Object | Select-Object -ExpandProperty Count` |
+| **Expected outputs produced** | `.gitattributes` created at repo root; baseline LF rule matched once; CRLF override rule count = 3 |
+| **Next task** | Task 4.2 — Renormalize the working tree and commit |
 | **Known blockers** | None |
-| **Last updated** | 2026-05-19 (created by /plan; not yet executed) |
+| **Last updated** | 2026-05-20T19:47:48Z |
 
 ### Progress History
 
 | Timestamp (ISO) | Task | Status | Evidence / outputs | Next step |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| 2026-05-20T19:47:48Z | Task 4.1 | ✅ Completed | `Test-Path` returned `True`; baseline `* text=auto eol=lf` matched once; `eol=crlf` count returned `3` | Execute Task 4.2: stage `.gitattributes`, renormalize with `git add --renormalize .`, and commit |
 
 ### Avoidance
 
@@ -405,19 +405,21 @@ If the executor session is interrupted, read §5b to determine where to resume. 
 
 ## §6. Execution Log
 
-(Populated during execution — timestamped entries of significant actions)
+- 2026-05-20T19:46:58Z — Confirmed baseline drift state with `git status --short`; observed the expected 4 modified files (`server/Dockerfile`, `server/db/graph.sql`, `server/db/schema.sql`, `server/src/parseContext.ts`).
+- 2026-05-20T19:47:24Z — Created `.gitattributes` at repo root with the exact §3 policy block.
+- 2026-05-20T19:47:48Z — Completed Task 4.1 verification commands; all expected outputs matched.
 
 ---
 
 ## §6b. Surprises & Discoveries
 
-(Document unexpected behaviours, performance tradeoffs, bugs, or insights. Provide evidence.)
+- None in Task 4.1.
 
 ---
 
 ## §6c. Decision Log
 
-(Record every decision made during execution with rationale.)
+- 2026-05-20T19:47:24Z — Used direct file patching for `.gitattributes` to preserve exact policy content and avoid command-escaping mistakes in multiline shell writes.
 
 ---
 
