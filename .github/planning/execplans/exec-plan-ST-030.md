@@ -116,6 +116,12 @@ Status: ✅ Ready for /continue (PO-approved 2026-05-19).
    - **Status:** Story unblocked. The actual goal of ST-030 — silence the `git status` false-positive churn — is **already satisfied** by commits `c1c1c7d` and `0611109`. Verified 2026-05-20: `git status` returns "nothing to commit, working tree clean."
    - **Next:** Resume at Task 4.4 (run the Deno test suite to confirm no semantic regression from the repo-wide renormalize). On pass, close out and move to Review per §7 Closeout.
 
+- 2026-05-20T20:45:06Z — **Execution blocked again at Task 4.4 (environment prerequisite gap).**
+   - Executed Task 4.4 Step 1 successfully from repo root: `docker compose up -d db` and `docker compose ps db`.
+   - When executing Step 2 (`deno test --allow-net --allow-env --allow-read` in `server/`), PowerShell returned: `deno: The term 'deno' is not recognized ...`.
+   - This precondition (Deno CLI available on PATH) is not explicitly covered in §3 Preconditions, so Task 4.4 cannot be executed as written in this environment.
+   - Per /continue escalation rules, execution stops and story is set to `blocked_by: plan-review` pending PO guidance (/plan update or environment provisioning decision).
+
 ---
 
 ## §2d. Requirement Traceability Matrix
@@ -379,11 +385,11 @@ If the executor session is interrupted, read §5b to determine where to resume. 
 | Field | Value |
 |---|---|
 | **Last completed task** | Task 4.3 — Verify clean state (re-verified 2026-05-20 against revised ACs; `git status` clean; index `i/lf` for server files; `.ps1` `i/lf w/crlf` as expected) |
-| **Last successful command** | `git status --porcelain` (returned no output) |
+| **Last successful command** | `docker compose ps db` (db service up; health in starting state) |
 | **Expected outputs produced** | `.gitattributes` at repo root; commit `0611109` (renormalize); commit `c1c1c7d` (.gitattributes); `git status` clean; index encodings match `.gitattributes` rules |
-| **Next task** | Task 4.4 — Confirm no semantic regression (run Deno test suite) |
-| **Known blockers** | None (plan-review resolved 2026-05-20) |
-| **Last updated** | 2026-05-20 (plan-review resolution) |
+| **Next task** | Task 4.4 — Confirm no semantic regression (run Deno test suite) **blocked pending plan-review** |
+| **Known blockers** | Deno CLI unavailable in executor environment (`deno` not recognized); §3 Preconditions missing explicit Deno installation/PATH requirement |
+| **Last updated** | 2026-05-20T20:45:06Z |
 
 ### Progress History
 
@@ -392,11 +398,13 @@ If the executor session is interrupted, read §5b to determine where to resume. 
 | 2026-05-20T19:47:48Z | Task 4.1 | ✅ Completed | `Test-Path` returned `True`; baseline `* text=auto eol=lf` matched once; `eol=crlf` count returned `3` | Execute Task 4.2: stage `.gitattributes`, renormalize with `git add --renormalize .`, and commit |
 | 2026-05-20T19:48:55Z | Task 4.2 | ✅ Completed | Commit `0611109` created with subject `build: add .gitattributes and normalize line endings`; renormalization staged/committed across tracked text files | Run Task 4.3 verification commands |
 | 2026-05-20T19:50:37Z | Task 4.3 | ⛔ Blocked | `git ls-files --eol` reported `i/lf w/crlf` for required server files before and after prescribed `git checkout --` retry; `.ps1` entries remained `i/lf w/crlf` | Escalate to PO via `blocked_by: plan-review` and await updated execution guidance |
+| 2026-05-20T20:45:06Z | Task 4.4 | ⛔ Blocked | `docker compose up -d db` succeeded; `deno test --allow-net --allow-env --allow-read` failed immediately with `deno: The term 'deno' is not recognized` | Escalate via `blocked_by: plan-review`; update plan preconditions or provide environment direction |
 
 ### Avoidance
 
 - 2026-05-20 — Validate `git ls-files --eol` expectations on Windows with a sampled file before locking acceptance criteria; `text eol=crlf` currently reports `i/lf w/crlf` in this repo.
 - 2026-05-20 — `git add --renormalize .` can stage hundreds of files at once; capture command output to an artifact file to preserve review evidence when terminal output is truncated.
+- 2026-05-20 — Add and verify runtime tool preconditions (for this story: `deno --version`) before entering Task 4.4 command sequence.
 
 ---
 
@@ -428,6 +436,10 @@ If the executor session is interrupted, read §5b to determine where to resume. 
 - 2026-05-20T19:48:55Z — Created Task 4.2 commit `0611109` with subject `build: add .gitattributes and normalize line endings`.
 - 2026-05-20T19:49:34Z — Ran Task 4.3 verification commands: status clean, but required server files reported `i/lf w/crlf`; tracked `.ps1` files reported `i/lf w/crlf`.
 - 2026-05-20T19:49:56Z — Applied Task 4.3 failure-handling retry (`git checkout --` on the 4 server paths) and re-ran verification; output unchanged.
+- 2026-05-20T20:44:33Z — Started Task 4.4 Step 1: `docker compose up -d db`; container `ai-memory-db-1` started.
+- 2026-05-20T20:44:35Z — Checked `docker compose ps db`; service up with `health: starting`.
+- 2026-05-20T20:44:36Z — Attempted Task 4.4 Step 2 in `server/`; PowerShell returned `deno: The term 'deno' is not recognized`.
+- 2026-05-20T20:45:06Z — Stopped execution and escalated to plan-review due to missing environment prerequisite not covered by current ExecPlan.
 - 2026-05-20T19:50:12Z — Verified `core.autocrlf=false`; mismatch persisted.
 - 2026-05-20T19:50:37Z — Stopped execution and escalated to plan-review per /continue rules.
 
@@ -438,6 +450,7 @@ If the executor session is interrupted, read §5b to determine where to resume. 
 - Task 4.2 renormalization scope was repo-wide and produced a large staged change set (540 files changed in commit `0611109`), with terminal output truncation requiring artifact capture.
 - In this Windows repo state, `git ls-files --eol -- '*.ps1'` currently reports `i/lf w/crlf` under `attr/text eol=crlf`, which conflicts with the plan's expected `i/crlf w/crlf` assertion.
 - Required server files remained `w/crlf` under `attr/text=auto eol=lf` even after the prescribed `git checkout -- <path>` retry in Task 4.3.
+- Task 4.4 cannot currently run in this executor environment because Deno CLI is not installed or not on PATH (`deno` command unresolved), while the plan assumes Deno is available.
 
 ---
 
@@ -446,6 +459,7 @@ If the executor session is interrupted, read §5b to determine where to resume. 
 - 2026-05-20T19:47:24Z — Used direct file patching for `.gitattributes` to preserve exact policy content and avoid command-escaping mistakes in multiline shell writes.
 - 2026-05-20T19:48:55Z — Followed per-task atomic commit workflow by committing Task 4.2 separately after Task 4.1 commit.
 - 2026-05-20T19:50:37Z — Stopped at Task 4.3 and escalated instead of attempting undocumented workarounds, per /continue escalation rules.
+- 2026-05-20T20:45:06Z — Stopped at Task 4.4 and escalated rather than substituting an alternate test runner path not specified by the ExecPlan.
 
 ---
 
