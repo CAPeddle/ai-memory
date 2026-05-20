@@ -76,7 +76,7 @@ Acceptance criteria phrased as observable behaviour:
 1. After `git status` runs from a clean checkout, no files are reported as modified.
 2. After `git ls-files --eol -- server/Dockerfile server/db/graph.sql server/db/schema.sql server/src/parseContext.ts` runs, every line shows **index `i/lf`** with `attr/text=auto eol=lf`. The working-tree column (`w/`) may be `lf` or `crlf` depending on whether the file was re-checked-out post-renormalize; both are acceptable because `.gitattributes` keeps `git status` clean either way.
 3. After `git ls-files --eol -- '*.ps1'` runs, every line shows **index `i/lf`** with **working-tree `w/crlf`** under `attr/text eol=crlf`. (Git **always** stores text files as LF in the index; the `eol=crlf` rule only affects the working tree on checkout.)
-4. After `cd server && deno test --allow-net --allow-env --allow-read` runs, all tests pass with the same outcome as the most recent green run prior to this story.
+4. After `git diff 0611109^..0611109 -w --stat` runs, the output is empty (or contains only the `.gitattributes` addition under whitespace-ignoring diff) — proving the renormalize commit contains zero non-whitespace change and therefore cannot have altered runtime behaviour. (Replaces the original "Deno tests pass" AC: a pure-whitespace story is verified by whitespace-ignoring diff, not by exercising an unrelated runtime.)
 5. The file `.gitattributes` exists at the repo root and contains the exact content specified in Task 4.1.
 
 ---
@@ -122,6 +122,13 @@ Status: ✅ Ready for /continue (PO-approved 2026-05-19).
    - This precondition (Deno CLI available on PATH) is not explicitly covered in §3 Preconditions, so Task 4.4 cannot be executed as written in this environment.
    - Per /continue escalation rules, execution stops and story is set to `blocked_by: plan-review` pending PO guidance (/plan update or environment provisioning decision).
 
+- 2026-05-20 — **Second plan-review resolution by /plan (PO-approved).**
+   - **Root cause:** Task 4.4 mis-scoped the verification. ST-030's deliverable is `.gitattributes` + a renormalize commit — pure whitespace work. The "no semantic regression" check should be a whitespace-ignoring diff, not a test runner. Running Deno tests pulls in unrelated runtime dependencies (Deno CLI, Docker Desktop, DB container) for a story whose deliverable touches no behaviour.
+   - **Evidence:** `git diff 0611109^..0611109 -w --stat` from the repo root returns **empty output**. The renormalize commit is mathematically provable as whitespace-only. This is stronger evidence than tests passing — tests only exercise a subset of the renormalized files, while `-w` covers all 540.
+   - **Resolution:** AC4 rewritten to assert `git diff -w` empty. §3 Preconditions: dropped Deno CLI and Docker Desktop (neither needed). Task 4.4 rewritten as the 1-second `git diff -w` check. §2d AC4 row updated.
+   - **Status:** Story unblocked. Resume at the new Task 4.4 — single command, no runtime dependencies. On pass, close out and move Refined → Review per §7.
+   - **Self-critique:** This is the second plan-review on ST-030 from an ExecPlan defect I authored. Both were instances of "ACs/tasks not aligned to the actual deliverable scope" — first the Git semantics, now the verification breadth. Saved as project memory `project_execplan_verification_scope.md` so future plans don't repeat the pattern.
+
 ---
 
 ## §2d. Requirement Traceability Matrix
@@ -136,7 +143,7 @@ Status: ✅ Ready for /continue (PO-approved 2026-05-19).
 | "`git status` clean" (QP-030 AC 1) | Empty `git status` output post-commit | Task 4.3 | Task 4.3 verification: `git status --porcelain` produces zero lines |
 | "Server `.ts`/`.sql`/Dockerfile use LF in index" (QP-030 AC 2, revised 2026-05-20) | Index stores LF for the 4 paths under `attr/text=auto eol=lf` | Task 4.3 | Task 4.3 verification: `git ls-files --eol -- server/…` shows `i/lf` for each (working-tree column `w/` is informational; `lf` or `crlf` both acceptable) |
 | "Tracked `.ps1` checkout as CRLF" (QP-030 AC 3, revised 2026-05-20) | Working tree CRLF under `attr/text eol=crlf`; index LF (always — Git stores text as LF in index) | Task 4.3 | Task 4.3 verification: `git ls-files --eol -- '*.ps1'` shows `i/lf w/crlf` for each line |
-| "Tests still pass" (QP-030 AC 4) | Deno test suite green | Task 4.4 | Task 4.4 verification: `deno test --allow-net --allow-env --allow-read` exits 0 |
+| "No semantic regression" (QP-030 AC 4, revised 2026-05-20 second plan-review) | Whitespace-ignoring diff of the renormalize commit shows zero substantive change | Task 4.4 | Task 4.4 verification: `git diff 0611109^..0611109 -w --stat` produces empty output (no files with non-whitespace differences) |
 
 ---
 
@@ -145,8 +152,8 @@ Status: ✅ Ready for /continue (PO-approved 2026-05-19).
 Tools and environment:
 - Git ≥ 2.30 (any modern Git supports `text=auto eol=lf`)
 - PowerShell 7+ (the tool is invoked from `c:\projects\ai-memory\` on Windows)
-- Docker Desktop running (so the `mcp` and `db` services can come up for Task 4.4)
-- `.venv/` (Python virtual env) is already gitignored — no special handling needed
+
+(Deno CLI and Docker Desktop were original preconditions for the now-removed test step; dropped 2026-05-20 in the second plan-review resolution. ST-030 has no runtime dependencies.)
 
 Prior stories that must be Done:
 - None (ST-005 and ST-022 are in Done as of 2026-05-19; ST-030 has no blocker)
@@ -323,52 +330,46 @@ The three commands above ARE the verification. Capture their output verbatim and
 
 ---
 
-### Task 4.4: Confirm no semantic regression
+### Task 4.4: Confirm no semantic regression (whitespace-ignoring diff)
 
-**Objective:** Prove that the renormalization changed no code behaviour by running the existing Deno test suite.
+**Objective:** Prove that the renormalize commit (`0611109`) contains zero non-whitespace change, and therefore cannot have altered runtime behaviour. This is the right tool for the job: ST-030 is a pure whitespace story and the proof is whitespace-ignoring diff, not a test run.
 
-**Input:** Commit from Task 4.2 on `main`; Docker Desktop running.
+**Input:** Commit `0611109` (`build: add .gitattributes and normalize line endings`) exists on `main`.
 
-**Working directory:** `c:\projects\ai-memory\server`
+**Working directory:** `c:\projects\ai-memory\`
 
 **Steps:**
 
-1. Bring up the database service (if not already running):
+1. Run the whitespace-ignoring diff of the renormalize commit against its parent:
    ```powershell
-   docker compose up -d db
-   ```
-   Wait for the `db` container to report healthy:
-   ```powershell
-   docker compose ps db
-   ```
-   The `STATUS` column should show `Up ... (healthy)`.
-2. Run the Deno test suite:
-   ```
-   deno test --allow-net --allow-env --allow-read
+   git diff 0611109^..0611109 -w --stat
    ```
 
 **Expected output:**
 
-- All tests pass. The summary line ends with `ok`.
-- Exit code 0 (in PowerShell: `$LASTEXITCODE` is `0` immediately after the command returns).
+- Empty output (no files listed). This proves the commit contains zero non-whitespace change across all 540 files it touched.
+- If any files are listed, they have non-whitespace differences that need investigation.
 
 **Requirement mapping:**
 
-Satisfies §2d row: "Tests still pass".
+Satisfies §2d row: "No semantic regression".
 
 **Verification:**
 
+The command above IS the verification. Capture the output verbatim (should be a blank line or nothing) into §6 (Execution Log) on completion.
+
+For additional confidence, run the full whitespace-ignoring diff (not just `--stat`):
+
 ```powershell
-deno test --allow-net --allow-env --allow-read
-$LASTEXITCODE
+git diff 0611109^..0611109 -w
 ```
 
-Expected: the final printed line is `0`. If the test command produced its own pass/fail summary line, capture it into §6.
+Expected: empty output.
 
 **Failure handling:**
 
-- If any test fails: STOP. This is unexpected — renormalization should not change behaviour. Investigate the specific failure; do not "fix" the test by reverting the renormalization without first proving the renormalization is the cause. Capture the failure output into §6c (Decision Log) before deciding next step.
-- If `db` container fails to come up: check `docker compose logs db`; this is independent of ST-030 (an environment issue, not a normalization issue).
+- If `git diff -w --stat` lists any files: the renormalize commit accidentally contains substantive change. Inspect with `git diff 0611109^..0611109 -w -- <path>` for each listed file. If any non-whitespace diff is found, STOP and escalate — this is a real regression risk and ST-030's "pure whitespace" claim is false.
+- If the diff is empty as expected: proceed to §7 Closeout. No further verification needed.
 
 ---
 
@@ -385,11 +386,11 @@ If the executor session is interrupted, read §5b to determine where to resume. 
 | Field | Value |
 |---|---|
 | **Last completed task** | Task 4.3 — Verify clean state (re-verified 2026-05-20 against revised ACs; `git status` clean; index `i/lf` for server files; `.ps1` `i/lf w/crlf` as expected) |
-| **Last successful command** | `docker compose ps db` (db service up; health in starting state) |
+| **Last successful command** | `git status --porcelain` (returned no output, AC1 satisfied) |
 | **Expected outputs produced** | `.gitattributes` at repo root; commit `0611109` (renormalize); commit `c1c1c7d` (.gitattributes); `git status` clean; index encodings match `.gitattributes` rules |
-| **Next task** | Task 4.4 — Confirm no semantic regression (run Deno test suite) **blocked pending plan-review** |
-| **Known blockers** | Deno CLI unavailable in executor environment (`deno` not recognized); §3 Preconditions missing explicit Deno installation/PATH requirement |
-| **Last updated** | 2026-05-20T20:45:06Z |
+| **Next task** | Task 4.4 (revised) — Run `git diff 0611109^..0611109 -w --stat`, expect empty output. No runtime dependencies. |
+| **Known blockers** | None (both plan-reviews resolved 2026-05-20) |
+| **Last updated** | 2026-05-20 (second plan-review resolution: Task 4.4 rewritten as whitespace-ignoring diff; Deno/Docker preconditions dropped) |
 
 ### Progress History
 
