@@ -1,58 +1,16 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
-> Next planning target: ST-008
-> Last updated: 2026-05-19
+> Next planning target: ST-029 (ST-008 plan complete; ST-029 is the next Phase 1 follow-up)
+> Last updated: 2026-05-20
 
 ---
 
 ## Backlog
 
-<!-- Cross-cutting hygiene (Phase 0) -->
-
-### ST-030: Add `.gitattributes` and normalize line endings repo-wide
-- Type: debt
-- Source: PO scope-lock during /plan closeout (2026-05-19)
-- phase: 0
-- Value: 2
-- Blocked by: plan-review
-- Touches: `.gitattributes` (new at repo root); all tracked text files renormalized on commit
-- Acceptance criteria:
-  - [ ] `.gitattributes` created at repo root with policy: `* text=auto eol=lf` baseline + `*.bat`/`*.cmd`/`*.ps1` → `text eol=crlf`
-  - [ ] `git add --renormalize .` applied; renormalized files committed in a single commit titled `build: add .gitattributes and normalize line endings`
-  - [ ] `git status --porcelain` produces zero lines on a clean checkout
-  - [ ] `git ls-files --eol -- server/Dockerfile server/db/graph.sql server/db/schema.sql server/src/parseContext.ts` shows `i/lf w/lf` for each
-  - [ ] `git ls-files --eol -- '*.ps1'` shows `i/crlf w/crlf` for each of the 8 tracked `.ps1` files
-  - [ ] `cd server && deno test --allow-net --allow-env --allow-read` passes
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-030.md`
-- Query packet: `.github/planning/query-packets/QP-030-gitattributes-line-endings.md`
-- Notes: Diagnosed during ST-008 /plan kickoff (2026-05-19): 4 `server/` files had `i/lf w/crlf` drift; no `.gitattributes` exists; `core.autocrlf=false`. PO chose LF-for-source + CRLF-for-Windows-scripts policy. Pure whitespace work — no semantic source changes expected. 2026-05-20 execution halted at Task 4.3 after unresolved EOL verification mismatch; /plan review required.
-
 <!-- Phase 1 — Cloud MCP Intelligence (extends OB1 fork shipped by ST-021) -->
 
-
-
-### ST-008: Implement consolidation worker (shard → wiki promotion)
-- Type: feature
-- Source: PO (rewritten post-ST-021 pivot; scope locked 2026-05-20 in QP-008)
-- phase: 1
-- Value: 3
-- Blocked by: none (ST-005 Done; ST-030 recommended-but-not-required)
-- Touches: `server/src/consolidationWorker.ts` (new), `server/src/consolidationScoring.ts` (new), `server/src/consolidationLLM.ts` (new), `server/index.ts` (modify), `server/db/schema.sql` (modify), `server/tests/consolidation-worker.test.ts` (new), `server/tests/fixtures/consolidation-corpus.sql` (new)
-- Acceptance criteria:
-  - [ ] Event-driven worker: triggers on `thoughts` INSERT and `recall_events` INSERT call `pg_notify('consolidation_event', thought_id::text)`; worker holds a `sql.listen('consolidation_event', ...)` connection and processes pending queue rows on each notification
-  - [ ] On worker startup, pending queue is drained once (miss recovery); MCP `consolidate({dry_run?, limit?})` tool exposes manual full-sweep as fallback
-  - [ ] Three-factor scoring per ADR-007: `0.40 × frequency_norm + 0.35 × diversity_norm + 0.25 × relevance`; frequency = recall_event count; diversity = distinct projects; relevance = `helpful` proportion in `feedback_events` OR `thoughts.confidence` as fallback when no feedback rows exist
-  - [ ] Threshold bands: ≥0.7 auto-promote; 0.5–0.69 flag (log only, no `thoughts` write); <0.5 skip
-  - [ ] Eligibility: `memory_type='shard'`, `active=true`, ≥2 recall events, `content_fingerprint` not already in a wiki row (dedup)
-  - [ ] Promotion: INSERT new `thoughts` row with `memory_type='wiki'`, `source='auto-promoted'`, `supersedes=NULL`, `confidence=score`, `content`=LLM-normalised; UPDATE original shard `active=false`; INSERT `consolidation_log` row
-  - [ ] LLM normalisation: OpenRouter `openai/gpt-4o-mini` call for every ≥0.5 candidate produces `normalised_content`; on call failure mark queue `status='llm_error'`, set `retry_after = now() + interval '1 hour'`
-  - [ ] 1:1 promotion model (one shard → one wiki). N:1 cluster-based promotion deferred to ST-031
-  - [ ] Integration tests: 7 cases — promote happy path, flag band, skip band, dry-run, dedup, relevance fallback, LLM failure defer
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-008.md`
-- Query packet: `.github/planning/query-packets/QP-008-consolidation-worker.md`
-- Docs: `docs/design/adr/ADR-007-consolidation-pipeline.md`, `docs/investigations/memory-architecture-design.md`
-- Notes: Scope locked across 4 /plan rounds 2026-05-19/20. Wiki.supersedes=NULL per ADR-007 (board's earlier supersedes→shard contradicted ADR and was reconciled). Relevance fallback to `thoughts.confidence` avoids blocking on ST-029 (feedback API). Event-driven LISTEN/NOTIFY replaces the earlier "Configurable schedule (default: daily)" wording.
+(ST-008 moved to Refined 2026-05-20)
 
 <!-- Phase 2 — Production Deployment & Hardening -->
 
@@ -232,7 +190,45 @@
 
 ## Refined
 
-(Empty)
+### ST-030: Add `.gitattributes` and normalize line endings repo-wide
+- Type: debt
+- Source: PO scope-lock during /plan closeout (2026-05-19); plan-review resolved 2026-05-20
+- phase: 0
+- Value: 2
+- Blocked by: none (plan-review resolved)
+- Touches: `.gitattributes` (created); 540 text files renormalized in commit `0611109`; pending: Task 4.4 verification only
+- Acceptance criteria:
+  - [x] `.gitattributes` created at repo root with policy: `* text=auto eol=lf` baseline + `*.bat`/`*.cmd`/`*.ps1` → `text eol=crlf` (commit `c1c1c7d`)
+  - [x] `git add --renormalize .` applied; renormalized files committed in a single commit titled `build: add .gitattributes and normalize line endings` (commit `0611109`)
+  - [x] `git status --porcelain` produces zero lines on a clean checkout (verified 2026-05-20)
+  - [x] `git ls-files --eol -- server/Dockerfile server/db/graph.sql server/db/schema.sql server/src/parseContext.ts` shows `i/lf` in index under `attr/text=auto eol=lf` for each (working-tree `w/` column may be `lf` or `crlf`; both acceptable — `.gitattributes` keeps `git status` clean)
+  - [x] `git ls-files --eol -- '*.ps1'` shows `i/lf w/crlf` under `attr/text eol=crlf` for each (Git always stores text as LF in the index; `eol=crlf` only affects the working tree)
+  - [ ] `cd server && deno test --allow-net --allow-env --allow-read` passes (Task 4.4 — pending)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-030.md` (resume at Task 4.4)
+- Query packet: `.github/planning/query-packets/QP-030-gitattributes-line-endings.md`
+- Notes: Plan-review resolved 2026-05-20. Original AC4/AC5 were Git-impossible (asserted `i/crlf` for `.ps1`; Git stores text as LF in the index regardless of `eol=crlf`). ACs revised to match Git semantics; only the Deno test pass remains for closeout. See §2c Plan Review Notes for the resolution detail.
+
+### ST-008: Implement consolidation worker (shard → wiki promotion)
+- Type: feature
+- Source: PO (rewritten post-ST-021 pivot; scope locked 2026-05-20 in QP-008)
+- phase: 1
+- Value: 3
+- Blocked by: none (ST-005 Done; ST-030 recommended-but-not-required)
+- Touches: `server/src/consolidationWorker.ts` (new), `server/src/consolidationScoring.ts` (new), `server/src/consolidationLLM.ts` (new), `server/index.ts` (modify), `server/db/schema.sql` (modify), `server/tests/consolidation-worker.test.ts` (new), `server/tests/fixtures/consolidation-corpus.sql` (new)
+- Acceptance criteria:
+  - [ ] Event-driven worker: triggers on `thoughts` INSERT and `recall_events` INSERT call `pg_notify('consolidation_event', thought_id::text)`; worker holds a `sql.listen('consolidation_event', ...)` connection and processes pending queue rows on each notification
+  - [ ] On worker startup, pending queue is drained once (miss recovery); MCP `consolidate({dry_run?, limit?})` tool exposes manual full-sweep as fallback
+  - [ ] Three-factor scoring per ADR-007: `0.40 × frequency_norm + 0.35 × diversity_norm + 0.25 × relevance`; frequency = recall_event count; diversity = distinct projects; relevance = `helpful` proportion in `feedback_events` OR `thoughts.confidence` as fallback when no feedback rows exist
+  - [ ] Threshold bands: ≥0.7 auto-promote; 0.5–0.69 flag (log only, no `thoughts` write); <0.5 skip
+  - [ ] Eligibility: `memory_type='shard'`, `active=true`, ≥2 recall events, `content_fingerprint` not already in a wiki row (dedup)
+  - [ ] Promotion: INSERT new `thoughts` row with `memory_type='wiki'`, `source='auto-promoted'`, `supersedes=NULL`, `confidence=score`, `content`=LLM-normalised; UPDATE original shard `active=false`; INSERT `consolidation_log` row
+  - [ ] LLM normalisation: OpenRouter `openai/gpt-4o-mini` call for every ≥0.5 candidate produces `normalised_content`; on call failure mark queue `status='llm_error'`, set `retry_after = now() + interval '1 hour'`
+  - [ ] 1:1 promotion model (one shard → one wiki). N:1 cluster-based promotion deferred to ST-031
+  - [ ] Integration tests: 7 cases — promote happy path, flag band, skip band, dry-run, dedup, relevance fallback, LLM failure defer
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-008.md`
+- Query packet: `.github/planning/query-packets/QP-008-consolidation-worker.md`
+- Docs: `docs/design/adr/ADR-007-consolidation-pipeline.md`, `docs/investigations/memory-architecture-design.md`
+- Notes: Scope locked across 4 /plan rounds 2026-05-19/20. Wiki.supersedes=NULL per ADR-007. Relevance fallback to `thoughts.confidence` avoids blocking on ST-029 (feedback API). Event-driven LISTEN/NOTIFY replaces earlier "Configurable schedule (default: daily)" wording. Moved Backlog → Refined 2026-05-20 so /continue can auto-pick up.
 
 ---
 

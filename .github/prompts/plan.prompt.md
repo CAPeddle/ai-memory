@@ -60,7 +60,11 @@ Read the query packet as sole input. It must reflect prior collaborative scoping
 - [ ] Every task ends with a verification step (command or assertion)
 - [ ] Acceptance criteria phrased as observable behaviour, not implementation details
 
-Walk the PO through the plan in iterative review rounds. On approval, commit.
+Walk the PO through the plan in iterative review rounds. On approval:
+
+1. Flip the ExecPlan `Status:` to `✅ Ready for /continue` and record the approval date.
+2. **Move the story Backlog → Refined** on `.github/planning/story-board.md`. `/continue` only auto-picks up stories from In Progress, Refined, or `blocked_by: plan-review` — Ready ExecPlans left in Backlog are invisible to the executor.
+3. Commit the QP, ExecPlan, and board move in one commit.
 
 ## Rules
 
@@ -95,6 +99,13 @@ Only the LE edits the board. When creating a new story:
 2. Assign the next ST-N ID
 3. Capture PO-confirmed value metadata (no effort estimate)
 4. Link the ExecPlan file
+
+Lifecycle transitions (LE-owned):
+- **Backlog → Refined**: when an ExecPlan flips to `✅ Ready for /continue` (see Phase 2 above)
+- **Refined → In Progress**: owned by `/continue` on session start (WIP limit 1)
+- **In Progress → Review**: owned by `/continue` at story closeout
+- **Review → Done**: PO acceptance, executed by `/plan` during closeout
+- **Any → `blocked_by: plan-review`**: set by `/continue` when escalating; cleared by `/plan` on resolution
 
 ## Key Files
 
