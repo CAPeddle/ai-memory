@@ -78,7 +78,7 @@ Acceptance criteria phrased as observable behaviour:
 5. After re-running consolidation on a shard whose `content_fingerprint` is already present in a wiki row, no second wiki row is created; `consolidation_log` records `operation='skip'` with `score_breakdown.dedup=true`.
 6. After running consolidation on a shard with zero `feedback_events` rows (today: all shards), the worker's scoring uses `thoughts.confidence` as the relevance value; the produced score matches `0.40 × frequency_norm + 0.35 × diversity_norm + 0.25 × thoughts.confidence` (with all factors normalised to 0–1).
 7. After OpenRouter is unavailable (stubbed failure for a ≥0.5 candidate), the queue entry shows `status='llm_error'` with `retry_after ≥ now() + 59 minutes`; no wiki row is created. On a subsequent wake with OpenRouter recovered, the candidate promotes.
-8. After `docker compose up -d` and `cd server && deno test --allow-net --allow-env --allow-read tests/consolidation-worker.test.ts`, all integration tests pass with exit code 0.
+8. After `docker compose up -d` (and the `mcp` container reports healthy) and `docker compose exec mcp deno test --allow-net --allow-env --allow-read tests/consolidation-worker.test.ts` (run from repo root), all integration tests pass with exit code 0.
 9. The boot sequence in `server/index.ts` calls `startConsolidationWorker()` after `startEntityWorker()`. The MCP server logs `[consolidationWorker] listening` on startup.
 
 ---
@@ -118,7 +118,7 @@ Status: ✅ Ready for /continue (PO-approved 2026-05-20).
 | AC5: Content-fingerprint dedup | Second run on same fingerprint → operation=`skip`, `score_breakdown.dedup=true` | Task 4.5, Task 4.2 | Test `dedup` |
 | AC6: Relevance fallback to `thoughts.confidence` | Scoring code uses `confidence` when no feedback rows | Task 4.3, Task 4.2 | Test `relevance fallback` |
 | AC7: LLM failure → `status='llm_error'` + `retry_after` | Queue entry mutation on LLM failure | Task 4.4, Task 4.2 | Test `LLM failure defer` |
-| AC8: All integration tests pass | `deno test` exits 0 | Task 4.7 | Final verification in Task 4.7 |
+| AC8: All integration tests pass | `docker compose exec mcp deno test ...` exits 0 (run from repo root, no host Deno needed) | Task 4.7 | Final verification in Task 4.7 |
 | AC9: Worker wired in `server/index.ts` | `startConsolidationWorker()` call after `startEntityWorker()`; `consolidate` MCP tool registered | Task 4.6 | Inspection: `grep -n "startConsolidationWorker" server/index.ts` returns one match; container startup logs include `[consolidationWorker] listening` |
 | Schema: `pg_notify` from triggers | `queue_for_consolidation()` function calls `pg_notify`; new `notify_consolidation_on_recall()` function on `recall_events` | Task 4.1 | Verification command in Task 4.1 inspects function definitions |
 | Schema: `retry_after` column on `consolidation_queue` | `ALTER TABLE … ADD COLUMN IF NOT EXISTS retry_after timestamptz` applied | Task 4.1 | `\d consolidation_queue` shows `retry_after` |
@@ -129,8 +129,8 @@ Status: ✅ Ready for /continue (PO-approved 2026-05-20).
 ## §3. Preconditions
 
 Tools and environment:
-- Docker Desktop running (the `db` and `mcp` services must be up for integration tests).
-- Deno ≥ 2.0 (matches `server/Dockerfile`).
+- Docker Desktop running (the `db` and `mcp` services must be up).
+- **No host Deno required.** All `deno test` and `deno check` commands run inside the `mcp` container via `docker compose exec mcp deno ...`. The container is `denoland/deno:2.0.0` (per [`server/Dockerfile`](../../../server/Dockerfile)) and the dev bind mount in `docker-compose.yml` (`./server:/app`) makes host source changes visible to the container live — newly-written test files take effect immediately.
 - `OPENROUTER_API_KEY` set in the `mcp` container's environment (already configured for ST-022; same key reused).
 - The `postgres` npm package version already in `server/deno.json` (used by ST-022; provides `sql.listen`).
 
@@ -336,15 +336,15 @@ Expected results:
 **Expected output:**
 
 - New files: `server/tests/fixtures/consolidation-corpus.sql`, `server/tests/consolidation-worker.test.ts`.
-- `deno test --allow-net --allow-env --allow-read tests/consolidation-worker.test.ts` reports 7 tests, all failing.
+- `docker compose exec mcp deno test --allow-net --allow-env --allow-read tests/consolidation-worker.test.ts` reports 7 tests, all failing.
 
 **Requirement mapping:** §2d rows AC1–AC7 (test cases for each).
 
 **Verification:**
 
 ```powershell
-cd c:\projects\ai-memory\server
-deno test --allow-net --allow-env --allow-read tests/consolidation-worker.test.ts
+cd c:\projects\ai-memory\
+docker compose exec mcp deno test --allow-net --allow-env --allow-read tests/consolidation-worker.test.ts
 ```
 
 Expected: `7 failed` (or `7 errored`). Each test name printed with a failure reason like "MCP tool 'consolidate' not found" or "expected wiki row, found 0".
@@ -439,9 +439,9 @@ Expected: `7 failed` (or `7 errored`). Each test name printed with a failure rea
 **Verification:**
 
 ```powershell
-cd c:\projects\ai-memory\server
-deno check src/consolidationScoring.ts
-deno test --allow-net --allow-env --allow-read tests/consolidation-scoring.test.ts  # if you wrote unit tests
+cd c:\projects\ai-memory\
+docker compose exec mcp deno check src/consolidationScoring.ts
+docker compose exec mcp deno test --allow-net --allow-env --allow-read tests/consolidation-scoring.test.ts  # if you wrote unit tests
 ```
 
 Expected: `deno check` exits 0 (no type errors). Unit tests pass.
@@ -512,8 +512,8 @@ Expected: `deno check` exits 0 (no type errors). Unit tests pass.
 **Verification:**
 
 ```powershell
-cd c:\projects\ai-memory\server
-deno check src/consolidationLLM.ts
+cd c:\projects\ai-memory\
+docker compose exec mcp deno check src/consolidationLLM.ts
 ```
 
 Expected: exits 0.
@@ -789,8 +789,8 @@ Expected: exits 0.
 **Verification:**
 
 ```powershell
-cd c:\projects\ai-memory\server
-deno check src/consolidationWorker.ts
+cd c:\projects\ai-memory\
+docker compose exec mcp deno check src/consolidationWorker.ts
 ```
 
 Expected: exits 0.
@@ -861,8 +861,8 @@ Run the integration tests; expect 1–3 of the 7 to pass at this point (those th
 **Verification:**
 
 ```powershell
-cd c:\projects\ai-memory\server
-deno check index.ts
+cd c:\projects\ai-memory\
+docker compose exec mcp deno check index.ts
 docker compose up -d
 Start-Sleep 5
 docker compose logs mcp | Select-String consolidationWorker
@@ -907,18 +907,18 @@ Expected: the response includes `"name":"consolidate"` in the tools list.
 
 2. Run the full integration test suite:
    ```powershell
-   deno test --allow-net --allow-env --allow-read tests/consolidation-worker.test.ts
+   docker compose exec mcp deno test --allow-net --allow-env --allow-read tests/consolidation-worker.test.ts
    ```
    Expect all 7 tests pass.
 
 3. (If you wrote them) run the scoring unit tests:
    ```powershell
-   deno test --allow-net --allow-env --allow-read tests/consolidation-scoring.test.ts
+   docker compose exec mcp deno test --allow-net --allow-env --allow-read tests/consolidation-scoring.test.ts
    ```
 
 4. Run the full repo test suite once more to confirm no regressions in entity worker / search tests:
    ```powershell
-   deno test --allow-net --allow-env --allow-read tests/
+   docker compose exec mcp deno test --allow-net --allow-env --allow-read tests/
    ```
 
 5. Capture verification evidence into §6 Execution Log:

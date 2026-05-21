@@ -26,6 +26,12 @@ services:
       DATABASE_URL: postgresql://ai_memory:${DB_PASSWORD}@db:5432/ai_memory
       MEMORY_API_KEY: ${MEMORY_API_KEY}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+    # Dev bind mount: host ./server is the source of truth at runtime so that
+    # /continue can write new files (tests, src) and `docker compose exec mcp deno ...`
+    # sees them immediately without rebuilding the image. Production deployment
+    # (ST-023) will use a no-mount variant.
+    volumes:
+      - ./server:/app
     ports:
       - "3000:3000"
     healthcheck:

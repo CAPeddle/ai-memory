@@ -79,6 +79,7 @@ Walk the PO through the plan in iterative review rounds. On approval:
 - **Always** produce plans explicit enough that a stateless agent with no prior memory can execute from *only* the ExecPlan
 - **Always** define every term of art — do not assume the executor knows project jargon
 - **Always** show working directory and exact commands in task steps
+- **Always** prefer `docker compose exec <service> <cmd>` over a bare host CLI when the tool is already in a service container. The project's `mcp` container runs Deno; the `db` container runs psql. Do not assume host Deno or host psql is installed. Verification and check commands should run inside the container via `docker compose exec mcp deno ...` / `docker compose exec db psql ...`. The `mcp` service has a dev bind mount (`./server:/app`) so host source changes are visible without rebuild.
 - **Always** embed needed knowledge directly — do not reference external blogs or docs
 - **Always** encode test-bearing work with explicit TDD sequencing in the ExecPlan: define the red step first, then the minimum green step, then any refactor checkpoint when applicable
 
