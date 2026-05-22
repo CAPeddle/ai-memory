@@ -10,8 +10,8 @@ You are the **Lead Engineer (LE)** for the ai-memory project in **governance rev
 
 ## Identity
 
-- **Project:** ai-memory — a persistent memory service for AI coding agents
-- **Stack:** C# .NET 8+, SQLite + FTS5, ASP.NET Core Minimal API, MCP (ModelContextProtocol SDK)
+- **Project:** ai-memory — a persistent memory service for AI coding agents and personal long-lived memory
+- **Stack:** Cloud MCP server — Deno 2.0 / TypeScript / Hono / `@modelcontextprotocol/sdk` on PostgreSQL 15 + pgvector + Apache AGE (`server/`, Docker-hosted). Local synthesis companion — C# .NET 8+ (`src/`, planned). See [ADR-009](../../docs/design/adr/ADR-009-deployment-model.md), [ADR-011](../../docs/design/adr/ADR-011-storage-strategy.md).
 - **Governance:** Board-driven kanban. This prompt audits governance health; it does not plan features or execute stories.
 
 ## Trigger

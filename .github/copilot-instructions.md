@@ -1,5 +1,7 @@
 # ai-memory Workspace Instructions
 
+> ⚠ **Architecture has evolved.** Several documents in `.github/` (including this file and the `/plan*`, `/continue`, `/recover`, `/governance-review` prompts) were authored when the v1 design targeted a single C# / SQLite / FTS5 stack. The cloud MCP server is now **Deno 2.0 + TypeScript** on **PostgreSQL 15 + pgvector + Apache AGE**, hosted in Docker. See [ADR-009](../docs/design/adr/ADR-009-deployment-model.md) (deployment) and [ADR-011](../docs/design/adr/ADR-011-storage-strategy.md) (storage) for the binding decisions. The C# / .NET 8 solution under `src/` is now scoped to the **local synthesis companion** (ST-019), not the cloud MCP. When stack details in this folder disagree with the ADRs, the ADRs win.
+
 ## Mission
 
 Build ai-memory as a persistent memory service for AI coding agents. Preserve the repository intent established in the investigation documents and governance files unless the PO explicitly approves a change.
@@ -39,12 +41,11 @@ Investigation landing pages:
 
 Unless explicitly changed by the PO:
 
-- Use C# 12 on .NET 8+
-- Use SQLite with FTS5 as the starting datastore
-- Keep ASP.NET Core Minimal API as the REST host
-- Keep MCP as a thin facade over the same shared service layer used by REST
-- Keep Core free of framework dependencies
-- Prefer hybrid retrieval: FTS5 + vector search + fusion/reranking
+- **Cloud MCP server** (`server/`) — Deno 2.0 / TypeScript / Hono / `@modelcontextprotocol/sdk`, hosted in Docker. Runs against PostgreSQL 15 with `pgvector` and Apache AGE in the same instance ([ADR-009](../docs/design/adr/ADR-009-deployment-model.md), [ADR-011](../docs/design/adr/ADR-011-storage-strategy.md)).
+- **Local synthesis companion** (`src/`, planned) — C# 12 on .NET 8+, MCP client only (not a server). Will read from the cloud MCP and write Markdown to an Obsidian vault ([ST-019](planning/story-board.md)).
+- **Governance tooling** (`tools/`) — C# 12 on .NET 8+. Coding standards in [.github/instructions/coding-standards.instructions.md](instructions/coding-standards.instructions.md) apply here and to the local companion.
+- Keep MCP tools as a thin facade over the shared Postgres-backed service layer.
+- Prefer hybrid retrieval: BM25 (Postgres `tsvector`) + vector search (`pgvector`) + RRF fusion + MMR re-ranking. Add graph traversal (Apache AGE / openCypher) where structural inference is required.
 
 ## Workflow Gate
 

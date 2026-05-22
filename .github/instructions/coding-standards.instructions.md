@@ -10,6 +10,8 @@ source_path: ".github/instructions/coding-standards.instructions.md"
 
 # Coding Standards — ai-memory
 
+> **Scope:** This document covers the **C# / .NET 8 codebase only** — the `src/` solution (local synthesis companion, ST-019) and the `tools/` solution (governance asset validator). It does **not** apply to the cloud MCP server in `server/`, which is Deno 2.0 / TypeScript and follows the conventions encoded in [server/deno.json](../../server/deno.json) and the patterns established in [server/index.ts](../../server/index.ts). See [ADR-009](../../docs/design/adr/ADR-009-deployment-model.md) and [ADR-011](../../docs/design/adr/ADR-011-storage-strategy.md) for the cloud architecture.
+
 ## Language & Framework
 
 - **C# 12** on **.NET 8+**
