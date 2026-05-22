@@ -2,7 +2,7 @@
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
 > Next planning target: ST-029 (ST-008 plan complete; ST-029 is the next Phase 1 follow-up)
-> Last updated: 2026-05-20
+> Last updated: 2026-05-22
 
 ---
 
@@ -11,6 +11,28 @@
 <!-- Phase 1 — Cloud MCP Intelligence (extends OB1 fork shipped by ST-021) -->
 
 (ST-008 moved to Refined 2026-05-20)
+
+### ST-035: Entity↔thought provenance link (entity_mentions back-link table)
+- Type: feature
+- Source: PO (brainstorming session 2026-05-22)
+- phase: 1 (foundational — enables Phase 3 consumers ST-019, ST-026 and future graph-expanded search)
+- Value: 4
+- Blocked by: none (ST-022 entity worker Done; this extends it)
+- Touches: `server/db/graph.sql` (new `entity_mentions` table + index), `server/src/entityWorker.ts` (modify `writeToGraph`), `server/tests/entity-mentions.test.ts` (new)
+- Acceptance criteria:
+  - [ ] New `public.entity_mentions` table with composite PK `(thought_id, entity_label, entity_name)`, CHECK constraint on label allow-list (`Person|Function|Error|Topic|Project`), FK to `thoughts(id)` with `ON DELETE CASCADE`, and a secondary index on `(entity_label, entity_name)`
+  - [ ] Entity worker writes one mention row per extracted entity, batched per thought, alongside existing AGE `MERGE` calls
+  - [ ] Delete-then-insert on every extraction so mentions reflect current content (re-extraction freshness, spec §4.4)
+  - [ ] `writeToGraph` receives `thoughtId` parameter; caller in `processQueue` passes `thought_id`
+  - [ ] Integration test: `capture_thought` → wait for worker → `entity_mentions` rows exist for the thought
+  - [ ] Integration test: re-extraction (content + `content_fingerprint` change) removes stale mentions and inserts new ones
+  - [ ] Integration test: CHECK constraint rejects INSERT with label outside the allow-list
+  - [ ] Integration test: `DELETE FROM thoughts` cascades to `entity_mentions`
+  - [ ] Out of scope (verified by absence): no new MCP tools (`server/index.ts` untouched), no read-path code, no bounding strategy (ST-034 owns that), no backfill (forward-only worker)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-035.md` (to be created by `/plan`)
+- Query packet: `.github/planning/query-packets/QP-035-entity-thought-provenance.md`
+- Docs: `docs/design/specs/2026-05-22-entity-thought-provenance.md`, `docs/design/plans/2026-05-22-entity-thought-provenance.md`
+- Notes: Design rationale + subagent-driven plan produced via brainstorming session 2026-05-22. Storage location (Option B relational vs AGE Thought nodes), transactional semantics (no wrapping, retry-idempotent), and re-extraction behaviour (delete-then-insert) are settled in the spec — `/plan` should focus on producing the ExecPlan task structure (subagent-driven per [[plans-are-subagent-driven]]), not re-litigating design. Three open questions parked for future consumer stories: co-occurrence vs structure preference, vector-vs-graph value overlap, pipeline vs composition (spec §6). Cardinality bounding for graph-expanded search is ST-034 (separate spike).
 
 <!-- Phase 2 — Production Deployment & Hardening -->
 
@@ -72,6 +94,22 @@
 - Docs: `docs/design/adr/ADR-007-consolidation-pipeline.md`
 - Notes: Operational closure for the cloud MCP. Without this, worker failures are invisible until users notice missing entity extractions or stale wikis. The `stats` tool also gives the local synthesis service (ST-019) and storyboard view (ST-026) a "is the cloud healthy?" check they can run before synthesis.
 
+### ST-034: Spike — Bounding cardinality of graph-expanded search
+- Type: spike
+- Source: PO (brainstorming session 2026-05-22, entity↔thought provenance design)
+- phase: 2
+- Value: 3
+- Blocked by: none (can investigate against current dev graph data)
+- Touches: `docs/investigations/graph-expanded-search-cardinality.md` (new); no code changes expected
+- Acceptance criteria:
+  - [ ] Findings doc quantifies the cardinality problem on current dev data: for each entity label (Person/Function/Error/Topic/Project), the distribution of (thoughts mentioning entity) and (entities reachable at 1-hop, 2-hop)
+  - [ ] At least 3 bounding strategies evaluated with trade-offs: hard limits (top-N per hop), score-based ranking (shared-entity count / edge confidence / recency / recall_count), and edge-type allow-listing (e.g. exclude `RELATED_TO` from expansion; weight `CAUSED_BY` higher than `LIKES`)
+  - [ ] One strategy recommended for graph-expanded search v1 with rationale grounded in the observed dev-data distribution (not a guess)
+  - [ ] Findings note explicitly addresses: does a popular entity (e.g. "TypeScript" if it appears in many thoughts) reliably get pruned, or does it dominate results?
+  - [ ] Out of scope: implementing the strategy (a follow-on feature story owns the graph-expanded search tool itself)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-034.md` (to be created)
+- Notes: Surfaced 2026-05-22 during entity↔thought provenance brainstorming. Without a bounding strategy, 1-hop expansion over popular entities returns hairballs and drowns out the high-signal hits that motivate the graph lane. Foundational design — settle before any graph-expanded search tool ships, not retrofitted after users hit noise.
+
 <!-- Phase 3 — Local Companion Services -->
 
 ### ST-019: Local Obsidian synthesis service (C# MCP client)
@@ -114,6 +152,26 @@
 - Query packet: `.github/planning/query-packets/QP-026-obsidian-storyboard-view.md`
 - Docs: `docs/design/adr/ADR-006-views-architecture.md`
 - Notes: Second of the "two views" promised in ADR-006. Reuses ST-019's C# scaffolding (MCP client, Markdown writer, polling loop) — thin extension, not a separate solution. Source of truth is the planning artifacts on disk today; if/when ADR-006's cloud-side `story_*` MCP tools are implemented, migrate to those.
+
+<!-- Phase 0 — governance / dev-experience debt -->
+
+### ST-032: Evaluate asset-metadata mechanism (cost/benefit + VS Code reconciliation + automation)
+- Type: spike
+- Source: PO (governance-friction observation 2026-05-22)
+- phase: 0
+- Value: 3
+- Blocked by: none
+- Touches: `docs/investigations/asset-metadata-mechanism-evaluation.md` (new), `docs/governance/asset-metadata-contract.md` (proposal section), `.github/planning/story-board.md` (adds follow-on ST-033), `.github/instructions/` (one file prototyped), `tools/GovernanceAssetValidator/` (read-only inspection)
+- Acceptance criteria:
+  - [ ] Findings doc at `docs/investigations/asset-metadata-mechanism-evaluation.md` contains a baseline section quantifying current state: count of governance asset files, count of VS Code Copilot "unknown attribute" warnings per file, last commit that regenerated `.github/planning/assets/asset-catalog.json`, output of `dotnet run --project tools/GovernanceAssetValidator -- validate .` at spike start
+  - [ ] Findings doc contains a cost/benefit table: dev-experience cost of current shape (warnings, manual-command frequency, contract complexity) vs concrete value the catalog delivers today (who reads `asset-catalog.json` / `asset-catalog.md`; how many drift events have been detected since ST-012 shipped)
+  - [ ] Findings doc evaluates ≥2 frontmatter reconciliation patterns against VS Code Copilot's schema (`applyTo`, `description`, `name`); recommends one pattern with rationale; demonstrated by editing one asset file to the proposed shape and showing both (a) VS Code reports 0 unknown-attribute warnings on that file and (b) `dotnet run --project tools/GovernanceAssetValidator -- build .` produces unchanged catalog output
+  - [ ] Findings doc evaluates ≥3 automation mechanisms (e.g. `.git/hooks/pre-commit`, `.vscode/tasks.json` runOptions, `dotnet watch`, `husky.net`, scheduled CI documentation diff); recommends one with rationale that **explicitly addresses the PO's premise that the manual `dotnet run … build .` step does not happen in practice**
+  - [ ] Recommendation is bounded to {reconcile, automate, reconcile+automate}; sunsetting is out of scope for this spike (PO scope decision 2026-05-22)
+  - [ ] Follow-on implementation story ST-033 added to Backlog with concrete `Touches:` and `Acceptance criteria:` derived from the spike's recommendation
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-032.md`
+- Docs: `docs/governance/asset-metadata-contract.md`, `docs/governance/asset-contribution-policy.md`, `tools/GovernanceAssetValidator/Program.cs`, `.github/planning/assets/asset-catalog.md`
+- Notes: PO observed 2026-05-22 that the validator's manual `dotnet run -- build .` step does not happen, so the catalog is silently drifting AND the mechanism is paying its dev-experience cost (VS Code warnings on every governance file) without delivering its value. Spike must produce a real cost/benefit evaluation, not a rubber-stamp of the existing design. Disposition space bounded to "keep, in some form" per PO direction.
 
 <!-- Phase 1 follow-ups deferred from earlier scoping -->
 
