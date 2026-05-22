@@ -44,7 +44,9 @@ No planning may be performed unilaterally. If there has not yet been back-and-fo
 2. **Direction exploration** — Surface trade-offs with bounded options (not open-ended)
 3. **Scope lock** — Confirm in-scope / out-of-scope boundaries and key decisions
 
-**Output:** Write a query packet to `.github/planning/query-packets/QP-NNN-slug.md` capturing all decisions. Signal PO to compact context before Phase 2.
+**Output:** Write a query packet to `.github/planning/query-packets/QP-NNN-slug.md` capturing all decisions, then **commit the query packet in a single Conventional Commit with a `Story: ST-NNN` trailer** before signalling the PO to compact context for Phase 2.
+
+**Why the commit is mandatory at end of Phase 1:** `/plan` Phase 2 reads the committed packet, not the working tree. A Phase 1 output left uncommitted creates rework if Phase 2 resumes in a new session, and risks the packet being bundled into an unrelated future commit (muddying authorship). Verify `git status` is clean for `.github/planning/query-packets/` before signalling for compaction.
 
 ## Phase 2 — ExecPlan Authoring
 
@@ -64,7 +66,14 @@ Walk the PO through the plan in iterative review rounds. On approval:
 
 1. Flip the ExecPlan `Status:` to `✅ Ready for /continue` and record the approval date.
 2. **Move the story Backlog → Refined** on `.github/planning/story-board.md`. `/continue` only auto-picks up stories from In Progress, Refined, or `blocked_by: plan-review` — Ready ExecPlans left in Backlog are invisible to the executor.
-3. Commit the QP, ExecPlan, and board move in one commit.
+3. **Commit finalisation (mandatory):**
+   - One commit containing the ExecPlan + the Backlog → Refined board move. The query packet was already committed at the end of Phase 1; do not re-commit it.
+   - Conventional Commits subject (e.g. `feat(planning): ST-NNN ExecPlan ready for /continue`); body explains the *why* behind the ExecPlan's task structure and any non-obvious scoping decisions made during review rounds.
+   - Trailer: `Story: ST-NNN` (required). Do not use `Task: §N.N` here — that trailer is reserved for in-execution commits issued by `/continue`.
+   - Verify `git status` shows no uncommitted files under `.github/planning/` related to this story before declaring Phase 2 complete.
+   - If the PO has unrelated edits in the working tree, surface them — do not bundle into the Ready commit.
+
+   **Why mandatory:** `/continue` reads committed state. An ExecPlan left in the working tree is invisible to the executor; a Backlog → Refined move left uncommitted leaves `/continue` unable to find the story. The Ready state only exists when both artifacts are in HEAD on the working branch.
 
 ## Rules
 
@@ -82,6 +91,7 @@ Walk the PO through the plan in iterative review rounds. On approval:
 - **Always** prefer `docker compose exec <service> <cmd>` over a bare host CLI when the tool is already in a service container. The project's `mcp` container runs Deno; the `db` container runs psql. Do not assume host Deno or host psql is installed. Verification and check commands should run inside the container via `docker compose exec mcp deno ...` / `docker compose exec db psql ...`. The `mcp` service has a dev bind mount (`./server:/app`) so host source changes are visible without rebuild.
 - **Always** embed needed knowledge directly — do not reference external blogs or docs
 - **Always** encode test-bearing work with explicit TDD sequencing in the ExecPlan: define the red step first, then the minimum green step, then any refactor checkpoint when applicable
+- **Always** commit at the end of each phase before declaring it complete — Phase 1 commits the QP on its own; Phase 2 commits the ExecPlan + board move together. Never end a planning round with cycle artifacts uncommitted (see Phase 1 Output and Phase 2 step 3 for the reasoning)
 
 ## Self-Containment Rule (from Codex PLANS.md)
 

@@ -35,6 +35,7 @@ Create a new story by:
 - **Never** create an ExecPlan in this prompt
 - **Never** skip research when the story impacts architecture, workflow, prompts, instructions, or multiple modules
 - **Never** propose final story metadata on your own after research — ask the PO to choose it
+- **Never** declare the cycle complete with cycle artifacts uncommitted (see Step 6)
 
 ## Step 1 — Intake And Intent
 
@@ -90,6 +91,20 @@ The seed query packet must capture:
 - Open questions for the later `/plan` session
 - Recommended next step: run `/plan` for this story
 
+## Step 6 — Commit Finalisation (mandatory)
+
+A `/plan-new` cycle is **not complete until its artifacts are committed**. Uncommitted cycle outputs are invisible to the next `/plan` session (which reads committed state when it resumes) and create authorship ambiguity once other edits land on top.
+
+1. Stage and commit the **board entry + seed query packet in one commit**:
+   - Subject: Conventional Commits, e.g. `feat(planning): add ST-NNN <slug>`.
+   - Body explains the PO intent that drove the story and a short summary of the targeted research that scoped its placement / value / blockers.
+   - Trailer: `Story: ST-NNN` (required).
+2. Verify `git status` shows no uncommitted files under `.github/planning/` related to this cycle.
+3. If the PO has unrelated edits in the working tree (e.g. concurrent work on another story), **do not** bundle them with this cycle. Surface them explicitly and ask the PO whether to include or defer. Never silently bundle work outside the cycle's scope.
+4. If a planning round is interrupted before the seed query packet is ready, commit a checkpoint with a clear `wip(planning):` subject and `Story: ST-NNN` trailer so the next session can resume from a tracked state.
+
+**Why this is non-negotiable:** the next session (whether `/plan`, `/continue`, or a fresh PO round) reads from committed state, not the working tree. A cycle output left uncommitted is functionally invisible to those sessions and tends to get bundled into unrelated future commits — muddying authorship, traceability, and the audit trail the board depends on.
+
 ## Output Requirements
 
 ### Board Entry
@@ -127,6 +142,8 @@ This prompt is complete when:
 - The story exists on the board
 - The seed query packet exists
 - The future ExecPlan path is reserved in the board entry
+- **All cycle artifacts (board entry + query packet) are committed to git on the current branch** with a Conventional Commits message and `Story: ST-NNN` trailer per Step 6
+- `git status` shows no uncommitted files under `.github/planning/` related to this cycle
 - The PO has enough context to run `/plan` next for full planning
 
 ## Key Files
