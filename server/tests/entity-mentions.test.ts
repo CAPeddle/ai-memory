@@ -145,3 +145,62 @@ Deno.test({
     }
   },
 });
+
+Deno.test({
+  name: "entity_mentions: CHECK constraint rejects unknown label",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    const thoughtId = await captureThought(
+      "Anchor thought for the CHECK constraint test",
+      "project:test-entity-mentions",
+    );
+    await waitForExtraction(thoughtId);
+
+    let threw = false;
+    try {
+      await sql`
+        INSERT INTO entity_mentions (thought_id, entity_label, entity_name)
+        VALUES (${thoughtId}, 'Animal', 'Cat')
+      `;
+    } catch (err) {
+      threw = true;
+      const msg = (err as Error).message.toLowerCase();
+      if (!msg.includes("check") && !msg.includes("constraint")) {
+        throw new Error(`Expected CHECK-constraint error, got: ${(err as Error).message}`);
+      }
+    }
+    if (!threw) {
+      throw new Error("Expected INSERT with label 'Animal' to be rejected, but it succeeded.");
+    }
+  },
+});
+
+Deno.test({
+  name: "entity_mentions: FK cascade removes mentions when thought is deleted",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    const thoughtId = await captureThought(
+      "Bob maintains the PaymentService component",
+      "project:test-entity-mentions",
+    );
+    await waitForExtraction(thoughtId);
+
+    const [{ c: before }] = await sql<{ c: number }[]>`
+      SELECT count(*)::int AS c FROM entity_mentions WHERE thought_id = ${thoughtId}
+    `;
+    if (before === 0) {
+      throw new Error("Setup precondition failed: no mentions written before delete.");
+    }
+
+    await sql`DELETE FROM thoughts WHERE id = ${thoughtId}`;
+
+    const [{ c: after }] = await sql<{ c: number }[]>`
+      SELECT count(*)::int AS c FROM entity_mentions WHERE thought_id = ${thoughtId}
+    `;
+    if (after !== 0) {
+      throw new Error(`Expected mentions to cascade-delete, got ${after} surviving rows.`);
+    }
+  },
+});
