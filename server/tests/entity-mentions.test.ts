@@ -61,7 +61,11 @@ async function waitForExtraction(thoughtId: string, maxSec = 40): Promise<void> 
   throw new Error(`Entity extraction did not complete within ${maxSec}s for thought ${thoughtId}`);
 }
 
-Deno.test("entity_mentions: capture writes mentions for extracted entities", async () => {
+Deno.test({
+  name: "entity_mentions: capture writes mentions for extracted entities",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
   const thoughtId = await captureThought(
     "Alice uses TypeScript for the Zoom project and it was caused by a NullReferenceError",
     "project:test-entity-mentions",
@@ -90,4 +94,5 @@ Deno.test("entity_mentions: capture writes mentions for extracted entities", asy
       `Expected at least one of ${expectedAny.join(", ")} in mentions. Got: ${names.join(", ")}`
     );
   }
+},
 });

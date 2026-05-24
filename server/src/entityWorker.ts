@@ -115,6 +115,19 @@ async function writeToGraph(extraction: ExtractionResult, thoughtId: string): Pr
       $$) AS t(v agtype);
     `);
   }
+  // Entity mentions back-link (spec §4.4: delete-then-insert on every
+  // extraction so mentions reflect current content, not a historical union).
+  await sql`DELETE FROM entity_mentions WHERE thought_id = ${thoughtId}`;
+  if (extraction.nodes.length > 0) {
+    const labels = extraction.nodes.map((n) => n.label);
+    const names = extraction.nodes.map((n) => n.name);
+    await sql`
+      INSERT INTO entity_mentions (thought_id, entity_label, entity_name)
+      SELECT ${thoughtId}, label, name
+      FROM unnest(${labels}::text[], ${names}::text[]) AS t(label, name)
+      ON CONFLICT (thought_id, entity_label, entity_name) DO NOTHING
+    `;
+  }
 }
 
 // --- Queue processing ---
