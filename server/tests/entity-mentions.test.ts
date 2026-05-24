@@ -96,3 +96,52 @@ Deno.test({
   }
 },
 });
+
+Deno.test({
+  name: "entity_mentions: re-extraction removes stale and inserts new",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    const thoughtId = await captureThought(
+      "Alice uses TypeScript on the Apollo project",
+      "project:test-entity-mentions",
+    );
+    await waitForExtraction(thoughtId);
+
+    const before = await sql<{ entity_name: string }[]>`
+      SELECT entity_name FROM entity_mentions WHERE thought_id = ${thoughtId}
+    `;
+    const beforeNames = before.map((r) => r.entity_name);
+    if (!beforeNames.some((n) => n.includes("Alice"))) {
+      throw new Error(`Expected initial mentions to include Alice. Got: ${beforeNames.join(", ")}`);
+    }
+
+    // Force re-extraction: change content AND fingerprint so the trigger
+    // re-queues (server/db/graph.sql lines 60-78 guard on fingerprint).
+    const newFingerprint = `forced-${crypto.randomUUID()}`;
+    await sql`
+      UPDATE thoughts
+      SET content = 'Quincy debugs the InvoiceService bug',
+          content_fingerprint = ${newFingerprint}
+      WHERE id = ${thoughtId}
+    `;
+
+    await waitForExtraction(thoughtId);
+
+    const after = await sql<{ entity_name: string }[]>`
+      SELECT entity_name FROM entity_mentions WHERE thought_id = ${thoughtId}
+    `;
+    const afterNames = after.map((r) => r.entity_name);
+
+    if (afterNames.some((n) => n.includes("Alice") || n.includes("Apollo"))) {
+      throw new Error(
+        `Expected stale entities removed after re-extraction. Got: ${afterNames.join(", ")}`
+      );
+    }
+    if (!afterNames.some((n) => n.includes("Quincy") || n.includes("InvoiceService"))) {
+      throw new Error(
+        `Expected new entities after re-extraction. Got: ${afterNames.join(", ")}`
+      );
+    }
+  },
+});
