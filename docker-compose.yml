@@ -17,11 +17,25 @@ services:
       timeout: 5s
       retries: 10
 
+  seed:
+    image: postgres:15
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${DB_PASSWORD}
+    volumes:
+      - ./server/tests/fixtures/search-quality-corpus.sql:/seed/corpus.sql:ro
+    entrypoint: ["/bin/sh", "-c", "until pg_isready -h db -U ai_memory -d ai_memory; do sleep 1; done && psql -h db -U ai_memory -d ai_memory -f /seed/corpus.sql"]
+    restart: "no"
+
   mcp:
     build: ./server
     depends_on:
       db:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     environment:
       DATABASE_URL: postgresql://ai_memory:${DB_PASSWORD}@db:5432/ai_memory
       MEMORY_API_KEY: ${MEMORY_API_KEY}

@@ -1,4 +1,9 @@
 import { mcpCall, extractText } from "./_helpers/mcpClient.ts";
+import { sql } from "../src/db.ts";
+
+// Remove test residue from other test files to maintain corpus isolation.
+// The search-quality corpus uses IDs starting with '00000000-0000-4000-8000-'.
+await sql`DELETE FROM thoughts WHERE id::text NOT LIKE '00000000-0000-4000-8000-%'`;
 
 // With context: "project:zoom" (no strict), cross-project results MUST still
 // appear, but in-project results should outrank otherwise-comparable cross-project ones.
