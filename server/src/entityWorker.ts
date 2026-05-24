@@ -93,7 +93,7 @@ function filterExtraction(raw: ExtractionResult): ExtractionResult {
 }
 
 // --- AGE graph writes ---
-async function writeToGraph(extraction: ExtractionResult): Promise<void> {
+async function writeToGraph(extraction: ExtractionResult, thoughtId: string): Promise<void> {
   for (const node of extraction.nodes) {
     // Label and name are allow-list–validated; name is escaped
     await sql.unsafe(`
@@ -156,7 +156,7 @@ async function processQueue(): Promise<void> {
       const extraction = filterExtraction(raw);
 
       // Write to graph (may produce zero writes if LLM found nothing)
-      await writeToGraph(extraction);
+      await writeToGraph(extraction, thought_id);
 
       // Mark done
       await sql`
