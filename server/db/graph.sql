@@ -124,3 +124,22 @@ CREATE TRIGGER trg_queue_entity_extraction
 -- Exponential backoff support (added by ST-022)
 ALTER TABLE public.entity_extraction_queue
   ADD COLUMN IF NOT EXISTS retry_after timestamptz;
+
+-- ============================================================
+-- 5. ENTITY MENTIONS (back-link from AGE entities to source thoughts)
+--    Added 2026-05-22 per docs/design/specs/2026-05-22-entity-thought-provenance.md
+--    Why: AGE nodes carry only (label, name) and do not reference the
+--    thoughts that mentioned them. This table is the relational back-link
+--    that powers provenance queries and graph-expanded search.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.entity_mentions (
+  thought_id   uuid        NOT NULL REFERENCES public.thoughts(id) ON DELETE CASCADE,
+  entity_label text        NOT NULL CHECK (entity_label IN ('Person', 'Function', 'Error', 'Topic', 'Project')),
+  entity_name  text        NOT NULL,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (thought_id, entity_label, entity_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_entity_mentions_entity
+  ON public.entity_mentions(entity_label, entity_name);
