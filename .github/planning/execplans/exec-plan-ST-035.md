@@ -29,7 +29,16 @@ The entity extraction worker (ST-022, Done) writes AGE graph nodes (`Person`, `F
 
 ## §1b. Outcomes & Conclusions
 
-(Populated on completion)
+- **Completion status:** Full — all in-scope deliverables implemented and verified.
+- **Key achievements:**
+  - `entity_mentions` table live with composite PK, CHECK, FK cascade, secondary index
+  - Entity worker writes mention rows via DELETE+INSERT on every extraction
+  - 4 integration tests pass: happy-path, re-extraction freshness, CHECK rejection, FK cascade
+- **Requirements met:** AC1–AC9 all satisfied
+- **Requirements unmet:** None
+- **Architectural impact:** Unchanged — relational back-link per spec Option B; no AGE schema changes
+- **Supporting evidence:** `docker compose exec mcp deno test tests/entity-mentions.test.ts` → 4/4 pass; `git diff HEAD~6..HEAD -- server/index.ts` → empty
+- **Downstream:** ST-035 ready to move to Review; consumer stories (ST-019, ST-026) can now query `entity_mentions`
 
 ---
 
@@ -855,18 +864,24 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | — |
-| **Last successful command** | — |
-| **Expected outputs produced** | — |
-| **Next task** | §4.1 — Add entity_mentions schema |
+| **Last completed task** | §4.7 — Final verification |
+| **Last successful command** | `git log --oneline HEAD~6..HEAD` |
+| **Expected outputs produced** | All 6 commits on main; 4/4 entity-mentions tests pass |
+| **Next task** | §7 Closeout — move to Review |
 | **Known blockers** | None |
-| **Last updated** | — |
+| **Last updated** | 2026-05-24T12:00Z |
 
 ### Progress History
 
 | Timestamp (ISO) | Task | Status | Evidence / outputs | Next step |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| 2026-05-24 | §4.1 | Done | `ca1978a` — entity_mentions table verified via `\d` | §4.2 |
+| 2026-05-24 | §4.2 | Done | `bc3132f` — test fails with "got none" | §4.3 |
+| 2026-05-24 | §4.3 | Done | `a1bf2e2` — deno check clean; test still fails | §4.4 |
+| 2026-05-24 | §4.4 | Done | `a0b68a7` — test passes (green) | §4.5 |
+| 2026-05-24 | §4.5 | Done | `bf4aa94` — 2/2 tests pass | §4.6 |
+| 2026-05-24 | §4.6 | Done | `6f2dd73` — 4/4 tests pass | §4.7 |
+| 2026-05-24 | §4.7 | Done | 16/20 suite pass; 4 failures pre-existing (seed data) | Closeout |
 
 ### Avoidance
 
@@ -901,7 +916,17 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 ## §6b. Surprises & Discoveries
 
-(Populated during execution)
+- Observation: Fresh DB reset requires explicit `docker compose build db` before `up -d` — the Dockerfile COPY of `graph.sql` happens at image build time, not runtime. The bind-mount only covers `server/` for the MCP container, not the DB init scripts.
+  Evidence: Table missing after `down -v && up -d` without `--build`; present after `build db && down -v && up -d`.
+  Impact: Future schema changes to `server/db/*.sql` need image rebuild.
+
+- Observation: 4 pre-existing search tests (`search-project-boost` ×3, `search-recall-quality` ×1) fail on fresh DB because they depend on seed data (specific UUIDs) that only existed in the old volume.
+  Evidence: Test output references `00000000-0000-4000-8000-*` UUIDs not present in DB.
+  Impact: Not a regression from ST-035; these tests need a seed fixture or conditional skip. Logged for awareness.
+
+- Observation: Deno resource-leak checker (`sanitizeResources`/`sanitizeOps`) fails when tests import `sql` directly from `db.ts` due to the persistent connection pool.
+  Evidence: Test pass on logic but fail on leak detection without sanitize flags.
+  Impact: All `entity-mentions` tests use `{ sanitizeResources: false, sanitizeOps: false }` object-style `Deno.test`.
 
 ---
 
