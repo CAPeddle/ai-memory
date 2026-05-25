@@ -248,6 +248,27 @@
 
 ## Refined
 
+### ST-036: Separate dev/test DB containers (Compose profiles)
+- Type: debt
+- Source: PO decision during ST-035 execution (2026-05-25); test-pollution incident surfaced the need
+- phase: 2
+- Value: 4
+- Blocked by: none
+- Touches: `docker-compose.yml` (add `db-test` service + `seed` profile migration), `server/tests/_helpers/` (test DATABASE_URL override), `server/tests/search-project-boost.test.ts` (remove cleanup hack), `CLAUDE.md`, `docs/design/adr/ADR-009-deployment-model.md`
+- Acceptance criteria:
+  - [ ] `docker compose up -d` (default profile) starts only `db` + `mcp`; no seed, no test corpus
+  - [ ] `docker compose --profile test up -d` starts `db-test` (ephemeral, seeded) alongside `db` + `mcp`
+  - [ ] `db-test` uses the same image as `db` but with no persistent volume (recreated each run)
+  - [ ] `seed` service targets `db-test` only; loads `search-quality-corpus.sql` on startup
+  - [ ] Tests connect to `db-test` via `MCP_TEST_DATABASE_URL` env var
+  - [ ] `docker compose --profile test exec mcp deno test tests/` passes 20/20 on fresh start
+  - [ ] Dev DB (`db`) data persists across test runs — manual exploration data is never wiped
+  - [ ] Cleanup hack removed from `search-project-boost.test.ts` (no longer needed with isolation)
+  - [ ] `CLAUDE.md` and ADR-009 updated with new convention
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-036.md` (to be created by `/plan`)
+- Query packet: `.github/planning/query-packets/QP-036-dev-test-db-separation.md`
+- Notes: PO confirmed Option A (two containers) over Option B (two databases in one container) and Option C (cleanup guards only). Rationale: dev data matters (PO keeps manual exploration data); Option C too fragile (any new test writing 'zoom' content re-breaks search tests). Compose profiles chosen over separate compose files or env-var-only switching.
+
 ### ST-030: Add `.gitattributes` and normalize line endings repo-wide
 - Type: debt
 - Source: PO scope-lock during /plan closeout (2026-05-19); plan-review resolved 2026-05-20
