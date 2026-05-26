@@ -17,25 +17,11 @@ services:
       timeout: 5s
       retries: 10
 
-  seed:
-    image: postgres:15
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      PGPASSWORD: ${DB_PASSWORD}
-    volumes:
-      - ./server/tests/fixtures/search-quality-corpus.sql:/seed/corpus.sql:ro
-    entrypoint: ["/bin/sh", "-c", "until pg_isready -h db -U ai_memory -d ai_memory; do sleep 1; done && psql -h db -U ai_memory -d ai_memory -f /seed/corpus.sql"]
-    restart: "no"
-
   mcp:
     build: ./server
     depends_on:
       db:
         condition: service_healthy
-      seed:
-        condition: service_completed_successfully
     environment:
       DATABASE_URL: postgresql://ai_memory:${DB_PASSWORD}@db:5432/ai_memory
       MEMORY_API_KEY: ${MEMORY_API_KEY}
@@ -48,6 +34,63 @@ services:
       - ./server:/app
     ports:
       - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # --- Test profile services (activated with: docker compose --profile test up -d) ---
+
+  db-test:
+    build:
+      context: .
+      dockerfile: docker/postgres-age/Dockerfile
+    profiles: [test]
+    environment:
+      POSTGRES_DB: ai_memory
+      POSTGRES_USER: ai_memory
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    tmpfs:
+      - /var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai_memory -d ai_memory"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  seed:
+    image: postgres:15
+    profiles: [test]
+    depends_on:
+      db-test:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${DB_PASSWORD}
+    volumes:
+      - ./server/tests/fixtures/search-quality-corpus.sql:/seed/corpus.sql:ro
+    entrypoint: ["/bin/sh", "-c", "until pg_isready -h db-test -U ai_memory -d ai_memory; do sleep 1; done && psql -h db-test -U ai_memory -d ai_memory -f /seed/corpus.sql"]
+    restart: "no"
+
+  mcp-test:
+    build: ./server
+    profiles: [test]
+    depends_on:
+      db-test:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql://ai_memory:${DB_PASSWORD}@db-test:5432/ai_memory
+      MEMORY_API_KEY: ${MEMORY_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+    volumes:
+      - ./server:/app
+    ports:
+      - "127.0.0.1:3001:3000"
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:3000/health || exit 1"]
       interval: 10s

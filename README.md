@@ -112,11 +112,14 @@ For Claude Code, add to your MCP settings:
 ### Running tests
 
 ```bash
-# All server tests
-docker compose exec mcp deno test --allow-net --allow-env --allow-read tests/
+# Start the test infrastructure (ephemeral DB + seeded corpus + test MCP server)
+docker compose --profile test up -d
+
+# All server tests (run inside the mcp-test container)
+docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/
 
 # A single test file
-docker compose exec mcp deno test --allow-net --allow-env --allow-read tests/search-mmr.test.ts
+docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/search-mmr.test.ts
 ```
 
 The `.NET` solution (governance tooling + the planned local synthesis companion) is built and tested with the standard `dotnet` CLI:

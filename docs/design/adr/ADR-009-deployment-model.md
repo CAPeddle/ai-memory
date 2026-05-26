@@ -132,10 +132,31 @@ All secrets are injected via environment variables. No secrets are committed to 
 | **Azure Database for PostgreSQL (managed)** | Managed PostgreSQL on Azure does not allow custom extensions (AGE); same constraint as Supabase managed |
 | **Local-first deployment (original design)** | Incompatible with online access from Claude.ai, ChatGPT, Gemini, Copilot; confirmed dropped as a requirement |
 
+### Dev/Test container separation (ST-036)
+
+The Compose file uses **profiles** to separate development and test infrastructure:
+
+| Profile | Services started | Volume strategy | Purpose |
+|---------|-----------------|-----------------|----------|
+| _(default)_ | `db`, `mcp` | `db_data` named volume (persistent) | Development — manual exploration data persists across sessions |
+| `test` | `db-test`, `seed`, `mcp-test` (plus default services) | tmpfs (RAM-only, wiped on stop) | Testing — ephemeral, seeded, deterministic |
+
+**Key conventions:**
+- `docker compose up -d` gives a clean dev stack. No seed data. Dev DB data persists.
+- `docker compose --profile test up -d` adds the test infrastructure alongside dev.
+- Tests run inside `mcp-test`: `docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/`
+- `db-test` uses the same image as `db` (PG15 + pgvector + AGE) but with tmpfs storage, so init scripts re-run on every start (always fresh schema).
+- `seed` loads the deterministic test corpus (`server/tests/fixtures/search-quality-corpus.sql`) into `db-test` only.
+- `mcp-test` connects to `db-test` via its own `DATABASE_URL`; no env-var override needed in tests.
+- `mcp-test` exposes port 3001 on the host for curl debugging.
+
+This separation ensures test runs never alter dev data, and eliminates test-pollution failures where one test's data affects another test's assertions.
+
 ---
 
 ## Revision History
 
 | Version | Date | Summary |
 |---------|------|---------|
+| 1.1 | 2026-05-26 | Added dev/test container separation via Compose profiles (ST-036) |
 | 1.0 | 2026-05-16 | Initial — Docker Compose (PostgreSQL 15 + pgvector + AGE, Deno MCP server); local validation first; cloud platform TBD post-spike |
