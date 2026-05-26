@@ -277,29 +277,20 @@
 
 ## Review
 
+(Empty)
+
+## Done
+
 ### ST-035: Entity↔thought provenance link (entity_mentions back-link table)
 - Type: feature
 - Source: PO (brainstorming session 2026-05-22)
 - phase: 1 (foundational — enables Phase 3 consumers ST-019, ST-026 and future graph-expanded search)
 - Value: 4
-- Blocked by: none (ST-022 entity worker Done; this extends it)
-- Touches: `server/db/graph.sql` (new `entity_mentions` table + index), `server/src/entityWorker.ts` (modify `writeToGraph`), `server/tests/entity-mentions.test.ts` (new)
-- Acceptance criteria:
-  - [x] New `public.entity_mentions` table with composite PK `(thought_id, entity_label, entity_name)`, CHECK constraint on label allow-list (`Person|Function|Error|Topic|Project`), FK to `thoughts(id)` with `ON DELETE CASCADE`, and a secondary index on `(entity_label, entity_name)`
-  - [x] Entity worker writes one mention row per extracted entity, batched per thought, alongside existing AGE `MERGE` calls
-  - [x] Delete-then-insert on every extraction so mentions reflect current content (re-extraction freshness, spec §4.4)
-  - [x] `writeToGraph` receives `thoughtId` parameter; caller in `processQueue` passes `thought_id`
-  - [x] Integration test: `capture_thought` → wait for worker → `entity_mentions` rows exist for the thought
-  - [x] Integration test: re-extraction (content + `content_fingerprint` change) removes stale mentions and inserts new ones
-  - [x] Integration test: CHECK constraint rejects INSERT with label outside the allow-list
-  - [x] Integration test: `DELETE FROM thoughts` cascades to `entity_mentions`
-  - [x] Out of scope (verified by absence): no new MCP tools (`server/index.ts` untouched), no read-path code, no bounding strategy (ST-034 owns that), no backfill (forward-only worker)
+- Completed: 2026-05-26
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-035.md`
 - Query packet: `.github/planning/query-packets/QP-035-entity-thought-provenance.md`
 - Docs: `docs/design/specs/2026-05-22-entity-thought-provenance.md`, `docs/design/plans/2026-05-22-entity-thought-provenance.md`
-- Notes: All 7 ExecPlan tasks complete (2026-05-24). 4/4 integration tests pass. `git diff HEAD~6..HEAD -- server/index.ts` empty — no MCP tools added. 4 pre-existing search test failures on fresh DB (seed corpus not in init scripts) are not ST-035 regressions — see exec-plan §6b Discovery 2. Awaiting PO acceptance.
-
-## Done
+- Notes: Accepted by PO 2026-05-26. All 7 tasks complete; 4/4 integration tests pass. `entity_mentions` table live with composite PK, CHECK, FK cascade, and secondary index. Entity worker writes batched DELETE+INSERT on every extraction. `server/index.ts` untouched — data-plane only. 4 pre-existing search test failures (seed-corpus gap on fresh DB) are not regressions — see exec-plan §6b Discovery 2.
 
 ### ST-036: Separate dev/test DB containers (Compose profiles)
 - Type: debt
