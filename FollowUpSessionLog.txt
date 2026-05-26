@@ -1,43 +1,38 @@
 # FollowUpSessionLog — ai-memory
 
-## Last Session: 2026-05-19 (ST-022 execution complete — entity extraction worker)
+## Last Session: 2026-05-26 (ST-035 complete, ST-036 complete)
 
 ### Accomplished
-- **ST-022 (6 tasks, all complete) — Implement Entity Extraction Worker (OpenRouter → AGE Graph):**
-  - **Task 4.1:** Created `server/src/entityWorker.ts` (211 lines) — `startEntityWorker()`, allow-list validation, MERGE writes to AGE, exponential backoff via `retry_after`. Commit 6b55f22.
-  - **Task 4.2:** Registered `graph_search` MCP tool in `server/index.ts` — parameterized (start_node, relationship_filter, max_hops), allow-listed relationship types, injection-safe. Commit 334dd37.
-  - **Task 4.3:** Wired `startEntityWorker()` call in `index.ts`; appended `retry_after timestamptz` column (ADD COLUMN IF NOT EXISTS) to `server/db/graph.sql`. Commit 70b357b.
-  - **Task 4.4:** Updated CMD in `server/Dockerfile` to add `--allow-read` flag. Commit 684f630.
-  - **Task 4.5:** Created `server/tests/entity-worker.test.ts` with 4 Deno integration tests. SSE parsing required for `@hono/mcp` StreamableHTTP transport. Commits bbfa469, b3f563c, 8acc0b2.
-  - **Task 4.6:** Full E2E build + run — all 4 tests passed (exit code 0). Worker confirmed in logs. Graph populated with Person(Alice/John), Function(TypeScript), Project(Zoom). Commits 1bcd2ae, 7dff264.
-- **Moved ST-022 to Review** on story board. All 7 ACs verified.
+- **ST-035 (entity_mentions back-link table):** All 7 tasks done, 4/4 tests pass. Moved to Done.
+- **ST-036 (dev/test DB separation):** Compose profiles implemented. Commit `a7964c0`.
+  - `docker compose up -d` → db + mcp only (persistent dev data)
+  - `docker compose --profile test up -d` → adds db-test (tmpfs) + seed + mcp-test (port 3001)
+  - Tests: `docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/`
+  - 20/20 tests pass. Dev data never wiped.
+- **Seed corpus fix:** search-quality-corpus.sql loaded by seed service into db-test.
+- **Docs updated:** ADR-009 (dev/test section), README (test commands), story-board (both stories → Done).
+- **CLAUDE.md updated locally** (gitignored — not committed, not portable to fresh clones).
 
-### Key Discoveries
-1. **`sql.unsafe()` multi-statement returns nested arrays.** When called with `LOAD 'age'; SET search_path; SELECT * FROM cypher(...)`, the postgres npm package returns `[[],[{result:vertex},...]]` — one inner array per statement. Flat-array access returns `undefined` silently. Fixed by `extractAgeRows()` helper (check `Array.isArray(result[0])` → return last inner array). Applies to ALL multi-statement AGE queries.
-2. **`@hono/mcp` StreamableHTTP requires `Accept: application/json, text/event-stream`.** Missing header → 406 Not Acceptable before any MCP processing.
-3. **StreamableHTTP responses are SSE format.** `event: message\ndata: {json}\n\n` — cannot use `res.json()`. Must read text, find first `data:` line, parse as JSON.
-4. **PostgreSQL init scripts don't re-run on existing volumes.** `retry_after` column added to graph.sql only applies on fresh db_data volume. Applied manually for live volumes via `ALTER TABLE entity_extraction_queue ADD COLUMN IF NOT EXISTS retry_after timestamptz`.
-
-### Resume Point
-- **In Progress: none. Review: ST-022.**
-- **Next work options:**
-  - PO accepts ST-022 → move to Done → plan next story from Backlog
-  - ST-022 blocks: ST-005 (recall events), ST-008 (.NET REST host), ST-023 (consolidation worker), ST-024 (cloud deployment) are all partially unblocked
+### Known Gap
+- CLAUDE.md has the authoritative test commands but is gitignored (global exclude or local).
+  No committed instruction file surfaces these commands to a fresh agent on a new clone.
+  PO to decide: add to `.github/instructions/` or keep CLAUDE.md workspace-local.
 
 ### Board State
 - In Progress: none
-- Review: **ST-022** (completed 2026-05-19, all 7 ACs verified)
-- Done: ST-001, ST-009, ST-011, ST-012, ST-013, ST-014, ST-015, ST-016, ST-017, ST-021
-- Refined: empty
-- Backlog: ST-002–ST-020 (Phases 1–6), ST-023, ST-024
+- Review: none
+- Done: ST-001, ST-005, ST-009, ST-011–ST-017, ST-021, ST-022, ST-035, ST-036
+- Refined: ST-030 (1 AC remaining), ST-008 (ExecPlan ready)
+- Backlog: ST-006, ST-010, ST-019, ST-023, ST-024, ST-026, ST-028, ST-029, ST-031, ST-032, ST-034
+
+### Resume Point
+- Next natural pick: ST-008 (consolidation worker, Refined, ExecPlan ready for /continue)
+- ST-030 has 1 trivial AC left (git diff -w verification, ~1 second)
 
 ### Avoidance
-- **`extractAgeRows()` pattern is MANDATORY for all multi-statement AGE queries.** `sql.unsafe()` with LOAD + SET + SELECT returns nested arrays. Always unwrap last element.
-- `@hono/mcp` StreamableHTTP: always include `Accept: application/json, text/event-stream` header in MCP tool calls from test code or client integrations.
-- PostgreSQL init scripts only run on fresh volumes. Live DB migrations must be applied manually or via a migration runner.
-- Do NOT use `git clone` inside Dockerfiles — Fortinet SSL proxy will block it.
-- AGE `v1.7.0` tag does not exist for PG15 — use `PG15/v1.6.0-rc0`.
-- AGE v1.6.0 `|` operator limitation: `[:A|B*1..n]` fails until PG17 + AGE v1.7.0.
+- Corpus-isolation filter in search-project-boost.test.ts is STILL NEEDED for intra-run ordering.
+- CLAUDE.md is gitignored by a global exclude rule — use `git add -f` if committing is decided.
+- `db-test` uses tmpfs — init scripts re-run on every container start (always fresh schema).
 
 ### Accomplished
 - **ST-013 (5 tasks, all complete) — Split investigation docs into landing pages and focused fragments:**

@@ -103,3 +103,13 @@ Apply the context-engineering principles from the investigation docs to your own
 ## Dogfooding
 
 Once ai-memory is implemented enough to be usable, prefer dogfooding it in approved stories and plans. Do not invent premature dogfooding steps before the service exists.
+
+## Session Review — Continuous Improvement
+
+At the end of each non-trivial session, review the work for **reusable nuggets** — recurring patterns, gotchas, workflow gaps, or conventions that a fresh agent would miss. When you identify one, suggest creating or updating:
+
+- A **`.github/instructions/*.instructions.md`** file — for conventions, commands, or constraints that should auto-load into every Copilot session.
+- A **skill** (`.github/skills/*/SKILL.md`) — for domain-specific procedural knowledge (multi-step workflows, research patterns).
+- An update to **`CLAUDE.md`** or **`.github/copilot-instructions.md`** — for architectural context or workflow-level guidance.
+
+Don't create these unilaterally — propose them to the PO with a one-line rationale. The goal is to compound project knowledge so future sessions start smarter.
