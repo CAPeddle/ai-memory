@@ -123,6 +123,11 @@ Use the existing story schema:
 
 If acceptance criteria are not ready, keep them minimal and clearly provisional.
 
+**Standard AC guidance:** Every non-trivial story should include a cross-model review AC:
+- `[ ] Cross-model critical review passes (different model reviews implementation against ExecPlan contract before story moves to Review)`
+
+This ensures the later `/plan` ExecPlan accounts for the review gate and `/continue` knows to pause before declaring completion. Trivial doc/housekeeping stories may omit this at PO discretion.
+
 ### Query Packet
 
 Make the query packet self-contained enough that a future `/plan` session can resume from it after another PO round if needed.

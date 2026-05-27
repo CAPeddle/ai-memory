@@ -61,6 +61,16 @@ Read the query packet as sole input. It must reflect prior collaborative scoping
 - [ ] Script templates or boilerplate provided in §3 where applicable
 - [ ] Every task ends with a verification step (command or assertion)
 - [ ] Acceptance criteria phrased as observable behaviour, not implementation details
+- [ ] Final task includes a cross-model review step (see below)
+
+**Cross-model review requirement:**
+
+Every ExecPlan's final verification task (typically §4.N) must include a step instructing the executor to request a cross-model critical review before moving the story to Review. The review is performed by a different model than the one that executed the tasks. The reviewer reads the ExecPlan's §2 ACs and §2d traceability matrix against the shipped implementation and tests, checking:
+- Do the tests actually validate the stated contract (not just pass)?
+- Are there behavioural paths or edge cases the tests miss?
+- Does the code's runtime semantics match the stated design (not just "deno check passes")?
+
+This gate exists because executing models self-validate against their own test coverage, which may be narrower than the stated contract. Evidence: ST-008 shipped with all ACs "checked" and 34/34 tests green, but a cross-model review found 3 contract defects the tests didn't cover (commit 319a9fe).
 
 Walk the PO through the plan in iterative review rounds. On approval:
 

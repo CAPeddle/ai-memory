@@ -35,7 +35,13 @@ For a story with a Ready ExecPlan:
    - Read only the current task's instructions
    - Execute steps exactly as written
    - After each task: update §5b Recovery Ledger, atomic commit
-5. **On story completion**: move to Review column, present acceptance criteria to PO
+5. **On story completion — cross-model review gate**:
+   - Do NOT move to Review yet
+   - Present the completed story to the PO and explicitly recommend a **cross-model critical review** before the story moves to Review
+   - The review must be performed by a different model than the executor, reading the ExecPlan contract (§2 ACs, §2d traceability matrix) against the actual implementation
+   - The reviewer checks: do the tests actually validate the contract? Are there behavioural paths the tests miss? Does the code match stated semantics (not just "tests pass")?
+   - Only after the cross-model review passes (or the PO waives it) should the story move to Review
+6. **After review passes**: move to Review column, present acceptance criteria to PO
 
 ## After Each Task — Atomic Commit
 
