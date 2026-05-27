@@ -7,6 +7,7 @@ import { requireApiKey } from "./src/auth.ts";
 import { parseContext } from "./src/parseContext.ts";
 import { sql } from "./src/db.ts";
 import { startEntityWorker } from "./src/entityWorker.ts";
+import { startConsolidationWorker, drainPendingOnce } from "./src/consolidationWorker.ts";
 import { cosineSim, mmrRerank, logRecall, parseVector, MmrCandidate } from "./src/searchQuality.ts";
 
 const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY") ?? "";
@@ -302,12 +303,13 @@ server.registerTool(
       const project = scope?.projects?.[0] ?? null;
       const since = days ? new Date(Date.now() - days * 86_400_000).toISOString() : null;
       const n = limit ?? 10;
+      const mt = memory_type ?? null;
 
       const rows = await sql`
         SELECT id, content, memory_type, project, created_at
         FROM thoughts
         WHERE active = true
-          AND (${memory_type}::text IS NULL OR memory_type = ${memory_type})
+          AND (${mt}::text IS NULL OR memory_type = ${mt})
           AND (${project}::text IS NULL OR project = ${project})
           AND (${since}::timestamptz IS NULL OR created_at >= ${since}::timestamptz)
         ORDER BY created_at DESC
@@ -466,6 +468,26 @@ server.registerTool(
   }
 );
 
+// --- Tool 8: consolidate ------------------------------------------------
+
+server.registerTool(
+  "consolidate",
+  {
+    title: "Run consolidation sweep",
+    description: "Manually drain the consolidation_queue. With dry_run=true, writes only consolidation_log rows marked dry_run=true and performs no thoughts writes.",
+    inputSchema: {
+      dry_run: z.boolean().optional().describe("If true, no thoughts mutations; consolidation_log rows are tagged dry_run=true"),
+      limit: z.number().int().positive().max(500).optional().describe("Maximum candidates to process this sweep (default 50)"),
+    },
+  },
+  async ({ dry_run, limit }) => {
+    const processed = await drainPendingOnce(dry_run ?? false, limit ?? 50);
+    return {
+      content: [{ type: "text" as const, text: JSON.stringify({ processed, dry_run: dry_run ?? false }) }],
+    };
+  }
+);
+
 // ---------------------------------------------------------------------------
 // Hono app — Bearer auth + CORS + StreamableHTTP transport
 // ---------------------------------------------------------------------------
@@ -503,3 +525,8 @@ Deno.serve({ port: 3000 }, app.fetch);
 
 // Start entity extraction background worker
 startEntityWorker();
+
+// Start consolidation background worker
+startConsolidationWorker().catch((err) =>
+  console.error("[server] consolidation worker failed to start:", err)
+);
