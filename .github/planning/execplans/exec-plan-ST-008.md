@@ -959,22 +959,28 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | — |
-| **Last successful command** | — |
-| **Expected outputs produced** | — |
-| **Next task** | Task 4.1 — Apply schema changes for event-driven consolidation |
+| **Last completed task** | Task 4.5 — `consolidationWorker.ts` created. `deno check` passes. Commit `073db30`. |
+| **Last successful command** | `docker compose exec mcp deno check src/consolidationWorker.ts` (exits 0) |
+| **Expected outputs produced** | `server/src/consolidationWorker.ts` exporting `drainPendingOnce()` and `startConsolidationWorker()`. Dedup via consolidation_log; dry_run mode; LLM-error → retry_after. |
+| **Next task** | Task 4.6 — Wire worker + register `consolidate` MCP tool in `server/index.ts` |
 | **Known blockers** | None |
-| **Last updated** | 2026-05-20 (created by /plan; not yet executed) |
+| **Last updated** | 2026-05-27 (Task 4.2 complete) |
 
 ### Progress History
 
 | Timestamp (ISO) | Task | Status | Evidence / outputs | Next step |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| 2026-05-27 | Task 4.1 | ✅ Completed | `queue_for_consolidation()` contains `pg_notify`; `notify_consolidation_on_recall` trigger live; `retry_after` column on `consolidation_queue`. Commit `1825f76`. | Execute Task 4.2: write failing integration tests + corpus |
+| 2026-05-27 | Task 4.2 | ✅ Completed | 7/7 tests fail as expected (TDD red). `consolidation-worker.test.ts` + `consolidation-corpus.sql` committed `ad56741`. | Execute Task 4.3: implement`consolidationScoring.ts` |
+| 2026-05-27 | Task 4.3 | ✅ Completed | `consolidationScoring.ts` with 4 exports; 7/7 scoring unit tests pass. Commit `ae768d7`. | Execute Task 4.4: implement `consolidationLLM.ts` |
+| 2026-05-27 | Task 4.4 | ✅ Completed | `consolidationLLM.ts` with `normaliseContent()`; `deno check` passes; `__TEST_LLM_FAIL__` stub included. Commit `b3cf14a`. | Execute Task 4.5: implement `consolidationWorker.ts` |
+| 2026-05-27 | Task 4.5 | ✅ Completed | `consolidationWorker.ts` with `drainPendingOnce()` + `startConsolidationWorker()`; dedup via consolidation_log; dry_run mode; `deno check` exits 0. Commit `073db30`. Key design: isDedupHit uses consolidation_log (not content_fingerprint) to handle shard re-activation; promote INSERT omits content_fingerprint to avoid UNIQUE constraint violation when wiki and shard coexist. | Execute Task 4.6: wire worker into index.ts + register consolidate MCP tool |
 
 ### Avoidance
 
 (Append dated entries here. Do not delete prior guidance.)
+
+- 2026-05-27 — **The `db` Docker image bakes `schema.sql` at build time via `COPY server/db/schema.sql /docker-entrypoint-initdb.d/02-schema.sql`.** After editing `schema.sql`, always run `docker compose build db` before `docker compose down -v && docker compose up -d`. Init scripts only fire on a fresh volume; skipping the rebuild silently applies the stale schema.
 
 ---
 
@@ -1012,6 +1018,14 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 ## §6c. Decision Log
 
 (Record every decision made during execution with rationale.)
+
+- 2026-05-27 (Task 4.1) \u2014 **Docker image rebuild required for schema changes.** `server/db/schema.sql` is baked into the `db` image via `COPY`. After editing, always `docker compose build db` before `docker compose down -v && docker compose up -d`. Added to Avoidance.
+
+- 2026-05-27 (Task 4.2) \u2014 **Test corpus design: direct `sql` over shared corpus file.** The ExecPlan step 3 offered two options: `_test/reset-consolidation-corpus` HTTP endpoint, or psql-direct seeding. Chose **direct `sql` calls** (importing `sql` from `../src/db.ts`) per the existing `entity-mentions.test.ts` pattern. Each test inserts/deletes its own rows via cleanup helper. `consolidation-corpus.sql` is created as a reference doc only (not loaded by seed service). No server modification needed.
+
+- 2026-05-27 (Task 4.2) \u2014 **Dedup test redesign: re-run approach instead of pre-seeded wiki.** The ExecPlan's dedup scenario (shard with fp matching a pre-seeded wiki) is impossible under the schema's `UNIQUE (content_fingerprint)` constraint — a wiki and shard cannot share the same fingerprint simultaneously. Redesigned dedup test to: (1) promote shard D, (2) manually re-activate it by SQL, (3) call `consolidate` again, (4) assert skip with `dedup=true` in `score_breakdown`. The worker implementation (Task 4.5) must detect prior promotion via `consolidation_log` rather than via `content_fingerprint`.
+
+- 2026-05-27 (Task 4.2) \u2014 **LLM failure stub: `__TEST_LLM_FAIL__` content prefix.** For Test G, the worker will check if thought content starts with `__TEST_LLM_FAIL__` and simulate a failure. Avoids env-var-per-test approach (can't change env vars at Deno test runtime) and avoids modifying the OpenRouter URL (would affect all LLM calls).
 
 ---
 

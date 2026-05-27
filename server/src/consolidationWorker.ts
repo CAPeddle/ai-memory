@@ -105,13 +105,13 @@ async function promote(
   workerRunId: string,
   dryRun: boolean,
 ): Promise<void> {
-  const breakdownJson = JSON.stringify({ ...breakdown, normalised_content: normalised });
+  const breakdownObj = { ...breakdown, normalised_content: normalised };
   if (dryRun) {
     await sql`
       INSERT INTO consolidation_log
         (operation, thought_id, score, score_breakdown, worker_run_id, dry_run)
       VALUES
-        ('promote', ${shardId}, ${score}, ${breakdownJson}::jsonb, ${workerRunId}, true)
+        ('promote', ${shardId}, ${score}, ${sql.json(breakdownObj as unknown as Record<string, string | number | boolean | null>)}, ${workerRunId}, true)
     `;
     return;
   }
@@ -137,7 +137,7 @@ async function promote(
       INSERT INTO consolidation_log
         (operation, thought_id, wiki_id, score, score_breakdown, worker_run_id, dry_run)
       VALUES
-        ('promote', ${shardId}, ${wiki.id}, ${score}, ${breakdownJson}::jsonb, ${workerRunId}, false)
+        ('promote', ${shardId}, ${wiki.id}, ${score}, ${sql.json(breakdownObj as unknown as Record<string, string | number | boolean | null>)}, ${workerRunId}, false)
     `;
   });
 }
@@ -151,12 +151,12 @@ async function flag(
   workerRunId: string,
   dryRun: boolean,
 ): Promise<void> {
-  const breakdownJson = JSON.stringify({ ...breakdown, normalised_content: normalised });
+  const breakdownObj = { ...breakdown, normalised_content: normalised };
   await sql`
     INSERT INTO consolidation_log
       (operation, thought_id, score, score_breakdown, worker_run_id, dry_run)
     VALUES
-      ('flag', ${shardId}, ${score}, ${breakdownJson}::jsonb, ${workerRunId}, ${dryRun})
+      ('flag', ${shardId}, ${score}, ${sql.json(breakdownObj as unknown as Record<string, string | number | boolean | null>)}, ${workerRunId}, ${dryRun})
   `;
 }
 
@@ -168,12 +168,11 @@ async function skip(
   workerRunId: string,
   dryRun: boolean,
 ): Promise<void> {
-  const breakdownJson = JSON.stringify(breakdown);
   await sql`
     INSERT INTO consolidation_log
       (operation, thought_id, score, score_breakdown, worker_run_id, dry_run)
     VALUES
-      ('skip', ${shardId}, ${score}, ${breakdownJson}::jsonb, ${workerRunId}, ${dryRun})
+      ('skip', ${shardId}, ${score}, ${sql.json(breakdown as unknown as Record<string, string | number | boolean | null>)}, ${workerRunId}, ${dryRun})
   `;
 }
 
@@ -303,8 +302,15 @@ export async function drainPendingOnce(dryRun = false, limit = BATCH_SIZE): Prom
  * Start the consolidation background worker.
  * - Drains pending queue once (miss-recovery for events fired before boot).
  * - Subscribes to pg_notify 'consolidation_event' and re-drains on each notification.
+ *
+ * Skipped when CONSOLIDATION_WORKER_DISABLED=true (test environment: prevents
+ * the auto-listener from racing with explicit mcpCall("consolidate") test calls).
  */
 export async function startConsolidationWorker(): Promise<void> {
+  if (Deno.env.get("CONSOLIDATION_WORKER_DISABLED") === "true") {
+    console.log("[consolidationWorker] auto-start disabled (CONSOLIDATION_WORKER_DISABLED=true)");
+    return;
+  }
   await drainPendingOnce().catch((err) =>
     console.error("[consolidationWorker] startup drain failed:", err)
   );

@@ -87,6 +87,9 @@ services:
       DATABASE_URL: postgresql://ai_memory:${DB_PASSWORD}@db-test:5432/ai_memory
       MEMORY_API_KEY: ${MEMORY_API_KEY}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      # Disable background LISTEN/NOTIFY auto-drain so integration tests
+      # can call the consolidate MCP tool explicitly without races.
+      CONSOLIDATION_WORKER_DISABLED: "true"
     volumes:
       - ./server:/app
     ports:
