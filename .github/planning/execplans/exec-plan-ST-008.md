@@ -1,6 +1,6 @@
 # ExecPlan — ST-008: Consolidation Worker (Shard → Wiki Promotion)
 
-> Status: ✅ Ready for /continue
+> Status: ✅ Done
 > Story: ST-008
 > Created: 2026-05-20
 > Approved: 2026-05-20 (PO, /plan review)
@@ -63,7 +63,28 @@ Today, no shard ever becomes a wiki. The infrastructure for promotion is in plac
 
 ## §1b. Outcomes & Conclusions
 
-(To be populated by /continue at story completion. Use the §1b template structure: completion status, key findings, requirements met/unmet, architectural impact, supporting evidence, downstream changes.)
+**Completion status:** ✅ All 9 acceptance criteria verified. 34/34 tests pass (7 new ST-008 integration tests + 7 new scoring unit tests + 20 pre-existing tests). Zero regressions.
+
+**Key findings:**
+- The consolidation worker (shard → wiki promotion) is fully operational via LISTEN/NOTIFY.
+- Three-factor scoring (frequency × diversity × relevance/confidence) produces correct band assignments.
+- LLM normalisation via OpenRouter `gpt-4o-mini` runs on all ≥0.5 candidates; fail-hard path sets `status='llm_error'` + `retry_after` without writing to `thoughts`.
+- Dry-run mode writes `consolidation_log` with `dry_run=true` and makes no `thoughts` mutations.
+- Dedup detection via `consolidation_log` prior-promote check prevents double-promotion on re-activation.
+
+**Requirements met:** All 9 ACs in §2 verified by `consolidation-worker.test.ts`.
+
+**Architectural impact:** `startConsolidationWorker()` wired into `server/index.ts` boot sequence after `startEntityWorker()`. `CONSOLIDATION_WORKER_DISABLED=true` env var disables the background LISTEN loop in test environments. `consolidate` MCP tool exposes manual sweep.
+
+**Supporting evidence:**
+- Commits: `1825f76` (schema), `ad56741` (tests), `ae768d7` (scoring), `b3cf14a` (LLM), `073db30` (worker), `bd38629` (wiring), `04b456b` (fixes)
+- `docker exec ai-memory-mcp-test-1 deno test --allow-all tests/ → ok | 34 passed | 0 failed`
+- `docker logs ai-memory-mcp-1 | grep consolidationWorker → [consolidationWorker] listening`
+
+**Discoveries recorded in §6b/§6c:**
+- Postgres 3.x returns JSONB column values as raw strings when inserted via `JSON.stringify(x)::jsonb` (TEXT parameter + SQL cast). Fix was `sql.json(obj)` which uses the native JSON type OID on send, triggering JSON.parse on retrieval.
+- Background LISTEN worker races with explicit MCP tool calls in integration tests → need `CONSOLIDATION_WORKER_DISABLED` guard.
+- `PROMOTE` INSERT must omit `content_fingerprint` to avoid `UNIQUE (content_fingerprint)` violation (shard still exists with active=false when wiki is inserted).
 
 ---
 
@@ -959,10 +980,10 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.5 — `consolidationWorker.ts` created. `deno check` passes. Commit `073db30`. |
-| **Last successful command** | `docker compose exec mcp deno check src/consolidationWorker.ts` (exits 0) |
-| **Expected outputs produced** | `server/src/consolidationWorker.ts` exporting `drainPendingOnce()` and `startConsolidationWorker()`. Dedup via consolidation_log; dry_run mode; LLM-error → retry_after. |
-| **Next task** | Task 4.6 — Wire worker + register `consolidate` MCP tool in `server/index.ts` |
+| **Last completed task** | Task 4.7 — All 7 integration tests pass; 34/34 full test suite passes. Story closed. Commit `04b456b`. |
+| **Last successful command** | `docker exec ai-memory-mcp-test-1 deno test --allow-all tests/` (ok | 34 passed | 0 failed) |
+| **Expected outputs produced** | Full consolidation worker (Tasks 4.1–4.7); all ACs verified. |
+| **Next task** | Story complete — move to Review. |
 | **Known blockers** | None |
 | **Last updated** | 2026-05-27 (Task 4.2 complete) |
 
@@ -975,6 +996,8 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-05-27 | Task 4.3 | ✅ Completed | `consolidationScoring.ts` with 4 exports; 7/7 scoring unit tests pass. Commit `ae768d7`. | Execute Task 4.4: implement `consolidationLLM.ts` |
 | 2026-05-27 | Task 4.4 | ✅ Completed | `consolidationLLM.ts` with `normaliseContent()`; `deno check` passes; `__TEST_LLM_FAIL__` stub included. Commit `b3cf14a`. | Execute Task 4.5: implement `consolidationWorker.ts` |
 | 2026-05-27 | Task 4.5 | ✅ Completed | `consolidationWorker.ts` with `drainPendingOnce()` + `startConsolidationWorker()`; dedup via consolidation_log; dry_run mode; `deno check` exits 0. Commit `073db30`. Key design: isDedupHit uses consolidation_log (not content_fingerprint) to handle shard re-activation; promote INSERT omits content_fingerprint to avoid UNIQUE constraint violation when wiki and shard coexist. | Execute Task 4.6: wire worker into index.ts + register consolidate MCP tool |
+| 2026-05-27 | Task 4.6 | ✅ Completed | `startConsolidationWorker()` boot-wired in index.ts after `startEntityWorker()`; `consolidate` MCP tool registered; `deno check index.ts` exits 0; `[consolidationWorker] listening` in dev logs; pre-existing TS2769 in list_thoughts fixed. Commit `bd38629`. | Execute Task 4.7: run all tests, verify ACs, close story |
+| 2026-05-27 | Task 4.7 | ✅ Completed | 7/7 consolidation-worker tests pass; 34/34 full suite passes. Key fixes: (1) sql.json() for JSONB inserts — postgres 3.x returns string instead of object when TEXT+::jsonb cast is used; (2) CONSOLIDATION_WORKER_DISABLED env var guard on mcp-test to prevent background worker racing explicit MCP calls. Commit `04b456b`. Story closed. |
 
 ### Avoidance
 
@@ -1041,11 +1064,15 @@ At story completion:
 
 ## §7b. Outcomes & Retrospective
 
-(Use this section for retrospective depth only. The primary at-a-glance outcomes summary belongs in §1b.)
+**Achieved:** Full consolidation pipeline: schema triggers (Task 4.1) → TDD red tests (Task 4.2) → pure scoring (Task 4.3) → LLM normalisation (Task 4.4) → worker logic (Task 4.5) → MCP wiring (Task 4.6) → full test pass (Task 4.7). 7/7 integration tests, 34/34 full suite.
 
-Achieved: ...
-Remains: ...
-Lesson: ...
+**Remains:** ST-029 (feedback_events table) will enable the feedback-based relevance path; the code already reads `feedback_events` if rows exist (no changes needed).
+
+**Lesson A — Postgres 3.x JSONB handling:** `JSON.stringify(obj)` passed via tagged template sends as TEXT (OID 25). On retrieval of a JSONB column, postgres 3 does NOT auto-parse the value to a JS object when the column was populated via TEXT + SQL cast. Use `sql.json(obj)` (OID 114 send) which triggers JSON.parse on retrieval. Record in session-resilience instructions.
+
+**Lesson B — Background worker test isolation:** LISTEN/NOTIFY worker races with integration tests when running in the same container as the MCP server. Pattern: add `CONSOLIDATION_WORKER_DISABLED` env var, set `true` on test containers. Document in dev-environment instructions.
+
+**Lesson C — Old images in test stack:** `docker compose build db` only rebuilds the `db` service image, NOT `db-test`. After schema changes, always rebuild both: `docker compose build db db-test`.
 
 ---
 
