@@ -65,7 +65,17 @@ The 315/315 symmetric insertion/deletion count and the side-by-side diff (identi
 
 ## §1b. Outcomes & Conclusions
 
-(To be populated by /continue at story completion. Use the template structure: completion status, key findings, requirements met/unmet, architectural impact, supporting evidence, downstream changes.)
+**Status:** Complete (2026-05-27). All 6 acceptance criteria met.
+
+**Key findings:**
+- `.gitattributes` created at repo root with `* text=auto eol=lf` baseline and `eol=crlf` overrides for `.bat`/`.cmd`/`.ps1`.
+- Commit `0611109` renormalized 540 files; `git diff 0611109^..0611109 -w --stat` returns empty output, mathematically proving zero non-whitespace change.
+- `git status` is clean; false-positive CRLF churn is eliminated.
+- Two plan-reviews were required (Git EOL semantics and verification scope). Both resolved; lessons saved to project memory.
+
+**Requirements met:** All 5 §2 Definition of Done criteria satisfied. No unmet requirements.
+**Architectural impact:** None — pure whitespace housekeeping; no runtime files changed semantically.
+**Supporting evidence:** See §6 Execution Log; Task 4.4 output is empty (captured 2026-05-27).
 
 ---
 
@@ -390,7 +400,7 @@ If the executor session is interrupted, read §5b to determine where to resume. 
 | **Expected outputs produced** | `.gitattributes` at repo root; commit `0611109` (renormalize); commit `c1c1c7d` (.gitattributes); `git status` clean; index encodings match `.gitattributes` rules |
 | **Next task** | Task 4.4 (revised) — Run `git diff 0611109^..0611109 -w --stat`, expect empty output. No runtime dependencies. |
 | **Known blockers** | None (both plan-reviews resolved 2026-05-20) |
-| **Last updated** | 2026-05-20 (second plan-review resolution: Task 4.4 rewritten as whitespace-ignoring diff; Deno/Docker preconditions dropped) |
+| **Last updated** | 2026-05-27 (Task 4.4 completed: `git diff 0611109^..0611109 -w --stat` returned empty output; story complete) |
 
 ### Progress History
 
@@ -399,7 +409,8 @@ If the executor session is interrupted, read §5b to determine where to resume. 
 | 2026-05-20T19:47:48Z | Task 4.1 | ✅ Completed | `Test-Path` returned `True`; baseline `* text=auto eol=lf` matched once; `eol=crlf` count returned `3` | Execute Task 4.2: stage `.gitattributes`, renormalize with `git add --renormalize .`, and commit |
 | 2026-05-20T19:48:55Z | Task 4.2 | ✅ Completed | Commit `0611109` created with subject `build: add .gitattributes and normalize line endings`; renormalization staged/committed across tracked text files | Run Task 4.3 verification commands |
 | 2026-05-20T19:50:37Z | Task 4.3 | ⛔ Blocked | `git ls-files --eol` reported `i/lf w/crlf` for required server files before and after prescribed `git checkout --` retry; `.ps1` entries remained `i/lf w/crlf` | Escalate to PO via `blocked_by: plan-review` and await updated execution guidance |
-| 2026-05-20T20:45:06Z | Task 4.4 | ⛔ Blocked | `docker compose up -d db` succeeded; `deno test --allow-net --allow-env --allow-read` failed immediately with `deno: The term 'deno' is not recognized` | Escalate via `blocked_by: plan-review`; update plan preconditions or provide environment direction |
+| 2026-05-20T20:45:06Z | Task 4.4 (original) | ⛔ Blocked | `docker compose up -d db` succeeded; `deno test --allow-net --allow-env --allow-read` failed immediately with `deno: The term 'deno' is not recognized` | Escalate via `blocked_by: plan-review`; update plan preconditions or provide environment direction |
+| 2026-05-27T00:00:00Z | Task 4.4 (revised) | ✅ Completed | `git diff 0611109^..0611109 -w --stat` produced empty output. Commit is provably whitespace-only across all 540 files. AC4 satisfied. | Story complete — update board, move to Review. |
 
 ### Avoidance
 
@@ -443,6 +454,7 @@ If the executor session is interrupted, read §5b to determine where to resume. 
 - 2026-05-20T20:45:06Z — Stopped execution and escalated to plan-review due to missing environment prerequisite not covered by current ExecPlan.
 - 2026-05-20T19:50:12Z — Verified `core.autocrlf=false`; mismatch persisted.
 - 2026-05-20T19:50:37Z — Stopped execution and escalated to plan-review per /continue rules.
+- 2026-05-27 — Task 4.4 (revised): ran `git diff 0611109^..0611109 -w --stat` from `c:\projects\ai-memory\`. Output: empty. AC4 satisfied. Story complete.
 
 ---
 
@@ -478,9 +490,9 @@ At story completion:
 
 (Use this section for retrospective depth only. The primary at-a-glance outcomes summary belongs in §1b.)
 
-Achieved: ...
-Remains: ...
-Lesson: ...
+**Achieved:** All 6 ACs met. `.gitattributes` live; CRLF churn eliminated; renormalize commit mathematically proven whitespace-only.
+**Remains:** Nothing. Story is Done.
+**Lesson:** Two plan-reviews were caused by misalignment between ACs and deliverable scope — first Git EOL semantics (index vs working tree), then verification breadth (test runner vs whitespace diff). Future pure-infrastructure stories should derive verification commands directly from the nature of the change.
 
 ---
 

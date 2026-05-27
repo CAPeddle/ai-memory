@@ -227,24 +227,6 @@
 
 ## Refined
 
-### ST-030: Add `.gitattributes` and normalize line endings repo-wide
-- Type: debt
-- Source: PO scope-lock during /plan closeout (2026-05-19); plan-review resolved 2026-05-20
-- phase: 0
-- Value: 2
-- Blocked by: none (both plan-reviews resolved 2026-05-20)
-- Touches: `.gitattributes` (created); 540 text files renormalized in commit `0611109`; pending: Task 4.4 verification only
-- Acceptance criteria:
-  - [x] `.gitattributes` created at repo root with policy: `* text=auto eol=lf` baseline + `*.bat`/`*.cmd`/`*.ps1` → `text eol=crlf` (commit `c1c1c7d`)
-  - [x] `git add --renormalize .` applied; renormalized files committed in a single commit titled `build: add .gitattributes and normalize line endings` (commit `0611109`)
-  - [x] `git status --porcelain` produces zero lines on a clean checkout (verified 2026-05-20)
-  - [x] `git ls-files --eol -- server/Dockerfile server/db/graph.sql server/db/schema.sql server/src/parseContext.ts` shows `i/lf` in index under `attr/text=auto eol=lf` for each (working-tree `w/` column may be `lf` or `crlf`; both acceptable — `.gitattributes` keeps `git status` clean)
-  - [x] `git ls-files --eol -- '*.ps1'` shows `i/lf w/crlf` under `attr/text eol=crlf` for each (Git always stores text as LF in the index; `eol=crlf` only affects the working tree)
-  - [ ] `git diff 0611109^..0611109 -w --stat` produces empty output (Task 4.4 — pending; no runtime dependencies)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-030.md` (resume at Task 4.4 — single `git diff -w` command, ~1 second)
-- Query packet: `.github/planning/query-packets/QP-030-gitattributes-line-endings.md`
-- Notes: Two plan-reviews resolved 2026-05-20. First resolution fixed AC4/AC5 Git semantics (i/crlf was Git-impossible). Second resolution replaced the Deno test step with a whitespace-ignoring `git diff -w` check — the renormalize commit is mathematically provable as whitespace-only, stronger evidence than tests. Deno/Docker preconditions dropped. ST-030 has zero runtime dependencies.
-
 ### ST-008: Implement consolidation worker (shard → wiki promotion)
 - Type: feature
 - Source: PO (rewritten post-ST-021 pivot; scope locked 2026-05-20 in QP-008)
@@ -280,6 +262,24 @@
 (Empty)
 
 ## Done
+
+### ST-030: Add `.gitattributes` and normalize line endings repo-wide
+- Type: debt
+- Source: PO scope-lock during /plan closeout (2026-05-19); plan-review resolved 2026-05-20
+- phase: 0
+- Value: 2
+- Completed: 2026-05-27
+- Touches: `.gitattributes` (created); 540 text files renormalized in commit `0611109`
+- Acceptance criteria:
+  - [x] `.gitattributes` created at repo root with policy: `* text=auto eol=lf` baseline + `*.bat`/`*.cmd`/`*.ps1` → `text eol=crlf` (commit `c1c1c7d`)
+  - [x] `git add --renormalize .` applied; renormalized files committed in a single commit titled `build: add .gitattributes and normalize line endings` (commit `0611109`)
+  - [x] `git status --porcelain` produces zero lines on a clean checkout (verified 2026-05-20)
+  - [x] `git ls-files --eol -- server/Dockerfile server/db/graph.sql server/db/schema.sql server/src/parseContext.ts` shows `i/lf` in index under `attr/text=auto eol=lf` for each
+  - [x] `git ls-files --eol -- '*.ps1'` shows `i/lf w/crlf` under `attr/text eol=crlf` for each
+  - [x] `git diff 0611109^..0611109 -w --stat` produces empty output (Task 4.4 — completed 2026-05-27; empty output confirmed)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-030.md`
+- Query packet: `.github/planning/query-packets/QP-030-gitattributes-line-endings.md`
+- Notes: Accepted by PO 2026-05-27. Two plan-reviews resolved 2026-05-20 (Git EOL semantics; verification scope). All 6 ACs met. `git diff -w` proves renormalize commit is whitespace-only.
 
 ### ST-035: Entity↔thought provenance link (entity_mentions back-link table)
 - Type: feature
