@@ -2,7 +2,7 @@
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
 > Next planning target: ST-029 (ST-008 plan complete; ST-029 is the next Phase 1 follow-up)
-> Last updated: 2026-05-26
+> Last updated: 2026-05-27
 
 ---
 
@@ -33,25 +33,6 @@
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-023.md` (to be created)
 - Docs: `docs/design/adr/ADR-009-deployment-model.md`, `docs/investigations/ST-021-findings.md`
 - Notes: Open question: AGE availability on managed Postgres. Supabase/Neon ship `pgvector` but not `age`; may require self-hosted Postgres alongside the MCP container, or waiting for AGE managed-service support. Decide during planning.
-
-### ST-010: Integration testing for cloud MCP (Deno + Docker Compose)
-- Type: debt
-- Source: PO (rewritten post-ST-021 pivot)
-- phase: 2
-- Value: 4
-- Blocked by: ST-022, ST-005, ST-008
-- Touches: `server/tests/` (new), `.github/workflows/ci.yml`, `docker-compose.test.yml`
-- Acceptance criteria:
-  - [ ] E2E test: `capture_thought` → `search_thoughts` returns it via BM25 lane
-  - [ ] E2E test: `capture_thought` (with embedding settled) → `search_thoughts` returns it via vector lane
-  - [ ] E2E test: shard promoted to wiki via consolidation worker; both queryable
-  - [ ] E2E test: entity extraction populates AGE graph; `graph_traverse` returns expected nodes
-  - [ ] E2E test: context-scoped search filters correctly across `project` / `profile`
-  - [ ] CI pipeline runs `docker compose up` against test images on every push
-  - [ ] Recall event tracking verified end-to-end
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-010.md` (to be created)
-- Docs: `docs/investigations/interface-design-mcp-rest.md`
-- Notes: Rewritten post-ST-021 pivot for TypeScript/Deno/Docker Compose. CI runs against the same `docker-compose.yml` used locally to keep dev and CI environments in sync.
 
 ### ST-028: Worker observability and `stats` MCP tool
 - Type: feature
@@ -227,7 +208,24 @@
 
 ## Refined
 
-(Empty)
+### ST-010: Integration testing for cloud MCP (Deno + Docker Compose)
+- Type: debt
+- Source: PO (rewritten post-ST-021 pivot)
+- phase: 2
+- Value: 4
+- Blocked by: ST-022, ST-005, ST-008
+- Touches: `server/tests/` (new), `.github/workflows/ci.yml`, `docker-compose.test.yml`
+- Acceptance criteria:
+  - [ ] E2E test: `capture_thought` → `search_thoughts` returns it via BM25 lane
+  - [ ] E2E test: `capture_thought` (with embedding settled) → `search_thoughts` returns it via vector lane
+  - [ ] E2E test: shard promoted to wiki via consolidation worker; both queryable
+  - [ ] E2E test: entity extraction populates AGE graph; `graph_traverse` returns expected nodes
+  - [ ] E2E test: context-scoped search filters correctly across `project` / `profile`
+  - [ ] CI pipeline runs `docker compose up` against test images on every push
+  - [ ] Recall event tracking verified end-to-end
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-010.md`
+- Docs: `docs/investigations/interface-design-mcp-rest.md`
+- Notes: Rewritten post-ST-021 pivot for TypeScript/Deno/Docker Compose. CI runs against the same `docker-compose.yml` used locally to keep dev and CI environments in sync.
 
 ---
 
@@ -239,12 +237,16 @@
 
 ## Review
 
+(Empty)
+
+## Done
+
 ### ST-008: Implement consolidation worker (shard → wiki promotion)
 - Type: feature
 - Source: PO (rewritten post-ST-021 pivot; scope locked 2026-05-20 in QP-008)
 - phase: 1
 - Value: 3
-- Blocked by: none (ST-005 Done; ST-030 recommended-but-not-required)
+- Completed: 2026-05-27
 - Touches: `server/src/consolidationWorker.ts` (new), `server/src/consolidationScoring.ts` (new), `server/src/consolidationLLM.ts` (new), `server/index.ts` (modify), `server/db/schema.sql` (modify), `server/tests/consolidation-worker.test.ts` (new), `server/tests/fixtures/consolidation-corpus.sql` (new)
 - Acceptance criteria:
   - [x] Event-driven worker: triggers on `thoughts` INSERT and `recall_events` INSERT call `pg_notify('consolidation_event', thought_id::text)`; worker holds a `sql.listen('consolidation_event', ...)` connection and processes pending queue rows on each notification
@@ -259,9 +261,7 @@
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-008.md`
 - Query packet: `.github/planning/query-packets/QP-008-consolidation-worker.md`
 - Docs: `docs/design/adr/ADR-007-consolidation-pipeline.md`, `docs/investigations/memory-architecture-design.md`
-- Notes: Scope locked across 4 /plan rounds 2026-05-19/20. Wiki.supersedes=NULL per ADR-007. Relevance fallback to `thoughts.confidence` avoids blocking on ST-029 (feedback API). Event-driven LISTEN/NOTIFY replaces earlier "Configurable schedule (default: daily)" wording. Moved Refined → Review 2026-05-27 upon task completion. 34/34 tests pass. Commits: 1825f76, ad56741, ae768d7, b3cf14a, 073db30, bd38629, 04b456b.
-
-## Done
+- Notes: Scope locked across 4 /plan rounds 2026-05-19/20. Wiki.supersedes=NULL per ADR-007. Relevance fallback to `thoughts.confidence` avoids blocking on ST-029 (feedback API). Event-driven LISTEN/NOTIFY replaces earlier "Configurable schedule (default: daily)" wording. 34/34 tests pass. Commits: 1825f76, ad56741, ae768d7, b3cf14a, 073db30, bd38629, 04b456b. Accepted by PO 2026-05-27.
 
 ### ST-030: Add `.gitattributes` and normalize line endings repo-wide
 - Type: debt
