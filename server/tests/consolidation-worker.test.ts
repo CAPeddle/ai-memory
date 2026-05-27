@@ -415,3 +415,140 @@ Deno.test({
     await cleanupTestData();
   },
 });
+
+// ---------------------------------------------------------------------------
+// Test H: LLM failure recovery (AC7 second half)
+// ---------------------------------------------------------------------------
+Deno.test({
+  name: "consolidation: LLM recovery — after retry_after expires, candidate promotes on next sweep",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    await cleanupTestData();
+    // Insert a high-score shard with __TEST_LLM_FAIL__ prefix (will fail first time)
+    await insertShard(
+      S_LLM_FAIL,
+      "__TEST_LLM_FAIL__ Recovery candidate",
+      0.8,
+      "test-consolidation-zoom",
+    );
+    await addRecalls(S_LLM_FAIL, 5, ["test-consolidation-zoom", "test-consolidation-bcf", "test-consolidation-personal"]);
+
+    // First sweep: LLM fails → llm_error + retry_after
+    await mcpCall("consolidate", { dry_run: false });
+
+    const [q1] = await sql<{ status: string }[]>`
+      SELECT status FROM public.consolidation_queue WHERE thought_id = ${S_LLM_FAIL}::uuid
+    `;
+    if (q1.status !== "llm_error") {
+      throw new Error(`Expected status='llm_error' after first sweep, got '${q1.status}'`);
+    }
+
+    // Simulate retry_after expiring by backdating it, and fix the content so LLM succeeds
+    await sql`
+      UPDATE public.consolidation_queue
+      SET retry_after = now() - interval '1 minute'
+      WHERE thought_id = ${S_LLM_FAIL}::uuid
+    `;
+    await sql`
+      UPDATE public.thoughts
+      SET content = 'Recovery candidate with valid content'
+      WHERE id = ${S_LLM_FAIL}::uuid
+    `;
+
+    // Second sweep: should now claim the llm_error row and promote
+    await mcpCall("consolidate", { dry_run: false });
+
+    const wikis = await sql<{ id: string }[]>`
+      SELECT id FROM public.thoughts
+      WHERE memory_type = 'wiki' AND source = 'auto-promoted'
+        AND id IN (SELECT wiki_id FROM public.consolidation_log WHERE thought_id = ${S_LLM_FAIL}::uuid)
+    `;
+    if (wikis.length === 0) {
+      throw new Error("Expected wiki to be created after LLM recovery");
+    }
+
+    const [shard] = await sql<{ active: boolean }[]>`
+      SELECT active FROM public.thoughts WHERE id = ${S_LLM_FAIL}::uuid
+    `;
+    if (shard.active !== false) {
+      throw new Error("Expected original shard active=false after recovery promotion");
+    }
+
+    await cleanupTestData();
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Test I: dry_run queue-state invariant
+// ---------------------------------------------------------------------------
+Deno.test({
+  name: "consolidation: dry_run preserves queue state — all candidates remain pending after sweep",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    await cleanupTestData();
+    await insertShard(S_PROMOTE, "Dry-run queue-state test promote", 0.8, "test-consolidation-zoom");
+    await addRecalls(S_PROMOTE, 5, ["test-consolidation-zoom", "test-consolidation-bcf", "test-consolidation-personal"]);
+    await insertShard(S_FLAG, "Dry-run queue-state test flag", 0.5, "test-consolidation-zoom");
+    await addRecalls(S_FLAG, 3, ["test-consolidation-zoom", "test-consolidation-bcf"]);
+    await insertShard(S_SKIP, "Dry-run queue-state test skip", 0.2, "test-consolidation-zoom");
+    await addRecalls(S_SKIP, 2, ["test-consolidation-zoom", "test-consolidation-zoom"]);
+
+    await mcpCall("consolidate", { dry_run: true, limit: 100 });
+
+    // All three candidates must still be in 'pending' status
+    const queueRows = await sql<{ thought_id: string; status: string }[]>`
+      SELECT thought_id::text, status
+      FROM public.consolidation_queue
+      WHERE thought_id = ANY(ARRAY[${S_PROMOTE}::uuid, ${S_FLAG}::uuid, ${S_SKIP}::uuid])
+    `;
+    for (const row of queueRows) {
+      if (row.status !== "pending") {
+        throw new Error(
+          `Expected queue status='pending' for ${row.thought_id} after dry_run, got '${row.status}'`
+        );
+      }
+    }
+
+    await cleanupTestData();
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Test J: limit enforcement
+// ---------------------------------------------------------------------------
+Deno.test({
+  name: "consolidation: limit is honored exactly — consolidate({limit:1}) processes at most 1 candidate",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    await cleanupTestData();
+    // Insert 3 eligible shards (all skip-band to avoid LLM calls)
+    await insertShard(S_PROMOTE, "Limit test shard A", 0.2, "test-consolidation-zoom");
+    await addRecalls(S_PROMOTE, 2, ["test-consolidation-zoom", "test-consolidation-bcf"]);
+    await insertShard(S_FLAG, "Limit test shard B", 0.2, "test-consolidation-zoom");
+    await addRecalls(S_FLAG, 2, ["test-consolidation-zoom", "test-consolidation-bcf"]);
+    await insertShard(S_SKIP, "Limit test shard C", 0.2, "test-consolidation-zoom");
+    await addRecalls(S_SKIP, 2, ["test-consolidation-zoom", "test-consolidation-bcf"]);
+
+    const result = await mcpCall("consolidate", { dry_run: false, limit: 1 });
+    const body = JSON.parse(
+      (result as { result: { content: { text: string }[] } }).result.content[0].text,
+    );
+    if (body.processed !== 1) {
+      throw new Error(`Expected processed=1 with limit=1, got ${body.processed}`);
+    }
+
+    // Verify only 1 consolidation_log row was written (the rest are still pending)
+    const logs = await sql<{ thought_id: string }[]>`
+      SELECT thought_id::text FROM public.consolidation_log
+      WHERE thought_id = ANY(ARRAY[${S_PROMOTE}::uuid, ${S_FLAG}::uuid, ${S_SKIP}::uuid])
+    `;
+    if (logs.length !== 1) {
+      throw new Error(`Expected exactly 1 log row with limit=1, got ${logs.length}`);
+    }
+
+    await cleanupTestData();
+  },
+});

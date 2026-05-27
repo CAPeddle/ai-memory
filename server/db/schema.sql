@@ -160,8 +160,9 @@ BEGIN
   VALUES (NEW.thought_id, 'pending')
   ON CONFLICT (thought_id) DO UPDATE SET
     status = 'pending',
-    queued_at = now()
-  WHERE consolidation_queue.status IN ('skipped', 'flagged');
+    queued_at = now(),
+    retry_after = NULL
+  WHERE consolidation_queue.status IN ('skipped', 'flagged', 'llm_error');
 
   PERFORM pg_notify('consolidation_event', NEW.thought_id::text);
   RETURN NEW;

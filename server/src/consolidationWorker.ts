@@ -37,17 +37,18 @@ interface QueueRow {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/** Claim up to BATCH_SIZE pending rows with FOR UPDATE SKIP LOCKED. */
-async function claimBatch(): Promise<QueueRow[]> {
+/** Claim up to maxRows pending or retriable rows with FOR UPDATE SKIP LOCKED. */
+async function claimBatch(maxRows: number): Promise<QueueRow[]> {
+  const take = Math.min(maxRows, BATCH_SIZE);
   const rows = await sql`
     UPDATE consolidation_queue
     SET status = 'processing', attempt_count = attempt_count + 1
     WHERE thought_id IN (
       SELECT thought_id FROM consolidation_queue
-      WHERE status = 'pending'
+      WHERE (status = 'pending' OR (status = 'llm_error' AND retry_after <= now()))
         AND (retry_after IS NULL OR retry_after <= now())
       ORDER BY queued_at ASC
-      LIMIT ${BATCH_SIZE}
+      LIMIT ${take}
       FOR UPDATE SKIP LOCKED
     )
     RETURNING thought_id
@@ -186,22 +187,38 @@ async function processCandidate(
   // 1. Eligibility: active shard with ≥2 recalls
   const metrics = await fetchMetrics(thoughtId);
   if (!metrics || metrics.recallCount < 2) {
-    await sql`
-      UPDATE consolidation_queue
-      SET status = 'skipped', processed_at = now()
-      WHERE thought_id = ${thoughtId}
-    `;
+    if (!dryRun) {
+      await sql`
+        UPDATE consolidation_queue
+        SET status = 'skipped', processed_at = now()
+        WHERE thought_id = ${thoughtId}
+      `;
+    } else {
+      await sql`
+        UPDATE consolidation_queue
+        SET status = 'pending', processed_at = NULL
+        WHERE thought_id = ${thoughtId}
+      `;
+    }
     return;
   }
 
   // 2. Dedup: already promoted in a prior run?
   if (await isDedupHit(thoughtId)) {
     await skip(thoughtId, 0, { dedup: true }, workerRunId, dryRun);
-    await sql`
-      UPDATE consolidation_queue
-      SET status = 'skipped', processed_at = now()
-      WHERE thought_id = ${thoughtId}
-    `;
+    if (!dryRun) {
+      await sql`
+        UPDATE consolidation_queue
+        SET status = 'skipped', processed_at = now()
+        WHERE thought_id = ${thoughtId}
+      `;
+    } else {
+      await sql`
+        UPDATE consolidation_queue
+        SET status = 'pending', processed_at = NULL
+        WHERE thought_id = ${thoughtId}
+      `;
+    }
     return;
   }
 
@@ -215,11 +232,19 @@ async function processCandidate(
       breakdown as unknown as Record<string, unknown>,
       workerRunId, dryRun,
     );
-    await sql`
-      UPDATE consolidation_queue
-      SET status = 'skipped', processed_at = now()
-      WHERE thought_id = ${thoughtId}
-    `;
+    if (!dryRun) {
+      await sql`
+        UPDATE consolidation_queue
+        SET status = 'skipped', processed_at = now()
+        WHERE thought_id = ${thoughtId}
+      `;
+    } else {
+      await sql`
+        UPDATE consolidation_queue
+        SET status = 'pending', processed_at = NULL
+        WHERE thought_id = ${thoughtId}
+      `;
+    }
     return;
   }
 
@@ -281,7 +306,8 @@ export async function drainPendingOnce(dryRun = false, limit = BATCH_SIZE): Prom
   const workerRunId = crypto.randomUUID();
   let processed = 0;
   while (processed < limit) {
-    const rows = await claimBatch();
+    const remaining = limit - processed;
+    const rows = await claimBatch(remaining);
     if (!rows.length) break;
     // Fetch metrics for the whole batch to compute shared normalisation maxima
     const metricsForBatch: CandidateMetrics[] = [];
