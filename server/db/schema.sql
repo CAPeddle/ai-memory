@@ -111,6 +111,7 @@ BEGIN
   INSERT INTO public.consolidation_queue (thought_id, status)
   VALUES (NEW.id, 'pending')
   ON CONFLICT (thought_id) DO NOTHING;
+  PERFORM pg_notify('consolidation_event', NEW.id::text);
   RETURN NEW;
 END;
 $$;
@@ -140,3 +141,44 @@ CREATE TABLE IF NOT EXISTS public.recall_events (
 
 CREATE INDEX IF NOT EXISTS idx_recall_events_thought_created
   ON public.recall_events(thought_id, created_at DESC);
+
+-- ============================================================
+-- 7. CONSOLIDATION EVENT NOTIFICATION ON RECALL (added by ST-008)
+--    Every recall event re-opens the recalled shard for
+--    consolidation evaluation, because its maturity (recall_count,
+--    diversity) may now meet the promotion threshold.
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION public.notify_consolidation_on_recall()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  INSERT INTO public.consolidation_queue (thought_id, status)
+  VALUES (NEW.thought_id, 'pending')
+  ON CONFLICT (thought_id) DO UPDATE SET
+    status = 'pending',
+    queued_at = now()
+  WHERE consolidation_queue.status IN ('skipped', 'flagged');
+
+  PERFORM pg_notify('consolidation_event', NEW.thought_id::text);
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_notify_consolidation_on_recall ON public.recall_events;
+CREATE TRIGGER trg_notify_consolidation_on_recall
+  AFTER INSERT ON public.recall_events
+  FOR EACH ROW
+  EXECUTE FUNCTION public.notify_consolidation_on_recall();
+
+-- ============================================================
+-- 8. CONSOLIDATION QUEUE RETRY SUPPORT (added by ST-008)
+--    Used when LLM normalisation fails: candidate is marked
+--    'llm_error' with retry_after set; worker skips it until then.
+-- ============================================================
+
+ALTER TABLE public.consolidation_queue
+  ADD COLUMN IF NOT EXISTS retry_after timestamptz;
