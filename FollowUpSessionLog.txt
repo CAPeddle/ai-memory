@@ -1,6 +1,41 @@
 # FollowUpSessionLog — ai-memory
 
-## Last Session: 2026-05-26 (ST-035 complete, ST-036 complete)
+## Last Session: 2026-05-27 (ST-030 closed, ST-008 complete → Review)
+
+### Accomplished
+- **ST-030 (EOL normalization):** Final AC verified (`git diff -w` no diff). Moved to Done. Commit `4a42575`.
+- **ST-008 (Consolidation Worker — shard→wiki promotion):** ALL 7 TASKS COMPLETE. Moved Refined → Review.
+  - Schema: pg_notify triggers, notify_consolidation_on_recall, retry_after column. Commit `1825f76`.
+  - TDD integration tests (7 cases): all red → green. Commit `ad56741`.
+  - consolidationScoring.ts: pure three-factor scoring + 7 unit tests pass. Commit `ae768d7`.
+  - consolidationLLM.ts: OpenRouter normalisation + __TEST_LLM_FAIL__ stub. Commit `b3cf14a`.
+  - consolidationWorker.ts: claim/score/promote/flag/skip/dedup/dry-run/LISTEN. Commit `073db30`.
+  - index.ts: consolidate MCP tool + startConsolidationWorker() boot wire-up. Commit `bd38629`.
+  - Bug fixes + full test pass (34/34). Commit `04b456b`.
+  - Story board closeout commit `83a4e97`.
+
+### Key Discoveries (add to instructions)
+1. **Postgres 3.x JSONB**: JSON.stringify+::jsonb inserts return STRING on SELECT (not object). Use `sql.json(obj)` for typed JSON insert — uses OID 114 send, triggers JSON.parse on retrieval.
+2. **Background worker vs test isolation**: LISTEN/NOTIFY background worker races with explicit MCP tool calls. Fix: `CONSOLIDATION_WORKER_DISABLED=true` env var on mcp-test; disables LISTEN loop while tests use explicit `consolidate` MCP calls.
+3. **Build both db images**: `docker compose build db` does NOT rebuild `db-test`. After schema changes: `docker compose build db db-test` then restart.
+
+### Board State
+- In Progress: none
+- Review: ST-008
+- Done: ST-001, ST-005, ST-009, ST-011–ST-017, ST-021, ST-022, ST-030, ST-035, ST-036
+- Refined: none
+- Backlog: ST-006, ST-010, ST-019, ST-023, ST-024, ST-026, ST-028, ST-029, ST-031, ST-032, ST-034
+
+### Resume Point
+- ST-008 is in Review — needs PO sign-off before moving to Done
+- Next implementation candidate: ST-029 (feedback_events) or ST-023 (deployment) — await PO direction
+
+### Avoidance
+- After editing schema.sql: `docker compose build db db-test` (both images), then full restart.
+- mcp-test container must be RESTARTED (not just file changes) to reload new Deno modules.
+- Use `sql.json(obj)` for JSONB column inserts; `JSON.stringify+::jsonb` returns string on SELECT.
+- `CONSOLIDATION_WORKER_DISABLED=true` is set on mcp-test in docker-compose.yml — preserve for test isolation.
+
 
 ### Accomplished
 - **ST-035 (entity_mentions back-link table):** All 7 tasks done, 4/4 tests pass. Moved to Done.
