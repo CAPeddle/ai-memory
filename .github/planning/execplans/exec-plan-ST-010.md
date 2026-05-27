@@ -29,6 +29,10 @@ Therefore the board wording "both queryable" is implemented here as: the promote
 
 Also note that only the vector-lane corpus is hermetic. The entity-extraction worker and consolidation LLM path both call OpenRouter at runtime, so CI needs a real `OPENROUTER_API_KEY` repository secret rather than a dummy value.
 
+One search-readiness distinction is important for this plan:
+- `search_vector` is a PostgreSQL generated `tsvector` column derived from `content`; BM25 readiness is synchronous with the `INSERT` and does not require a later worker or polling loop.
+- `embedding` is populated later by the current `capture_thought` implementation via a fire-and-forget OpenRouter call; vector-lane readiness is therefore eventually consistent unless the test uses pre-seeded fixture embeddings.
+
 **Key files:**
 - MCP server: `server/index.ts`
 - DB schema: `server/db/schema.sql`
@@ -90,7 +94,14 @@ Status: ✅ Ready for /continue
 
 ## §2c. Plan Review Notes
 
-(Empty — populated by /continue when escalating issues)
+- 2026-05-27: Task 4.1 execution blocked at the verification step. The required command `docker compose --profile test exec mcp-test sh -c "grep -c '::vector' /app/tests/fixtures/search-quality-corpus.sql"` could not reach a Docker daemon from the execution shell.
+- Evidence gathered during execution:
+  - `search-quality-corpus.sql` was read successfully and contains multiple `::vector` literals.
+  - `search-quality-queries.json` was read successfully and still contains `"typescript narrow union" -> "00000000-0000-4000-8000-000000000009"`.
+  - Re-running the Task 4.1 verification command twice failed with `failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine`.
+  - Host checks from the execution shell showed both `\\.\pipe\docker_engine` and `\\.\pipe\dockerDesktopLinuxEngine` absent, and `com.docker.service` was stopped; starting it failed due permission error (`Cannot open 'com.docker.service' service on computer '.'`).
+- This blocker is not covered by the ExecPlan's recovery/failure-handling steps, so execution is stopped and returned for plan-review.
+- **Resolution (2026-05-27):** Confirmed environmental — no plan defect. Docker Desktop was stopped between sessions. Added §4.0 preflight step requiring daemon verification before any task execution. Block cleared.
 
 ---
 
@@ -98,7 +109,7 @@ Status: ✅ Ready for /continue
 
 | Requirement (source) | Must appear in output artifact(s) | Implemented by task(s) | Verification evidence |
 |---|---|---|---|
-| AC1: capture→search via BM25 (QP-010) | `server/tests/e2e.test.ts` contains a test that captures, waits for `search_vector`, searches, asserts result | Task 4.2 | Test passes in mcp-test |
+| AC1: capture→search via BM25 (QP-010) | `server/tests/e2e.test.ts` contains a test that captures and searches immediately via BM25; it does not wait for async embedding population because `search_vector` is generated synchronously | Task 4.2 | Test passes in mcp-test |
 | AC2: capture→search via vector (pre-seeded) (QP-010) | `server/tests/e2e.test.ts` uses a fixed query/ID pair from `server/tests/fixtures/search-quality-queries.json` against a pre-seeded embedded row | Task 4.1 (fixture + pair selection), Task 4.2 | Test passes in mcp-test |
 | AC3: consolidation promote path + wiki queryability (QP-010, aligned to current runtime semantics) | `server/tests/e2e.test.ts` test calling `consolidate`, asserting `consolidation_log.operation = 'promote'`, non-null `wiki_id`, MCP queryability of the wiki, and SQL evidence that the source shard is inactive | Task 4.2 | Test passes in mcp-test |
 | AC4: entity extraction → graph (QP-010) | `server/tests/e2e.test.ts` test calling `capture_thought` → waiting → `graph_search` and `graph_traverse` | Task 4.2 | Test passes in mcp-test |
@@ -209,6 +220,27 @@ jobs:
 
 ## §4. Task Definitions
 
+### Task 4.0: Preflight — verify Docker daemon is running
+
+**Objective:** Confirm that Docker Desktop is running and the test profile containers can be reached before attempting any task that requires container access.
+
+**Working directory:** `c:\projects\ai-memory\`
+
+**Steps:**
+1. Run `docker info` and confirm exit code 0.
+2. If it fails: start Docker Desktop (`Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"`), then poll `docker info` every 10 s (max 2 min) until it succeeds.
+3. Once Docker responds, run `docker compose --profile test up -d` and wait for all services to report healthy.
+
+**Verification:**
+```powershell
+docker compose --profile test ps --format "table {{.Name}}\t{{.Status}}" | Select-String "healthy|running"
+```
+Expected: `db-test`, `seed`, and `mcp-test` all listed.
+
+**Failure handling:** If Docker cannot start after 2 minutes, stop execution and report the environmental blocker in §2c. Do not attempt subsequent tasks.
+
+---
+
 ### Task 4.1: Verify existing fixture has pre-seeded embeddings for vector lane
 
 **Objective:** Confirm that the existing `search-quality-corpus.sql` already contains non-null 512-dim embeddings for the corpus rows, ensuring CI-hermetic vector search tests without needing a live OpenRouter call.
@@ -257,7 +289,9 @@ Expected result: A count ≥ 1, confirming vector literals exist in the fixture.
    - Generate a unique content string using `crypto.randomUUID()` as a distinctive keyword (to avoid corpus collision).
    - Call `mcpCall("capture_thought", { content: "...<uuid-keyword>...", context: "project:e2e-test" })`.
    - Extract the thought ID from the response text (pattern: `/id:\s*([0-9a-f-]{36})/i`).
-   - Poll with retry (up to 5s, 500ms interval): `SELECT id FROM thoughts WHERE id = '<id>' AND search_vector IS NOT NULL` — this confirms the generated `tsvector` column is populated.
+  - Do **not** add a wait loop for `search_vector`. The BM25 field is a generated column and is populated synchronously when the row is inserted.
+  - Call `mcpCall("search_thoughts", { query: "<uuid-keyword>", context: "project:e2e-test", limit: 5 })` immediately after capture.
+  - Assert the returned results contain the captured thought ID/content, demonstrating that BM25 capture→search is ready without a later post-process.
    - Call `mcpCall("search_thoughts", { query: "<uuid-keyword>", context: "project:e2e-test" })`.
    - Assert the captured thought ID appears in the results.
    - Cleanup: `DELETE FROM recall_events WHERE thought_id = '<id>'::uuid`, then `DELETE FROM thoughts WHERE id = '<id>'::uuid`.
@@ -611,11 +645,11 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | Field | Value |
 |---|---|
 | **Last completed task** | — |
-| **Last successful command** | — |
-| **Expected outputs produced** | — |
+| **Last successful command** | Read `server/tests/fixtures/search-quality-corpus.sql` and `server/tests/fixtures/search-quality-queries.json` |
+| **Expected outputs produced** | Confirmed seeded vector literals exist; confirmed deterministic vector query/ID pair for Task 4.2 |
 | **Next task** | Task 4.1 — Verify existing fixture has pre-seeded embeddings |
-| **Known blockers** | None |
-| **Last updated** | — |
+| **Known blockers** | None (plan-review resolved 2026-05-27; Docker preflight added as §4.0) |
+| **Last updated** | 2026-05-27 |
 
 ### Progress History
 

@@ -213,7 +213,7 @@
 - Source: PO (rewritten post-ST-021 pivot)
 - phase: 2
 - Value: 4
-- Blocked by: ST-022, ST-005, ST-008
+- Blocked by: —
 - Touches: `server/tests/` (new), `.github/workflows/ci.yml`, `docker-compose.test.yml`
 - Acceptance criteria:
   - [ ] E2E test: `capture_thought` → `search_thoughts` returns it via BM25 lane
