@@ -689,19 +689,19 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | **Last completed task** | — |
 | **Last successful command** | Read `server/tests/fixtures/search-quality-corpus.sql` and `server/tests/fixtures/search-quality-queries.json` |
 | **Expected outputs produced** | Confirmed seeded vector literals exist; no BM25-negative vector proof has been executed yet under the patched plan |
-| **Next task** | Task 4.0 — Preflight: verify Docker daemon is running |
-| **Known blockers** | None (plan-review resolved 2026-05-27; Docker preflight added as §4.0) |
+| **Next task** | Task 4.0 — Preflight: verify Docker daemon is running (resume after laptop restart) |
+| **Known blockers** | Docker daemon unresponsive — WSL2 Linux engine hung; all `docker` CLI calls hang indefinitely. PO is restarting laptop to recover. No plan defect. |
 | **Last updated** | 2026-05-27 |
 
 ### Progress History
 
 | Timestamp (ISO) | Task | Status | Evidence / outputs | Next step |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| 2026-05-27T00:00:00Z | Task 4.0 | 🔴 Blocked (env) | Docker Desktop process running but WSL2 Linux engine unresponsive; `docker info`, `docker ps`, `docker version` all hang; `wsl -l --running` also hangs. Named pipes `\\.\pipe\dockerDesktopLinuxEngine` and `\\.\pipe\docker_engine` exist but do not respond. Force-killed all docker/wsl processes and relaunched Docker Desktop; daemon still did not become ready after ~4 min polling. Laptop restart required. | After restart: re-run Task 4.0 from step 1 |
 
 ### Avoidance
 
-(Append dated entries here. Do not delete prior guidance.)
+- **2026-05-27:** Docker CLI hangs indefinitely (exit code never returned) when the WSL2 Linux engine is stuck — force-killing via `taskkill /F /IM wsl.exe /T` and `taskkill /F /IM docker.exe /T` and relaunching Docker Desktop did NOT recover the daemon in this session. A full laptop restart was required. After restart, allow Docker Desktop to fully initialize before running any docker command (wait for the Docker Desktop tray icon to show "Engine running").
 
 ---
 
