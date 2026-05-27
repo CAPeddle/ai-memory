@@ -1,0 +1,31 @@
+-- consolidation-corpus.sql
+-- Reference document for ST-008 consolidation worker integration tests.
+--
+-- NOTE: This file is NOT loaded by the `seed` service at startup
+-- (unlike search-quality-corpus.sql). State management for consolidation
+-- tests is done inline via direct `sql` calls in consolidation-worker.test.ts,
+-- because each test needs a clean, independent DB state. (See §6c in exec-plan-ST-008.md.)
+--
+-- This file documents the intended test data design for reference.
+
+-- ============================================================
+-- TEST SHARD UUIDs (used in consolidation-worker.test.ts)
+-- ============================================================
+-- S_PROMOTE  = '00000000-0008-4000-a001-000000000001'  5 recalls / 3 projects / confidence=0.8  → promote
+-- S_FLAG     = '00000000-0008-4000-a001-000000000002'  3 recalls / 2 projects / confidence=0.5  → flag
+-- S_SKIP     = '00000000-0008-4000-a001-000000000003'  2 recalls / 1 project  / confidence=0.2  → skip
+-- S_DEDUP    = '00000000-0008-4000-a001-000000000004'  5 recalls / 3 projects / fp=DEDUP_FP     → skip (dedup)
+-- S_IDLE     = '00000000-0008-4000-a001-000000000005'  0 recalls               → ineligible
+-- S_FALLBK   = '00000000-0008-4000-a001-000000000006'  3 recalls / 3 projects / confidence=0.5  → relevance fallback test
+-- W_PREEXIST = '00000000-0008-4000-a002-000000000001'  pre-existing wiki with fp=DEDUP_FP
+
+-- ============================================================
+-- BATCH NORMALISATION EXAMPLE (S_PROMOTE + S_FLAG + S_SKIP in batch)
+-- ============================================================
+-- maxRecallCount = 5, maxDistinctProjects = 3
+-- S_PROMOTE: freq_norm=1.0, div_norm=1.0, rel=0.8 → score = 0.40+0.35+0.20 = 0.95  → promote
+-- S_FLAG:    freq_norm=0.6, div_norm=0.667, rel=0.5 → score = 0.24+0.233+0.125 = 0.598 → flag
+-- S_SKIP:    freq_norm=0.4, div_norm=0.333, rel=0.2 → score = 0.16+0.117+0.05 = 0.327  → skip
+--
+-- S_FALLBK alone in batch:
+-- maxRecallCount=3, maxDistinctProjects=3 → freq_norm=1.0, div_norm=1.0, rel=0.5 → score=0.875
