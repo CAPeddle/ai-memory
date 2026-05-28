@@ -208,24 +208,7 @@
 
 ## Refined
 
-### ST-010: Integration testing for cloud MCP (Deno + Docker Compose)
-- Type: debt
-- Source: PO (rewritten post-ST-021 pivot)
-- phase: 2
-- Value: 4
-- Blocked by: —
-- Touches: `server/tests/` (new), `.github/workflows/ci.yml`, `docker-compose.test.yml`
-- Acceptance criteria:
-  - [ ] E2E test: `capture_thought` → `search_thoughts` returns it via BM25 lane
-  - [ ] E2E test: `capture_thought` (with embedding settled) → `search_thoughts` returns it via vector lane
-  - [ ] E2E test: shard promoted to wiki via consolidation worker; both queryable
-  - [ ] E2E test: entity extraction populates AGE graph; `graph_traverse` returns expected nodes
-  - [ ] E2E test: context-scoped search filters correctly across `project` / `profile`
-  - [ ] CI pipeline runs `docker compose up` against test images on every push
-  - [ ] Recall event tracking verified end-to-end
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-010.md`
-- Docs: `docs/investigations/interface-design-mcp-rest.md`
-- Notes: Rewritten post-ST-021 pivot for TypeScript/Deno/Docker Compose. CI runs against the same `docker-compose.yml` used locally to keep dev and CI environments in sync.
+(Empty)
 
 ---
 
@@ -237,7 +220,24 @@
 
 ## Review
 
-(Empty)
+### ST-010: Integration testing for cloud MCP (Deno + Docker Compose)
+- Type: debt
+- Source: PO (rewritten post-ST-021 pivot)
+- phase: 2
+- Value: 4
+- Blocked by: —
+- Touches: `server/tests/` (new), `.github/workflows/ci.yml`, `docker-compose.test.yml`
+- Acceptance criteria:
+  - [x] E2E test: `capture_thought` → `search_thoughts` returns it via BM25 lane
+  - [x] E2E test: `capture_thought` (with embedding settled) → `search_thoughts` returns it via vector lane
+  - [x] E2E test: shard promoted to wiki via consolidation worker; both queryable
+  - [x] E2E test: entity extraction populates AGE graph; `graph_traverse` returns expected nodes
+  - [x] E2E test: context-scoped search filters correctly across `project` / `profile`
+  - [x] CI pipeline runs `docker compose up` against test images on every push
+  - [x] Recall event tracking verified end-to-end
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-010.md`
+- Docs: `docs/investigations/interface-design-mcp-rest.md`
+- Notes: Rewritten post-ST-021 pivot for TypeScript/Deno/Docker Compose. CI runs against the same `docker-compose.yml` used locally to keep dev and CI environments in sync.
 
 ## Done
 
