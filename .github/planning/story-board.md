@@ -1,8 +1,8 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
-> Next planning target: ST-029 (ST-008 plan complete; ST-029 is the next Phase 1 follow-up)
-> Unblocked: ST-023, ST-028, ST-029, ST-019 (all ST-005/ST-008/ST-022 blockers cleared)
+> Next planning target: ST-037 (local MCP client config — prerequisite for dogfooding)
+> Unblocked: ST-023, ST-028, ST-029, ST-019, ST-037 (all ST-005/ST-008/ST-022 blockers cleared)
 > Last updated: 2026-05-28
 
 ---
@@ -55,12 +55,27 @@
 - Docs: `docs/design/adr/ADR-007-consolidation-pipeline.md`
 - Notes: Operational closure for the cloud MCP. Without this, worker failures are invisible until users notice missing entity extractions or stale wikis. The `stats` tool also gives the local synthesis service (ST-019) and storyboard view (ST-026) a "is the cloud healthy?" check they can run before synthesis.
 
+### ST-037: Configure local MCP clients for dogfooding
+- Type: enablement
+- Source: PO (scoping session 2026-05-28, prerequisite for ST-034 data accumulation)
+- phase: 2
+- Value: 4
+- Blocked by: —
+- Touches: `.vscode/mcp.json` (new), `README.md` (new section)
+- Acceptance criteria:
+  - [ ] `.vscode/mcp.json` configures VS Code Copilot to connect to `http://localhost:3000/mcp` using `${env:MEMORY_API_KEY}` interpolation
+  - [ ] README.md "Connecting Clients" section documents setup for VS Code Copilot, Claude Code, and Claude Desktop
+  - [ ] PO manually performs capture+search round-trip from at least one configured client
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-037.md` (to be created)
+- Query packet: `.github/planning/query-packets/QP-037-local-mcp-client-config.md`
+- Notes: Dev graph is empty (0 thoughts). Service is functional but no AI agent is connected. This story enables daily dogfooding so that real data accumulates for ST-034's cardinality analysis. Cloud clients (ChatGPT/Gemini) deferred to ST-023.
+
 ### ST-034: Spike — Bounding cardinality of graph-expanded search
 - Type: spike
 - Source: PO (brainstorming session 2026-05-22, entity↔thought provenance design)
 - phase: 2
 - Value: 3
-- Blocked by: none (can investigate against current dev graph data)
+- Blocked by: ST-037 (needs accumulated real data from dogfooding)
 - Touches: `docs/investigations/graph-expanded-search-cardinality.md` (new); no code changes expected
 - Acceptance criteria:
   - [ ] Findings doc quantifies the cardinality problem on current dev data: for each entity label (Person/Function/Error/Topic/Project), the distribution of (thoughts mentioning entity) and (entities reachable at 1-hop, 2-hop)
