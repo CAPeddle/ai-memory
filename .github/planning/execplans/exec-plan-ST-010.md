@@ -686,12 +686,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.1 — Fixture verification |
-| **Last successful command** | `docker compose --profile test exec -T db-test psql ... SELECT id FROM thoughts WHERE search_vector @@ ... AND id = '...004'` → zero rows |
-| **Expected outputs produced** | `docker compose up` stack healthy; `grep -c '::vector'` = 28; BM25-negative probe = zero rows |
-| **Next task** | Task 4.2 — Create `server/tests/e2e.test.ts` |
+| **Last completed task** | Task 4.5 — Full suite verification |
+| **Last successful command** | `docker compose --profile test exec mcp-test deno test tests/` → 27/27 pass (fresh stack) |
+| **Expected outputs produced** | `e2e.test.ts` (16 tests), `ci.yml`, 8 files deleted, 3 test files remain, all 27 tests green |
+| **Next task** | Task 4.6 — Cross-model review gate |
 | **Known blockers** | None |
-| **Last updated** | 2026-05-27 |
+| **Last updated** | 2026-05-28 |
 
 ### Progress History
 
@@ -699,6 +699,10 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 |---|---|---|---|---|
 | 2026-05-27T00:00:00Z | Task 4.0 | 🔴 Blocked (env) | Docker Desktop process running but WSL2 Linux engine unresponsive; `docker info`, `docker ps`, `docker version` all hang; `wsl -l --running` also hangs. Named pipes `\\.\pipe\dockerDesktopLinuxEngine` and `\\.\pipe\docker_engine` exist but do not respond. Force-killed all docker/wsl processes and relaunched Docker Desktop; daemon still did not become ready after ~4 min polling. Laptop restart required. | After restart: re-run Task 4.0 from step 1 || 2026-05-27T23:45:00Z | Task 4.0 | ✅ Done | `db-test: healthy`, `mcp-test: healthy`, `seed: Exited (0)`, `curl http://localhost:3001/health` → `ok` (stack remained up through Docker Desktop restart) | Task 4.1 |
 | 2026-05-27T23:46:00Z | Task 4.1 | ✅ Done | `grep -c '::vector'` = 28 in search-quality-corpus.sql; BM25-negative probe for `"zoom recording auto archive"` → `...004` returned zero rows | Task 4.2 |
+| 2026-05-28T00:10:00Z | Task 4.2 | ✅ Done | `server/tests/e2e.test.ts` created, 16/16 pass on fresh stack (1m18s). Commit `0e8155d` | Task 4.3 |
+| 2026-05-28T00:12:00Z | Task 4.3 | ✅ Done | `.github/workflows/ci.yml` created with secret injection + compose test profile. Commit `40ca1df` | Task 4.4 |
+| 2026-05-28T00:15:00Z | Task 4.4 | ✅ Done | 8 legacy files deleted. 27/27 tests pass on fresh stack. Commit `27327f7` | Task 4.5 |
+| 2026-05-28T00:16:00Z | Task 4.5 | ✅ Done | Per-task commits confirmed in history; full fresh-stack verification 27/27 green | Task 4.6 |
 ### Avoidance
 
 - **2026-05-27:** Docker CLI hangs indefinitely (exit code never returned) when the WSL2 Linux engine is stuck — force-killing via `taskkill /F /IM wsl.exe /T` and `taskkill /F /IM docker.exe /T` and relaunching Docker Desktop did NOT recover the daemon in this session. A full laptop restart was required. After restart, allow Docker Desktop to fully initialize before running any docker command (wait for the Docker Desktop tray icon to show "Engine running").
