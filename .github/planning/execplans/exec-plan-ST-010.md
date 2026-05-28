@@ -686,19 +686,19 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | — |
-| **Last successful command** | Read `server/tests/fixtures/search-quality-corpus.sql` and `server/tests/fixtures/search-quality-queries.json` |
-| **Expected outputs produced** | Confirmed seeded vector literals exist; no BM25-negative vector proof has been executed yet under the patched plan |
-| **Next task** | Task 4.0 — Preflight: verify Docker daemon is running (resume after laptop restart) |
-| **Known blockers** | Docker daemon unresponsive — WSL2 Linux engine hung; all `docker` CLI calls hang indefinitely. PO is restarting laptop to recover. No plan defect. |
+| **Last completed task** | Task 4.1 — Fixture verification |
+| **Last successful command** | `docker compose --profile test exec -T db-test psql ... SELECT id FROM thoughts WHERE search_vector @@ ... AND id = '...004'` → zero rows |
+| **Expected outputs produced** | `docker compose up` stack healthy; `grep -c '::vector'` = 28; BM25-negative probe = zero rows |
+| **Next task** | Task 4.2 — Create `server/tests/e2e.test.ts` |
+| **Known blockers** | None |
 | **Last updated** | 2026-05-27 |
 
 ### Progress History
 
 | Timestamp (ISO) | Task | Status | Evidence / outputs | Next step |
 |---|---|---|---|---|
-| 2026-05-27T00:00:00Z | Task 4.0 | 🔴 Blocked (env) | Docker Desktop process running but WSL2 Linux engine unresponsive; `docker info`, `docker ps`, `docker version` all hang; `wsl -l --running` also hangs. Named pipes `\\.\pipe\dockerDesktopLinuxEngine` and `\\.\pipe\docker_engine` exist but do not respond. Force-killed all docker/wsl processes and relaunched Docker Desktop; daemon still did not become ready after ~4 min polling. Laptop restart required. | After restart: re-run Task 4.0 from step 1 |
-
+| 2026-05-27T00:00:00Z | Task 4.0 | 🔴 Blocked (env) | Docker Desktop process running but WSL2 Linux engine unresponsive; `docker info`, `docker ps`, `docker version` all hang; `wsl -l --running` also hangs. Named pipes `\\.\pipe\dockerDesktopLinuxEngine` and `\\.\pipe\docker_engine` exist but do not respond. Force-killed all docker/wsl processes and relaunched Docker Desktop; daemon still did not become ready after ~4 min polling. Laptop restart required. | After restart: re-run Task 4.0 from step 1 || 2026-05-27T23:45:00Z | Task 4.0 | ✅ Done | `db-test: healthy`, `mcp-test: healthy`, `seed: Exited (0)`, `curl http://localhost:3001/health` → `ok` (stack remained up through Docker Desktop restart) | Task 4.1 |
+| 2026-05-27T23:46:00Z | Task 4.1 | ✅ Done | `grep -c '::vector'` = 28 in search-quality-corpus.sql; BM25-negative probe for `"zoom recording auto archive"` → `...004` returned zero rows | Task 4.2 |
 ### Avoidance
 
 - **2026-05-27:** Docker CLI hangs indefinitely (exit code never returned) when the WSL2 Linux engine is stuck — force-killing via `taskkill /F /IM wsl.exe /T` and `taskkill /F /IM docker.exe /T` and relaunching Docker Desktop did NOT recover the daemon in this session. A full laptop restart was required. After restart, allow Docker Desktop to fully initialize before running any docker command (wait for the Docker Desktop tray icon to show "Engine running").
