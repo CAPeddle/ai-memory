@@ -2,7 +2,8 @@
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
 > Next planning target: ST-029 (ST-008 plan complete; ST-029 is the next Phase 1 follow-up)
-> Last updated: 2026-05-27
+> Unblocked: ST-023, ST-028, ST-029, ST-019 (all ST-005/ST-008/ST-022 blockers cleared)
+> Last updated: 2026-05-28
 
 ---
 
