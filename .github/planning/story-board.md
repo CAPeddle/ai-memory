@@ -21,7 +21,7 @@
 - Source: ST-021 spike outcome
 - phase: 2
 - Value: 5
-- Blocked by: ST-022, ST-005, ST-008 (functionally complete cloud MCP)
+- Blocked by: —
 - Touches: deployment config (`fly.toml` / `railway.json` / `.do/app.yaml`), `.github/workflows/`
 - Acceptance criteria:
   - [ ] Container hosting target chosen and documented (Fly.io / Railway / DigitalOcean Apps)
@@ -40,7 +40,7 @@
 - Source: PO assessment of storyboard sufficiency (2026-05-18)
 - phase: 2
 - Value: 3
-- Blocked by: ST-022, ST-008 (workers must exist to be observed); ST-005 (recall_events table powers recall counts)
+- Blocked by: —
 - Touches: `server/index.ts` (new `stats` tool), `server/src/entityWorker.ts`, `server/src/consolidationWorker.ts`, `server/db/schema.sql` (new `worker_runs` table)
 - Acceptance criteria:
   - [ ] Both workers emit structured JSON logs to stdout, one line per event: `{ts, level, worker, run_id, event, duration_ms, items_processed, errors}` where `event` is one of `run_started|item_processed|run_completed|run_failed`
@@ -78,7 +78,7 @@
 - Source: PO (rewritten post-ST-021 pivot 2026-05-17)
 - phase: 3
 - Value: 4
-- Blocked by: ST-022, ST-005, ST-008 (core MCP feature-complete)
+- Blocked by: —
 - Touches: New `local-synthesis/` solution (separate from `server/`)
 - Acceptance criteria:
   - [ ] Standalone C# console/daemon (.NET 8) that authenticates to the cloud MCP via Bearer token
@@ -157,7 +157,7 @@
 - Source: PO scope-lock during QP-005 planning (2026-05-18)
 - phase: 1
 - Value: 3
-- Blocked by: ST-005 (recall_events flow established first)
+- Blocked by: —
 - Touches: `server/index.ts` (new MCP tool), `server/db/schema.sql` (new table)
 - Acceptance criteria:
   - [ ] New MCP tool `report_feedback({ thought_id, query, verdict: 'helpful' | 'irrelevant' })`
