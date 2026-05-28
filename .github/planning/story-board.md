@@ -220,6 +220,10 @@
 
 ## Review
 
+(Empty)
+
+## Done
+
 ### ST-010: Integration testing for cloud MCP (Deno + Docker Compose)
 - Type: debt
 - Source: PO (rewritten post-ST-021 pivot)
@@ -238,8 +242,6 @@
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-010.md`
 - Docs: `docs/investigations/interface-design-mcp-rest.md`
 - Notes: Rewritten post-ST-021 pivot for TypeScript/Deno/Docker Compose. CI runs against the same `docker-compose.yml` used locally to keep dev and CI environments in sync.
-
-## Done
 
 ### ST-008: Implement consolidation worker (shard → wiki promotion)
 - Type: feature
