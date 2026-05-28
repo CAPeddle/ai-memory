@@ -36,6 +36,7 @@ For a story with a Ready ExecPlan:
    - Execute steps exactly as written
    - After each task: update §5b Recovery Ledger, atomic commit
 5. **On story completion — cross-model review gate**:
+   - Populate §1b Outcomes & Conclusions before requesting review (do not leave as placeholder)
    - Do NOT move to Review yet
    - Present the completed story to the PO and explicitly recommend a **cross-model critical review** before the story moves to Review
    - The review must be performed by a different model than the executor, reading the ExecPlan contract (§2 ACs, §2d traceability matrix) against the actual implementation

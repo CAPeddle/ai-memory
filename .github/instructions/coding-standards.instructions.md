@@ -122,6 +122,19 @@ tests/
 - Document any package with a non-MIT/Apache license in this file when added.
 - Major version upgrades: create a dedicated story rather than inlining during feature work.
 
+## Deno / Server Testing
+
+These rules apply to `server/tests/` (Deno integration tests running inside Docker).
+
+- **Idempotency:** Every test must pass on both a fresh stack (`docker compose --profile test down/up`) AND on re-runs against the same container. If a test leaves state that breaks subsequent runs, it has a bug.
+- **Corpus isolation:** The seed corpus (`search-quality-corpus.sql`) must remain intact after all tests complete. Never allow a test to deactivate, delete, or mutate seeded corpus rows. Guard against shared-state side effects (e.g., background workers bulk-processing corpus queue entries).
+- **Cleanup ownership:** Each test cleans up its own non-corpus rows. Module-level `cleanupNonCorpusState()` is a safety net, not a substitute for per-test cleanup.
+- **Queue awareness:** The `consolidation_queue` trigger fires on every `INSERT INTO thoughts ... WHERE memory_type = 'shard'`. Tests that call the `consolidate` MCP tool must first drain or delete corpus queue entries to prevent bulk-processing of seeded shards.
+- **External API resilience:** Tests depending on OpenRouter (entity extraction, consolidation LLM) should pre-check API reachability and warn (not silently hang) if unavailable.
+- **Limit headroom:** With 29 corpus rows (28 with embeddings), BM25-only matches need `limit ≥ 30` to surface above vector-lane-only RRF ties (~0.0164). Always set limits with corpus size in mind.
+
+Evidence: ST-010 — `drainPendingOnce()` bulk-processed all queued corpus shards, deactivating 17/29 rows and breaking 3 downstream tests. Fix: explicit queue purge before test shard insert.
+
 ## Docker and Infrastructure
 
 **No `git clone` inside Dockerfiles.** A corporate SSL proxy (Fortinet or similar) intercepts HTTPS connections inside Docker containers and terminates them with an untrusted CA certificate. `git clone https://github.com/...` inside a `RUN` step will fail. The mandated pattern is:
