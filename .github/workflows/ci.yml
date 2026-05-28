@@ -1,0 +1,58 @@
+name: CI — Integration Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  integration-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require OPENROUTER_API_KEY secret
+        run: |
+          if [ -z "${{ secrets.OPENROUTER_API_KEY }}" ]; then
+            echo "Missing repository secret OPENROUTER_API_KEY"
+            exit 1
+          fi
+
+      - name: Create .env for CI
+        run: |
+          cat <<EOF > .env
+          MEMORY_API_KEY=ci-test-key
+          DB_PASSWORD=ci-test-password
+          OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}
+          EOF
+
+      - name: Start test infrastructure
+        run: docker compose --profile test up -d --build --wait
+
+      - name: Wait for mcp-test healthy
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3001/health; then
+              echo "mcp-test is healthy"
+              exit 0
+            fi
+            echo "Waiting for mcp-test... ($i/30)"
+            sleep 2
+          done
+          echo "mcp-test did not become healthy"
+          docker compose --profile test logs
+          exit 1
+
+      - name: Run integration tests
+        run: docker compose --profile test exec -T mcp-test deno test --allow-net --allow-env --allow-read tests/
+
+      - name: Print logs on failure
+        if: failure()
+        run: docker compose --profile test logs --tail=100
+
+      - name: Tear down
+        if: always()
+        run: docker compose --profile test down -v
