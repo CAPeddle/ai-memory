@@ -92,22 +92,60 @@ curl http://localhost:3000/health
 # → ok
 ```
 
-### 4. Connect an MCP client
+### 4. Connecting Clients
 
-Point any MCP-compatible client at `http://localhost:3000/mcp` with the `Authorization: Bearer <MEMORY_API_KEY>` header.
+The MCP server uses **Streamable HTTP transport** at `http://localhost:3000/mcp`. Every request requires an `Authorization: Bearer <MEMORY_API_KEY>` header. Ensure `MEMORY_API_KEY` is set in your environment before configuring clients.
 
-For Claude Code, add to your MCP settings:
+#### VS Code Copilot
+
+The workspace already includes `.vscode/mcp.json` which auto-configures the connection. Ensure `MEMORY_API_KEY` is set in your shell environment before launching VS Code:
+
+```powershell
+# Windows (PowerShell) — add to your $PROFILE or set as a system env var
+$env:MEMORY_API_KEY = "your-key-here"
+code .
+```
+
+After VS Code starts, open the MCP server panel and confirm `ai-memory` appears as a configured server.
+
+#### Claude Code
+
+Use the **user-level** setup method (not project-level `.mcp.json`) so this server is available across your projects. Claude Code stores user-scoped MCP servers in `~/.claude.json`.
+
+Add the server with the CLI:
+
+```bash
+claude mcp add --transport http --scope user ai-memory http://localhost:3000/mcp \
+  --header "Authorization: Bearer YOUR_MEMORY_API_KEY"
+```
+
+Equivalent JSON server entry:
 
 ```json
 {
-  "mcpServers": {
-    "ai-memory": {
-      "url": "http://localhost:3000/mcp",
-      "headers": { "Authorization": "Bearer <MEMORY_API_KEY>" }
-    }
+  "type": "http",
+  "url": "http://localhost:3000/mcp",
+  "headers": {
+    "Authorization": "Bearer YOUR_MEMORY_API_KEY"
   }
 }
 ```
+
+Claude Code docs explicitly confirm environment-variable expansion in project-level `.mcp.json` (including `url` and `headers`). For user-level `~/.claude.json`, prefer adding the server via `claude mcp add` unless you have verified interpolation behavior in your installed version.
+
+#### Claude Desktop
+
+Open Claude Desktop, then go to **Settings → Developer → Edit Config**.
+
+Configuration file locations:
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+`Current official documentation confirms where Claude Desktop MCP configuration lives, but does not confirm this exact JSON shape for a localhost Streamable HTTP server. Verify the current Claude Desktop release before adding ai-memory there.`
+
+#### Verify connectivity
+
+From a connected client, call `thought_stats`. A successful non-error text response containing `Total active thoughts:` confirms the server connection is working.
 
 ### Running tests
 
