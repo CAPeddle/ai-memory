@@ -123,6 +123,8 @@ Update the active ExecPlan's §5b Recovery Ledger immediately after each commit.
 
 The Deno MCP server in [server/](server/) is a thin Hono app over `@modelcontextprotocol/sdk`'s `StreamableHTTPTransport`. All requests to `/mcp` go through `requireApiKey` Bearer auth ([server/src/auth.ts](server/src/auth.ts)); `/health` is unauthenticated for Docker healthchecks.
 
+**Transport contract (Streamable HTTP):** The SDK's transport layer enforces content negotiation. Clients **must** send `Accept: application/json, text/event-stream` — omitting this returns HTTP 406. Responses use SSE framing (`event: message\ndata: <JSON-RPC payload>\n\n`), not bare JSON. MCP client libraries handle this automatically; raw `curl` callers must parse the `data:` line from the SSE envelope. See [server/tests/_helpers/mcpClient.ts](server/tests/_helpers/mcpClient.ts) for the canonical request/response parsing pattern.
+
 [server/index.ts](server/index.ts) registers six MCP tools that share the Postgres pool from [server/src/db.ts](server/src/db.ts):
 
 - `search` / `fetch` — ChatGPT-compatible read-only tools (vector lane only)

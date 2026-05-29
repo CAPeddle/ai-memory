@@ -1,43 +1,35 @@
 # FollowUpSessionLog — ai-memory
 
-## Last Session: 2026-05-28 (ST-010 accepted → Done)
+## Last Session: 2026-05-29 (ST-037 smoke test + compound engineering)
 
 ### Accomplished
-- **ST-010 (Integration Testing):** Cross-model review completed, all defects fixed, accepted by PO and moved to Done. 27/27 tests pass (idempotent).
-- Key fix: consolidation_queue bulk-drain was deactivating corpus rows; resolved by purging corpus queue entries before test shard insert.
+- **ST-037 (Local MCP clients):** All tasks completed. `.vscode/mcp.json` committed, README expanded with three-client setup, PO smoke test passed (thought_stats, capture_thought, search_thoughts all succeed). Story moved to Review.
+- **Compound engineering:** Promoted MCP transport contract (Accept header + SSE framing) into CLAUDE.md and README.md. Added raw curl example for developer testing.
 
 ### Board State
 - In Progress: none
-- Review: none
+- Review: ST-037
 - Done: ST-001, ST-005, ST-008, ST-009, ST-010, ST-011–ST-017, ST-021, ST-022, ST-030, ST-035, ST-036
-- Refined: none
 - Backlog: ST-006, ST-019, ST-023, ST-024, ST-026, ST-028, ST-029, ST-031, ST-032, ST-034
 
 ### Resume Point
-- Board empty of executable work. Next planning target: ST-029 (Feedback API).
-- No stories In Progress or Refined with ExecPlans.
+- ST-037 awaits PO sign-off to move to Done.
+- Next planning target: ST-029 (Feedback API) or ST-028 (Worker observability).
+- ST-034 (cardinality spike) now unblocked once dogfooding accumulates data.
 
 ### Avoidance
+- **MCP transport 406:** Raw HTTP callers MUST send `Accept: application/json, text/event-stream`. Without it the server returns 406. MCP client libraries handle this automatically.
+- **SSE response framing:** Tool responses arrive as `event: message\ndata: <JSON-RPC>\n\n`, not bare JSON. Parse the `data:` line.
 - After editing schema.sql: `docker compose build db db-test` (both images), then full restart.
 - mcp-test container must be RESTARTED (not just file changes) to reload new Deno modules.
-- Use `sql.json(obj)` for JSONB column inserts; `JSON.stringify+::jsonb` returns string on SELECT.
 - `CONSOLIDATION_WORKER_DISABLED=true` is set on mcp-test — preserve for test isolation.
-- **consolidation_queue trigger:** Seed INSERT fires trigger for ALL shards. The `consolidate` MCP tool calls `drainPendingOnce()` which bulk-processes ALL pending rows. Test must `DELETE FROM consolidation_queue WHERE thought_id::text LIKE '00000000-0000-4000-8000-%'` before inserting test shard.
-- **BM25 limit:** With 29 corpus rows (28 embedded), BM25-only hits need limit≥30 to surface above vector-lane-only RRF ties (~0.0164).
-- **Corpus state:** 29 rows (8 zoom, 8 bcf-managers, 13 misc/NULL). Row ...009 (NULL project) has active=true only on fresh stack.
 - dev/test separation: `docker compose up -d` → dev only; `--profile test` adds ephemeral test stack.
 - Tests: `docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/`
 
 ### Known Gap
 - CLAUDE.md has authoritative test commands but is gitignored. PO to decide: add to `.github/instructions/`.
 - CI workflow (`.github/workflows/ci.yml`) requires OPENROUTER_API_KEY repo secret — not yet provisioned on GitHub.
-- Review: none
-- Done: ST-001, ST-005, ST-009, ST-011–ST-017, ST-021, ST-022, ST-035, ST-036
-- Refined: ST-030 (1 AC remaining), ST-008 (ExecPlan ready)
-- Backlog: ST-006, ST-010, ST-019, ST-023, ST-024, ST-026, ST-028, ST-029, ST-031, ST-032, ST-034
-
-### Resume Point
-- Next natural pick: ST-008 (consolidation worker, Refined, ExecPlan ready for /continue)
+- ST-037 committed CLAUDE.md + README.md transport contract docs — needs final commit.
 - ST-030 has 1 trivial AC left (git diff -w verification, ~1 second)
 
 ### Avoidance

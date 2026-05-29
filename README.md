@@ -141,11 +141,30 @@ Configuration file locations:
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 
-`Current official documentation confirms where Claude Desktop MCP configuration lives, but does not confirm this exact JSON shape for a localhost Streamable HTTP server. Verify the current Claude Desktop release before adding ai-memory there.`
+Current official documentation confirms where Claude Desktop MCP configuration lives, but does not confirm this exact JSON shape for a localhost Streamable HTTP server. Verify the current Claude Desktop release before adding ai-memory there.
 
 #### Verify connectivity
 
 From a connected client, call `thought_stats`. A successful non-error text response containing `Total active thoughts:` confirms the server connection is working.
+
+**Raw HTTP (curl):** The server uses Streamable HTTP transport — clients must accept SSE:
+
+```bash
+curl -s -X POST http://localhost:3000/mcp \
+  -H "Authorization: Bearer $MEMORY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"thought_stats","arguments":{}}}'
+```
+
+Expected response (SSE framed):
+
+```
+event: message
+data: {"result":{"content":[{"type":"text","text":"Total active thoughts: ..."}]},"jsonrpc":"2.0","id":1}
+```
+
+If you get HTTP 406, ensure the `Accept` header includes both `application/json` and `text/event-stream`.
 
 ### Running tests
 
