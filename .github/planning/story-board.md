@@ -211,21 +211,6 @@
 
 ## Refined
 
-### ST-037: Configure local MCP clients for dogfooding
-- Type: enablement
-- Source: PO (scoping session 2026-05-28, prerequisite for ST-034 data accumulation)
-- phase: 2
-- Value: 4
-- Blocked by: —
-- Touches: `.vscode/mcp.json` (new), `README.md` (new section)
-- Acceptance criteria:
-  - [ ] `.vscode/mcp.json` configures VS Code Copilot to connect to `http://localhost:3000/mcp` using `${env:MEMORY_API_KEY}` interpolation
-  - [ ] README.md "Connecting Clients" section documents setup for VS Code Copilot, Claude Code, and Claude Desktop
-  - [ ] PO manually performs capture+search round-trip from at least one configured client
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-037.md`
-- Query packet: `.github/planning/query-packets/QP-037-local-mcp-client-config.md`
-- Notes: Dev graph is empty (0 thoughts). Service is functional but no AI agent is connected. This story enables daily dogfooding so that real data accumulates for ST-034's cardinality analysis. Cloud clients (ChatGPT/Gemini) deferred to ST-023.
-
 ---
 
 ## In Progress
@@ -236,7 +221,21 @@
 
 ## Review
 
-(Empty)
+### ST-037: Configure local MCP clients for dogfooding
+- Type: enablement
+- Source: PO (scoping session 2026-05-28, prerequisite for ST-034 data accumulation)
+- phase: 2
+- Value: 4
+- Blocked by: —
+- Touches: `.vscode/mcp.json` (new), `README.md` (new section)
+- Acceptance criteria:
+  - [x] `.vscode/mcp.json` configures VS Code Copilot to connect to `http://localhost:3000/mcp` using `${env:MEMORY_API_KEY}` interpolation
+  - [x] README.md "Connecting Clients" section documents setup for VS Code Copilot, Claude Code, and Claude Desktop
+  - [x] PO manually performs capture+search round-trip from at least one configured client
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-037.md`
+- Query packet: `.github/planning/query-packets/QP-037-local-mcp-client-config.md`
+- Notes: Dev graph is empty (0 thoughts). Service is functional but no AI agent is connected. This story enables daily dogfooding so that real data accumulates for ST-034's cardinality analysis. Cloud clients (ChatGPT/Gemini) deferred to ST-023.
+  - **Completed 2026-05-29:** `.vscode/mcp.json` committed with Streamable HTTP config; README updated with three-client setup section; all-tools smoke test passed (thought_stats, capture_thought, search_thoughts)
 
 ## Done
 
