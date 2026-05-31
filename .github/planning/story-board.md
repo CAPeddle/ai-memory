@@ -207,6 +207,220 @@
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-024.md` (to be created)
 - Docs: `docs/investigations/ST-021-findings.md`
 - Notes: Deferred from ST-021. Only triggered if a use case requires the `|` selector in openCypher (multi-relationship-type traversal in a single MATCH). Current workaround: explicit MATCH chains per relationship type, as documented in §R6 of the findings.
+
+<!-- Phase 2 — Operational Hardening (from QP-038 vectorize-mcp-worker review) -->
+
+### ST-038: Startup safety & input guards
+- Type: hardening
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 5
+- Blocked by: —
+- Touches: `server/index.ts`, `server/src/tools/captureThought.ts` (new extraction or inline)
+- Acceptance criteria:
+  - [ ] Server fails fast at startup if required env vars are missing (AC-1)
+  - [ ] `capture_thought` rejects content exceeding 32KB with clear error (AC-5)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-038.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: 🔴 Must fix. Active silent failure risk — missing OPENROUTER_API_KEY currently logs a warning but continues, causing all embeddings to silently fail.
+
+### ST-039: Embedding resilience
+- Type: hardening
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 5
+- Blocked by: —
+- Touches: `server/db/002_needs_embedding.sql` (new), `server/index.ts`, `server/src/entityWorker.ts` or new backfill module
+- Acceptance criteria:
+  - [ ] Thoughts with failed embeddings are recoverable via backfill (AC-2)
+  - [ ] Embedding model version is recorded per thought (AC-17)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-039.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: 🔴 Must fix. Fire-and-forget embeddings currently lose data silently on transient failures. Uses standalone idempotent DDL (not migration runner from ST-042).
+
+### ST-040: Worker crash isolation
+- Type: hardening
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 5
+- Blocked by: —
+- Touches: `server/src/entityWorker.ts`
+- Acceptance criteria:
+  - [ ] Entity worker survives errors without crashing the server (AC-10)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-040.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: 🔴 Must fix. No schema change required. Adds try/catch + exponential backoff to the poll loop so unhandled rejections don't propagate to the main process.
+
+### ST-041: Cypher injection hardening
+- Type: security
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 5
+- Blocked by: —
+- Touches: `server/index.ts` (graph_traverse tool handler)
+- Acceptance criteria:
+  - [ ] `graph_traverse` rejects mutation keywords (AC-12)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-041.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: 🔴 Must fix. Current mitigation (`$$` stripping + MATCH-start check) is insufficient — mutation keywords after MATCH bypass it.
+
+### ST-042: Migration framework
+- Type: infrastructure
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 4
+- Blocked by: —
+- Touches: `server/src/migrate.ts` (new), `server/db/migrations/` (new directory), `server/index.ts`
+- Acceptance criteria:
+  - [ ] Schema changes are applied via numbered migrations (AC-9)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-042.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: 🟡 Should fix. Includes bootstrap detection for existing databases. Enables ST-045 (worker idempotency) and ST-048 (metrics table).
+
+### ST-043: Context validation + feature flags
+- Type: hardening
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 3
+- Blocked by: —
+- Touches: `server/src/parseContext.ts`, `server/index.ts`
+- Acceptance criteria:
+  - [ ] Malformed context strings are rejected with a clear error (AC-6)
+  - [ ] Feature flags disable graph/entity features when toggled off (AC-16)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-043.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: 🟡 Should fix. Context parser currently silently ignores garbage. Feature flags enable safe progressive rollout.
+
+### ST-044: Structured logging
+- Type: observability
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 3
+- Blocked by: —
+- Touches: `server/src/logging.ts` (new), `server/index.ts` (middleware)
+- Acceptance criteria:
+  - [ ] Every MCP tool invocation emits structured JSON log with timing (AC-3)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-044.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: 🟡 Should fix. Additive to ST-028 (worker observability). ST-028 covers worker-specific logs; this covers tool invocation timing.
+
+### ST-045: Worker idempotency
+- Type: hardening
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 3
+- Blocked by: ST-042 (needs migration framework)
+- Touches: `server/src/entityWorker.ts`, `server/db/migrations/004_entity_extracted.sql` (new)
+- Acceptance criteria:
+  - [ ] Entity worker uses `entity_extracted` flag for safe replay (AC-10 extended, AC-11)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-045.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: 🟡 Should fix. Depends on ST-042 for migration infrastructure. Prevents duplicate processing after crash.
+
+### ST-046: Golden-set regression tests
+- Type: quality
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 3
+- Blocked by: —
+- Touches: `server/tests/search-golden-set.test.ts` (new), `server/tests/fixtures/search-quality-corpus.sql`
+- Acceptance criteria:
+  - [ ] Search quality golden-set test catches regressions (AC-7)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-046.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: 🟡 Should fix. Uses existing seeded test corpus. Verifies that tuning RRF/MMR parameters doesn't silently degrade recall quality.
+
+### ST-047: Tool descriptions
+- Type: dx
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 3
+- Blocked by: —
+- Touches: `server/index.ts` (tool registration descriptions)
+- Acceptance criteria:
+  - [ ] All MCP tool descriptions include usage examples and parameter docs (AC-15)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-047.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: 🟡 Should fix. Current descriptions are minimal. AI agent consumers invoke tools more accurately with example values and error condition docs.
+
+### ST-048: Queryable metrics table
+- Type: observability
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 2
+- Blocked by: ST-042 (needs migration framework)
+- Touches: `server/db/migrations/003_tool_metrics.sql` (new), `server/index.ts`
+- Acceptance criteria:
+  - [ ] Tool metrics are persisted to a queryable `metrics` table (AC-4)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-048.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: 🟢 Nice to have. Additive to ST-028 (worker observability) which covers worker-run metrics. This covers per-tool-invocation timing/error persistence.
+
+### ST-049: Query routing (lane skipping)
+- Type: performance
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 2
+- Blocked by: —
+- Touches: `server/src/searchQuality.ts`, `server/index.ts`
+- Acceptance criteria:
+  - [ ] Query routing skips vector lane for keyword-only queries (AC-13)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-049.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: 🟢 Nice to have. Exact error codes, UUIDs, and short tokens benefit from BM25 precision without the vector lane's embedding call latency.
+
+### ST-050: Latency assertions in tests
+- Type: quality
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 2
+- Blocked by: ST-046 (needs golden-set tests to exist)
+- Touches: `server/tests/search-golden-set.test.ts`
+- Acceptance criteria:
+  - [ ] Search tests include latency assertions (AC-8)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-050.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: 🟢 Nice to have. Extends ST-046's golden-set test with timing checks (< 500ms on seeded local corpus).
+
+### ST-051: Rate limiting
+- Type: security
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 2
+- Blocked by: —
+- Touches: `server/src/rateLimit.ts` (new), `server/index.ts`
+- Acceptance criteria:
+  - [ ] Rate limiting returns 429 after threshold exceeded (AC-14)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-051.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: 🟢 Nice to have. Single-instance in-memory token bucket. Document Redis needed for multi-instance. Protects against runaway agent loops burning embedding quotas.
+
+### ST-052: Backpressure control
+- Type: hardening
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 2
+- Blocked by: ST-045 (needs entity_extracted flag)
+- Touches: `server/src/entityWorker.ts`
+- Acceptance criteria:
+  - [ ] Entity worker respects backpressure limits (AC-11)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-052.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: 🟢 Nice to have. Bounded queue with observational alerting when pending count exceeds configurable threshold. Items never dropped.
+
+### ST-053: Deep health check
+- Type: observability
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 2
+- Blocked by: ST-039, ST-040 (needs worker state to report)
+- Touches: `server/index.ts` (/health endpoint)
+- Acceptance criteria:
+  - [ ] Health check reports DB latency, queue depth, and degraded state (operational polish)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-053.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: 🟢 Nice to have. Industry standard for container orchestration. Reports degraded state (e.g. embedding failures, worker backlog) in health response for monitoring.
+
 ---
 
 ## Refined
