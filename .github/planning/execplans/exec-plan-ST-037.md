@@ -38,6 +38,7 @@ After this story, the PO can begin daily dogfooding in at least one configured c
 ✅ **Story ST-037 Complete** — All acceptance criteria met.
 
 1. ✅ `.vscode/mcp.json` configured and committed with `http://localhost:3000/mcp` URL and `${env:MEMORY_API_KEY}` Bearer auth.
+  - Follow-up validation (2026-05-31): VS Code MCP transport on this host failed against `localhost` (`TypeError: fetch failed`) but succeeded against `127.0.0.1`; workspace config now pins `http://127.0.0.1:3000/mcp`.
 2. ✅ README.md expanded with "Connecting Clients" section covering VS Code Copilot (workspace auto-config), Claude Code (user-level only), and Claude Desktop (entry-point guidance plus limitation note).
 3. ✅ VS Code MCP panel shows `ai-memory` as a configured server after environment setup.
 4. ✅ End-to-end smoke test completed:
@@ -464,6 +465,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - 2026-05-29T13:37:26.8123004+02:00 — Task 4.1 completed: created `.vscode/mcp.json`, verified JSON parse + required literals, committed as `18e5952`.
 - 2026-05-29T14:18:19.5163963+02:00 — Task 4.2 completed: recorded Claude Code/Desktop setup verification evidence, replaced README client section with "Connecting Clients", committed README as `b925e3a`.
 - 2026-05-29T15:25:00.0000000+02:00 — Task 4.3 completed: automated verification passed (AC1/AC2); cross-model review confirmed valid MCP schema, no secrets, correct env var interpolation; PO smoke test executed: thought_stats ✓, capture_thought ✓, search_thoughts ✓; story ready for board Review.
+- 2026-05-31T05:41:47.3331699+02:00 — Post-closeout follow-up: diagnosed VS Code `TypeError: fetch failed` against `http://localhost:3000/mcp`; host diagnostics showed `/health` and MCP initialize succeed via `127.0.0.1`; updated `.vscode/mcp.json` URL to IPv4 loopback and documented workaround in README.
 
 ---
 
@@ -473,6 +475,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - Observation: Claude Code setup verification — Source: "Connect Claude Code to tools via MCP" (https://code.claude.com/docs/en/mcp). Verified that user-level MCP configuration is supported via `--scope user` (stored in `~/.claude.json`), remote HTTP transport is supported (`claude mcp add --transport http`), and auth headers can be set with `--header` or JSON config.
 - Observation: Claude Desktop setup verification — Source: "Connect to local MCP servers" (https://modelcontextprotocol.io/docs/develop/connect-local-servers). Verified the settings entry point (Settings > Developer > Edit Config) and config paths (`%APPDATA%\\Claude\\claude_desktop_config.json` on Windows, `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS); available documentation examples are stdio/command-based and do not confirm a localhost Streamable HTTP `url` + `headers` JSON shape.
 - Observation: MCP server uses Server-Sent Events transport (SSE) in responses — tool calls return `event: message` + `data: <JSON-RPC>` format, not pure JSON. Client `Accept` header must include `text/event-stream` in addition to `application/json`.
+- Observation: On this Windows host, MCP calls to `http://localhost:3000/mcp` failed from VS Code with `TypeError: fetch failed` even while `curl` and `/health` succeeded, and direct MCP initialize to `http://127.0.0.1:3000/mcp` returned HTTP 200. Using IPv4 loopback in `.vscode/mcp.json` resolved the VS Code connection issue.
 
 ---
 
@@ -480,6 +483,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 - 2026-05-29 — Used `git add -f .vscode/mcp.json` for Task 4.1 to satisfy the story requirement of committing workspace-level MCP configuration while keeping staging scoped to the single task artifact.
 - 2026-05-29 — Kept the Claude Desktop subsection at verified entry-point/file-path guidance and included the required limitation note because available documentation did not confirm a localhost Streamable HTTP `url` + `headers` JSON shape.
+- 2026-05-31 — Updated VS Code MCP URL in `.vscode/mcp.json` from `localhost` to `127.0.0.1` for this workspace after reproducible VS Code fetch failures on `localhost` and successful MCP initialize over IPv4 loopback.
 
 ---
 
@@ -507,6 +511,7 @@ All four acceptance criteria (§2) confirmed:
 **Retrospective notes:**
 - The server uses Streamable HTTP (SSE) transport, not traditional JSON-RPC. Client implementations must handle `event: message` / `data:` framing.
 - `.vscode/mcp.json` is workspace-committed and auto-loads; no manual VS Code configuration required for users cloning the repo.
+- On some Windows environments, pinning VS Code MCP URL to `127.0.0.1` is more reliable than `localhost` when extension-host fetch resolves `localhost` to an unreachable loopback path.
 - Docker health checks confirm both `db` and `mcp` services are stable.
 - No secrets or sensitive values were accidentally committed in `.vscode/mcp.json` — `${env:MEMORY_API_KEY}` is a runtime interpolation.
 - Story is ready for PO sign-off and board Review transition.

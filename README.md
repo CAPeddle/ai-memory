@@ -106,6 +106,8 @@ $env:MEMORY_API_KEY = "your-key-here"
 code .
 ```
 
+The committed workspace config currently uses `http://127.0.0.1:3000/mcp` for the VS Code MCP client path. On some Windows hosts, VS Code fetch can fail against `localhost` when it resolves to IPv6 loopback (`::1`) while the IPv4 loopback path succeeds.
+
 After VS Code starts, open the MCP server panel and confirm `ai-memory` appears as a configured server.
 
 #### Claude Code
