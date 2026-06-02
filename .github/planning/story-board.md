@@ -425,6 +425,10 @@
 
 ## Review
 
+(Empty)
+
+## Done
+
 ### ST-038: Startup safety & input guards
 - Type: hardening
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
@@ -438,9 +442,7 @@
   - [x] `capture_thought` rejects content exceeding 32KB with clear error (AC-5)
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-038.md`
 - Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
-- Notes: 🔴 Must fix resolved. Startup validation now fails fast on missing required env vars; 32KB byte-limit enforcement and boundary coverage added.
-
-## Done
+- Notes: 🔴 Must fix resolved. Startup validation now fails fast on missing required env vars; 32KB byte-limit enforcement and boundary coverage added. Cross-model review gate passed.
 
 ### ST-037: Configure local MCP clients for dogfooding
 - Type: enablement
