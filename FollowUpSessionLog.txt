@@ -1,186 +1,40 @@
 # FollowUpSessionLog — ai-memory
 
-## Last Session: 2026-05-29 (ST-037 smoke test + compound engineering)
+## Last Session: 2026-06-02 (ST-038 execution complete)
 
 ### Accomplished
-- **ST-037 (Local MCP clients):** All tasks completed. `.vscode/mcp.json` committed, README expanded with three-client setup, PO smoke test passed (thought_stats, capture_thought, search_thoughts all succeed). Story moved to Review.
-- **Compound engineering:** Promoted MCP transport contract (Accept header + SSE framing) into CLAUDE.md and README.md. Added raw curl example for developer testing.
+- Executed ST-038 end-to-end from .github/planning/execplans/exec-plan-ST-038.md (Tasks 4.1–4.4).
+- Task 4.1: Added startup fail-fast required-env validation for OPENROUTER_API_KEY and MEMORY_API_KEY before server startup.
+- Task 4.1: Updated entity worker to remove OPENROUTER_API_KEY fallback/disable path that is now unreachable.
+- Task 4.2: Added UTF-8 byte-size guard in capture_thought with MAX_CONTENT_BYTES=32768 and MCP isError response.
+- Task 4.3: Added server/tests/capture-size-limit.test.ts with ASCII and UTF-8 boundary coverage plus oversized non-insert assertion.
+- Task 4.4: Added server/src/startupValidation.ts and server/tests/startup-validation.test.ts, including explicit ensureRequiredEnv fatal-log + exit(1) assertions.
+- Verification: Process-level fail-fast check returns FATAL + EXIT_CODE:1 when OPENROUTER_API_KEY is unset.
+- Verification: Full test suite passes via docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/ (39 passed, 0 failed).
+- Cross-model gate: PASS (no acceptance-criteria violations).
+- Board updates: ST-038 moved Refined -> Review -> Done after PO acceptance.
 
-### Board State
-- In Progress: none
-- Review: ST-037
-- Done: ST-001, ST-005, ST-008, ST-009, ST-010, ST-011–ST-017, ST-021, ST-022, ST-030, ST-035, ST-036
-- Backlog: ST-006, ST-019, ST-023, ST-024, ST-026, ST-028, ST-029, ST-031, ST-032, ST-034
-
-### Resume Point
-- ST-037 awaits PO sign-off to move to Done.
-- Next planning target: ST-029 (Feedback API) or ST-028 (Worker observability).
-- ST-034 (cardinality spike) now unblocked once dogfooding accumulates data.
-
-### Avoidance
-- **MCP transport 406:** Raw HTTP callers MUST send `Accept: application/json, text/event-stream`. Without it the server returns 406. MCP client libraries handle this automatically.
-- **SSE response framing:** Tool responses arrive as `event: message\ndata: <JSON-RPC>\n\n`, not bare JSON. Parse the `data:` line.
-- After editing schema.sql: `docker compose build db db-test` (both images), then full restart.
-- mcp-test container must be RESTARTED (not just file changes) to reload new Deno modules.
-- `CONSOLIDATION_WORKER_DISABLED=true` is set on mcp-test — preserve for test isolation.
-- dev/test separation: `docker compose up -d` → dev only; `--profile test` adds ephemeral test stack.
-- Tests: `docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/`
-
-### Known Gap
-- CLAUDE.md has authoritative test commands but is gitignored. PO to decide: add to `.github/instructions/`.
-- CI workflow (`.github/workflows/ci.yml`) requires OPENROUTER_API_KEY repo secret — not yet provisioned on GitHub.
-- ST-037 committed CLAUDE.md + README.md transport contract docs — needs final commit.
-- ST-030 has 1 trivial AC left (git diff -w verification, ~1 second)
-
-### Avoidance
-- Corpus-isolation filter in search-project-boost.test.ts is STILL NEEDED for intra-run ordering.
-- CLAUDE.md is gitignored by a global exclude rule — use `git add -f` if committing is decided.
-- `db-test` uses tmpfs — init scripts re-run on every container start (always fresh schema).
-
-### Accomplished
-- **ST-013 (5 tasks, all complete) — Split investigation docs into landing pages and focused fragments:**
-  - **Task 4.1:** Built `_inventory-all-md.txt` (20 source files), `split-manifest.md` (222 rows), `split-section-mapping-matrix.md` (222 rows). Commit 90ebc6a.
-  - **Task 4.2:** Split 14 top-level investigation docs into compact landing pages + 174 fragment files across 14 folders. Hybrid granularity: one fragment per `##` section; subsection fragments if section >250 lines or 4+ `###` blocks. Commit 1a4c242.
-  - **Task 4.3:** Normalized nested Discussions/ (4 docs → 45 sibling fragments) and Youtube/ (2 docs → 3 sibling fragments). Created `_index.md` for each subtree. Commit b4df44a.
-  - **Task 4.4:** Updated `copilot-instructions.md`, `plan.prompt.md`, `plan-new.prompt.md` with landing-page-first policy and fragment navigation guidance. Repo-wide reference scan: zero broken real paths. Commit 64c68ff.
-  - **Task 4.5:** Validated matrix 222/222 mapped. Repaired 54 stale placeholder paths (45 Discussions, 6 WAP duplicates, 3 Youtube) using `tools/fix-matrix-paths.ps1`. All ACs verified PASS. Commit 5b6e94a.
-- **Moved ST-013 to Review** on story board. All 4 ACs checked off. Awaiting PO acceptance.
-- **Updated board header**: Next planning target TBD.
-
-### Key Discoveries
-1. **split-investigations.ps1 is NOT idempotent.** Running it twice on already-rewritten landing pages parses the new `## Read This When`, `## Fragment Map`, `## Design Authority Note` headings as source sections and creates wrong fragment files. Always restore originals from git before re-running. Rule added to exec-plan §5b Avoidance.
-2. **Task 4.3 adopted sibling-flat convention** (all fragments for a nested doc go as siblings in the parent folder with source-prefix in the filename), but **Task 4.1 matrix placeholders assumed sub-folder convention** (separate subfolder per nested source). Required matrix path repair in Task 4.5.
-3. **Duplicate `##` headings** in `workflow-and-prompt-design.md` (§6b, §6c, §7b, §2b, §5b, §5c each appear twice) caused the split script to create `-2` suffix files for the second occurrence. Matrix had unsuffixed paths for these rows.
-4. **`Nate B Jones on Open Brain vs LLM Wiki.md` (831 lines)** has no `##` headings — treated as a single-fragment transcript. Decision logged in exec-plan §6c.
+### Commits (ST-038)
+- 1afb15f fix(startup): fail fast on missing required env vars
+- 997b8a7 fix(capture): enforce 32kb content byte limit
+- cb5f739 test(capture): add 32kb boundary coverage
+- 00914d2 refactor(startup): harden validation and close review gaps
+- 3dfd4be chore(board): move st-038 to review
+- 3b91a96 docs(execplan): record final cross-model pass
+- 2ac1790 chore(board): move st-038 to done
 
 ### Resume Point
-- **In Progress: none. Review: empty. ST-013 is Done.**
-- **Next work options:**
-  - PO accepts ST-013 → move to Done → plan next story from Backlog
-  - PO requests fixes → make corrections → re-present
-
-### Board State
-- In Progress: none
-- Review: **ST-013** (completed 2026-05-18, all ACs verified)
-- Done: ST-001, ST-009, ST-011, ST-012, ST-013, ST-014, ST-015, ST-016, ST-017, ST-021
-- Backlog: ST-002–ST-020 (Phases 1–6)
+- No story In Progress.
+- No story in Review.
+- Next planning target on board remains ST-039 (embedding resilience).
 
 ### Avoidance
-- Do NOT re-run `tools/split-investigations.ps1` on already-rewritten landing pages. Restore originals from git first.
-- FTS5 in SystemDesign.md is correct — it documents SqliteMemoryStore only.
-- ADR-008 = Option C (stateless ambient). Do not substitute Option B without new ADR + PO.
-- SRS is v1.1; do not reference as v1.0.
-- Do NOT use `git clone` inside Dockerfiles — Fortinet SSL proxy will block it.
-- AGE `v1.7.0` tag does not exist for PG15 — use `PG15/v1.6.0-rc0`.
-- AGE v1.6.0 `|` operator limitation: `[:A|B*1..n]` fails until PG17 + AGE v1.7.0.
-
-
-
-### Accomplished
-- Validated Docker Compose stack locally: both `db` (PostgreSQL 15 + pgvector + AGE v1.6.0-rc0) and `mcp` (Deno MCP server) containers started and healthy.
-- Confirmed all 8 ST-021 acceptance criteria are met:
-  - AC1: `docker compose ps` — both containers healthy
-  - AC2: `vector` and `age` extensions loaded
-  - AC3: `memory_graph` created by init SQL
-  - AC4: BM25+RRF query returns `rrf_score` column
-  - AC5: `CAUSED_BY*1..5` traversal returns 3-hop chain
-  - AC6: Fact inference returns `flowers` via explicit MATCH chain
-  - AC7: Context scoping documented in findings
-  - AC8: Docker Compose stack confirmed running
-- Updated `docs/investigations/ST-021-findings.md`: §R4 (version correction, tarball workaround), §R6 (AGE v1.6.0 `|` limitation and workaround), §6b (discoveries #6–#8).
-- Updated exec-plan `§1b`: all ACs confirmed, version and workaround notes added.
-- **Moved ST-021 to Done** on story board. All 8 ACs checked.
-- Committed: `chore(docker): fix AGE build and close ST-021` (hash 3241519)
-
-### Key Discoveries (Docker Validation Session)
-1. **AGE `v1.7.0` does not exist for PG15.** Correct latest stable tag: `PG15/v1.6.0-rc0`. AGE v1.7.0 is only for PG17/PG18.
-2. **Fortinet SSL proxy intercepts HTTPS inside Docker.** `git clone https://github.com/...` fails with SSL cert error. Solution: download tarball on host, COPY into image. `docker/postgres-age/age-v1.6.0-rc0.tar.gz` added to repo.
-3. **`flex` and `bison` required for AGE build.** `postgres:15` base image does not include them. Added to apt-get.
-4. **AGE v1.6.0 does not support `|` in relationship type selectors.** `[:LIKES|INTERESTED_IN*1..3]` causes a parse error. This feature requires AGE v1.7.0 (PG17+ only). Workaround: explicit chained MATCH clauses. Workaround confirmed functional — fact inference returns `flowers`.
-5. **MCP container health check shows "unhealthy"** because the `/health` endpoint is not implemented — but the server is running functionally on port 3000. Not a blocker.
-
-### Resume Point
-- No story In Progress. Review: empty. **ST-021 is Done.**
-- Next work: plan downstream implementation stories from ST-021 findings:
-  - Entity extraction worker story (design in §R8 is ready)
-  - Consolidation worker story (queue schema in `server/db/schema.sql`)
-  - Cloud deployment story (Fly.io / Railway / DigitalOcean per ADR-009)
-  - Optionally: PG17 upgrade story if `|` in relationship selectors is desired
+- If mcp-test is not running, start test profile first: docker compose --profile test up -d.
+- After server runtime code changes, restart mcp-test: docker compose --profile test restart mcp-test.
+- Keep process-level startup fail-fast check in verification evidence (unset OPENROUTER_API_KEY -> FATAL + EXIT_CODE:1).
+- Preserve task-scoped commits with Story/Task trailers; do not stage unrelated local changes.
 
 ### Board State
-- In Progress: none
+- In Progress: empty
 - Review: empty
-- Done: ST-001, ST-009, ST-011, ST-012, ST-014, ST-015, ST-016, ST-017, **ST-021**
-- Backlog: ST-002–ST-020 (Phases 1–6); new downstream stories need creation
-
-### Avoidance
-- FTS5 in SystemDesign.md is correct — it documents SqliteMemoryStore only.
-- "No memory tiers" in ProjectOverview.md is revised — do not revert.
-- ADR-008 = Option C (stateless ambient). Do not substitute Option B without new ADR + PO.
-- SRS is v1.1; do not reference as v1.0.
-- ST-017 recommended "Stay Current" (4.50/5.0) — ST-021 has now confirmed OB1 fork is viable and supersedes that evaluation.
-- Do NOT use `git clone` inside Dockerfiles — Fortinet SSL proxy will block it. Rule now promoted to `coding-standards.instructions.md §Docker and Infrastructure`.
-- AGE `v1.7.0` tag does not exist for PG15 — never use it; use `PG15/v1.6.0-rc0` or check github.com/apache/age/tags for latest. Rule promoted to `coding-standards.instructions.md §Docker and Infrastructure`.
-- AGE v1.6.0 `|` operator limitation: do not assume `[:A|B*1..n]` works until PG17 with AGE v1.7.0 is deployed. Documented in ST-021-findings.md §R6.
-
-
-
-### Accomplished
-- Created SE document body: SRS v1.0→v1.1, ADR-001–008, SystemDesign.md, delivery-plan.md.
-- Applied 3 wording clarifications to MicrosoftCopilotProjectOverview.md (no deviations found).
-- ADR-008 accepted: AsyncLocal ambient context + middleware (Option C).
-- SRS v1.1: FR-R-016, FR-API-013, FR-MCP-007, FR-B-009, FR-C-008 added.
-- ST-020 (ambient context, phase 3) added to board and delivery plan.
-- Governance review: promoted design-authority hierarchy in copilot-instructions.md; extracted Supabase evaluation into query packet.
-- **Accepted ST-015, ST-016, ST-017** — moved to Done.
-- **Created ST-021** — Supabase hosted-first architecture spike (critical, blocks Phase 1).
-
-### Supabase Hosted-First Evaluation (ST-021)
-PO directed a major architectural evaluation:
-- **Hosted-first pivot**: Supabase Postgres replaces SQLite as primary storage (supersedes ADR-002).
-- **Hybrid architecture**: Supabase Edge Functions (Deno/TS) for remote MCP front-door + C# local tooling for views/pipelines.
-- **Multi-AI access**: Claude Desktop, ChatGPT, Cursor, Claude Code — all connect to same hosted MCP.
-- **OB1 pattern**: `thoughts` table + entity-extraction schema + Edge Function MCP server.
-- **Always-connected**: No offline sync. Local tooling calls remote hosted MCP.
-- **Markdown views preserved**: Git-tracked local Markdown files (ADR-006 unchanged).
-- **Spike scope**: Broad — evaluate C# vs Deno per layer, schema mapping, cost, ADR impact.
-- **Spike output**: Investigation doc + updated ADRs + revised storyboard.
-- **No hard timebox**.
-
-### PO Decisions Captured
-1. Deployment model: **Hosted-first pivot** (not hybrid/additive).
-2. Raw shards: Memory records (semantic + episodic) AND Open Brain Thoughts.
-3. Chat platforms: Whatever OB1 already supports (Claude Desktop, ChatGPT, Cursor, Claude Code).
-4. Offline: **Always-connected** (simpler, no sync).
-5. ADR-002: **Supersede with Postgres**.
-6. Priority: **Before Phase 1 as spike** (critical — blocks all implementation).
-7. Spike scope: Broad, including hybrid C#+TS evaluation.
-8. ST-017: Not reopened — new story ST-021 created.
-9. WIP: Accepted ST-015/016/017 first, then ST-021.
-
-### Impact Assessment (from evaluation)
-- ~60% of ADR decisions (001-005, 007-008) need review if pivot confirmed.
-- ~80% of investigation docs remain reusable (concepts transfer regardless of stack).
-- C# scaffold (ST-001) at risk if Deno chosen for all layers.
-- Phase 1-5 stories need replanning based on spike outcome.
-- ADR-006 (Markdown views) and ADR-003 (search algorithm) core logic preserved.
-
-### Resume Point
-- No story In Progress. Review: empty.
-- **Next: Execute ST-021 spike** — Supabase hosted-first architecture evaluation.
-- Query packet: `.github/planning/query-packets/QP-Supabase-Hosted-MCP.md`
-
-### Board State
-- In Progress: none
-- Review: empty
-- Done: ST-001, ST-009, ST-011, ST-012, ST-014, ST-015, ST-016, ST-017
-- Backlog: ST-021 (Phase 0.5, critical), ST-002–ST-020 (Phases 1–6)
-
-### Avoidance
-- FTS5 in SystemDesign.md is correct — it documents SqliteMemoryStore only.
-- "No memory tiers" in ProjectOverview.md is revised — do not revert.
-- ADR-008 = Option C (stateless ambient). Do not substitute Option B without new ADR + PO.
-- SRS is v1.1; do not reference as v1.0.
-- ST-017 recommended "Stay Current" (4.50/5.0) — do not treat as binding; ST-021 explicitly re-evaluates.
-- ST-021 blocks Phase 1 implementation — do NOT start ST-002/ST-003 until spike is resolved.
-
+- Done: includes ST-038 (completed 2026-06-02)
