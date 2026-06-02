@@ -175,10 +175,13 @@ If you get HTTP 406, ensure the `Accept` header includes both `application/json`
 docker compose --profile test up -d
 
 # All server tests (run inside the mcp-test container)
-docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/
+docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/
 
 # A single test file
-docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/search-mmr.test.ts
+docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/search-mmr.test.ts
+
+# Intentional lock refresh (only when dependencies/imports changed)
+docker compose --profile test exec mcp-test deno cache --lock=deno.lock --lock-write tests/**/*.ts src/**/*.ts index.ts
 ```
 
 The `.NET` solution (governance tooling + the planned local synthesis companion) is built and tested with the standard `dotnet` CLI:

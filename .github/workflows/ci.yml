@@ -47,7 +47,7 @@ jobs:
           exit 1
 
       - name: Run integration tests
-        run: docker compose --profile test exec -T mcp-test deno test --allow-net --allow-env --allow-read tests/
+        run: docker compose --profile test exec -T mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/
 
       - name: Print logs on failure
         if: failure()
