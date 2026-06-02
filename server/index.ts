@@ -9,19 +9,13 @@ import { sql } from "./src/db.ts";
 import { startEntityWorker } from "./src/entityWorker.ts";
 import { startConsolidationWorker, drainPendingOnce } from "./src/consolidationWorker.ts";
 import { cosineSim, mmrRerank, logRecall, parseVector, MmrCandidate } from "./src/searchQuality.ts";
+import { ensureRequiredEnv } from "./src/startupValidation.ts";
 
 // ---------------------------------------------------------------------------
 // Startup validation — fail fast if required config is missing
 // ---------------------------------------------------------------------------
 
-const REQUIRED_ENV = ["OPENROUTER_API_KEY", "MEMORY_API_KEY"] as const;
-
-for (const name of REQUIRED_ENV) {
-  if (!Deno.env.get(name)) {
-    console.error(`FATAL: Required environment variable ${name} is not set. Exiting.`);
-    Deno.exit(1);
-  }
-}
+ensureRequiredEnv();
 
 const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY")!;
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";

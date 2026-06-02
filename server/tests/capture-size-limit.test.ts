@@ -45,6 +45,11 @@ Deno.test({
 
     assertEquals(responseIsError(result), true);
     assertEquals(responseText(result).includes("32KB"), true, "Error message should mention 32KB limit");
+
+    const rows = await sql<{ cnt: number }[]>`
+      SELECT count(*)::int AS cnt FROM thoughts WHERE content = ${bigContent}
+    `;
+    assertEquals(rows[0]?.cnt ?? 0, 0, "Oversized content must be rejected before INSERT");
   },
 });
 
@@ -80,6 +85,44 @@ Deno.test({
     const overByOne = "a".repeat(32_769);
     const result = await mcpCall("capture_thought", {
       content: overByOne,
+      memory_type: "shard",
+    }) as ToolCallResponse;
+
+    assertEquals(responseIsError(result), true);
+    assertEquals(responseText(result).includes("32KB"), true, "Error message should mention 32KB limit");
+  },
+});
+
+Deno.test({
+  name: "capture_thought accepts multibyte UTF-8 content at exactly 32768 bytes",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    const emoji = "😀";
+    const exactBytes = emoji.repeat(8_192); // 8192 * 4 UTF-8 bytes = 32768
+    const result = await mcpCall("capture_thought", {
+      content: exactBytes,
+      memory_type: "shard",
+    }) as ToolCallResponse;
+
+    try {
+      assertEquals(responseIsError(result), undefined);
+      assertEquals(responseText(result).includes("Captured as"), true);
+    } finally {
+      await cleanupCapturedThought(result);
+    }
+  },
+});
+
+Deno.test({
+  name: "capture_thought rejects multibyte UTF-8 content over 32768 bytes",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    const emoji = "😀";
+    const overLimitBytes = emoji.repeat(8_193); // 8193 * 4 UTF-8 bytes = 32772
+    const result = await mcpCall("capture_thought", {
+      content: overLimitBytes,
       memory_type: "shard",
     }) as ToolCallResponse;
 

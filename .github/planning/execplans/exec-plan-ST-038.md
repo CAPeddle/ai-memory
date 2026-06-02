@@ -36,7 +36,12 @@ This story adds:
 
 ## §1b. Outcomes & Conclusions
 
-*(populated on completion)*
+- ✅ Implemented fail-fast startup validation for required env vars (`OPENROUTER_API_KEY`, `MEMORY_API_KEY`) before server startup.
+- ✅ Implemented `capture_thought` UTF-8 byte-size guard at 32KB (`MAX_CONTENT_BYTES = 32_768`) before context parsing, DB insert, or embedding work.
+- ✅ Added/expanded test coverage:
+  - `server/tests/capture-size-limit.test.ts`: oversized rejection, ASCII boundaries (32768/32769), multibyte UTF-8 boundaries, and oversized non-insert assertion.
+  - `server/tests/startup-validation.test.ts`: required-env detection plus explicit `ensureRequiredEnv` fatal-log + exit(1) behavior.
+- ✅ Final verification: `docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/` → `39 passed, 0 failed`.
 
 ---
 
@@ -74,8 +79,8 @@ Status: ✅ Ready for /continue
 
 | Requirement (source) | Must appear in output artifact(s) | Implemented by task(s) | Verification evidence |
 |---|---|---|---|
-| Server fails fast at startup if required env vars are missing (QP-038 AC-1) | `server/index.ts` startup block exits before `Deno.serve()` | Task 4.1 | Test: server exits with code 1 when env var removed |
-| `capture_thought` rejects content exceeding 32KB (QP-038 AC-5) | Size check in capture tool handler (before DB insert) | Task 4.2 | Test: 64KB payload returns `isError: true` with size message |
+| Server fails fast at startup if required env vars are missing (QP-038 AC-1) | `server/index.ts` startup block exits before `Deno.serve()` | Task 4.1 | Process check: `unset OPENROUTER_API_KEY` run logs `FATAL: Required environment variable OPENROUTER_API_KEY is not set. Exiting.` and `EXIT_CODE:1`; plus `tests/startup-validation.test.ts` asserts fatal log + exit(1) path in `ensureRequiredEnv`. |
+| `capture_thought` rejects content exceeding 32KB (QP-038 AC-5) | Size check in capture tool handler (before DB insert) | Task 4.2 | `tests/capture-size-limit.test.ts`: 64KB reject with `isError: true` and 32KB message, ASCII and multibyte boundary coverage, and assertion that oversized content is not inserted into `thoughts`. |
 
 ---
 
@@ -344,12 +349,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.3 — Write tests |
-| **Last successful command** | `docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/capture-size-limit.test.ts` |
-| **Expected outputs produced** | New `server/tests/capture-size-limit.test.ts` with 4 cases: 64KB reject, 32768-byte accept, 32769-byte reject, normal-content accept; accepted captures are cleaned up after assertions. |
-| **Next task** | Task 4.4 — Run full test suite + cross-model review |
+| **Last completed task** | Task 4.4 — Run full test suite + cross-model review |
+| **Last successful command** | `docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/` |
+| **Expected outputs produced** | Full suite green (`39 passed, 0 failed`); process-level fail-fast evidence captured (`FATAL...`, `EXIT_CODE:1`); cross-model review findings on test coverage addressed via startup-validation helper tests and expanded size-limit tests. |
+| **Next task** | Present completion + cross-model gate results to PO; move ST-038 to Review after PO approval |
 | **Known blockers** | None |
-| **Last updated** | 2026-06-02T14:35:49+02:00 |
+| **Last updated** | 2026-06-02T14:53:38+02:00 |
 
 ### Progress History
 
@@ -358,6 +363,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-06-02T14:29:07+02:00 | Task 4.1 | ✅ Complete | Startup with missing `OPENROUTER_API_KEY` logs FATAL and exits with code 1; `server/index.ts` now validates `OPENROUTER_API_KEY` + `MEMORY_API_KEY` at startup; `server/src/entityWorker.ts` uses non-null key and no longer self-disables. | Execute Task 4.2 |
 | 2026-06-02T14:30:57+02:00 | Task 4.2 | ✅ Complete | `capture_thought` byte-size guard implemented at top of try block; verification command run and failed with "No such file" because `tests/capture-size-limit.test.ts` is created in Task 4.3 per plan failure handling. | Execute Task 4.3 |
 | 2026-06-02T14:35:49+02:00 | Task 4.3 | ✅ Complete | `tests/capture-size-limit.test.ts` added and verified green: `4 passed, 0 failed`; tests assert `result.isError` and 32KB messaging, with cleanup for accepted captures. | Execute Task 4.4 |
+| 2026-06-02T14:53:38+02:00 | Task 4.4 | ✅ Complete | Full suite rerun after review-driven fixes: `39 passed, 0 failed`; process-level fail-fast check confirms `EXIT_CODE:1` when key missing; cross-model review findings addressed with startup-exit assertions and UTF-8 boundary/non-insert tests. | Present to PO for review gate |
 
 ### Avoidance
 
@@ -394,6 +400,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - 2026-06-02: Task 4.2 verification command surfaced expected missing-file error (`tests/capture-size-limit.test.ts` not yet present); Task 4.3 creates that file.
 - 2026-06-02: A quick MCP probe initially returned pre-change behavior until `mcp-test` was restarted; restart is required to pick up runtime code changes.
 - 2026-06-02: New test file initially hit Deno resource/op leak sanitizers on accepted-path MCP calls; setting `sanitizeResources: false` and `sanitizeOps: false` aligned with existing integration-test patterns.
+- 2026-06-02: Initial cross-model review flagged verification gaps (startup-exit assertion, UTF-8 boundary coverage, and oversized non-insert proof); these were resolved within Task 4.4.
 
 ---
 
@@ -402,6 +409,8 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - 2026-06-02: Kept the required-env set exactly to `OPENROUTER_API_KEY` and `MEMORY_API_KEY` per plan; `AI_MEMORY_CITATION_BASE_URL` remains optional with default.
 - 2026-06-02: Used `mcpCall` response shape (`result.isError`, `result.content[0].text`) in tests instead of introducing a new helper API.
 - 2026-06-02: Added explicit DB cleanup for accepted capture tests to preserve corpus/test isolation guarantees.
+- 2026-06-02: Extracted startup env validation to `server/src/startupValidation.ts` so exit-path behavior can be unit-tested without introducing `--allow-run` test requirements.
+- 2026-06-02: Added multibyte UTF-8 boundary tests (`😀` payloads) to lock byte-based semantics and prevent accidental character-count regressions.
 
 ---
 
@@ -417,7 +426,10 @@ At story completion:
 
 ## §7b. Outcomes & Retrospective
 
-*(populated on completion)*
+- Story objective achieved: startup now fails fast on missing required secrets, and `capture_thought` enforces a hard 32KB UTF-8 byte cap.
+- Contract evidence now includes both process-level startup verification and automated exit-path assertions.
+- Test suite expanded from 31 to 39 passing tests due to new startup validation and size-limit boundary cases.
+- No plan-review escalation required; all cross-model review findings were addressed within ST-038 scope.
 
 ---
 
