@@ -344,12 +344,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.2 — Add content size limit to `capture_thought` |
-| **Last successful command** | `docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/capture-size-limit.test.ts` (expected failure in Task 4.2 because test file is created in Task 4.3) |
-| **Expected outputs produced** | Module-level `MAX_CONTENT_BYTES = 32_768` added in `server/index.ts`; `capture_thought` now rejects payloads over 32KB before context parsing, DB insert, and embedding call with MCP `isError: true`. |
-| **Next task** | Task 4.3 — Write tests |
+| **Last completed task** | Task 4.3 — Write tests |
+| **Last successful command** | `docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/capture-size-limit.test.ts` |
+| **Expected outputs produced** | New `server/tests/capture-size-limit.test.ts` with 4 cases: 64KB reject, 32768-byte accept, 32769-byte reject, normal-content accept; accepted captures are cleaned up after assertions. |
+| **Next task** | Task 4.4 — Run full test suite + cross-model review |
 | **Known blockers** | None |
-| **Last updated** | 2026-06-02T14:30:57+02:00 |
+| **Last updated** | 2026-06-02T14:35:49+02:00 |
 
 ### Progress History
 
@@ -357,10 +357,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 |---|---|---|---|---|
 | 2026-06-02T14:29:07+02:00 | Task 4.1 | ✅ Complete | Startup with missing `OPENROUTER_API_KEY` logs FATAL and exits with code 1; `server/index.ts` now validates `OPENROUTER_API_KEY` + `MEMORY_API_KEY` at startup; `server/src/entityWorker.ts` uses non-null key and no longer self-disables. | Execute Task 4.2 |
 | 2026-06-02T14:30:57+02:00 | Task 4.2 | ✅ Complete | `capture_thought` byte-size guard implemented at top of try block; verification command run and failed with "No such file" because `tests/capture-size-limit.test.ts` is created in Task 4.3 per plan failure handling. | Execute Task 4.3 |
+| 2026-06-02T14:35:49+02:00 | Task 4.3 | ✅ Complete | `tests/capture-size-limit.test.ts` added and verified green: `4 passed, 0 failed`; tests assert `result.isError` and 32KB messaging, with cleanup for accepted captures. | Execute Task 4.4 |
 
 ### Avoidance
 
 - 2026-06-02: If `mcp-test` is not running, start the profile first with `docker compose --profile test up -d` before executing verification commands.
+- 2026-06-02: After changing server runtime code, restart `mcp-test` (`docker compose --profile test restart mcp-test`) before running behavior checks; Deno modules are not hot-reloaded in the running container process.
 
 ---
 
@@ -390,12 +392,16 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 - 2026-06-02: Task 4.1 verification initially failed because `mcp-test` was not running; bringing up the `--profile test` stack resolved it without code changes.
 - 2026-06-02: Task 4.2 verification command surfaced expected missing-file error (`tests/capture-size-limit.test.ts` not yet present); Task 4.3 creates that file.
+- 2026-06-02: A quick MCP probe initially returned pre-change behavior until `mcp-test` was restarted; restart is required to pick up runtime code changes.
+- 2026-06-02: New test file initially hit Deno resource/op leak sanitizers on accepted-path MCP calls; setting `sanitizeResources: false` and `sanitizeOps: false` aligned with existing integration-test patterns.
 
 ---
 
 ## §6c. Decision Log
 
 - 2026-06-02: Kept the required-env set exactly to `OPENROUTER_API_KEY` and `MEMORY_API_KEY` per plan; `AI_MEMORY_CITATION_BASE_URL` remains optional with default.
+- 2026-06-02: Used `mcpCall` response shape (`result.isError`, `result.content[0].text`) in tests instead of introducing a new helper API.
+- 2026-06-02: Added explicit DB cleanup for accepted capture tests to preserve corpus/test isolation guarantees.
 
 ---
 
