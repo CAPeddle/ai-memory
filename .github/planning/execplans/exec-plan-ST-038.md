@@ -1,6 +1,6 @@
 # ExecPlan — ST-038: Startup Safety & Input Guards
 
-> Status: ✅ Ready for /continue
+> Status: ✅ Completed (accepted and moved to Done 2026-06-02)
 > Story: ST-038
 > Created: 2026-05-31
 > Approved: 2026-06-02
@@ -352,9 +352,9 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | **Last completed task** | Task 4.4 — Run full test suite + cross-model review |
 | **Last successful command** | `docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/` |
 | **Expected outputs produced** | Full suite green (`39 passed, 0 failed`); process-level fail-fast evidence captured (`FATAL...`, `EXIT_CODE:1`); cross-model review findings on test coverage addressed via startup-validation helper tests and expanded size-limit tests. |
-| **Next task** | Present completion + cross-model gate results to PO; move ST-038 to Review after PO approval |
+| **Next task** | None — story completed, accepted by PO, and moved to Done |
 | **Known blockers** | None |
-| **Last updated** | 2026-06-02T14:53:38+02:00 |
+| **Last updated** | 2026-06-02T15:04:36+02:00 |
 
 ### Progress History
 
@@ -364,6 +364,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-06-02T14:30:57+02:00 | Task 4.2 | ✅ Complete | `capture_thought` byte-size guard implemented at top of try block; verification command run and failed with "No such file" because `tests/capture-size-limit.test.ts` is created in Task 4.3 per plan failure handling. | Execute Task 4.3 |
 | 2026-06-02T14:35:49+02:00 | Task 4.3 | ✅ Complete | `tests/capture-size-limit.test.ts` added and verified green: `4 passed, 0 failed`; tests assert `result.isError` and 32KB messaging, with cleanup for accepted captures. | Execute Task 4.4 |
 | 2026-06-02T14:53:38+02:00 | Task 4.4 | ✅ Complete | Full suite rerun after review-driven fixes: `39 passed, 0 failed`; process-level fail-fast check confirms `EXIT_CODE:1` when key missing; cross-model review findings addressed with startup-exit assertions and UTF-8 boundary/non-insert tests. | Present to PO for review gate |
+| 2026-06-02T15:04:36+02:00 | §7 closeout | ✅ Complete | PO accepted ST-038; board moved Refined → Review → Done; follow-up session handoff refreshed. | Story complete |
 
 ### Avoidance
 
