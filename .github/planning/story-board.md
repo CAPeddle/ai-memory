@@ -413,19 +413,7 @@
 
 ## Refined
 
-### ST-038: Startup safety & input guards
-- Type: hardening
-- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
-- phase: 2
-- Value: 5
-- Blocked by: —
-- Touches: `server/index.ts`, `server/src/tools/captureThought.ts` (new extraction or inline)
-- Acceptance criteria:
-  - [ ] Server fails fast at startup if required env vars are missing (AC-1)
-  - [ ] `capture_thought` rejects content exceeding 32KB with clear error (AC-5)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-038.md`
-- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
-- Notes: 🔴 Must fix. Active silent failure risk — missing OPENROUTER_API_KEY currently logs a warning but continues, causing all embeddings to silently fail.
+(Empty)
 
 ---
 
@@ -437,7 +425,20 @@
 
 ## Review
 
-(Empty)
+### ST-038: Startup safety & input guards
+- Type: hardening
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 5
+- Completed: 2026-06-02
+- Blocked by: —
+- Touches: `server/index.ts`, `server/src/startupValidation.ts`, `server/src/entityWorker.ts`, `server/tests/capture-size-limit.test.ts`, `server/tests/startup-validation.test.ts`
+- Acceptance criteria:
+  - [x] Server fails fast at startup if required env vars are missing (AC-1)
+  - [x] `capture_thought` rejects content exceeding 32KB with clear error (AC-5)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-038.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: 🔴 Must fix resolved. Startup validation now fails fast on missing required env vars; 32KB byte-limit enforcement and boundary coverage added.
 
 ## Done
 
