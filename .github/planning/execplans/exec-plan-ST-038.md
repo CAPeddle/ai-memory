@@ -401,6 +401,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - 2026-06-02: A quick MCP probe initially returned pre-change behavior until `mcp-test` was restarted; restart is required to pick up runtime code changes.
 - 2026-06-02: New test file initially hit Deno resource/op leak sanitizers on accepted-path MCP calls; setting `sanitizeResources: false` and `sanitizeOps: false` aligned with existing integration-test patterns.
 - 2026-06-02: Initial cross-model review flagged verification gaps (startup-exit assertion, UTF-8 boundary coverage, and oversized non-insert proof); these were resolved within Task 4.4.
+- 2026-06-02: Final cross-model gate rerun reported PASS with no acceptance-criteria violations.
 
 ---
 
