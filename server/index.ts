@@ -26,6 +26,7 @@ for (const name of REQUIRED_ENV) {
 const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY")!;
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 const CITATION_BASE_URL = Deno.env.get("AI_MEMORY_CITATION_BASE_URL") ?? "https://ai-memory.local/thoughts";
+const MAX_CONTENT_BYTES = 32_768; // 32 KB content limit per thought
 
 // ---------------------------------------------------------------------------
 // Embedding via OpenRouter (512-dim via text-embedding-3-small truncation)
@@ -259,6 +260,14 @@ server.registerTool(
   },
   async ({ content, memory_type, context }) => {
     try {
+      const contentBytes = new TextEncoder().encode(content).length;
+      if (contentBytes > MAX_CONTENT_BYTES) {
+        return {
+          content: [{ type: "text" as const, text: `Error: Content exceeds maximum size of 32KB (received ${contentBytes} bytes, limit ${MAX_CONTENT_BYTES})` }],
+          isError: true,
+        };
+      }
+
       const scope = parseContext(context);
       const project = scope?.projects?.[0] ?? null;
       const profile = scope?.profile ?? null;
