@@ -10,10 +10,20 @@ import { startEntityWorker } from "./src/entityWorker.ts";
 import { startConsolidationWorker, drainPendingOnce } from "./src/consolidationWorker.ts";
 import { cosineSim, mmrRerank, logRecall, parseVector, MmrCandidate } from "./src/searchQuality.ts";
 
-const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY") ?? "";
-if (!OPENROUTER_API_KEY) {
-  console.warn("OPENROUTER_API_KEY is not set — embedding generation will fail; vector search lane will be skipped");
+// ---------------------------------------------------------------------------
+// Startup validation — fail fast if required config is missing
+// ---------------------------------------------------------------------------
+
+const REQUIRED_ENV = ["OPENROUTER_API_KEY", "MEMORY_API_KEY"] as const;
+
+for (const name of REQUIRED_ENV) {
+  if (!Deno.env.get(name)) {
+    console.error(`FATAL: Required environment variable ${name} is not set. Exiting.`);
+    Deno.exit(1);
+  }
 }
+
+const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY")!;
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 const CITATION_BASE_URL = Deno.env.get("AI_MEMORY_CITATION_BASE_URL") ?? "https://ai-memory.local/thoughts";
 

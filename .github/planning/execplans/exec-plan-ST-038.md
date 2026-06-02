@@ -344,22 +344,22 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | — |
-| **Last successful command** | — |
-| **Expected outputs produced** | — |
-| **Next task** | Task 4.1 — Add startup env validation |
+| **Last completed task** | Task 4.1 — Add startup env validation |
+| **Last successful command** | `docker compose --profile test exec mcp-test sh -c 'unset OPENROUTER_API_KEY && timeout 5 deno run --allow-net --allow-env --allow-read /app/index.ts >/tmp/st038-task41.log 2>&1; code=$?; cat /tmp/st038-task41.log; echo EXIT_CODE:$code'` |
+| **Expected outputs produced** | Fail-fast startup validation in `server/index.ts`; entity worker fallback/early-return removed; verification output includes `FATAL: Required environment variable OPENROUTER_API_KEY is not set. Exiting.` and `EXIT_CODE:1`. |
+| **Next task** | Task 4.2 — Add content size limit to `capture_thought` |
 | **Known blockers** | None |
-| **Last updated** | — |
+| **Last updated** | 2026-06-02T14:29:07+02:00 |
 
 ### Progress History
 
 | Timestamp (ISO) | Task | Status | Evidence / outputs | Next step |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| 2026-06-02T14:29:07+02:00 | Task 4.1 | ✅ Complete | Startup with missing `OPENROUTER_API_KEY` logs FATAL and exits with code 1; `server/index.ts` now validates `OPENROUTER_API_KEY` + `MEMORY_API_KEY` at startup; `server/src/entityWorker.ts` uses non-null key and no longer self-disables. | Execute Task 4.2 |
 
 ### Avoidance
 
-(Append dated entries here. Do not delete prior guidance.)
+- 2026-06-02: If `mcp-test` is not running, start the profile first with `docker compose --profile test up -d` before executing verification commands.
 
 ---
 
@@ -387,13 +387,13 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 ## §6b. Surprises & Discoveries
 
-*(populated during execution)*
+- 2026-06-02: Task 4.1 verification initially failed because `mcp-test` was not running; bringing up the `--profile test` stack resolved it without code changes.
 
 ---
 
 ## §6c. Decision Log
 
-*(populated during execution)*
+- 2026-06-02: Kept the required-env set exactly to `OPENROUTER_API_KEY` and `MEMORY_API_KEY` per plan; `AI_MEMORY_CITATION_BASE_URL` remains optional with default.
 
 ---
 

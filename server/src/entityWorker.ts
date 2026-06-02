@@ -5,7 +5,7 @@ const POLL_INTERVAL_MS = 10_000; // 10 seconds
 const BATCH_SIZE = 10;
 const MAX_ATTEMPTS = 5;
 const MAX_INPUT_CHARS = 16_000; // ~4000 tokens at 4 chars/token
-const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY") ?? "";
+const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY")!;
 
 // --- Allow-lists (critical injection mitigation) ---
 const ALLOWED_LABELS = new Set(["Person", "Function", "Error", "Topic", "Project"]);
@@ -211,10 +211,6 @@ async function processQueue(): Promise<void> {
 
 // --- Public entry point ---
 export function startEntityWorker(): void {
-  if (!OPENROUTER_API_KEY) {
-    console.warn("[entityWorker] OPENROUTER_API_KEY not set — entity extraction disabled");
-    return;
-  }
   console.log("[entityWorker] started (poll every 10s, batch 10)");
   setInterval(processQueue, POLL_INTERVAL_MS);
   // Run once immediately on start
