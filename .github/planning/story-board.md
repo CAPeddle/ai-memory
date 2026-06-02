@@ -1,7 +1,7 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
-> Next planning target: ST-038 (startup safety & input guards)
+> Next planning target: ST-039 (embedding resilience)
 > Unblocked: ST-023, ST-028, ST-029, ST-019 (all ST-005/ST-008/ST-022 blockers cleared)
 > Last updated: 2026-06-02
 
@@ -210,19 +210,7 @@
 
 <!-- Phase 2 — Operational Hardening (from QP-038 vectorize-mcp-worker review) -->
 
-### ST-038: Startup safety & input guards
-- Type: hardening
-- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
-- phase: 2
-- Value: 5
-- Blocked by: —
-- Touches: `server/index.ts`, `server/src/tools/captureThought.ts` (new extraction or inline)
-- Acceptance criteria:
-  - [ ] Server fails fast at startup if required env vars are missing (AC-1)
-  - [ ] `capture_thought` rejects content exceeding 32KB with clear error (AC-5)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-038.md`
-- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
-- Notes: 🔴 Must fix. Active silent failure risk — missing OPENROUTER_API_KEY currently logs a warning but continues, causing all embeddings to silently fail.
+
 
 ### ST-039: Embedding resilience
 - Type: hardening
@@ -424,6 +412,20 @@
 ---
 
 ## Refined
+
+### ST-038: Startup safety & input guards
+- Type: hardening
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 5
+- Blocked by: —
+- Touches: `server/index.ts`, `server/src/tools/captureThought.ts` (new extraction or inline)
+- Acceptance criteria:
+  - [ ] Server fails fast at startup if required env vars are missing (AC-1)
+  - [ ] `capture_thought` rejects content exceeding 32KB with clear error (AC-5)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-038.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: 🔴 Must fix. Active silent failure risk — missing OPENROUTER_API_KEY currently logs a warning but continues, causing all embeddings to silently fail.
 
 ---
 

@@ -1,8 +1,9 @@
 # ExecPlan — ST-038: Startup Safety & Input Guards
 
-> Status: ⬜ Not Ready
+> Status: ✅ Ready for /continue
 > Story: ST-038
 > Created: 2026-05-31
+> Approved: 2026-06-02
 > Parent: QP-038-Vectorize-MCP-Repo-Review.md
 > PLANS.md: This document must be maintained per `.github/planning/execplans/_TEMPLATE.md`
 
@@ -59,7 +60,7 @@ This story adds:
 - [x] Every task ends with a verification step (command or assertion)
 - [x] Acceptance criteria phrased as observable behaviour
 
-Status: ⬜ Not ready — requires /plan
+Status: ✅ Ready for /continue
 
 ---
 
@@ -233,6 +234,38 @@ Expected result: Test passes — a 64 KB payload is rejected with an error menti
      );
    });
 
+   Deno.test("capture_thought accepts content at exactly 32768 bytes", async () => {
+     // Exactly at the limit — must be accepted
+     const boundaryContent = "a".repeat(32_768);
+     const result = await callTool("capture_thought", {
+       content: boundaryContent,
+       memory_type: "shard",
+     });
+     assertEquals(result.isError, undefined);
+     assertEquals(
+       typeof result.content[0].text === "string" &&
+         result.content[0].text.includes("Captured as"),
+       true,
+       "Content at exactly 32768 bytes should be accepted",
+     );
+   });
+
+   Deno.test("capture_thought rejects content at 32769 bytes", async () => {
+     // One byte over the limit — must be rejected
+     const overByOne = "a".repeat(32_769);
+     const result = await callTool("capture_thought", {
+       content: overByOne,
+       memory_type: "shard",
+     });
+     assertEquals(result.isError, true);
+     assertEquals(
+       typeof result.content[0].text === "string" &&
+         result.content[0].text.includes("32KB"),
+       true,
+       "Error message should mention 32KB limit",
+     );
+   });
+
    Deno.test("capture_thought accepts content under 32KB", async () => {
      const okContent = "This is a normal-sized thought for testing size limits.";
      const result = await callTool("capture_thought", {
@@ -250,7 +283,7 @@ Expected result: Test passes — a 64 KB payload is rejected with an error menti
 
 2. The `callTool` helper in `server/tests/_helpers/mcpClient.ts` should already handle MCP tool calls. If its signature doesn't match, adapt the import. Check the helper's interface before writing.
 
-**Expected output:** Two tests — one asserting rejection of oversized content, one asserting normal content still works.
+**Expected output:** Four tests — 64KB rejected, exactly 32768 bytes accepted, exactly 32769 bytes rejected, and normal content accepted.
 
 **Requirement mapping:** §2d rows 1 and 2 (verification evidence)
 
@@ -258,7 +291,7 @@ Expected result: Test passes — a 64 KB payload is rejected with an error menti
 ```powershell
 docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/capture-size-limit.test.ts
 ```
-Expected result: 2 tests pass (2 passed, 0 failed).
+Expected result: 4 tests pass (4 passed, 0 failed).
 
 **Failure handling:** If `callTool` helper has a different signature, read `server/tests/_helpers/mcpClient.ts` and adapt the test accordingly.
 
