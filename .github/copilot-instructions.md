@@ -104,6 +104,18 @@ Apply the context-engineering principles from the investigation docs to your own
 
 Once ai-memory is implemented enough to be usable, prefer dogfooding it in approved stories and plans. Do not invent premature dogfooding steps before the service exists.
 
+## Deno Lockfile Hygiene (server)
+
+- `server/deno.json` enforces frozen lock mode (`lock.frozen = true`).
+- Keep normal test runs frozen so `server/deno.lock` does not drift during routine iteration.
+- When dependencies/imports change intentionally, refresh the lock explicitly:
+
+```powershell
+docker compose --profile test exec mcp-test deno cache --lock=deno.lock --lock-write tests/**/*.ts src/**/*.ts index.ts
+```
+
+- Commit the updated `server/deno.lock` in the same change as the dependency/import update.
+
 ## Session Review — Continuous Improvement
 
 At the end of each non-trivial session, review the work for **reusable nuggets** — recurring patterns, gotchas, workflow gaps, or conventions that a fresh agent would miss. When you identify one, suggest creating or updating:
