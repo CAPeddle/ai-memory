@@ -1,9 +1,9 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
-> Next planning target: ST-037 (local MCP client config — prerequisite for dogfooding)
-> Unblocked: ST-023, ST-028, ST-029, ST-019, ST-037 (all ST-005/ST-008/ST-022 blockers cleared)
-> Last updated: 2026-05-28
+> Next planning target: ST-038 (startup safety & input guards)
+> Unblocked: ST-023, ST-028, ST-029, ST-019 (all ST-005/ST-008/ST-022 blockers cleared)
+> Last updated: 2026-06-02
 
 ---
 
@@ -435,11 +435,16 @@
 
 ## Review
 
+(Empty)
+
+## Done
+
 ### ST-037: Configure local MCP clients for dogfooding
 - Type: enablement
 - Source: PO (scoping session 2026-05-28, prerequisite for ST-034 data accumulation)
 - phase: 2
 - Value: 4
+- Completed: 2026-05-29
 - Blocked by: —
 - Touches: `.vscode/mcp.json` (new), `README.md` (new section)
 - Acceptance criteria:
@@ -450,8 +455,7 @@
 - Query packet: `.github/planning/query-packets/QP-037-local-mcp-client-config.md`
 - Notes: Dev graph is empty (0 thoughts). Service is functional but no AI agent is connected. This story enables daily dogfooding so that real data accumulates for ST-034's cardinality analysis. Cloud clients (ChatGPT/Gemini) deferred to ST-023.
   - **Completed 2026-05-29:** `.vscode/mcp.json` committed with Streamable HTTP config; README updated with three-client setup section; all-tools smoke test passed (thought_stats, capture_thought, search_thoughts)
-
-## Done
+  - **Accepted 2026-06-02:** VS Code MCP visibility issue resolved; server visible after user-scoped env + global MCP config refresh and VS Code reload.
 
 ### ST-010: Integration testing for cloud MCP (Deno + Docker Compose)
 - Type: debt
