@@ -30,6 +30,9 @@ async function readRow(id: string) {
 
 const cleanup = (id: string) => sql`DELETE FROM thoughts WHERE id = ${id}`;
 
+// Deterministic alternate vector for simulating a concurrent writer.
+const CONCURRENT_VECTOR = Array.from({ length: 512 }, () => 0.02);
+
 Deno.test({
   name: "AC-2 recovery: NULL-embedding row is populated after a successful sweep",
   sanitizeResources: false,
@@ -94,6 +97,73 @@ Deno.test({
       await runBackfillSweep({ embed: succeedEmbed });
       const row = await readRow(id);
       assertEquals(row.embedding_model, "openai/text-embedding-3-small");
+    } finally {
+      await cleanup(id);
+    }
+  },
+});
+
+Deno.test({
+  name: "ST-039 regression: backfill success does not overwrite a concurrently-written embedding",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    const id = await insertNeedyRow();
+    try {
+      const embed = async (_text: string) => {
+        // Simulate another worker successfully writing an embedding after the sweep SELECT
+        // but before this sweep executes its success UPDATE.
+        await sql`
+          UPDATE thoughts
+          SET embedding       = ${sql.unsafe(`'[${CONCURRENT_VECTOR.join(",")}]'`)}::vector,
+              needs_embedding = false,
+              embedding_model = ${"concurrent/test"},
+              embedding_error = NULL
+          WHERE id = ${id}
+        `;
+        return STUB_VECTOR;
+      };
+
+      await runBackfillSweep({ embed });
+      const row = await readRow(id);
+      assertEquals(row.has_emb, true, "embedding remains populated");
+      assertEquals(row.needs_embedding, false, "concurrent writer cleared needs_embedding");
+      assertEquals(row.embedding_model, "concurrent/test", "backfill must not overwrite embedding_model");
+    } finally {
+      await cleanup(id);
+    }
+  },
+});
+
+Deno.test({
+  name: "ST-039 regression: backfill failure does not mark an already-succeeded row as failed",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    const id = await insertNeedyRow();
+    try {
+      const embed = async (_text: string) => {
+        // Simulate another worker successfully writing an embedding, then this sweep's
+        // embed call failing (e.g., transient client error). The failure UPDATE must not
+        // increment attempts or write an error once needs_embedding=false.
+        await sql`
+          UPDATE thoughts
+          SET embedding       = ${sql.unsafe(`'[${CONCURRENT_VECTOR.join(",")}]'`)}::vector,
+              needs_embedding = false,
+              embedding_model = ${"concurrent/test2"},
+              embedding_error = NULL
+          WHERE id = ${id}
+        `;
+        throw new Error("stub embed failure after concurrent success");
+      };
+
+      await runBackfillSweep({ embed });
+      const row = await readRow(id);
+      assertEquals(row.has_emb, true, "embedding remains populated");
+      assertEquals(row.needs_embedding, false, "row stays marked complete");
+      assertEquals(row.embedding_attempts, 0, "attempts must not increment after concurrent success");
+      assertEquals(row.embedding_error, null, "error must not be written after concurrent success");
+      assertEquals(row.embedding_model, "concurrent/test2", "embedding_model must remain from concurrent writer");
     } finally {
       await cleanup(id);
     }
