@@ -20,6 +20,8 @@ RUN tar -xzf /tmp/age.tar.gz -C /tmp \
 # 01 — create extensions (vector, age)
 # 02 — create thoughts table and supporting schema
 # 03 — create AGE memory_graph and entity extraction queue
+# 04 — ST-039 embedding-resilience columns (needs_embedding, embedding_model, ...)
 COPY docker/postgres-age/init/01-extensions.sql /docker-entrypoint-initdb.d/01-extensions.sql
 COPY server/db/schema.sql                        /docker-entrypoint-initdb.d/02-schema.sql
 COPY server/db/graph.sql                         /docker-entrypoint-initdb.d/03-graph.sql
+COPY server/db/002_needs_embedding.sql           /docker-entrypoint-initdb.d/04-needs-embedding.sql
