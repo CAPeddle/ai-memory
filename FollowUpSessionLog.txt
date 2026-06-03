@@ -1,6 +1,42 @@
 # FollowUpSessionLog — ai-memory
 
-## Last Session: 2026-06-02 (ST-038 execution complete)
+## Last Session: 2026-06-03 (ST-039 execution complete)
+
+### Accomplished
+- Executed ST-039 end-to-end from .github/planning/execplans/exec-plan-ST-039.md (Tasks 4.1–4.6).
+- Task 4.1: Created server/db/002_needs_embedding.sql (idempotent DDL for 4 new columns + partial index). Added COPY to docker/postgres-age/Dockerfile for fresh-DB init. Applied manually to dev DB (persistent volume).
+- Task 4.2: Extracted getEmbedding + EMBEDDING_MODEL into server/src/embeddings.ts (side-effect-free module). Updated index.ts to import from it; removed duplicated local declarations.
+- Task 4.3: Created server/tests/embedding-backfill.test.ts with 4 RED tests (module-not-found for embeddingBackfill.ts — correct RED state).
+- Task 4.4: Implemented server/src/embeddingBackfill.ts with runBackfillSweep + startEmbeddingBackfill. All 4 backfill tests GREEN.
+- Task 4.5: Updated index.ts capture path to record embedding_model + clear needs_embedding on success. Added startEmbeddingBackfill() call at startup. Added EMBEDDING_BACKFILL_DISABLED=true to mcp-test service in docker-compose.yml.
+- Task 4.6: Full suite 43 passed 0 failed. Idempotency re-proved. Cross-model review (GPT-5.2) found race-condition defect (backfill UPDATE used only WHERE id — could overwrite concurrently-written embedding). Fix applied: added AND embedding IS NULL AND needs_embedding = true to success UPDATE, AND needs_embedding = true to failure UPDATE. Two regression tests added proving guards. GPT-5.2 re-review: PASS. Board moved to Review.
+
+### Commits (ST-039)
+- 432a991 feat(db): add embedding-resilience columns (ST-039)
+- 9760407 refactor(server): extract shared embeddings module (ST-039)
+- d002a05 test(embeddings): add failing backfill resilience tests (ST-039)
+- 8dc9f2a feat(embeddings): implement backfill sweep worker (ST-039)
+- 2570f8c feat(capture): record embedding model and wire backfill worker (ST-039)
+- 474778a fix(embeddings): guard backfill UPDATEs against concurrent writes (ST-039)
+- 35759c0 test(embeddings): add concurrency regression tests for backfill UPDATE guards (ST-039)
+- fa47fa2 chore(board): move ST-039 to Review, update ExecPlan §1b and §6c
+
+### Resume Point
+- ST-039 in Review, awaiting PO acceptance.
+- On PO acceptance: move to Done, clear ST-039 from blocked_by on ST-041 (worker health/status reporting).
+- Next planning target: ST-040 (worker crash isolation).
+
+### Avoidance
+- db image is NOT bind-mounted — SQL init changes require docker compose build. Only server/ is live-mounted.
+- Dev db has a persistent volume; init scripts do NOT re-run. Apply DDL manually via docker compose exec db psql.
+- Keep EMBEDDING_BACKFILL_DISABLED=true on mcp-test; without it the server's real-OpenRouter auto-sweep races the stubbed tests.
+- Keep process-level startup fail-fast check in verification evidence.
+- Preserve task-scoped commits with Story/Task trailers.
+
+### Board State
+- In Progress: empty
+- Review: ST-039 (embedding resilience, shipped 2026-06-03)
+- Done: includes ST-038 (completed 2026-06-02)
 
 ### Accomplished
 - Executed ST-038 end-to-end from .github/planning/execplans/exec-plan-ST-038.md (Tasks 4.1–4.4).
