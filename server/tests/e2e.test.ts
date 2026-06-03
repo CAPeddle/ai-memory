@@ -32,18 +32,72 @@ function parseIds(text: string): string[] {
 }
 
 async function waitForEntityExtraction(thoughtId: string, maxSec = 40): Promise<void> {
-  for (let i = 0; i < maxSec; i++) {
-    const rows = await sql<{ status: string }[]>`
-      SELECT status FROM entity_extraction_queue WHERE thought_id = ${thoughtId}
+  const [initialQueueProbe] = await sql<{ ahead: number }[]>`
+    SELECT COUNT(*)::int AS ahead
+    FROM entity_extraction_queue q0
+    JOIN entity_extraction_queue q
+      ON q.thought_id = ${thoughtId}
+    WHERE q0.status IN ('pending', 'processing')
+      AND q0.queued_at <= q.queued_at
+  `;
+
+  // The seeded corpus can leave a deep extraction backlog at test start.
+  // Add bounded slack so this helper waits for queue progression instead of
+  // flaking at a fixed 40s threshold.
+  const backlogSlackSec = Math.min((initialQueueProbe?.ahead ?? 0) * 2, 60);
+  const timeoutSec = maxSec + backlogSlackSec;
+
+  let lastStatus = "missing";
+  let lastAttemptCount = 0;
+  let lastError = "";
+  let lastStartedAt: string | null = null;
+
+  for (let i = 0; i < timeoutSec; i++) {
+    const [row] = await sql<{
+      status: string;
+      attempt_count: number;
+      last_error: string | null;
+      started_at: string | null;
+    }[]>`
+      SELECT
+        status,
+        attempt_count,
+        last_error,
+        to_char(started_at, 'HH24:MI:SS') AS started_at
+      FROM entity_extraction_queue
+      WHERE thought_id = ${thoughtId}
     `;
-    const row = rows[0];
+
     if (row?.status === "done") return;
     if (row?.status === "failed") {
-      throw new Error(`Entity extraction failed for thought ${thoughtId}`);
+      throw new Error(
+        `Entity extraction failed for thought ${thoughtId}: ${row.last_error ?? "unknown error"}`,
+      );
     }
+
+    if (row) {
+      lastStatus = row.status;
+      lastAttemptCount = row.attempt_count;
+      lastError = row.last_error ?? "";
+      lastStartedAt = row.started_at;
+    }
+
     await sleep(1_000);
   }
-  throw new Error(`Entity extraction did not complete within ${maxSec}s for thought ${thoughtId}`);
+
+  const [queueSnapshot] = await sql<{ pending: number; processing: number }[]>`
+    SELECT
+      COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
+      COUNT(*) FILTER (WHERE status = 'processing')::int AS processing
+    FROM entity_extraction_queue
+  `;
+
+  throw new Error(
+    `Entity extraction did not complete within ${timeoutSec}s for thought ${thoughtId} ` +
+      `(base=${maxSec}s, backlog_slack=${backlogSlackSec}s). ` +
+      `Last observed status=${lastStatus}, attempts=${lastAttemptCount}, started_at=${lastStartedAt ?? "null"}, ` +
+      `last_error=${lastError || "none"}, queue(pending=${queueSnapshot?.pending ?? 0}, processing=${queueSnapshot?.processing ?? 0})`,
+  );
 }
 
 async function cleanupNonCorpusState(): Promise<void> {
