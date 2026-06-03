@@ -10,6 +10,7 @@ import { startEntityWorker } from "./src/entityWorker.ts";
 import { startConsolidationWorker, drainPendingOnce } from "./src/consolidationWorker.ts";
 import { cosineSim, mmrRerank, logRecall, parseVector, MmrCandidate } from "./src/searchQuality.ts";
 import { ensureRequiredEnv } from "./src/startupValidation.ts";
+import { getEmbedding, EMBEDDING_MODEL } from "./src/embeddings.ts";
 
 // ---------------------------------------------------------------------------
 // Startup validation — fail fast if required config is missing
@@ -17,35 +18,8 @@ import { ensureRequiredEnv } from "./src/startupValidation.ts";
 
 ensureRequiredEnv();
 
-const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY")!;
-const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 const CITATION_BASE_URL = Deno.env.get("AI_MEMORY_CITATION_BASE_URL") ?? "https://ai-memory.local/thoughts";
 const MAX_CONTENT_BYTES = 32_768; // 32 KB content limit per thought
-
-// ---------------------------------------------------------------------------
-// Embedding via OpenRouter (512-dim via text-embedding-3-small truncation)
-// ---------------------------------------------------------------------------
-
-async function getEmbedding(text: string): Promise<number[]> {
-  const r = await fetch(`${OPENROUTER_BASE}/embeddings`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "openai/text-embedding-3-small",
-      input: text,
-      dimensions: 512,
-    }),
-  });
-  if (!r.ok) {
-    const msg = await r.text().catch(() => "");
-    throw new Error(`OpenRouter embeddings failed: ${r.status} ${msg}`);
-  }
-  const d = await r.json();
-  return d.data[0].embedding;
-}
 
 // ---------------------------------------------------------------------------
 // MCP Server
