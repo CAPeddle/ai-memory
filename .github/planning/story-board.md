@@ -1,9 +1,9 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
-> Next planning target: ST-039 (embedding resilience)
+> Next planning target: ST-040 (worker crash isolation) — ST-039 now Refined (Ready for /continue)
 > Unblocked: ST-023, ST-028, ST-029, ST-019 (all ST-005/ST-008/ST-022 blockers cleared)
-> Last updated: 2026-06-02
+> Last updated: 2026-06-03
 
 ---
 
@@ -212,20 +212,6 @@
 
 
 
-### ST-039: Embedding resilience
-- Type: hardening
-- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
-- phase: 2
-- Value: 5
-- Blocked by: —
-- Touches: `server/db/002_needs_embedding.sql` (new), `server/index.ts`, `server/src/entityWorker.ts` or new backfill module
-- Acceptance criteria:
-  - [ ] Thoughts with failed embeddings are recoverable via backfill (AC-2)
-  - [ ] Embedding model version is recorded per thought (AC-17)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-039.md`
-- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
-- Notes: 🔴 Must fix. Fire-and-forget embeddings currently lose data silently on transient failures. Uses standalone idempotent DDL (not migration runner from ST-042).
-
 ### ST-040: Worker crash isolation
 - Type: hardening
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
@@ -413,7 +399,20 @@
 
 ## Refined
 
-(Empty)
+### ST-039: Embedding resilience
+- Type: hardening
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31) → refined into QP-039 (2026-06-02)
+- phase: 2
+- Value: 5
+- Blocked by: —
+- Refined: 2026-06-03 (ExecPlan Ready for /continue)
+- Touches: `server/db/002_needs_embedding.sql` (new), `server/src/embeddings.ts` (new), `server/src/embeddingBackfill.ts` (new), `server/index.ts`, `server/tests/embedding-backfill.test.ts` (new), `docker/postgres-age/Dockerfile`, `docker-compose.yml`
+- Acceptance criteria:
+  - [ ] Thoughts with failed embeddings are recoverable via backfill (AC-2)
+  - [ ] Embedding model version is recorded per thought (AC-17)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-039.md`
+- Query packet: `.github/planning/query-packets/QP-039-embedding-resilience.md`
+- Notes: 🔴 Must fix. Fire-and-forget embeddings currently lose data silently on transient failures. Standalone idempotent DDL (not ST-042 migration runner). Polling sweep-as-retry (60s) with MAX_ATTEMPTS=5 + `embedding_attempts`/`embedding_error` bookkeeping; exported `runBackfillSweep` (no new MCP tool). PO approved two §2c deviations (sweep `embedding IS NULL` guard; `EMBEDDING_BACKFILL_DISABLED` on mcp-test).
 
 ---
 
