@@ -48,6 +48,8 @@ export async function runBackfillSweep({ embed = getEmbedding }: BackfillDeps = 
             embedding_model  = ${EMBEDDING_MODEL},
             embedding_error  = NULL
         WHERE id = ${row.id}
+          AND embedding IS NULL
+          AND needs_embedding = true
       `;
       succeeded++;
     } catch (err) {
@@ -57,6 +59,7 @@ export async function runBackfillSweep({ embed = getEmbedding }: BackfillDeps = 
         SET embedding_attempts = embedding_attempts + 1,
             embedding_error    = ${msg}
         WHERE id = ${row.id}
+          AND needs_embedding = true
       `;
       failed++;
     }
