@@ -11,6 +11,7 @@ import { startConsolidationWorker, drainPendingOnce } from "./src/consolidationW
 import { cosineSim, mmrRerank, logRecall, parseVector, MmrCandidate } from "./src/searchQuality.ts";
 import { ensureRequiredEnv } from "./src/startupValidation.ts";
 import { getEmbedding, EMBEDDING_MODEL } from "./src/embeddings.ts";
+import { startEmbeddingBackfill } from "./src/embeddingBackfill.ts";
 
 // ---------------------------------------------------------------------------
 // Startup validation — fail fast if required config is missing
@@ -252,9 +253,18 @@ server.registerTool(
         RETURNING id, memory_type, project
       `;
 
-      // Fire-and-forget embedding update; log failure so misconfigured deployments surface the issue
+      // Fire-and-forget embedding update. On success, record the model and clear the
+      // needs_embedding flag; on failure, log only — the backfill sweep owns retries
+      // and the embedding_attempts counter (this inline attempt is best-effort).
       getEmbedding(content).then((emb) =>
-        sql`UPDATE thoughts SET embedding = ${sql.unsafe(`'[${emb.join(",")}]'`)}::vector WHERE id = ${insertResult.id}`
+        sql`
+          UPDATE thoughts
+          SET embedding       = ${sql.unsafe(`'[${emb.join(",")}]'`)}::vector,
+              needs_embedding = false,
+              embedding_model = ${EMBEDDING_MODEL},
+              embedding_error = NULL
+          WHERE id = ${insertResult.id}
+        `
       ).catch((err) => console.error(`[capture_thought] embedding update failed for ${insertResult.id}:`, err));
 
       return {
@@ -517,3 +527,6 @@ startEntityWorker();
 startConsolidationWorker().catch((err) =>
   console.error("[server] consolidation worker failed to start:", err)
 );
+
+// Start embedding backfill worker (recovers rows whose embedding call failed)
+startEmbeddingBackfill();
