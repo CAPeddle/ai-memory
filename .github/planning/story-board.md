@@ -1,7 +1,7 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
-> Next planning target: ST-040 (worker crash isolation) — ST-039 in Review, awaiting PO acceptance
+> Next planning target: ST-040 (worker crash isolation) — ST-039 Done
 > Unblocked: ST-023, ST-028, ST-029, ST-019 (all ST-005/ST-008/ST-022 blockers cleared)
 > Last updated: 2026-06-03
 
@@ -387,7 +387,7 @@
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
 - phase: 2
 - Value: 2
-- Blocked by: ST-039, ST-040 (needs worker state to report)
+- Blocked by: ST-040 (needs worker state to report)
 - Touches: `server/index.ts` (/health endpoint)
 - Acceptance criteria:
   - [ ] Health check reports DB latency, queue depth, and degraded state (operational polish)
@@ -411,13 +411,17 @@
 
 ## Review
 
+(Empty)
+
+## Done
+
 ### ST-039: Embedding resilience
 - Type: hardening
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31) → refined into QP-039 (2026-06-02)
 - phase: 2
 - Value: 5
+- Completed: 2026-06-03
 - Blocked by: —
-- Refined: 2026-06-03 (ExecPlan Ready for /continue)
 - Touches: `server/db/002_needs_embedding.sql` (new), `server/src/embeddings.ts` (new), `server/src/embeddingBackfill.ts` (new), `server/index.ts`, `server/tests/embedding-backfill.test.ts` (new), `docker/postgres-age/Dockerfile`, `docker-compose.yml`
 - Acceptance criteria:
   - [x] Thoughts with failed embeddings are recoverable via backfill (AC-2)
@@ -425,8 +429,6 @@
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-039.md`
 - Query packet: `.github/planning/query-packets/QP-039-embedding-resilience.md`
 - Notes: Shipped 2026-06-03. Cross-model review (GPT-5.2) found and confirmed fix for concurrent-write overwrite in backfill UPDATE predicates. 43 passed 0 failed.
-
-## Done
 
 ### ST-038: Startup safety & input guards
 - Type: hardening
