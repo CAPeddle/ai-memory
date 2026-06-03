@@ -61,12 +61,12 @@ This ExecPlan is self-contained: a novice with only this file and the working tr
 
 *(Populated during/after execution. Required for completion visibility.)*
 
-- completion status: _pending_
-- key findings/achievements: _pending_
-- requirements met vs unmet: _pending_
-- architectural impact: _pending_
-- supporting evidence: _pending_
-- downstream changes: _pending_
+- completion status: COMPLETE — all 7 DoD items satisfied
+- key findings/achievements: Introduced `needs_embedding`/`embedding_model`/`embedding_attempts`/`embedding_error` columns; standalone idempotent DDL `002_needs_embedding.sql` wired into Docker init; shared `embeddings.ts` module extracted; `embeddingBackfill.ts` implements polling sweep-as-retry with MAX_ATTEMPTS=5 cap; capture success path records model + clears flag; `EMBEDDING_BACKFILL_DISABLED` isolation guard on `mcp-test`; cross-model review (GPT-5.2) found and confirmed fix for a concurrency overwrite defect in the backfill UPDATE predicates
+- requirements met vs unmet: all met — AC-2 recovery, AC-2 failure/cap, AC-17 model recorded, idempotent DDL, full suite green (43 passed 0 failed), cross-model PASS
+- architectural impact: `public.thoughts` now has four new columns; backfill worker starts alongside entity/consolidation workers at boot; `EMBEDDING_MODEL` is now a single source-of-truth constant in `src/embeddings.ts`; backfill UPDATE guards prevent concurrent-write overwrite
+- supporting evidence: full suite `ok | 43 passed | 0 failed`; idempotency re-run exits 0 with NOTICE skips; cross-model PASS recorded in §6c
+- downstream changes: ST-042 migration runner should be taught about `002_needs_embedding.sql`; kill-switch `FEATURE_EMBEDDING_BACKFILL` could be folded into a future `Config` module (ST-043)
 
 ---
 
@@ -675,18 +675,23 @@ If a session is interrupted, read §5b to determine where to resume. The Recover
 
 | Field | Value |
 |---|---|
-| **Last completed task** | — |
-| **Last successful command** | — |
-| **Expected outputs produced** | — |
-| **Next task** | Task 4.1 — Add the standalone idempotent schema delta |
+| **Last completed task** | Task 4.6 — cross-model review, full verification, closeout |
+| **Last successful command** | `deno test --allow-net --allow-env --allow-read tests/` → 43 passed 0 failed |
+| **Expected outputs produced** | all artifacts shipped; board moved to Review |
+| **Next task** | — (story complete) |
 | **Known blockers** | None |
-| **Last updated** | — |
+| **Last updated** | 2026-06-03 |
 
 ### Progress History
 
 | Timestamp (ISO) | Task | Status | Evidence / outputs | Next step |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| 2026-06-03T00:00Z | Task 4.1 | ✅ Done | `server/db/002_needs_embedding.sql` + Dockerfile; idempotent on both DBs; commit `432a991` | Task 4.2 |
+| 2026-06-03T00:00Z | Task 4.2 | ✅ Done | `server/src/embeddings.ts` extracted; `deno check` clean; 39 passed 0 failed; commit `9760407` | Task 4.3 |
+| 2026-06-03T00:00Z | Task 4.3 | ✅ Done | `tests/embedding-backfill.test.ts` created; RED (module not found); commit `d002a05` | Task 4.4 |
+| 2026-06-03T00:00Z | Task 4.4 | ✅ Done | `server/src/embeddingBackfill.ts` created; 4 backfill tests GREEN; commit `8dc9f2a` | Task 4.5 |
+| 2026-06-03T00:00Z | Task 4.5 | ✅ Done | capture path records model; `startEmbeddingBackfill` wired; `EMBEDDING_BACKFILL_DISABLED=true` on mcp-test; 43 passed 0 failed; commit `2570f8c` | Task 4.6 |
+| 2026-06-03T00:00Z | Task 4.6 | ✅ Done | Cross-model review PASS (GPT-5.2, after fix for concurrent-write overwrite); 43 passed 0 failed; idempotency re-proved; board moved to Review; commits `474778a`, `35759c0` | — |
 
 ### Avoidance
 
@@ -738,9 +743,9 @@ If a session is interrupted, read §5b to determine where to resume. The Recover
 - Decision: PO approved both §2c deviations (`AND embedding IS NULL` sweep guard; `EMBEDDING_BACKFILL_DISABLED` on `mcp-test`).
   Rationale: Accepted as correctness + test-isolation measures during /plan Phase 2 review.
   Date: 2026-06-03
-- Decision: (Cross-model review verdict) — _pending Task 4.6_.
-  Rationale: _pending_.
-  Date: _pending_.
+- Decision: Cross-model review verdict — PASS after one defect fix.
+  Rationale: GPT-5.2 (first pass, 2026-06-03) returned FAIL: the success UPDATE used only `WHERE id = $1`, allowing it to overwrite a concurrently-written good embedding (and the failure UPDATE had the same gap for incrementing attempts). Fix applied: added `AND embedding IS NULL AND needs_embedding = true` to the success UPDATE and `AND needs_embedding = true` to the failure UPDATE. Two regression tests added to prove the guards. GPT-5.2 (re-review, 2026-06-03) returned PASS: defect resolved, no new issues, minor note that succeeded/failed counters still tick on 0-row updates (non-blocking metrics nuance, not data-correctness). Verdict recorded: PASS.
+  Date: 2026-06-03.
 
 ---
 
