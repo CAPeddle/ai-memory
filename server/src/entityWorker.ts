@@ -21,6 +21,14 @@ function backoffSeconds(attemptCount: number): number {
   return Math.min(Math.pow(2, attemptCount - 1), 128);
 }
 
+let consecutivePollFailures = 0;
+const MAX_POLL_BACKOFF_MS = 60_000;
+
+function getPollBackoffMs(): number {
+  if (consecutivePollFailures === 0) return POLL_INTERVAL_MS;
+  return Math.min(POLL_INTERVAL_MS * Math.pow(2, consecutivePollFailures - 1), MAX_POLL_BACKOFF_MS);
+}
+
 // --- Types ---
 interface ExtractedNode {
   label: string;
@@ -209,12 +217,57 @@ async function processQueue(): Promise<void> {
   }
 }
 
+interface SafePollDeps {
+  runQueue?: () => Promise<void>;
+  onError?: (msg: string) => void;
+  onRecover?: (msg: string) => void;
+  schedule?: (next: () => void, delayMs: number) => void;
+}
+
+async function safePoll(deps: SafePollDeps = {}): Promise<void> {
+  const runQueue = deps.runQueue ?? processQueue;
+  const onError = deps.onError ?? ((msg: string) => console.error(msg));
+  const onRecover = deps.onRecover ?? ((msg: string) => console.log(msg));
+  const schedule = deps.schedule ?? ((next: () => void, delayMs: number) => setTimeout(next, delayMs));
+
+  try {
+    await runQueue();
+    if (consecutivePollFailures > 0) {
+      onRecover(`[entityWorker] recovered after ${consecutivePollFailures} consecutive failures`);
+    }
+    consecutivePollFailures = 0;
+  } catch (err) {
+    consecutivePollFailures++;
+    const msg = (err as Error).message?.slice(0, 300) ?? "Unknown error";
+    if (consecutivePollFailures >= 5) {
+      onError(`[entityWorker] ALERT: ${consecutivePollFailures} consecutive failures — ${msg}`);
+    } else {
+      onError(`[entityWorker] poll failed (attempt ${consecutivePollFailures}, next retry in ${getPollBackoffMs()}ms): ${msg}`);
+    }
+  }
+
+  schedule(() => {
+    void safePoll(deps);
+  }, getPollBackoffMs());
+}
+
+export const __entityWorkerTestHooks = {
+  safePoll,
+  resetWorkerState(): void {
+    consecutivePollFailures = 0;
+  },
+  getConsecutiveFailures(): number {
+    return consecutivePollFailures;
+  },
+};
+
 // --- Public entry point ---
 export function startEntityWorker(): void {
-  console.log("[entityWorker] started (poll every 10s, batch 10)");
-  setInterval(processQueue, POLL_INTERVAL_MS);
-  // Run once immediately on start
-  processQueue().catch((err) =>
-    console.error("[entityWorker] initial poll failed:", err)
-  );
+  if (!OPENROUTER_API_KEY) {
+    console.warn("[entityWorker] OPENROUTER_API_KEY not set — entity extraction disabled");
+    return;
+  }
+
+  console.log(`[entityWorker] started (base interval ${POLL_INTERVAL_MS}ms, batch ${BATCH_SIZE})`);
+  void safePoll();
 }
