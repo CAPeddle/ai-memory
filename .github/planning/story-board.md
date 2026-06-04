@@ -1,13 +1,35 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
-> Next planning target: ST-054 (retrieval robustness) — run /plan; note blocked_by ST-046 (eval harness)
+> Next planning target: ST-046 (eval harness — gate for ST-054), then ST-054 (retrieval robustness). Both in Backlog until their ExecPlans are Ready.
 > Unblocked: ST-023, ST-028, ST-029, ST-019 (all ST-005/ST-008/ST-022 blockers cleared)
 > Last updated: 2026-06-04
 
 ---
 
 ## Backlog
+
+<!-- Retrieval quality (from 2026-06-04 build-failure false-empty incident analysis) -->
+
+### ST-054: Retrieval robustness (false-empty, identifier dilution, zero-result observability)
+- Type: hardening
+- Source: Session analysis 2026-06-04 (build-failure false-empty incident) + adversarial design review + local-instance validation
+- phase: 2
+- Value: 5
+- Blocked by: ST-046 (eval harness must exist to prove the recall gate)
+- Touches: `server/index.ts` (`search` floor, `search_thoughts` response signal, capture/query normalization), `server/src/identifierNormalization.ts` (new), `server/src/searchQuality.ts` (zero-result logging), possibly `server/db/` (`search_text` column + metadata facets — schema-vs-inline decided in /plan), `server/tests/`
+- Acceptance criteria:
+  - [ ] **D1** — `search` no longer returns an empty set when relevant memories exist below the legacy 0.5 floor; a characterization test pins the `{results:[{id,title,url}]}` response shape ([server/index.ts:43-65](../../server/index.ts#L43-L65))
+  - [ ] **D2** — high-entropy identifiers (Jira-style tickets, build numbers) are normalized out of the embedding + BM25 retrieval text via a non-destructive helper; raw `content` is preserved verbatim; identifiers are retained as exact-match `metadata` facets. Token-class boundary reconciled with ST-049 (error codes/UUIDs/versions stay BM25-precise)
+  - [ ] **D3** — zero-result queries are logged for both `search` and `search_thoughts` (currently invisible: [server/index.ts:166](../../server/index.ts#L166), [server/src/searchQuality.ts:62](../../server/src/searchQuality.ts#L62))
+  - [ ] **D3b** — `search_thoughts` results carry a machine-parseable per-result quality signal so consumers can distinguish authoritative hits from thin-corpus best-guesses
+  - [ ] **Gate** — passes the ST-046 eval harness: recall@k on incident-style queries (with/without identifiers) meets threshold; no-false-empty regression green
+  - [ ] Cross-model critical review passes (different model reviews implementation against the ExecPlan contract before the story moves to Review)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-054.md` (to be created by /plan)
+- Query packet: `.github/planning/query-packets/QP-054-retrieval-robustness.md`
+- ce-plan artifact: `docs/plans/2026-06-04-001-feat-retrieval-robustness-plan.md`
+- Docs: `server/index.ts`, `server/db/search.sql`, `server/src/searchQuality.ts`
+- Notes: Next planning target — **Backlog until its ExecPlan is authored and marked Ready** by /plan Phase 2 (Refined ⟺ Ready ExecPlan, per plan.prompt.md; a Refined story with no ExecPlan would be wrongly auto-picked by /continue). Tooling-side fix for the build-failure false-empty incident. **Why:** a hyper-specific query (`build 65008 PRI-5751 pipeline failure`) returned `{"results":[]}` from `search` — indistinguishable from "memory is empty" — and `search_thoughts` returned 10 low-signal results. Three independent defects proven in-session against source + local instance: `search`'s hard 0.5 floor fails closed (D1); `plainto_tsquery` ANDs every lexeme so unique identifiers zero the BM25 lane while also skewing the vector (D2); zero-result queries leave no trace so the failure rate is unmeasurable (D3). PO decisions (2026-06-04): fix `search` floor **in place** + characterization test (the floor is an internal knob, not the MCP shape contract; a flag is riskier given ChatGPT's fixed single-arg call); **non-destructive** normalization (raw + derived retrieval text + facets); connected-retrieval deferred to reshaped ST-034; eval harness built in ST-046 and consumed here. Sequencing: /plan ST-046 first (gate), then ST-054. Corpus was also genuinely empty of build-failure memories — retrieval fix cannot conjure uncaptured data, which is why the ST-046 gate seeds a known corpus.
 
 <!-- Phase 1 — Cloud MCP Intelligence (extends OB1 fork shipped by ST-021) -->
 
@@ -418,25 +440,7 @@
 
 ## Refined
 
-### ST-054: Retrieval robustness (false-empty, identifier dilution, zero-result observability)
-- Type: hardening
-- Source: Session analysis 2026-06-04 (build-failure false-empty incident) + adversarial design review + local-instance validation
-- phase: 2
-- Value: 5
-- Blocked by: ST-046 (eval harness must exist to prove the recall gate)
-- Touches: `server/index.ts` (`search` floor, `search_thoughts` response signal, capture/query normalization), `server/src/identifierNormalization.ts` (new), `server/src/searchQuality.ts` (zero-result logging), possibly `server/db/` (`search_text` column + metadata facets — schema-vs-inline decided in /plan), `server/tests/`
-- Acceptance criteria:
-  - [ ] **D1** — `search` no longer returns an empty set when relevant memories exist below the legacy 0.5 floor; a characterization test pins the `{results:[{id,title,url}]}` response shape ([server/index.ts:43-65](../../server/index.ts#L43-L65))
-  - [ ] **D2** — high-entropy identifiers (Jira-style tickets, build numbers) are normalized out of the embedding + BM25 retrieval text via a non-destructive helper; raw `content` is preserved verbatim; identifiers are retained as exact-match `metadata` facets. Token-class boundary reconciled with ST-049 (error codes/UUIDs/versions stay BM25-precise)
-  - [ ] **D3** — zero-result queries are logged for both `search` and `search_thoughts` (currently invisible: [server/index.ts:166](../../server/index.ts#L166), [server/src/searchQuality.ts:62](../../server/src/searchQuality.ts#L62))
-  - [ ] **D3b** — `search_thoughts` results carry a machine-parseable per-result quality signal so consumers can distinguish authoritative hits from thin-corpus best-guesses
-  - [ ] **Gate** — passes the ST-046 eval harness: recall@k on incident-style queries (with/without identifiers) meets threshold; no-false-empty regression green
-  - [ ] Cross-model critical review passes (different model reviews implementation against the ExecPlan contract before the story moves to Review)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-054.md` (to be created by /plan)
-- Query packet: `.github/planning/query-packets/QP-054-retrieval-robustness.md`
-- ce-plan artifact: `docs/plans/2026-06-04-001-feat-retrieval-robustness-plan.md`
-- Docs: `server/index.ts`, `server/db/search.sql`, `server/src/searchQuality.ts`
-- Notes: Tooling-side fix for the build-failure false-empty incident. **Why:** a hyper-specific query (`build 65008 PRI-5751 pipeline failure`) returned `{"results":[]}` from `search` — indistinguishable from "memory is empty" — and `search_thoughts` returned 10 low-signal results. Three independent defects proven in-session against source + local instance: `search`'s hard 0.5 floor fails closed (D1); `plainto_tsquery` ANDs every lexeme so unique identifiers zero the BM25 lane while also skewing the vector (D2); zero-result queries leave no trace so the failure rate is unmeasurable (D3). PO decisions (2026-06-04): fix `search` floor **in place** + characterization test (the floor is an internal knob, not the MCP shape contract; a flag is riskier given ChatGPT's fixed single-arg call); **non-destructive** normalization (raw + derived retrieval text + facets); connected-retrieval deferred to reshaped ST-034; eval harness built in ST-046 and consumed here. Corpus was also genuinely empty of build-failure memories — retrieval fix cannot conjure uncaptured data, which is why the ST-046 gate seeds a known corpus.
+(Empty)
 
 ---
 

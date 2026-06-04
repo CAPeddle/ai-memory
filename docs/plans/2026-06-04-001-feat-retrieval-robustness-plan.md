@@ -2,6 +2,7 @@
 title: "feat: Retrieval robustness — false-empty, identifier dilution, zero-result observability"
 status: active
 created: 2026-06-04
+deepened: 2026-06-04
 type: feat
 origin: .github/planning/query-packets/QP-054-retrieval-robustness.md
 story: ST-054
@@ -76,6 +77,14 @@ guarantee. A flag/param is the *riskier* option because ChatGPT invokes `search`
 single-arg signature; a behavioral parameter cannot be required of that caller. So: change behavior,
 pin the shape with a characterization test. (PO-confirmed.)
 
+**Recommended policy: floor-with-fallback** (deepening F1). Keep the floor as a *preference*, not a
+gate: return above-floor results when any exist; when none clear the floor, fall back to the top-k
+nearest by similarity rather than an empty set. This preserves the current high-precision behavior on
+strong-match queries while making "empty when relevant memories exist" structurally impossible — only
+a genuinely empty store yields `[]`. The remaining open question is narrow: the exact fallback
+constant / whether to keep any floor at all for the above-floor preference (settle in `/plan`,
+informed by the ST-046 recall numbers).
+
 ### KTD-2 — Non-destructive identifier normalization (raw + derived + facets)
 `content` is never mutated. A normalization helper produces the text used for embedding and BM25;
 extracted identifiers are written to the existing `metadata` JSONB column as exact-match facets.
@@ -91,9 +100,14 @@ numbers `\d{4,}`; keep error codes/UUIDs/versions) is a KTD to settle jointly so
 don't fight.
 
 ### KTD-4 — Quality signal is structured, not prose
-R4's signal must be parseable by a consuming agent. Options: numeric score passthrough, a 3-band
-label, or an absolute-similarity flag. Leaning toward a normalized score plus a band, emitted as a
-structured field, not buried in the `rrf: 0.xxxx` text line. Final shape settled in /plan.
+R4's signal must be parseable by a consuming agent. **Recommended shape (deepening F2):** emit, per
+result, a normalized `0–1` relevance score **plus** a discrete band — `high` / `medium` / `low` —
+derived from absolute similarity thresholds (not RRF rank, which is relative and says nothing about
+absolute closeness). The band is what lets an agent distinguish "authoritative hit" from "best guess
+on a thin corpus" — the exact failure the validation surfaced (10 unrelated results all formatted
+identically). Carried as a structured field in the response, not buried in the `rrf: 0.xxxx` text
+line. The remaining open question is narrow: the band threshold values, which the ST-046 seeded
+corpus calibrates.
 
 ### KTD-5 — Eval harness lives in ST-046, consumed here
 ST-046 already owns the golden-set regression and the seeded corpus. Building a second harness in
@@ -170,10 +184,10 @@ the legacy 0.5 floor, without changing the response shape.
 **Requirements:** R1.
 **Dependencies:** U1.
 **Files:** `server/index.ts` (the `search` handler, lines ~43-65), `server/tests/search-tool-contract.test.ts`.
-**Approach:** Replace the hard `>= 0.5` SQL predicate with a floor-with-fallback policy: prefer
-above-floor results; when none clear the floor, return the top-k by similarity anyway (exact policy
-— lower constant vs. top-k fallback — is an Open Question, resolve in /plan). Keep the `LIMIT 10`
-and ordering. Do not alter the shape.
+**Approach:** Replace the hard `>= 0.5` SQL predicate with the floor-with-fallback policy settled in
+KTD-1: prefer above-floor results; when none clear the floor, return the top-k by similarity anyway.
+Keep the `LIMIT 10` and ordering. Do not alter the shape. The only open bit is the fallback constant
+(see KTD-1), not the policy.
 **Patterns to follow:** the no-floor vector lane already used by `search_thoughts`
 (`server/index.ts:153-158`) is the reference for "rank, don't gate."
 **Test scenarios:**
@@ -212,10 +226,19 @@ storing raw `content` verbatim.
 **Files:** `server/index.ts` (`capture_thought`, ~lines 230-280), possibly `server/db/` (a
 `search_text` column + facet write) — **schema-vs-inline is an Open Question**.
 **Approach:** Run U3's helper on `content`; use `retrievalText` as the embedding input and (if
-persisted) as the `search_text` feeding the generated `search_vector`; merge `facets` into the
-existing `metadata` JSONB (`server/index.ts:94` shows metadata is already surfaced). Raw `content`
-column unchanged. If a `search_text` column is added, provide idempotent DDL consistent with the
-ST-039 `002_*.sql` precedent and a one-time backfill (overlaps ST-039's sweep pattern).
+persisted) as the `search_text` feeding the BM25 index; merge `facets` into the existing `metadata`
+JSONB (`server/index.ts:94` shows metadata is already surfaced). Raw `content` column unchanged.
+
+**If `search_text` is persisted (deepening F3) — name the real cost:** the `search_vector` column in
+`server/db/schema.sql` is a **generated tsvector currently derived from `content`**. Persisting
+normalized text means *redefining that generated column to derive from `search_text` instead* — which
+forces a full tsvector regeneration and a **GIN index rebuild across every existing row**, not just a
+column add. Provide idempotent DDL consistent with the ST-039 `002_*.sql` precedent, and a one-time
+backfill that (a) populates `search_text` for pre-existing rows and (b) lets the generated column
+recompute. On the dev + test DBs this is cheap (small corpus); the plan records it because on a grown
+production corpus it is a non-trivial migration, and the alternative (inline normalization at
+embed/tsquery time, no persisted column) trades BM25 index quality for zero migration — that
+schema-vs-inline fork is the U4 decision for `/plan` (see Risks).
 **Patterns to follow:** ST-039 `server/db/002_needs_embedding.sql` idempotent-DDL + backfill pattern;
 existing fire-and-forget embedding update.
 **Test scenarios:**
@@ -308,6 +331,24 @@ review (R6).
 
 ---
 
+## System-Wide Impact
+
+Three distinct blast radii this change reaches, each worth a reviewer's attention (deepening F4):
+
+- **`search` consumers (contract).** `search` is the ChatGPT-compatibility tool. U2 changes *which
+  rows come back* (never the response shape — U1 pins that). Any external deep-research connector
+  bound to `search` sees more results on previously-empty queries; none see a schema change.
+- **Capture path (every new thought).** U4 inserts a normalization step into `capture_thought`, the
+  single write path all memories flow through. A bug here affects *every* thought captured after
+  deploy, so its tests (U3 unit + U4 integration) are load-bearing. Raw `content` immutability is the
+  guardrail that keeps the blast radius to retrieval, not stored data.
+- **Existing rows (schema/backfill).** Only if `search_text` is persisted (U4 / F3): the generated
+  `search_vector` redefinition + reindex touches every existing row. Dev/test corpus is small;
+  production is not. This is the highest-risk surface and the reason the schema-vs-inline fork is an
+  explicit `/plan` decision rather than an executor judgment call.
+
+---
+
 ## Risks & Dependencies
 
 - **Hard dependency on ST-046.** ST-054 cannot prove R5 until the harness + seeded incident corpus
@@ -318,6 +359,18 @@ review (R6).
 - **Schema-vs-inline (U4).** Persisting `search_text` improves BM25 (generated `search_vector`) but
   forces a backfill and a DDL file; inline-only is simpler but leaves BM25 indexing on raw text.
   Resolve in /plan; if persisted, follow ST-039's idempotent-DDL precedent.
+- **Generated-column reindex cost (F3).** Redefining `search_vector` to derive from `search_text`
+  regenerates the tsvector and rebuilds the GIN index for every row — cheap on dev/test, non-trivial
+  on a grown production corpus. Mitigation: prefer applying during a low-traffic window; the
+  inline-only alternative avoids it entirely. Decided with the schema-vs-inline fork above.
+- **Normalizer version drift (F5 — subtle, high-impact).** If doc-side normalization is *persisted*
+  (`search_text`) and query-side is computed *inline*, the two must use the **same normalizer logic
+  forever**. Changing the identifier regex set later silently desynchronizes persisted documents from
+  normalized queries — recall degrades with no error and no log. Mitigations to choose in /plan:
+  (a) keep normalization **query-side only** (never persist `search_text`) so there is a single code
+  path and nothing to drift — the simplest safe option; or (b) if persisting, record a
+  `normalizer_version` and re-run the backfill when it changes. The golden-set harness (ST-046) is
+  the detector of last resort, but prevention beats detection here.
 - **`search` is a ChatGPT-compat surface.** U2 must not change the response shape — U1's
   characterization test is the guardrail.
 - **Contract drift telemetry.** U6 is partly self-justifying: without zero-result logging we cannot
@@ -338,6 +391,34 @@ review (R6).
 - No external/framework research run: the design is grounded in the existing codebase and the
   validated incident; RRF/MMR/pgvector mechanics are already established in `server/src/searchQuality.ts`
   and ST-005. (Recorded for honesty — this plan is codebase-grounded, not externally sourced.)
+
+---
+
+## Repo Planning-Workflow Alignment
+
+This ce-plan artifact is **supporting material** for the repo's native `/plan` workflow
+(`.github/prompts/plan.prompt.md`), not a replacement for it. How the pieces fit:
+
+- **Authoritative seed = the query packet.** `/plan` Phase 2 reads `QP-054-retrieval-robustness.md`
+  as its *sole input* and authors the ExecPlan against the `_TEMPLATE.md` structure. This document is
+  required reading the QP points to for the implementation-unit breakdown (U1–U8), test scenarios, and
+  KTD rationale that Phase 2 lifts into ExecPlan §4 / §2d — but the QP remains the contract.
+- **Lifecycle (corrected 2026-06-04).** Per `plan.prompt.md`, a story is **Refined only once its
+  ExecPlan is `✅ Ready for /continue`**; `/continue` auto-executes Refined stories. ST-054 therefore
+  sits in **Backlog** until `/plan` Phase 2 produces and marks its ExecPlan Ready — placing it in
+  Refined with only a seed QP would let `/continue` pick up a story with no ExecPlan. (This reverses
+  the `/plan-new` intake's "Refined" placement, which conflicts with the operational lifecycle.)
+- **Sequencing across the three stories:**
+  1. **ST-046** (eval harness) — Backlog, blocked_by none. `/plan` it first; its Ready ExecPlan is the
+     gate ST-054 depends on.
+  2. **ST-054** (this plan) — Backlog, blocked_by ST-046. `/plan` after ST-046 lands.
+  3. **ST-034** (reshaped: cardinality + connected-retrieval orchestration) — Backlog, blocked_by
+     ST-037 (needs accumulated dogfooding data). Owns the "connected memories" answer ST-054 defers.
+- **Cross-model review.** The ExecPlan's final task must carry the cross-model critical-review step
+  (`plan.prompt.md` §"Cross-model review requirement"); R6 / the board AC already reserve it.
+- **Verification posture.** ExecPlan task commands run **inside containers** (`docker compose
+  --profile test exec mcp-test deno test …`), never host Deno — match each task's verification to its
+  deliverable scope (no unrelated suites as a safety net).
 
 ---
 

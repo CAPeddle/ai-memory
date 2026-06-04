@@ -144,8 +144,20 @@ Medium. Four focused changes across `server/index.ts` and a new normalization he
 possible schema delta (`search_text` + facets), plus the eval-gate consumption. No new
 agent-facing tool. The contested surface (`search` contract) is settled to fix-in-place.
 
-## Recommended Next Step
+## Required Reading for /plan Phase 2
 
-Run `/plan` for ST-054 to produce the ExecPlan. The companion ce-plan artifact
-(`docs/plans/2026-06-04-001-feat-retrieval-robustness-plan.md`) carries the implementation-unit
-breakdown, test scenarios, and KTD rationale that the ExecPlan §4 can draw on directly.
+`plan.prompt.md` Phase 2 treats this query packet as the *sole input*. The companion **ce-plan
+artifact `docs/plans/2026-06-04-001-feat-retrieval-robustness-plan.md` is required reading** for that
+session: it carries the implementation-unit breakdown (U1–U8), enumerated test scenarios, KTD
+rationale (including the deepening-pass additions: floor-with-fallback policy, structured quality
+signal, generated-`search_vector` reindex cost, normalizer-version-drift risk), and the System-Wide
+Impact analysis. The ExecPlan §4 / §2d should lift directly from it.
+
+## Recommended Next Step (sequencing)
+
+1. Run `/plan` for **ST-046** first — it owns the eval harness (seeded incident corpus + recall@k +
+   no-false-empty regression) that is ST-054's proof gate.
+2. Then run `/plan` for **ST-054**, consuming this packet + the ce-plan artifact.
+
+ST-054 stays in **Backlog** until its ExecPlan is authored and flipped `✅ Ready for /continue`
+(Refined ⟺ Ready ExecPlan per `plan.prompt.md`).
