@@ -1,9 +1,9 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
-> Next planning target: ST-040 (worker crash isolation) — ST-039 Done
+> Next planning target: ST-054 (retrieval robustness) — run /plan; note blocked_by ST-046 (eval harness)
 > Unblocked: ST-023, ST-028, ST-029, ST-019 (all ST-005/ST-008/ST-022 blockers cleared)
-> Last updated: 2026-06-03
+> Last updated: 2026-06-04
 
 ---
 
@@ -57,9 +57,9 @@
 
 
 
-### ST-034: Spike — Bounding cardinality of graph-expanded search
+### ST-034: Spike — Graph-expanded "connected" retrieval: cardinality bounding + orchestration design
 - Type: spike
-- Source: PO (brainstorming session 2026-05-22, entity↔thought provenance design)
+- Source: PO (brainstorming session 2026-05-22, entity↔thought provenance design); scope widened 2026-06-04 to carry the connected-retrieval orchestration outcome (PO decision during ST-054 intake)
 - phase: 2
 - Value: 3
 - Blocked by: ST-037 (needs accumulated real data from dogfooding)
@@ -69,9 +69,11 @@
   - [ ] At least 3 bounding strategies evaluated with trade-offs: hard limits (top-N per hop), score-based ranking (shared-entity count / edge confidence / recency / recall_count), and edge-type allow-listing (e.g. exclude `RELATED_TO` from expansion; weight `CAUSED_BY` higher than `LIKES`)
   - [ ] One strategy recommended for graph-expanded search v1 with rationale grounded in the observed dev-data distribution (not a guess)
   - [ ] Findings note explicitly addresses: does a popular entity (e.g. "TypeScript" if it appears in many thoughts) reliably get pruned, or does it dominate results?
+  - [ ] **Orchestration design (added 2026-06-04):** recommend *when* graph expansion fires and *how* its candidates fuse with the lexical/vector path — specifically a **conditional** trigger on thin/low-confidence results (not always-on, to protect latency and ranking predictability) plus a **bounded-boost** fusion into the existing RRF/MMR ranker. Grounds the "surface connected memories" requirement that motivated ST-054 but is out of ST-054's scope
   - [ ] Out of scope: implementing the strategy (a follow-on feature story owns the graph-expanded search tool itself)
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-034.md` (to be created)
-- Notes: Surfaced 2026-05-22 during entity↔thought provenance brainstorming. Without a bounding strategy, 1-hop expansion over popular entities returns hairballs and drowns out the high-signal hits that motivate the graph lane. Foundational design — settle before any graph-expanded search tool ships, not retrofitted after users hit noise.
+- Relates to: ST-054 (retrieval robustness) — ST-054's thin-corpus / low-confidence result signal is the trigger condition this spike designs the graph expansion against; ST-034 owns the "connected memories" answer ST-054 explicitly defers
+- Notes: Surfaced 2026-05-22 during entity↔thought provenance brainstorming. Without a bounding strategy, 1-hop expansion over popular entities returns hairballs and drowns out the high-signal hits that motivate the graph lane. Foundational design — settle before any graph-expanded search tool ships, not retrofitted after users hit noise. **Why widened 2026-06-04:** the build-failure false-empty incident (ST-054) showed the conceptually-correct mechanism for "surface *connected* memories" is the AGE graph, but it is built and orphaned from the default search path. Rather than spawn a duplicate "Story B", this spike now also designs the orchestration (conditional trigger + bounded-boost fusion) so the connected-retrieval feature story that follows has a settled design, not just cardinality numbers.
 
 <!-- Phase 3 — Local Companion Services -->
 
@@ -212,6 +214,20 @@
 
 
 
+### ST-039: Embedding resilience
+- Type: hardening
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 5
+- Blocked by: —
+- Touches: `server/db/002_needs_embedding.sql` (new), `server/index.ts`, `server/src/entityWorker.ts` or new backfill module
+- Acceptance criteria:
+  - [ ] Thoughts with failed embeddings are recoverable via backfill (AC-2)
+  - [ ] Embedding model version is recorded per thought (AC-17)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-039.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: 🔴 Must fix. Fire-and-forget embeddings currently lose data silently on transient failures. Uses standalone idempotent DDL (not migration runner from ST-042).
+
 ### ST-040: Worker crash isolation
 - Type: hardening
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
@@ -291,18 +307,21 @@
 - Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
 - Notes: 🟡 Should fix. Depends on ST-042 for migration infrastructure. Prevents duplicate processing after crash.
 
-### ST-046: Golden-set regression tests
+### ST-046: Golden-set regression tests (search-quality eval harness)
 - Type: quality
-- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31); scope widened 2026-06-04 to serve as the ST-054 eval-harness gate (PO decision during ST-054 intake)
 - phase: 2
-- Value: 3
+- Value: 4
 - Blocked by: —
 - Touches: `server/tests/search-golden-set.test.ts` (new), `server/tests/fixtures/search-quality-corpus.sql`
 - Acceptance criteria:
   - [ ] Search quality golden-set test catches regressions (AC-7)
+  - [ ] **Eval harness (added 2026-06-04):** the seeded corpus includes known build-failure-class memories, and the golden set includes **incident-style queries with and without identifiers** (e.g. `build 65008 PRI-5751 pipeline failure` vs `build pipeline failure`); asserts **recall@k** meets a defined threshold on both forms
+  - [ ] **No-false-empty regression (added 2026-06-04):** with a seeded related memory present, `search` never returns an empty result set — pins the ST-054 D1 fix so it cannot regress
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-046.md`
 - Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
-- Notes: 🟡 Should fix. Uses existing seeded test corpus. Verifies that tuning RRF/MMR parameters doesn't silently degrade recall quality.
+- Blocks: ST-054 (retrieval robustness) — ST-054 consumes this harness as its proof gate
+- Notes: 🟡 Should fix → elevated to Value 4 (2026-06-04). Uses existing seeded test corpus. Verifies that tuning RRF/MMR parameters doesn't silently degrade recall quality. **Why widened:** during ST-054 intake the PO chose to build the retrieval-robustness eval harness here rather than duplicate it inside ST-054 — so ST-046 now owns the incident-query relevance set + no-false-empty regression, and ST-054 is blocked_by ST-046. Without a *seeded* corpus, "0 results" stays ambiguous between broken ranking and an empty store — the exact ambiguity that made the original incident hard to diagnose.
 
 ### ST-047: Tool descriptions
 - Type: dx
@@ -387,7 +406,7 @@
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
 - phase: 2
 - Value: 2
-- Blocked by: ST-040 (needs worker state to report)
+- Blocked by: ST-039, ST-040 (needs worker state to report)
 - Touches: `server/index.ts` (/health endpoint)
 - Acceptance criteria:
   - [ ] Health check reports DB latency, queue depth, and degraded state (operational polish)
@@ -399,7 +418,25 @@
 
 ## Refined
 
-(Empty)
+### ST-054: Retrieval robustness (false-empty, identifier dilution, zero-result observability)
+- Type: hardening
+- Source: Session analysis 2026-06-04 (build-failure false-empty incident) + adversarial design review + local-instance validation
+- phase: 2
+- Value: 5
+- Blocked by: ST-046 (eval harness must exist to prove the recall gate)
+- Touches: `server/index.ts` (`search` floor, `search_thoughts` response signal, capture/query normalization), `server/src/identifierNormalization.ts` (new), `server/src/searchQuality.ts` (zero-result logging), possibly `server/db/` (`search_text` column + metadata facets — schema-vs-inline decided in /plan), `server/tests/`
+- Acceptance criteria:
+  - [ ] **D1** — `search` no longer returns an empty set when relevant memories exist below the legacy 0.5 floor; a characterization test pins the `{results:[{id,title,url}]}` response shape ([server/index.ts:43-65](../../server/index.ts#L43-L65))
+  - [ ] **D2** — high-entropy identifiers (Jira-style tickets, build numbers) are normalized out of the embedding + BM25 retrieval text via a non-destructive helper; raw `content` is preserved verbatim; identifiers are retained as exact-match `metadata` facets. Token-class boundary reconciled with ST-049 (error codes/UUIDs/versions stay BM25-precise)
+  - [ ] **D3** — zero-result queries are logged for both `search` and `search_thoughts` (currently invisible: [server/index.ts:166](../../server/index.ts#L166), [server/src/searchQuality.ts:62](../../server/src/searchQuality.ts#L62))
+  - [ ] **D3b** — `search_thoughts` results carry a machine-parseable per-result quality signal so consumers can distinguish authoritative hits from thin-corpus best-guesses
+  - [ ] **Gate** — passes the ST-046 eval harness: recall@k on incident-style queries (with/without identifiers) meets threshold; no-false-empty regression green
+  - [ ] Cross-model critical review passes (different model reviews implementation against the ExecPlan contract before the story moves to Review)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-054.md` (to be created by /plan)
+- Query packet: `.github/planning/query-packets/QP-054-retrieval-robustness.md`
+- ce-plan artifact: `docs/plans/2026-06-04-001-feat-retrieval-robustness-plan.md`
+- Docs: `server/index.ts`, `server/db/search.sql`, `server/src/searchQuality.ts`
+- Notes: Tooling-side fix for the build-failure false-empty incident. **Why:** a hyper-specific query (`build 65008 PRI-5751 pipeline failure`) returned `{"results":[]}` from `search` — indistinguishable from "memory is empty" — and `search_thoughts` returned 10 low-signal results. Three independent defects proven in-session against source + local instance: `search`'s hard 0.5 floor fails closed (D1); `plainto_tsquery` ANDs every lexeme so unique identifiers zero the BM25 lane while also skewing the vector (D2); zero-result queries leave no trace so the failure rate is unmeasurable (D3). PO decisions (2026-06-04): fix `search` floor **in place** + characterization test (the floor is an internal knob, not the MCP shape contract; a flag is riskier given ChatGPT's fixed single-arg call); **non-destructive** normalization (raw + derived retrieval text + facets); connected-retrieval deferred to reshaped ST-034; eval harness built in ST-046 and consumed here. Corpus was also genuinely empty of build-failure memories — retrieval fix cannot conjure uncaptured data, which is why the ST-046 gate seeds a known corpus.
 
 ---
 
@@ -414,21 +451,6 @@
 (Empty)
 
 ## Done
-
-### ST-039: Embedding resilience
-- Type: hardening
-- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31) → refined into QP-039 (2026-06-02)
-- phase: 2
-- Value: 5
-- Completed: 2026-06-03
-- Blocked by: —
-- Touches: `server/db/002_needs_embedding.sql` (new), `server/src/embeddings.ts` (new), `server/src/embeddingBackfill.ts` (new), `server/index.ts`, `server/tests/embedding-backfill.test.ts` (new), `docker/postgres-age/Dockerfile`, `docker-compose.yml`
-- Acceptance criteria:
-  - [x] Thoughts with failed embeddings are recoverable via backfill (AC-2)
-  - [x] Embedding model version is recorded per thought (AC-17)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-039.md`
-- Query packet: `.github/planning/query-packets/QP-039-embedding-resilience.md`
-- Notes: Shipped 2026-06-03. Cross-model review (GPT-5.2) found and confirmed fix for concurrent-write overwrite in backfill UPDATE predicates. 43 passed 0 failed.
 
 ### ST-038: Startup safety & input guards
 - Type: hardening
