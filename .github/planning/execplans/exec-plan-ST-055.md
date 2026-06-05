@@ -396,18 +396,19 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.1 — Add RED pure MMR tests for null-embedding candidates |
-| **Last successful command** | Task 4.1 verification intentionally exited non-zero in the expected RED state: `docker compose --profile test exec mcp-test deno test --allow-env --allow-read tests/search-quality.test.ts` |
-| **Expected outputs produced** | `server/tests/search-quality.test.ts` added with five deterministic pure MMR tests; high-scoring null and equal-score bias tests fail on current implementation; other three pass. |
-| **Next task** | Task 4.2 — Implement unified-loop MMR handling for null embeddings |
+| **Last completed task** | Task 4.2 — Implement unified-loop MMR handling for null embeddings |
+| **Last successful command** | `docker compose --profile test exec mcp-test deno check src/searchQuality.ts tests/search-quality.test.ts`; `docker compose --profile test exec mcp-test deno test --allow-env --allow-read tests/search-quality.test.ts` |
+| **Expected outputs produced** | `server/src/searchQuality.ts` `mmrRerank` now uses one `remaining = [...candidates]` loop; null embeddings participate with similarity-to-selected `0`; all five pure MMR tests pass. |
+| **Next task** | Task 4.3 — Prove the e2e blocker is gone and run the full suite |
 | **Known blockers** | None |
-| **Last updated** | 2026-06-05T14:21:10.4091848+02:00 |
+| **Last updated** | 2026-06-05T14:21:58.9774984+02:00 |
 
 ### Progress History
 
 | Timestamp (ISO) | Task | Status | Evidence / outputs | Next step |
 |---|---|---|---|---|
 | 2026-06-05T14:21:10.4091848+02:00 | Task 4.1 | Completed — expected RED | Added `server/tests/search-quality.test.ts`; targeted test command exited non-zero with exactly two expected failures: `mmrRerank keeps a high-scoring null-embedding candidate in top-k` returned `embedded-redundant` instead of `fresh-bm25-null`, and `mmrRerank documents null-embedding equal-score bias` returned `redundant-equal` instead of `null-equal`; 3 tests passed. | Task 4.2 — replace `mmrRerank` with unified loop. |
+| 2026-06-05T14:21:58.9774984+02:00 | Task 4.2 | Completed | Replaced `mmrRerank` with one selection loop over all candidates and updated the required comment. `deno check src/searchQuality.ts tests/search-quality.test.ts` passed; `deno test --allow-env --allow-read tests/search-quality.test.ts` passed with 5/5 tests green. | Task 4.3 — restart `mcp-test`, run e2e, then full suite. |
 
 ### Avoidance
 

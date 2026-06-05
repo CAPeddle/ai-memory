@@ -19,27 +19,28 @@ export function cosineSim(a: number[], b: number[]): number {
 // MMR (Maximal Marginal Relevance) re-ranking.
 //
 // Candidates must already be sorted by post-boost RRF score descending.
-// Rows with null embeddings skip MMR selection and are appended by score.
+// Null embeddings participate in MMR with similarity-to-selected = 0.
+// This keeps fresh BM25-only hits returnable while preserving diversity among embedded rows.
 // λ = 0.7 (relevance weight); (1 - λ) = 0.3 (diversity penalty weight).
 // ---------------------------------------------------------------------------
 
 export interface MmrCandidate { id: string; score: number; embedding: number[] | null; }
 
 export function mmrRerank(candidates: MmrCandidate[], k: number, lambda = 0.7): { id: string; score: number }[] {
-  const withEmb = candidates.filter((c) => c.embedding !== null);
-  const noEmb   = candidates.filter((c) => c.embedding === null);
-
   const selected: MmrCandidate[] = [];
-  const remaining = [...withEmb];
+  const remaining = [...candidates];
 
   while (selected.length < k && remaining.length > 0) {
     let bestIdx = 0, bestScore = -Infinity;
     for (let i = 0; i < remaining.length; i++) {
       const c = remaining[i];
       let maxSim = 0;
-      for (const s of selected) {
-        const sim = cosineSim(c.embedding!, s.embedding!);
-        if (sim > maxSim) maxSim = sim;
+      if (c.embedding !== null) {
+        for (const s of selected) {
+          if (s.embedding === null) continue;
+          const sim = cosineSim(c.embedding, s.embedding);
+          if (sim > maxSim) maxSim = sim;
+        }
       }
       const mmr = lambda * c.score - (1 - lambda) * maxSim;
       if (mmr > bestScore) { bestScore = mmr; bestIdx = i; }
@@ -47,10 +48,7 @@ export function mmrRerank(candidates: MmrCandidate[], k: number, lambda = 0.7): 
     selected.push(remaining.splice(bestIdx, 1)[0]);
   }
 
-  return [
-    ...selected.map((c) => ({ id: c.id, score: c.score })),
-    ...noEmb.sort((a, b) => b.score - a.score).map((c) => ({ id: c.id, score: c.score })),
-  ].slice(0, k);
+  return selected.map((c) => ({ id: c.id, score: c.score }));
 }
 
 // ---------------------------------------------------------------------------
