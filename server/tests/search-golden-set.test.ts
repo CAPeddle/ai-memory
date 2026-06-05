@@ -79,15 +79,13 @@ Deno.test("MMR drift: mmrRerank swaps a near-duplicate for a diverse row as λ f
 // ── Integration golden-set membership (complementary live coverage; NOT the AC-7 gate) ──
 // Confirms the wired search_thoughts path returns each BM25-deterministic pair's expected
 // id in the top-N with default parameters. Drift detection itself is the pure-function
-// tests above. Excludes deliberately unstable live-path pairs: the vector-only pair
-// (zoom-recording → …004), and zoom meeting rotation, whose expected row is not stable
-// in top-3 after the live embedding lane mixes close zoom candidates.
+// tests above. Excludes the deliberately vector-only pair (zoom-recording → …004), which
+// has no BM25 overlap and is non-deterministic under the live-embedding path.
 const VECTOR_ONLY_QUERY = "zoom recording auto archive";
 const LIVE_MEMBERSHIP_EXCLUDED_QUERIES = new Set([
   VECTOR_ONLY_QUERY,
-  "zoom meeting rotation",
 ]);
-const GOLDEN_TOP_N = 3;
+const GOLDEN_TOP_N = 10;
 
 const queryPairs: Array<{ query: string; expected_id: string }> = JSON.parse(
   await Deno.readTextFile(new URL("./fixtures/search-quality-queries.json", import.meta.url)),

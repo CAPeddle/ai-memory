@@ -39,7 +39,24 @@ The harness does three jobs:
 
 ## §1b. Outcomes & Conclusions
 
-*(populated on completion)*
+Status: implementation, verification, and cross-model review complete; ST-046 is ready for PO acceptance from Review.
+
+Delivered behavior:
+
+- The seeded search-quality corpus now includes four identifier-free `build_failure` memories (`...1e` through `...21`) that use the literal `failure` stem and contain no `65008` / `PRI-5751` identifiers.
+- `server/tests/_helpers/recall.ts` provides reusable `parseIds`, `searchThoughtIds`, and `recallAtK` helpers for ST-046 and ST-054.
+- `rrfFuse(lanes, k)` is extracted as a pure helper in `server/src/searchQuality.ts`, and `search_thoughts` calls it with `k=60` without changing downstream scoring, project boost, or MMR behavior.
+- `server/tests/search-golden-set.test.ts` now pins deterministic pure RRF/MMR drift tests, structural BM25 incident baselines, the `search_thoughts` no-id recall floor, the `search` D1 false-empty characterization, and the ST-054 `normalizeForBm25` / `BASELINE` TDD seam.
+
+Verification:
+
+- Task 4.3 post-ST-055 preflight: `docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/e2e.test.ts` passed 16/16 before editing.
+- Task 4.3 after `rrfFuse` rewire: `docker compose --profile test exec mcp-test deno check index.ts src/searchQuality.ts` passed; `tests/e2e.test.ts` passed 16/16.
+- Task 4.4 targeted golden-set test passed after retuning complementary live membership to top-10: `tests/search-golden-set.test.ts` passed 16/16; seam check printed `seam ok: true`.
+- Task 4.5 full suite passed after the same retune: `docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/` passed 69/69.
+- Cross-model review (GPT-5.2 via `ce-correctness-reviewer`) passed with no blocking findings. Residual notes were minor: RRF exact-score tie order follows input order, db-test live membership can be perturbed by transient rows, the `search` D1 characterization is intentionally time-sensitive, and additional tests could someday pin rank-base or duplicate-lane behavior.
+
+Downstream note: ST-054 can now consume this harness as its proof gate after PO accepts ST-046 as Done.
 
 ---
 
@@ -559,7 +576,7 @@ docker compose --profile test exec mcp-test deno eval "const s = await Deno.read
 
 | Field | Value |
 |---|---|
-| **Next task** | Task 4.5 |
+| **Next task** | Await PO acceptance from Review |
 | **Known blockers** | None. |
 
 ---
@@ -574,6 +591,7 @@ docker compose --profile test exec mcp-test deno eval "const s = await Deno.read
 | 2026-06-05T15:31:13.4755624+02:00 | Blocker clearance | Complete | ST-055 accepted Done; board cleared ST-046's blocker and restored ST-046 to Refined. | Resume Task 4.3 with the post-ST-055 e2e preflight before editing. |
 | 2026-06-05T15:38:21.4826538+02:00 | Task 4.3 | Complete | Post-ST-055 preflight `tests/e2e.test.ts` passed 16/16 before editing. Extracted `rrfFuse(lanes,k)` into `server/src/searchQuality.ts`, rewired `search_thoughts` in `server/index.ts`, restarted `mcp-test`, then `deno check index.ts src/searchQuality.ts` passed and `tests/e2e.test.ts` passed 16/16. | Commit Task 4.3, then start Task 4.4. |
 | 2026-06-05T15:41:05.7821085+02:00 | Task 4.4 | Complete | Added `server/tests/search-golden-set.test.ts`. First run had one allowed complementary live-membership failure for `zoom meeting rotation`; trimmed that unstable pair per Task 4.4 failure handling. Rerun passed: 15 tests, 0 failed. Seam check printed `seam ok: true`. | Commit Task 4.4, then run Task 4.5 full suite and cross-model review. |
+| 2026-06-05T15:50:09.0905869+02:00 | Task 4.5 | Complete | Initial full suite exposed another complementary live-membership instability for `bcf manager review` after earlier e2e tests inserted transient rows. Retuned the complementary membership block from top-3 to top-10, reran `tests/search-golden-set.test.ts` (16 passed, 0 failed), then reran full `tests/` (69 passed, 0 failed). Cross-model reviewer returned PASS with only minor residual notes. | Move ST-046 to Review and await PO acceptance. |
 
 ---
 
@@ -593,12 +611,15 @@ docker compose --profile test exec mcp-test deno eval "const s = await Deno.read
 
 - 2026-06-05: Worktree had an unrelated untracked `opencode.json` before edits. PO approved ignoring it; do not stage it with ST-046 commits.
 - 2026-06-05: The plan's broad id-count verification regex matched both the SQL DELETE list and INSERT blocks, reporting `build rows: 8`. The INSERT-only check verified the intended four new corpus rows and no incident identifiers.
+- 2026-06-05: Complementary live golden-set membership was too brittle at top-3 once full-suite e2e tests inserted transient rows into `db-test`. Targeted golden-set passed alone, but full-suite runs failed `zoom meeting rotation` / `bcf manager review` membership intermittently. Retuned only the complementary live membership block to top-10; deterministic AC-7 pure tests and structural incident baselines remain unchanged.
 
 ---
 
 ## §6c. Decision Log
 
 - 2026-06-05: Trimmed `zoom meeting rotation` from the complementary live golden-set membership block after it failed top-3 with returned ids `...002`, `...014`, `...007` instead of expected `...001`. This block is not the AC-7 gate; Task 4.4 explicitly allows dropping/retuning live membership pairs when live-embedding ranking is unstable. The deterministic pure RRF/MMR drift tests and incident BM25 baselines remain intact.
+- 2026-06-05: Replaced the earlier one-pair trim with a `GOLDEN_TOP_N = 10` retune for the complementary live membership block. Rationale: full-suite e2e tests insert transient rows before `search-golden-set.test.ts`, so top-3 membership is not stable; top-10 preserves live-path coverage without making AC-7 depend on live embedding rank luck.
+- 2026-06-05: Cross-model review passed before moving ST-046 to Review. Reviewer found no blocking contract issues. Minor residual notes: RRF exact-score ties preserve input order, live membership depends on db-test isolation, the `search` D1 characterization is time-sensitive by design, and future tests could pin rank-base / duplicate-lane assumptions if they become relevant.
 
 ---
 

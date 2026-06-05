@@ -449,6 +449,12 @@
 
 ## In Progress
 
+(Empty)
+
+---
+
+## Review
+
 ### ST-046: Golden-set regression tests (search-quality eval harness)
 - Type: quality
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31); scope widened 2026-06-04 to serve as the ST-054 eval-harness gate (PO decision during ST-054 intake)
@@ -458,21 +464,13 @@
 - ExecPlan status: ✅ Ready for /continue
 - Touches: `server/tests/search-golden-set.test.ts` (new), `server/tests/_helpers/recall.ts` (new), `server/tests/fixtures/build-search-quality-corpus.ts`, `server/tests/fixtures/search-quality-corpus.sql`, `server/src/searchQuality.ts` (extract pure `rrfFuse`), `server/index.ts` (rewire `search_thoughts` to `rrfFuse` — no behaviour change)
 - Acceptance criteria:
-  - [ ] Search quality regression catches RRF/MMR parameter drift (AC-7): a **deterministic pure-function test** asserts `rrfFuse` ordering flips between k=60 and k=10 and `mmrRerank` ordering changes with λ (no network); a complementary integration golden-set confirms default-parameter correctness end-to-end
-  - [ ] **Incident relevance + recall@k machinery (revised 2026-06-04, Option A):** the seeded corpus includes identifier-free build-failure-class memories, and the harness defines the incident relevance set + queries in **both forms** (`build 65008 PRI-5751 pipeline failure` vs `build pipeline failure`) with a reusable recall@k helper — consumable by ST-054
-  - [ ] **Baselines pinned to today's behaviour (revised 2026-06-04, Option A):** no-identifier form matches the full build-failure set via the deterministic BM25 lane; identifier form deterministically records the degraded value (BM25 ANDs unmatched id tokens to **0 rows**); a `search` D1 false-empty **characterization** pins that the incident memory is not surfaced by `search` today. A named `BASELINE`/`normalizeForBm25` TDD seam lets ST-054 flip these to targets. *(Target thresholds themselves are ST-054 ACs, not ST-046.)*
+  - [x] Search quality regression catches RRF/MMR parameter drift (AC-7): a **deterministic pure-function test** asserts `rrfFuse` ordering flips between k=60 and k=10 and `mmrRerank` ordering changes with λ (no network); a complementary integration golden-set confirms default-parameter correctness end-to-end
+  - [x] **Incident relevance + recall@k machinery (revised 2026-06-04, Option A):** the seeded corpus includes identifier-free build-failure-class memories, and the harness defines the incident relevance set + queries in **both forms** (`build 65008 PRI-5751 pipeline failure` vs `build pipeline failure`) with a reusable recall@k helper — consumable by ST-054
+  - [x] **Baselines pinned to today's behaviour (revised 2026-06-04, Option A):** no-identifier form matches the full build-failure set via the deterministic BM25 lane; identifier form deterministically records the degraded value (BM25 ANDs unmatched id tokens to **0 rows**); a `search` D1 false-empty **characterization** pins that the incident memory is not surfaced by `search` today. A named `BASELINE`/`normalizeForBm25` TDD seam lets ST-054 flip these to targets. *(Target thresholds themselves are ST-054 ACs, not ST-046.)*
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-046.md`
 - Query packet: `.github/planning/query-packets/QP-046-search-quality-eval-harness.md`
 - Blocks: ST-054 (retrieval robustness) — ST-054 consumes this harness as its proof gate
-- Notes: Restored to Refined after ST-055 reached Done and cleared the blocker. Uses existing seeded test corpus. Verifies that tuning RRF/MMR parameters doesn't silently degrade recall quality. **Why widened:** during ST-054 intake the PO chose to build the retrieval-robustness eval harness here rather than duplicate it inside ST-054 — so ST-046 now owns the incident-query relevance set + no-false-empty regression, and ST-054 is blocked_by ST-046. Without a *seeded* corpus, "0 results" stays ambiguous between broken ranking and an empty store — the exact ambiguity that made the original incident hard to diagnose.
-
----
-
----
-
-## Review
-
-(Empty)
+- Notes: Implementation, full verification, and cross-model review passed 2026-06-05; awaiting PO acceptance. Uses existing seeded test corpus. Verifies that tuning RRF/MMR parameters doesn't silently degrade recall quality. **Why widened:** during ST-054 intake the PO chose to build the retrieval-robustness eval harness here rather than duplicate it inside ST-054 — so ST-046 now owns the incident-query relevance set + no-false-empty regression, and ST-054 is blocked_by ST-046. Without a *seeded* corpus, "0 results" stays ambiguous between broken ranking and an empty store — the exact ambiguity that made the original incident hard to diagnose.
 
 ## Done
 
