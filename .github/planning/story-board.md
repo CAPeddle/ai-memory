@@ -45,7 +45,7 @@
 - Source: ST-021 spike outcome
 - phase: 2
 - Value: 5
-- Blocked by: plan-review
+- Blocked by: —
 - Touches: deployment config (`fly.toml` / `railway.json` / `.do/app.yaml`), `.github/workflows/`
 - Acceptance criteria:
   - [ ] Container hosting target chosen and documented (Fly.io / Railway / DigitalOcean Apps)
@@ -431,7 +431,7 @@
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31); scope widened 2026-06-04 to serve as the ST-054 eval-harness gate (PO decision during ST-054 intake)
 - phase: 2
 - Value: 4
-- Blocked by: —
+- Blocked by: plan-review
 - ExecPlan status: ✅ Ready for /continue (rewritten + approved 2026-06-04, Option A)
 - Touches: `server/tests/search-golden-set.test.ts` (new), `server/tests/_helpers/recall.ts` (new), `server/tests/fixtures/build-search-quality-corpus.ts`, `server/tests/fixtures/search-quality-corpus.sql`, `server/src/searchQuality.ts` (extract pure `rrfFuse`), `server/index.ts` (rewire `search_thoughts` to `rrfFuse` — no behaviour change)
 - Acceptance criteria:
