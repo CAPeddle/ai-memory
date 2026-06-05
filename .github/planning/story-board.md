@@ -45,7 +45,7 @@
 - Source: ST-021 spike outcome
 - phase: 2
 - Value: 5
-- Blocked by: —
+- Blocked by: plan-review
 - Touches: deployment config (`fly.toml` / `railway.json` / `.do/app.yaml`), `.github/workflows/`
 - Acceptance criteria:
   - [ ] Container hosting target chosen and documented (Fly.io / Railway / DigitalOcean Apps)

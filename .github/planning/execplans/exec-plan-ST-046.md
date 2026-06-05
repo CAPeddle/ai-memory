@@ -81,6 +81,7 @@ Status: ✅ Ready for /continue — PO approved the rewrite and the determinism 
 - Why the identifier-form gate is a **structural BM25 probe**, not a tool-level recall assertion: the tool path mixes in the non-deterministic vector lane, which could surface a build-failure row by noise (~k/N chance). The raw `plainto_tsquery` probe is lane-isolated and deterministic, so it is the honest, flake-free gate for the D2 mechanism.
 - Why AC-7 is a **deterministic pure-function test**, not an integration k-flip (revised 2026-06-05 after cross-model review): a uniquely-BM25-matched golden row receives an RRF term no vector-only row gets, and `1/(k+1)` only *grows* as `k` falls — so flipping `k` 60→10 would *not* drop a stable pair from the top-N, and forcing a break would require a boundary pair sensitive to the noisy vector lane (the exact flake the determinism strategy avoids). Extracting the pure `rrfFuse(lanes, k)` lets the regression prove k-sensitivity by direct construction (a two-lane mid-rank row overtakes a single-lane top row as `k` grows), with zero network. `mmrRerank` is tested the same way for `λ`.
 - Integration membership coverage is **retained and expanded** per PO (2026-06-05): the live-path golden-set membership checks confirm default-parameter correctness end-to-end. This keeps ~11 live OpenRouter calls in the suite; the PO accepted that coupling in exchange for broader coverage. AC-7 itself does *not* depend on those live calls.
+- 2026-06-05 plan-review blocker: Task 4.3 verification failed after the behaviour-preserving `rrfFuse` extraction/rewire. `deno check index.ts src/searchQuality.ts` passed, but `docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/e2e.test.ts` failed the existing `capture_thought → search_thoughts returns via BM25 lane` assertion. The returned top-3 omitted the freshly captured BM25 thought id/keyword and instead returned seeded rows (`00000000-0000-4000-8000-000000000009`, `...006`, `...021`). Per `/continue`, execution stopped; the uncommitted Task 4.3 code edits were reverted; ST-046 is marked `blocked_by: plan-review` on the board. Recommend `/plan` or `/recover` to decide whether this is caused by the new seeded corpus, the rewire, test flake, or a missing verification step.
 
 ---
 
@@ -550,7 +551,7 @@ docker compose --profile test exec mcp-test deno eval "const s = await Deno.read
 | Field | Value |
 |---|---|
 | **Next task** | Task 4.3 |
-| **Known blockers** | None |
+| **Known blockers** | plan-review: Task 4.3 e2e verification failed on the BM25 capture/search assertion after the `rrfFuse` rewire attempt. |
 
 ---
 
@@ -560,6 +561,7 @@ docker compose --profile test exec mcp-test deno eval "const s = await Deno.read
 |---|---|---|---|---|
 | 2026-06-05T11:00:46.6981917+02:00 | Task 4.1 | Complete | Generator wrote `33 thoughts and 10 query pairs`; test profile re-seeded successfully; INSERT-only check reported `build insert rows: 4 has identifier: false`; fixture diff scope limited to `build-search-quality-corpus.ts` and `search-quality-corpus.sql` with `search-quality-queries.json` unchanged. | Commit Task 4.1, then start Task 4.2. |
 | 2026-06-05T11:01:30.0704816+02:00 | Task 4.2 | Complete | Added `server/tests/_helpers/recall.ts`; `docker compose --profile test exec mcp-test deno check tests/_helpers/recall.ts` passed. | Commit Task 4.2, then start Task 4.3. |
+| 2026-06-05T11:04:24.5127132+02:00 | Task 4.3 | Failed / blocked | `deno check index.ts src/searchQuality.ts` passed; `tests/e2e.test.ts` failed `capture_thought → search_thoughts returns via BM25 lane` after the `rrfFuse` rewire attempt; uncommitted Task 4.3 code edits reverted. | Stop execution and route ST-046 to plan-review. |
 
 ---
 
