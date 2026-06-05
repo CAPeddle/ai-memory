@@ -39,7 +39,7 @@ The harness does three jobs:
 
 ## §1b. Outcomes & Conclusions
 
-Status: implementation, verification, and cross-model review complete; ST-046 is ready for PO acceptance from Review.
+Status: implementation, verification, cross-model review, and PO acceptance complete; ST-046 is Done.
 
 Delivered behavior:
 
@@ -56,7 +56,7 @@ Verification:
 - Task 4.5 full suite passed after the same retune: `docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/` passed 69/69.
 - Cross-model review (GPT-5.2 via `ce-correctness-reviewer`) passed with no blocking findings. Residual notes were minor: RRF exact-score tie order follows input order, db-test live membership can be perturbed by transient rows, the `search` D1 characterization is intentionally time-sensitive, and additional tests could someday pin rank-base or duplicate-lane behavior.
 
-Downstream note: ST-054 can now consume this harness as its proof gate after PO accepts ST-046 as Done.
+Downstream note: ST-054 can now consume this harness as its proof gate; its blocker has been cleared on the board.
 
 ---
 
@@ -576,7 +576,7 @@ docker compose --profile test exec mcp-test deno eval "const s = await Deno.read
 
 | Field | Value |
 |---|---|
-| **Next task** | Await PO acceptance from Review |
+| **Next task** | Plan ST-054 against the completed harness. |
 | **Known blockers** | None. |
 
 ---
@@ -592,6 +592,7 @@ docker compose --profile test exec mcp-test deno eval "const s = await Deno.read
 | 2026-06-05T15:38:21.4826538+02:00 | Task 4.3 | Complete | Post-ST-055 preflight `tests/e2e.test.ts` passed 16/16 before editing. Extracted `rrfFuse(lanes,k)` into `server/src/searchQuality.ts`, rewired `search_thoughts` in `server/index.ts`, restarted `mcp-test`, then `deno check index.ts src/searchQuality.ts` passed and `tests/e2e.test.ts` passed 16/16. | Commit Task 4.3, then start Task 4.4. |
 | 2026-06-05T15:41:05.7821085+02:00 | Task 4.4 | Complete | Added `server/tests/search-golden-set.test.ts`. First run had one allowed complementary live-membership failure for `zoom meeting rotation`; trimmed that unstable pair per Task 4.4 failure handling. Rerun passed: 15 tests, 0 failed. Seam check printed `seam ok: true`. | Commit Task 4.4, then run Task 4.5 full suite and cross-model review. |
 | 2026-06-05T15:50:09.0905869+02:00 | Task 4.5 | Complete | Initial full suite exposed another complementary live-membership instability for `bcf manager review` after earlier e2e tests inserted transient rows. Retuned the complementary membership block from top-3 to top-10, reran `tests/search-golden-set.test.ts` (16 passed, 0 failed), then reran full `tests/` (69 passed, 0 failed). Cross-model reviewer returned PASS with only minor residual notes. | Move ST-046 to Review and await PO acceptance. |
+| 2026-06-05T15:56:02.0683114+02:00 | PO acceptance | Complete | PO accepted ST-046 as Done. Board moved ST-046 to Done and cleared ST-054's blocker. | Plan ST-054 against the completed harness. |
 
 ---
 
@@ -635,7 +636,11 @@ docker compose --profile test exec mcp-test deno eval "const s = await Deno.read
 
 ## §7b. Outcomes & Retrospective
 
-*(populated on completion)*
+Achieved: ST-046 delivered the reusable search-quality harness needed by ST-054: additive build-failure corpus rows, reusable recall helpers, pure `rrfFuse`, deterministic RRF/MMR drift tests, incident BM25 baselines, `search_thoughts` recall floor, and `search` D1 characterization.
+
+Remains: Plan ST-054 against the completed harness.
+
+Lesson: The deterministic gates stayed stable once AC-7 lived in pure tests; live embedding membership is useful as broad coverage but must not be the proof gate.
 
 ---
 
