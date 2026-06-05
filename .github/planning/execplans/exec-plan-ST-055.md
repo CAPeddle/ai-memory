@@ -51,7 +51,19 @@ Out of scope:
 
 ## §1b. Outcomes & Conclusions
 
-*(populated on completion)*
+Status: implementation and verification through Task 4.3 complete; cross-model review remains before moving ST-055 to Review.
+
+Delivered behavior: `mmrRerank` now selects from embedded and null-embedding candidates in one loop. Null embeddings participate with similarity-to-selected `0`, keeping fresh BM25-only hits returnable while preserving diversity among embedded rows.
+
+Verification so far:
+
+- `docker compose --profile test exec mcp-test deno test --allow-env --allow-read tests/search-quality.test.ts` first produced the expected RED state in Task 4.1: high-scoring null candidate and equal-score bias tests failed; three other tests passed.
+- `docker compose --profile test exec mcp-test deno check src/searchQuality.ts tests/search-quality.test.ts` passed after Task 4.2.
+- `docker compose --profile test exec mcp-test deno test --allow-env --allow-read tests/search-quality.test.ts` passed after Task 4.2: 5 passed, 0 failed.
+- `docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/e2e.test.ts` passed after restarting `mcp-test`: 16 passed, 0 failed. The named tests `e2e: capture_thought → search_thoughts returns via BM25 lane` and `e2e: MMR keeps null-embedding row returnable` both passed.
+- `docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/` passed: 53 passed, 0 failed.
+
+Downstream note: ST-046 remains blocked until ST-055 is accepted as Done by the PO; do not move or unblock ST-046 during ST-055 closeout.
 
 ---
 
@@ -396,12 +408,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.2 — Implement unified-loop MMR handling for null embeddings |
-| **Last successful command** | `docker compose --profile test exec mcp-test deno check src/searchQuality.ts tests/search-quality.test.ts`; `docker compose --profile test exec mcp-test deno test --allow-env --allow-read tests/search-quality.test.ts` |
-| **Expected outputs produced** | `server/src/searchQuality.ts` `mmrRerank` now uses one `remaining = [...candidates]` loop; null embeddings participate with similarity-to-selected `0`; all five pure MMR tests pass. |
-| **Next task** | Task 4.3 — Prove the e2e blocker is gone and run the full suite |
+| **Last completed task** | Task 4.3 — Prove the e2e blocker is gone and run the full suite |
+| **Last successful command** | `docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/` |
+| **Expected outputs produced** | Restarted `mcp-test`; `tests/e2e.test.ts` passed with 16/16 tests green including the two named ST-055 checks; full `tests/` suite passed with 53 passed, 0 failed. |
+| **Next task** | Task 4.4 — Cross-model review and closeout |
 | **Known blockers** | None |
-| **Last updated** | 2026-06-05T14:21:58.9774984+02:00 |
+| **Last updated** | 2026-06-05T14:25:47.9319942+02:00 |
 
 ### Progress History
 
@@ -409,6 +421,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 |---|---|---|---|---|
 | 2026-06-05T14:21:10.4091848+02:00 | Task 4.1 | Completed — expected RED | Added `server/tests/search-quality.test.ts`; targeted test command exited non-zero with exactly two expected failures: `mmrRerank keeps a high-scoring null-embedding candidate in top-k` returned `embedded-redundant` instead of `fresh-bm25-null`, and `mmrRerank documents null-embedding equal-score bias` returned `redundant-equal` instead of `null-equal`; 3 tests passed. | Task 4.2 — replace `mmrRerank` with unified loop. |
 | 2026-06-05T14:21:58.9774984+02:00 | Task 4.2 | Completed | Replaced `mmrRerank` with one selection loop over all candidates and updated the required comment. `deno check src/searchQuality.ts tests/search-quality.test.ts` passed; `deno test --allow-env --allow-read tests/search-quality.test.ts` passed with 5/5 tests green. | Task 4.3 — restart `mcp-test`, run e2e, then full suite. |
+| 2026-06-05T14:25:47.9319942+02:00 | Task 4.3 | Completed | Restarted `mcp-test`; `deno test --allow-net --allow-env --allow-read tests/e2e.test.ts` passed with 16/16 tests green, including `capture_thought → search_thoughts returns via BM25 lane` and `MMR keeps null-embedding row returnable`; full `deno test --allow-net --allow-env --allow-read tests/` passed with 53 passed, 0 failed. | Task 4.4 — cross-model review and closeout. |
 
 ### Avoidance
 
