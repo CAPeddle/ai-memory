@@ -462,6 +462,10 @@
 
 ## Refined
 
+---
+
+## In Progress
+
 ### ST-055: MMR null-embedding BM25 recall preservation
 - Type: bug
 - Source: ST-046 plan-review resolution (2026-06-05 Task 4.3 e2e failure after expanded corpus)
@@ -483,12 +487,6 @@
 - Query packet: `.github/planning/query-packets/QP-055-mmr-null-embedding-bm25-recall.md`
 - Blocks: ST-046 (eval harness Task 4.3 should not resume until current-state e2e is green with the expanded corpus)
 - Notes: The ST-046 corpus expansion revealed a runtime recall bug: newly captured BM25-only rows can have `embedding = NULL` while embedding generation is fire-and-forget. Current MMR selection fills `k` from embedded candidates before appending null-embedding candidates, so a high-scoring BM25-only hit can be dropped once the corpus has enough embedded rows. PO decision: split this out of ST-046; fix via a unified MMR selection loop where null-embedding candidates participate with similarity-to-selected = `0` (intentional recency/lexical-recall bias), not by raising e2e limits or waiting synchronously for embeddings.
-
----
-
-## In Progress
-
-(Empty)
 
 ---
 

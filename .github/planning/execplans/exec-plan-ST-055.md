@@ -396,18 +396,18 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | — |
-| **Last successful command** | — |
-| **Expected outputs produced** | — |
-| **Next task** | Task 4.1 — Add RED pure MMR tests for null-embedding candidates |
+| **Last completed task** | Task 4.1 — Add RED pure MMR tests for null-embedding candidates |
+| **Last successful command** | Task 4.1 verification intentionally exited non-zero in the expected RED state: `docker compose --profile test exec mcp-test deno test --allow-env --allow-read tests/search-quality.test.ts` |
+| **Expected outputs produced** | `server/tests/search-quality.test.ts` added with five deterministic pure MMR tests; high-scoring null and equal-score bias tests fail on current implementation; other three pass. |
+| **Next task** | Task 4.2 — Implement unified-loop MMR handling for null embeddings |
 | **Known blockers** | None |
-| **Last updated** | — |
+| **Last updated** | 2026-06-05T14:21:10.4091848+02:00 |
 
 ### Progress History
 
 | Timestamp (ISO) | Task | Status | Evidence / outputs | Next step |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| 2026-06-05T14:21:10.4091848+02:00 | Task 4.1 | Completed — expected RED | Added `server/tests/search-quality.test.ts`; targeted test command exited non-zero with exactly two expected failures: `mmrRerank keeps a high-scoring null-embedding candidate in top-k` returned `embedded-redundant` instead of `fresh-bm25-null`, and `mmrRerank documents null-embedding equal-score bias` returned `redundant-equal` instead of `null-equal`; 3 tests passed. | Task 4.2 — replace `mmrRerank` with unified loop. |
 
 ### Avoidance
 
