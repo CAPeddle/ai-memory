@@ -559,7 +559,7 @@ docker compose --profile test exec mcp-test deno eval "const s = await Deno.read
 
 | Field | Value |
 |---|---|
-| **Next task** | Task 4.4 |
+| **Next task** | Task 4.5 |
 | **Known blockers** | None. |
 
 ---
@@ -573,6 +573,7 @@ docker compose --profile test exec mcp-test deno eval "const s = await Deno.read
 | 2026-06-05T11:04:24.5127132+02:00 | Task 4.3 | Failed / blocked | `deno check index.ts src/searchQuality.ts` passed; `tests/e2e.test.ts` failed `capture_thought → search_thoughts returns via BM25 lane` after the `rrfFuse` rewire attempt; uncommitted Task 4.3 code edits reverted. | Stop execution and route ST-046 to plan-review. |
 | 2026-06-05T15:31:13.4755624+02:00 | Blocker clearance | Complete | ST-055 accepted Done; board cleared ST-046's blocker and restored ST-046 to Refined. | Resume Task 4.3 with the post-ST-055 e2e preflight before editing. |
 | 2026-06-05T15:38:21.4826538+02:00 | Task 4.3 | Complete | Post-ST-055 preflight `tests/e2e.test.ts` passed 16/16 before editing. Extracted `rrfFuse(lanes,k)` into `server/src/searchQuality.ts`, rewired `search_thoughts` in `server/index.ts`, restarted `mcp-test`, then `deno check index.ts src/searchQuality.ts` passed and `tests/e2e.test.ts` passed 16/16. | Commit Task 4.3, then start Task 4.4. |
+| 2026-06-05T15:41:05.7821085+02:00 | Task 4.4 | Complete | Added `server/tests/search-golden-set.test.ts`. First run had one allowed complementary live-membership failure for `zoom meeting rotation`; trimmed that unstable pair per Task 4.4 failure handling. Rerun passed: 15 tests, 0 failed. Seam check printed `seam ok: true`. | Commit Task 4.4, then run Task 4.5 full suite and cross-model review. |
 
 ---
 
@@ -596,6 +597,8 @@ docker compose --profile test exec mcp-test deno eval "const s = await Deno.read
 ---
 
 ## §6c. Decision Log
+
+- 2026-06-05: Trimmed `zoom meeting rotation` from the complementary live golden-set membership block after it failed top-3 with returned ids `...002`, `...014`, `...007` instead of expected `...001`. This block is not the AC-7 gate; Task 4.4 explicitly allows dropping/retuning live membership pairs when live-embedding ranking is unstable. The deterministic pure RRF/MMR drift tests and incident BM25 baselines remain intact.
 
 ---
 
