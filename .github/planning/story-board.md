@@ -335,6 +335,25 @@
 - Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
 - Notes: 🟡 Should fix. Additive to ST-028 (worker observability). ST-028 covers worker-specific logs; this covers tool invocation timing.
 
+### ST-056: Embedding request timeout resilience
+- Type: hardening
+- Source: MCP stall investigation 2026-06-05 (VS Code agent fetch failures + embedding-call timeout risk)
+- phase: 2
+- Value: 4
+- Blocked by: —
+- Touches: `server/src/embeddings.ts`, `server/index.ts` (`search`, `search_thoughts`, `capture_thought` call sites), `server/src/embeddingBackfill.ts`, focused tests under `server/tests/`
+- Acceptance criteria:
+  - [ ] `getEmbedding` aborts OpenRouter embedding requests after a configurable timeout and returns a clear timeout error without leaking secrets
+  - [ ] `search_thoughts` does not hang when query embedding times out; it falls back to BM25/null-vector behavior and returns a bounded response
+  - [ ] `capture_thought` and `embeddingBackfill` preserve ST-039 recovery semantics on timeout: rows remain recoverable via `needs_embedding`, attempts/error state is handled by the backfill path, and capture remains non-blocking
+  - [ ] Timeout events produce an operator-visible log/error signal that distinguishes upstream timeout from no-results/no-memory outcomes
+  - [ ] Focused tests cover timeout/cancellation behavior without real OpenRouter calls
+  - [ ] Cross-model critical review passes (different model reviews implementation against ExecPlan contract before story moves to Review)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-056.md` (to be created by /plan)
+- Query packet: `.github/planning/query-packets/QP-056-embedding-request-timeout-resilience.md`
+- Relates to: ST-039 (embedding recoverability/backfill), ST-044 (general tool logging), ST-049 (query routing / vector-lane skipping), ST-053 (deep health check)
+- Notes: Focused follow-up from 2026-06-05 MCP stall investigation. The service was healthy for direct `list_thoughts`, `search`, and `search_thoughts` probes, while VS Code logs showed client-side `fetch failed` / SSE termination during connection windows. Separately, source review found `server/src/embeddings.ts` uses `fetch` with no timeout; if OpenRouter or the network stalls, embedding-backed tools can appear to hang even though non-embedding tools stay fast. PO scoped this story to embedding calls only; entity extraction and consolidation OpenRouter timeouts are out of scope unless later pulled into a shared HTTP client story.
+
 ### ST-045: Worker idempotency
 - Type: hardening
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
