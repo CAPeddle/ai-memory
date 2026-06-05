@@ -51,7 +51,7 @@ Out of scope:
 
 ## §1b. Outcomes & Conclusions
 
-Status: implementation, verification, and cross-model critical review complete; ST-055 is ready for PO acceptance from Review.
+Status: implementation, verification, cross-model critical review, and PO acceptance complete; ST-055 is Done.
 
 Delivered behavior: `mmrRerank` now selects from embedded and null-embedding candidates in one loop. Null embeddings participate with similarity-to-selected `0`, keeping fresh BM25-only hits returnable while preserving diversity among embedded rows.
 
@@ -64,7 +64,7 @@ Verification so far:
 - `docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/` passed: 53 passed, 0 failed.
 - Cross-model critical review (GPT-5.2 via `ce-correctness-reviewer`) passed. Reviewer confirmed the unified-loop implementation, null-row equal-score bias, embedded diversity coverage, degenerate input coverage, e2e ST-046 blocker evidence, and absence of out-of-scope changes. Residual notes were low risk: existing `cosineSim` assumes equal-length vectors, and exact MMR ties preserve input order.
 
-Downstream note: ST-046 remains blocked until ST-055 is accepted as Done by the PO; do not move or unblock ST-046 during ST-055 closeout.
+Downstream note: ST-055 PO acceptance cleared the ST-046 blocker; ST-046 is restored to Refined for `/continue`.
 
 ---
 
@@ -411,10 +411,10 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 |---|---|
 | **Last completed task** | Task 4.4 — Cross-model review and closeout |
 | **Last successful command** | Cross-model review PASS from GPT-5.2 `ce-correctness-reviewer`; `git diff -- .github/planning/story-board.md .github/planning/execplans/exec-plan-ST-055.md` reviewed the final board/ExecPlan closeout diff. |
-| **Expected outputs produced** | Cross-model critical review passed; §1b and §6c updated; ST-055 moved to Review on the board; ST-046 intentionally remains blocked by ST-055 until PO accepts Done. |
-| **Next task** | Await PO acceptance; after acceptance, move ST-055 to Done and clear ST-046 blocker. |
+| **Expected outputs produced** | Cross-model critical review passed; PO accepted ST-055; ST-055 moved to Done; ST-046 blocker cleared and ST-046 restored to Refined. |
+| **Next task** | Resume ST-046 via `/continue`. |
 | **Known blockers** | None |
-| **Last updated** | 2026-06-05T14:29:27.8997679+02:00 |
+| **Last updated** | 2026-06-05T15:31:13.4755624+02:00 |
 
 ### Progress History
 
@@ -424,6 +424,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-06-05T14:21:58.9774984+02:00 | Task 4.2 | Completed | Replaced `mmrRerank` with one selection loop over all candidates and updated the required comment. `deno check src/searchQuality.ts tests/search-quality.test.ts` passed; `deno test --allow-env --allow-read tests/search-quality.test.ts` passed with 5/5 tests green. | Task 4.3 — restart `mcp-test`, run e2e, then full suite. |
 | 2026-06-05T14:25:47.9319942+02:00 | Task 4.3 | Completed | Restarted `mcp-test`; `deno test --allow-net --allow-env --allow-read tests/e2e.test.ts` passed with 16/16 tests green, including `capture_thought → search_thoughts returns via BM25 lane` and `MMR keeps null-embedding row returnable`; full `deno test --allow-net --allow-env --allow-read tests/` passed with 53 passed, 0 failed. | Task 4.4 — cross-model review and closeout. |
 | 2026-06-05T14:29:27.8997679+02:00 | Task 4.4 | Completed | Cross-model reviewer returned PASS. Reviewer confirmed the null-embedding unified-loop contract, equal-score bias pinning, embedded-diversity coverage, degenerate coverage, e2e blocker evidence, and no out-of-scope changes to RRF, SQL, capture timing, response formatting, or e2e limits. Low residual notes: equal-length vector assumption and input-order tie behavior. | Await PO acceptance from Review. |
+| 2026-06-05T15:31:13.4755624+02:00 | PO acceptance | Completed | PO accepted ST-055 as Done. Board moved ST-055 to Done, cleared ST-046's blocker, and restored ST-046 to Refined. | Resume ST-046 via `/continue`. |
 
 ### Avoidance
 
@@ -496,7 +497,7 @@ At story completion:
 
 Achieved: ST-055 completed through implementation, verification, and cross-model review on 2026-06-05. The fix stayed inside `mmrRerank`: null-embedding candidates now remain in the same MMR selection pool as embedded candidates, with missing pairwise similarity treated as `0`.
 
-Remains: PO acceptance from Review. After PO accepts ST-055 as Done, clear ST-055 from ST-046's blocker and restore ST-046 according to the board notes.
+Remains: Resume ST-046 via `/continue`, then plan ST-054 against the completed harness.
 
 Lesson: The RED pure tests were the clean proof point for this recall bug; e2e confirmed the production path after the ranking behavior was fixed without changing capture timing, e2e limits, SQL, or response formatting.
 
