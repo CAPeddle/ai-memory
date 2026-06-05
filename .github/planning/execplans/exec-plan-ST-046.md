@@ -549,7 +549,7 @@ docker compose --profile test exec mcp-test deno eval "const s = await Deno.read
 
 | Field | Value |
 |---|---|
-| **Next task** | Task 4.2 |
+| **Next task** | Task 4.3 |
 | **Known blockers** | None |
 
 ---
@@ -559,6 +559,7 @@ docker compose --profile test exec mcp-test deno eval "const s = await Deno.read
 | Timestamp | Task | Status | Evidence | Next step |
 |---|---|---|---|---|
 | 2026-06-05T11:00:46.6981917+02:00 | Task 4.1 | Complete | Generator wrote `33 thoughts and 10 query pairs`; test profile re-seeded successfully; INSERT-only check reported `build insert rows: 4 has identifier: false`; fixture diff scope limited to `build-search-quality-corpus.ts` and `search-quality-corpus.sql` with `search-quality-queries.json` unchanged. | Commit Task 4.1, then start Task 4.2. |
+| 2026-06-05T11:01:30.0704816+02:00 | Task 4.2 | Complete | Added `server/tests/_helpers/recall.ts`; `docker compose --profile test exec mcp-test deno check tests/_helpers/recall.ts` passed. | Commit Task 4.2, then start Task 4.3. |
 
 ---
 
