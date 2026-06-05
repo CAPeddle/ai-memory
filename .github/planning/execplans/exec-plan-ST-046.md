@@ -560,7 +560,7 @@ docker compose --profile test exec mcp-test deno eval "const s = await Deno.read
 | Field | Value |
 |---|---|
 | **Next task** | Task 4.3 |
-| **Known blockers** | ST-055: fix `mmrRerank` / search finalization so high-scoring BM25-only rows with `embedding = NULL` remain returnable before ST-046 reattempts Task 4.3. |
+| **Known blockers** | None — ST-055 is Done; resume Task 4.3 with the post-ST-055 e2e preflight. |
 
 ---
 
@@ -571,6 +571,7 @@ docker compose --profile test exec mcp-test deno eval "const s = await Deno.read
 | 2026-06-05T11:00:46.6981917+02:00 | Task 4.1 | Complete | Generator wrote `33 thoughts and 10 query pairs`; test profile re-seeded successfully; INSERT-only check reported `build insert rows: 4 has identifier: false`; fixture diff scope limited to `build-search-quality-corpus.ts` and `search-quality-corpus.sql` with `search-quality-queries.json` unchanged. | Commit Task 4.1, then start Task 4.2. |
 | 2026-06-05T11:01:30.0704816+02:00 | Task 4.2 | Complete | Added `server/tests/_helpers/recall.ts`; `docker compose --profile test exec mcp-test deno check tests/_helpers/recall.ts` passed. | Commit Task 4.2, then start Task 4.3. |
 | 2026-06-05T11:04:24.5127132+02:00 | Task 4.3 | Failed / blocked | `deno check index.ts src/searchQuality.ts` passed; `tests/e2e.test.ts` failed `capture_thought → search_thoughts returns via BM25 lane` after the `rrfFuse` rewire attempt; uncommitted Task 4.3 code edits reverted. | Stop execution and route ST-046 to plan-review. |
+| 2026-06-05T15:31:13.4755624+02:00 | Blocker clearance | Complete | ST-055 accepted Done; board cleared ST-046's blocker and restored ST-046 to Refined. | Resume Task 4.3 with the post-ST-055 e2e preflight before editing. |
 
 ---
 
