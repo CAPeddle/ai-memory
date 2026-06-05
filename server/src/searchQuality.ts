@@ -24,6 +24,23 @@ export function cosineSim(a: number[], b: number[]): number {
 // λ = 0.7 (relevance weight); (1 - λ) = 0.3 (diversity penalty weight).
 // ---------------------------------------------------------------------------
 
+export interface RrfLaneRow { id: string; rank: number; }
+
+/**
+ * Reciprocal Rank Fusion. Sums 1/(k + rank) for each id across all lanes.
+ * Pure and deterministic — no I/O. Used by search_thoughts and by the
+ * ST-046 regression harness to prove k-sensitivity without the network.
+ */
+export function rrfFuse(lanes: RrfLaneRow[][], k = 60): Map<string, number> {
+  const scores = new Map<string, number>();
+  for (const lane of lanes) {
+    for (const r of lane) {
+      scores.set(r.id, (scores.get(r.id) ?? 0) + 1 / (k + r.rank));
+    }
+  }
+  return scores;
+}
+
 export interface MmrCandidate { id: string; score: number; embedding: number[] | null; }
 
 export function mmrRerank(candidates: MmrCandidate[], k: number, lambda = 0.7): { id: string; score: number }[] {

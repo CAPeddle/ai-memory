@@ -445,6 +445,10 @@
 
 ## Refined
 
+---
+
+## In Progress
+
 ### ST-046: Golden-set regression tests (search-quality eval harness)
 - Type: quality
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31); scope widened 2026-06-04 to serve as the ST-054 eval-harness gate (PO decision during ST-054 intake)
@@ -463,10 +467,6 @@
 - Notes: Restored to Refined after ST-055 reached Done and cleared the blocker. Uses existing seeded test corpus. Verifies that tuning RRF/MMR parameters doesn't silently degrade recall quality. **Why widened:** during ST-054 intake the PO chose to build the retrieval-robustness eval harness here rather than duplicate it inside ST-054 — so ST-046 now owns the incident-query relevance set + no-false-empty regression, and ST-054 is blocked_by ST-046. Without a *seeded* corpus, "0 results" stays ambiguous between broken ranking and an empty store — the exact ambiguity that made the original incident hard to diagnose.
 
 ---
-
-## In Progress
-
-(Empty)
 
 ---
 

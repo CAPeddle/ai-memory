@@ -559,8 +559,8 @@ docker compose --profile test exec mcp-test deno eval "const s = await Deno.read
 
 | Field | Value |
 |---|---|
-| **Next task** | Task 4.3 |
-| **Known blockers** | None — ST-055 is Done; resume Task 4.3 with the post-ST-055 e2e preflight. |
+| **Next task** | Task 4.4 |
+| **Known blockers** | None. |
 
 ---
 
@@ -572,6 +572,7 @@ docker compose --profile test exec mcp-test deno eval "const s = await Deno.read
 | 2026-06-05T11:01:30.0704816+02:00 | Task 4.2 | Complete | Added `server/tests/_helpers/recall.ts`; `docker compose --profile test exec mcp-test deno check tests/_helpers/recall.ts` passed. | Commit Task 4.2, then start Task 4.3. |
 | 2026-06-05T11:04:24.5127132+02:00 | Task 4.3 | Failed / blocked | `deno check index.ts src/searchQuality.ts` passed; `tests/e2e.test.ts` failed `capture_thought → search_thoughts returns via BM25 lane` after the `rrfFuse` rewire attempt; uncommitted Task 4.3 code edits reverted. | Stop execution and route ST-046 to plan-review. |
 | 2026-06-05T15:31:13.4755624+02:00 | Blocker clearance | Complete | ST-055 accepted Done; board cleared ST-046's blocker and restored ST-046 to Refined. | Resume Task 4.3 with the post-ST-055 e2e preflight before editing. |
+| 2026-06-05T15:38:21.4826538+02:00 | Task 4.3 | Complete | Post-ST-055 preflight `tests/e2e.test.ts` passed 16/16 before editing. Extracted `rrfFuse(lanes,k)` into `server/src/searchQuality.ts`, rewired `search_thoughts` in `server/index.ts`, restarted `mcp-test`, then `deno check index.ts src/searchQuality.ts` passed and `tests/e2e.test.ts` passed 16/16. | Commit Task 4.3, then start Task 4.4. |
 
 ---
 

@@ -8,7 +8,7 @@ import { parseContext } from "./src/parseContext.ts";
 import { sql } from "./src/db.ts";
 import { startEntityWorker } from "./src/entityWorker.ts";
 import { startConsolidationWorker, drainPendingOnce } from "./src/consolidationWorker.ts";
-import { cosineSim, mmrRerank, logRecall, parseVector, MmrCandidate } from "./src/searchQuality.ts";
+import { cosineSim, mmrRerank, logRecall, parseVector, rrfFuse, MmrCandidate } from "./src/searchQuality.ts";
 import { ensureRequiredEnv } from "./src/startupValidation.ts";
 import { getEmbedding, EMBEDDING_MODEL } from "./src/embeddings.ts";
 import { startEmbeddingBackfill } from "./src/embeddingBackfill.ts";
@@ -158,10 +158,12 @@ server.registerTool(
               `)
         : [];
 
-      // RRF fusion in application layer (unchanged)
-      const scores = new Map<string, number>();
-      for (const r of bm25)   scores.set(r.id as string, (scores.get(r.id as string) ?? 0) + 1 / (60 + Number(r.bm25_rank)));
-      for (const r of vector) scores.set(r.id as string, (scores.get(r.id as string) ?? 0) + 1 / (60 + Number(r.vector_rank)));
+      // RRF fusion via the pure rrfFuse helper (k=60). Extracted so the regression harness
+      // can prove k-sensitivity deterministically without the network. Behaviour-identical.
+      const scores = rrfFuse([
+        bm25.map((r) => ({ id: r.id as string, rank: Number(r.bm25_rank) })),
+        vector.map((r) => ({ id: r.id as string, rank: Number(r.vector_rank) })),
+      ], 60);
 
       if (!scores.size) return { content: [{ type: "text" as const, text: `No thoughts found matching "${query}".` }] };
 
