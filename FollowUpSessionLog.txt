@@ -1,76 +1,28 @@
 # FollowUpSessionLog — ai-memory
 
-## Last Session: 2026-06-03 (ST-039 execution complete)
+## Last Session: 2026-06-05 (/continue ST-055 + ST-046 complete)
 
 ### Accomplished
-- Executed ST-039 end-to-end from .github/planning/execplans/exec-plan-ST-039.md (Tasks 4.1–4.6).
-- Task 4.1: Created server/db/002_needs_embedding.sql (idempotent DDL for 4 new columns + partial index). Added COPY to docker/postgres-age/Dockerfile for fresh-DB init. Applied manually to dev DB (persistent volume).
-- Task 4.2: Extracted getEmbedding + EMBEDDING_MODEL into server/src/embeddings.ts (side-effect-free module). Updated index.ts to import from it; removed duplicated local declarations.
-- Task 4.3: Created server/tests/embedding-backfill.test.ts with 4 RED tests (module-not-found for embeddingBackfill.ts — correct RED state).
-- Task 4.4: Implemented server/src/embeddingBackfill.ts with runBackfillSweep + startEmbeddingBackfill. All 4 backfill tests GREEN.
-- Task 4.5: Updated index.ts capture path to record embedding_model + clear needs_embedding on success. Added startEmbeddingBackfill() call at startup. Added EMBEDDING_BACKFILL_DISABLED=true to mcp-test service in docker-compose.yml.
-- Task 4.6: Full suite 43 passed 0 failed. Idempotency re-proved. Cross-model review (GPT-5.2) found race-condition defect (backfill UPDATE used only WHERE id — could overwrite concurrently-written embedding). Fix applied: added AND embedding IS NULL AND needs_embedding = true to success UPDATE, AND needs_embedding = true to failure UPDATE. Two regression tests added proving guards. GPT-5.2 re-review: PASS. Board moved to Review.
+- Executed ST-055 from Ready through Done. Added pure MMR null-embedding tests, fixed `mmrRerank` to use one unified loop with null-pair similarity `0`, verified e2e/full suite, passed cross-model review, PO accepted Done.
+- ST-055 commits: 094100d, 65ff132, 8cd16c5, e7a28b5, f65e049.
+- Cleared ST-055 blocker and resumed ST-046.
+- Executed ST-046 Tasks 4.3–4.5 from the post-ST-055 resume point. Extracted pure `rrfFuse(lanes,k)`, rewired `search_thoughts`, added `search-golden-set.test.ts`, stabilized complementary live membership at top-10, verified full suite, passed cross-model review, PO accepted Done.
+- ST-046 commits this session: f8cdbea, 3bc7bf6, 590a0c6, 66965c8, a6a0823.
 
-### Commits (ST-039)
-- 432a991 feat(db): add embedding-resilience columns (ST-039)
-- 9760407 refactor(server): extract shared embeddings module (ST-039)
-- d002a05 test(embeddings): add failing backfill resilience tests (ST-039)
-- 8dc9f2a feat(embeddings): implement backfill sweep worker (ST-039)
-- 2570f8c feat(capture): record embedding model and wire backfill worker (ST-039)
-- 474778a fix(embeddings): guard backfill UPDATEs against concurrent writes (ST-039)
-- 35759c0 test(embeddings): add concurrency regression tests for backfill UPDATE guards (ST-039)
-- fa47fa2 chore(board): move ST-039 to Review, update ExecPlan §1b and §6c
-
-### Resume Point
-- ST-039 in Review, awaiting PO acceptance.
-- On PO acceptance: move to Done, clear ST-039 from blocked_by on ST-041 (worker health/status reporting).
-- Next planning target: ST-040 (worker crash isolation).
-
-### Avoidance
-- db image is NOT bind-mounted — SQL init changes require docker compose build. Only server/ is live-mounted.
-- Dev db has a persistent volume; init scripts do NOT re-run. Apply DDL manually via docker compose exec db psql.
-- Keep EMBEDDING_BACKFILL_DISABLED=true on mcp-test; without it the server's real-OpenRouter auto-sweep races the stubbed tests.
-- Keep process-level startup fail-fast check in verification evidence.
-- Preserve task-scoped commits with Story/Task trailers.
+### Verification
+- ST-055: targeted pure tests 5/5, e2e 16/16, full suite 53/53 before ST-046 harness was added.
+- ST-046: e2e 16/16 after `rrfFuse` rewire; `search-golden-set.test.ts` 16/16; final full suite 69/69.
+- Cross-model reviews: PASS for ST-055 and ST-046.
 
 ### Board State
-- In Progress: empty
-- Review: ST-039 (embedding resilience, shipped 2026-06-03)
-- Done: includes ST-038 (completed 2026-06-02)
+- In Progress: empty.
+- Review: empty.
+- Done: ST-055, ST-046.
+- Newly unblocked: ST-054 and ST-050.
+- Next planning target: ST-054 (retrieval robustness) — still Backlog because ExecPlan must be authored by `/plan` before `/continue` can execute it.
 
-### Accomplished
-- Executed ST-038 end-to-end from .github/planning/execplans/exec-plan-ST-038.md (Tasks 4.1–4.4).
-- Task 4.1: Added startup fail-fast required-env validation for OPENROUTER_API_KEY and MEMORY_API_KEY before server startup.
-- Task 4.1: Updated entity worker to remove OPENROUTER_API_KEY fallback/disable path that is now unreachable.
-- Task 4.2: Added UTF-8 byte-size guard in capture_thought with MAX_CONTENT_BYTES=32768 and MCP isError response.
-- Task 4.3: Added server/tests/capture-size-limit.test.ts with ASCII and UTF-8 boundary coverage plus oversized non-insert assertion.
-- Task 4.4: Added server/src/startupValidation.ts and server/tests/startup-validation.test.ts, including explicit ensureRequiredEnv fatal-log + exit(1) assertions.
-- Verification: Process-level fail-fast check returns FATAL + EXIT_CODE:1 when OPENROUTER_API_KEY is unset.
-- Verification: Full test suite passes via docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/ (39 passed, 0 failed).
-- Cross-model gate: PASS (no acceptance-criteria violations).
-- Board updates: ST-038 moved Refined -> Review -> Done after PO acceptance.
-
-### Commits (ST-038)
-- 1afb15f fix(startup): fail fast on missing required env vars
-- 997b8a7 fix(capture): enforce 32kb content byte limit
-- cb5f739 test(capture): add 32kb boundary coverage
-- 00914d2 refactor(startup): harden validation and close review gaps
-- 3dfd4be chore(board): move st-038 to review
-- 3b91a96 docs(execplan): record final cross-model pass
-- 2ac1790 chore(board): move st-038 to done
-
-### Resume Point
-- No story In Progress.
-- No story in Review.
-- Next planning target on board remains ST-039 (embedding resilience).
-
-### Avoidance
-- If mcp-test is not running, start test profile first: docker compose --profile test up -d.
-- After server runtime code changes, restart mcp-test: docker compose --profile test restart mcp-test.
-- Keep process-level startup fail-fast check in verification evidence (unset OPENROUTER_API_KEY -> FATAL + EXIT_CODE:1).
-- Preserve task-scoped commits with Story/Task trailers; do not stage unrelated local changes.
-
-### Board State
-- In Progress: empty
-- Review: empty
-- Done: includes ST-038 (completed 2026-06-02)
+### Avoidance / Lessons
+- Live embedding membership checks are complementary coverage only; deterministic AC-7 lives in pure `rrfFuse` / `mmrRerank` tests.
+- Full-suite e2e tests can insert transient rows before golden-set tests; use top-10 membership rather than top-3 for live-path coverage.
+- Do not clear ST-054 from Backlog until `/plan` creates and marks its ExecPlan Ready.
+- Continue running Deno commands inside `mcp-test`; restart `mcp-test` after runtime code changes.

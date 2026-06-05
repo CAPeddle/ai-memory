@@ -466,7 +466,7 @@
 - Value: 4
 - Completed: 2026-06-05
 - Blocked by: —
-- ExecPlan status: ✅ Ready for /continue
+- ExecPlan status: ✅ Completed
 - Touches: `server/tests/search-golden-set.test.ts` (new), `server/tests/_helpers/recall.ts` (new), `server/tests/fixtures/build-search-quality-corpus.ts`, `server/tests/fixtures/search-quality-corpus.sql`, `server/src/searchQuality.ts` (extract pure `rrfFuse`), `server/index.ts` (rewire `search_thoughts` to `rrfFuse` — no behaviour change)
 - Acceptance criteria:
   - [x] Search quality regression catches RRF/MMR parameter drift (AC-7): a **deterministic pure-function test** asserts `rrfFuse` ordering flips between k=60 and k=10 and `mmrRerank` ordering changes with λ (no network); a complementary integration golden-set confirms default-parameter correctness end-to-end
