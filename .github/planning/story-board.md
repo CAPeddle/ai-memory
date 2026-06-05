@@ -337,6 +337,25 @@
 - Relates to: ST-039 (embedding recoverability/backfill), ST-044 (general tool logging), ST-049 (query routing / vector-lane skipping), ST-053 (deep health check)
 - Notes: Focused follow-up from 2026-06-05 MCP stall investigation. The service was healthy for direct `list_thoughts`, `search`, and `search_thoughts` probes, while VS Code logs showed client-side `fetch failed` / SSE termination during connection windows. Separately, source review found `server/src/embeddings.ts` uses `fetch` with no timeout; if OpenRouter or the network stalls, embedding-backed tools can appear to hang even though non-embedding tools stay fast. PO scoped this story to embedding calls only; entity extraction and consolidation OpenRouter timeouts are out of scope unless later pulled into a shared HTTP client story.
 
+### ST-057: MCP compatibility hardening
+- Type: hardening
+- Source: OpenCode ai-memory MCP investigation 2026-06-05 (`prompts/list` returned JSON-RPC -32601)
+- phase: 2
+- Value: 5
+- Blocked by: —
+- Touches: `server/index.ts` (MCP server capability/registration surface), possibly new protocol-compat helper under `server/src/`, focused protocol tests under `server/tests/`, README/client troubleshooting docs if behavior changes
+- Acceptance criteria:
+  - [ ] `prompts/list` no longer returns JSON-RPC `-32601 Method not found` for clients that probe prompts; it returns an MCP-compatible empty prompt list or a minimal intentional prompt surface as decided during `/plan`
+  - [ ] `prompts/get` behavior is explicitly decided and tested: either a valid minimal prompt is retrievable, or unsupported prompt names return the protocol-appropriate error while `prompts/list` remains safe
+  - [ ] `resources/list` and `resources/templates/list` compatibility expectations are researched and either implemented as safe empty lists or deliberately left unsupported with documented rationale
+  - [ ] A protocol audit in the ExecPlan maps the server-side MCP 2025-06-18 methods relevant to ai-memory (`tools/*`, `prompts/*`, `resources/*`, ping, and any optional completion/subscribe behavior) to implemented/deferred decisions
+  - [ ] Focused tests prove OpenCode-style startup probes do not produce `-32601` for accepted compatibility endpoints and that existing `tools/list` / `tools/call` behavior is unchanged
+  - [ ] Cross-model critical review passes (different model reviews implementation against ExecPlan contract before story moves to Review)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-057.md` (to be created by /plan)
+- Query packet: `.github/planning/query-packets/QP-057-mcp-compatibility-hardening.md`
+- Docs: MCP 2025-06-18 server specs for prompts/resources/tools; README client setup section
+- Notes: Direct diagnostic probes showed `initialize` advertises only `capabilities.tools`, `tools/list` works, while `prompts/list` and `resources/list` return `-32601`. OpenCode logged `MCP error -32601: Method not found failed to get prompts`, so the immediate interop gap is prompts capability compatibility. PO requested the story also research other expected MCP server endpoints instead of patching only `prompts/list`. ProviderModelNotFoundError and `@opencode-ai/plugin@local` install failures are OpenCode-side issues, not ai-memory MCP failures, but this story should remove ai-memory's avoidable protocol-probe noise.
+
 ### ST-045: Worker idempotency
 - Type: hardening
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
