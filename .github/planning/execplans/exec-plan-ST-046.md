@@ -15,11 +15,11 @@ ST-046 builds a **reusable search-quality eval harness** against the seeded `db-
 
 The harness does three jobs:
 
-1. **Catch RRF/MMR parameter drift** (the original AC-7 reason the story existed): if someone retunes RRF `k=60`, MMR `λ=0.7`, or project-boost `×1.2`, a golden-set assertion must notice.
+1. **Catch RRF/MMR parameter drift** (the original AC-7 reason the story existed): if someone retunes RRF `k=60` or MMR `λ=0.7`, a **deterministic pure-function test** must notice. To make this network-free and flake-free, the inline RRF fusion in `search_thoughts` is extracted into a pure `rrfFuse(lanes, k)` (mirroring the already-pure `mmrRerank`); the regression asserts that `rrfFuse` / `mmrRerank` ordering changes when `k` / `λ` change. A complementary set of integration golden-set membership checks (live path) confirms default-parameter correctness end-to-end.
 2. **Establish a recall@k baseline** on incident-style queries (the `build 65008 PRI-5751 pipeline failure` class) in **two forms** — with identifiers and without — so the identifier-dilution gap (ST-054 D2) is *measurable*.
 3. **Pin the current false-empty behaviour** of the vector-only `search` tool (ST-054 D1) as a characterization, so ST-054's fix is self-proving.
 
-**Determinism strategy (binding — see QP-046 KD-1/KD-2).** The corpus uses **synthetic orthonormal topic embeddings** (every row of a topic shares one axis vector via `topicVector(idx, 0)`), while `search` / `search_thoughts` embed the query **live** via OpenRouter in the HTTP path (no DI seam). A real query embedding vs a synthetic axis yields ~random cosine, so the **vector lane is non-deterministic** for precise recall@k. Therefore every recall@k baseline is pinned to the **deterministic BM25 lexical lane** (structural `plainto_tsquery` SQL probes) or to a deterministic floor that MMR ordering guarantees. The single exception is the `search` D1 characterization (KD-2), which is the only assertion that touches the live embedding path — and its *outcome* is robust because the synthetic corpus never clears the `0.5` cosine floor against a real query embedding.
+**Determinism strategy (binding — see QP-046 KD-1/KD-2).** The corpus uses **synthetic orthonormal topic embeddings** (every row of a topic shares one axis vector via `topicVector(idx, 0)`), while `search` / `search_thoughts` embed the query **live** via OpenRouter in the HTTP path (no DI seam). A real query embedding vs a synthetic axis yields ~random cosine, so the **vector lane is non-deterministic** for precise recall@k. Therefore every recall@k baseline is pinned to the **deterministic BM25 lexical lane** (structural `plainto_tsquery` SQL probes), to a pure-function assertion, or to a deterministic floor that MMR ordering guarantees. The live embedding path is touched only by the `search` D1 characterization (KD-2) — whose *outcome* is robust because the synthetic corpus never clears the `0.5` cosine floor against a real query embedding — and by the complementary integration membership block, which is coverage only and never the source of an AC-7 guarantee.
 
 **Stemming gotcha (must respect when authoring corpus content).** The `english` text-search config stems `failure → failur` but `failed → fail` — *different* lexemes. The no-identifier query and the stored incident content must therefore share the literal stem: use the word **`failure`** in both, not `failed`.
 
@@ -30,7 +30,8 @@ The harness does three jobs:
 - `server/tests/_helpers/mcpClient.ts` — `mcpCall` / `extractText` (existing)
 - `server/src/db.ts` — exports the `sql` postgres template tag used for structural BM25 probes
 - `server/db/search.sql`, `server/db/schema.sql` — hybrid-search SQL; `search_vector` is a `GENERATED ALWAYS … STORED` tsvector, so seeded rows auto-index for BM25 with no manual step
-- `server/index.ts` — `search` (vector-only, `≥0.5` floor) and `search_thoughts` (BM25+vector RRF k=60 + MMR λ=0.7) handlers
+- `server/src/searchQuality.ts` — `mmrRerank` (pure) and the new pure `rrfFuse(lanes, k)` extracted here; imported by both `index.ts` and the regression test
+- `server/index.ts` — `search` (vector-only, `≥0.5` floor) and `search_thoughts` (BM25+vector RRF k=60 + MMR λ=0.7) handlers; the inline RRF loop is rewired to call `rrfFuse`
 
 **Prerequisite knowledge:** The corpus is loaded by the `seed` Compose service into `db-test` at stack start. `db-test` is tmpfs (wiped on container removal). After regenerating the `.sql`, a `down`/`up` of the `test` profile re-seeds it. Tests run inside `mcp-test`.
 
@@ -46,13 +47,14 @@ The harness does three jobs:
 
 - The corpus generator gains a `build_failure` topic axis with ≥4 identifier-free incident memories (carrying the lexemes `build` / `pipeline` / `failure`, no ticket/build numbers); `search-quality-corpus.sql` is regenerated and committed; the existing rows are byte-unchanged (additive only); the null-embedding row stays pinned to `…1d`.
 - A reusable recall@k helper exists at `server/tests/_helpers/recall.ts` (`searchThoughtIds`, `recallAtK`, `parseIds`) and is consumable by ST-054.
+- The pure RRF fusion is extracted into `rrfFuse(lanes, k)` in `server/src/searchQuality.ts` and `search_thoughts` is rewired to call it, with **no behaviour change** (the full suite, including `e2e.test.ts`, stays green).
 - `server/tests/search-golden-set.test.ts` exists and, on current `main`, passes with default parameters. It contains:
-  - **RRF/MMR golden-set regression** — for each BM25-deterministic pair in `search-quality-queries.json`, the expected id appears in the top-N.
+  - **Deterministic RRF/MMR drift detection (AC-7)** — pure-function tests asserting `rrfFuse` ordering flips between `k=60` and `k=10`, and `mmrRerank` ordering changes with `λ`. No network.
+  - **Integration golden-set membership (complementary coverage)** — for each BM25-deterministic pair in `search-quality-queries.json`, the expected id appears in the top-N via the live `search_thoughts` path.
   - **Structural incident baselines** — a `plainto_tsquery` probe returns the full build-failure set (≥4 rows) for the no-identifier form and **0 rows** for the identifier form (the D2 dilution mechanism).
-  - **Tool-level recall@k** — `search_thoughts` recall@k for the no-identifier form meets the deterministic floor.
+  - **Tool-level recall@k** — `search_thoughts` recall@k for the no-identifier form meets the deterministic floor (≥0.25; rationale in the `BASELINE` comment).
   - **`search` D1 characterization** — the incident memory is *not* surfaced by `search` today.
   - A single named **`BASELINE`** constants block plus a **`normalizeForBm25`** identity hook encoding the TDD seam ST-054 flips.
-- Temporarily changing RRF `k` from 60 to 10 in `server/index.ts` makes at least one golden-set assertion fail; reverting restores green (verification step, not a standing assertion).
 - The full `mcp-test` suite (including `e2e.test.ts`) passes after the corpus is regenerated and re-seeded.
 
 ---
@@ -63,13 +65,13 @@ The harness does three jobs:
 - [x] Architecture decisions documented (determinism, TDD seam, corpus shape)
 - [x] Input/output specified (exact ids, queries, BASELINE values)
 - [x] Error handling noted (reseed flow, e2e regression risk)
-- [x] No open judgment calls beyond the documented empirical golden-pair selection in Task 4.4
-- [x] Templates provided (generator edit, helper, test file)
+- [x] No open judgment calls beyond the documented empirical golden-pair selection for the *complementary* integration membership block in Task 4.4 (AC-7 itself is deterministic)
+- [x] Templates provided (generator edit, helper, `rrfFuse` extraction, test file)
 - [x] Requirements mapped (§2d)
 - [x] Verification steps on every task
 - [x] Observable acceptance criteria
 
-Status: ✅ Ready for /continue — PO approved the rewrite and the three determinism design calls (id-form gate = structural BM25 probe; no-id tool recall floor 0.25 + structural ≥4-rows probe; k-flip as a Task 4.4 verification step) on 2026-06-04.
+Status: ✅ Ready for /continue — PO approved the rewrite and the determinism design calls (id-form gate = structural BM25 probe; no-id tool recall floor 0.25 + structural ≥4-rows probe) on 2026-06-04, then approved (2026-06-05, post cross-model review) making AC-7 a deterministic pure-function `rrfFuse` / `mmrRerank` drift test (replacing the flaky integration k-flip), extracting `rrfFuse` into production, and *adding* the pure-function tests alongside the retained integration membership checks.
 
 ---
 
@@ -77,7 +79,8 @@ Status: ✅ Ready for /continue — PO approved the rewrite and the three determ
 
 - Scope and resolution authority: QP-046 "Resolution Adopted (Option A)". ST-046 owns the harness + baselines pinned to today; ST-054 owns the target thresholds and flips the seam. Dependency unchanged (ST-054 `blocked_by` ST-046).
 - Why the identifier-form gate is a **structural BM25 probe**, not a tool-level recall assertion: the tool path mixes in the non-deterministic vector lane, which could surface a build-failure row by noise (~k/N chance). The raw `plainto_tsquery` probe is lane-isolated and deterministic, so it is the honest, flake-free gate for the D2 mechanism.
-- Why the k-flip is a **verification step**, not a standing inequality: catching a *caller-side* parameter edit in `index.ts` requires the integration path, whose precise ranking depends on the noisy vector lane. QP-046 Acceptance #2 frames this as "temporarily change → expect ≥1 failure," matching the original AC-7 intent.
+- Why AC-7 is a **deterministic pure-function test**, not an integration k-flip (revised 2026-06-05 after cross-model review): a uniquely-BM25-matched golden row receives an RRF term no vector-only row gets, and `1/(k+1)` only *grows* as `k` falls — so flipping `k` 60→10 would *not* drop a stable pair from the top-N, and forcing a break would require a boundary pair sensitive to the noisy vector lane (the exact flake the determinism strategy avoids). Extracting the pure `rrfFuse(lanes, k)` lets the regression prove k-sensitivity by direct construction (a two-lane mid-rank row overtakes a single-lane top row as `k` grows), with zero network. `mmrRerank` is tested the same way for `λ`.
+- Integration membership coverage is **retained and expanded** per PO (2026-06-05): the live-path golden-set membership checks confirm default-parameter correctness end-to-end. This keeps ~11 live OpenRouter calls in the suite; the PO accepted that coupling in exchange for broader coverage. AC-7 itself does *not* depend on those live calls.
 
 ---
 
@@ -85,12 +88,14 @@ Status: ✅ Ready for /continue — PO approved the rewrite and the three determ
 
 | Requirement (source) | Must appear in output artifact(s) | Implemented by task(s) | Verification evidence |
 |---|---|---|---|
-| RRF/MMR golden-set catches parameter drift (QP-046 Acceptance #1/#2; orig. AC-7) | `search-golden-set.test.ts` golden-set block; `search-quality-queries.json` | 4.3, 4.4 | Default params green; k 60→10 → ≥1 failure; revert → green |
+| RRF/MMR drift detection, deterministic (QP-046 Acceptance #1/#2; orig. AC-7) | `rrfFuse` / `mmrRerank` pure tests in `search-golden-set.test.ts` | 4.3, 4.4 | `rrfFuse` top flips k=60↔k=10; `mmrRerank` order changes with λ — no network |
+| Pure `rrfFuse(lanes,k)` extracted; `search_thoughts` rewired (no behaviour change) | `server/src/searchQuality.ts`; `server/index.ts` | 4.3 | `deno check` clean; full suite incl. `e2e.test.ts` green after rewire |
+| Integration golden-set membership (complementary coverage) | membership block in `search-golden-set.test.ts`; `search-quality-queries.json` | 4.4 | default params: each BM25-deterministic pair's id in top-N |
 | Seeded identifier-free incident corpus (QP-046 Scope #1) | `build-search-quality-corpus.ts`; regenerated `search-quality-corpus.sql` | 4.1 | `.sql` contains 4 build_failure INSERTs, ids `…1e`–`…21`, no identifiers; existing rows unchanged |
 | Reusable recall@k helper (QP-046 Scope #2) | `server/tests/_helpers/recall.ts` | 4.2 | Imported by the test; `recallAtK` unit-checked inline |
-| Incident relevance / query set, both forms (QP-046 Scope #3) | `BASELINE` block in `search-golden-set.test.ts` | 4.3 | `NO_ID_QUERY`, `ID_QUERY`, `INCIDENT_RELEVANT_IDS` present |
-| Baselines pinned to today, TDD seam (QP-046 Scope #4; KD-1/KD-3) | `BASELINE` + `normalizeForBm25` in test | 4.3 | no-id probe ≥4 & recall floor green; id probe = 0; `search` char green |
-| `search` D1 false-empty characterization (QP-046 Scope #4; KD-2) | `search` assertion in test | 4.3 | `search(NO_ID_QUERY)` surfaces no incident id |
+| Incident relevance / query set, both forms (QP-046 Scope #3) | `BASELINE` block in `search-golden-set.test.ts` | 4.4 | `NO_ID_QUERY`, `ID_QUERY`, `INCIDENT_RELEVANT_IDS` present |
+| Baselines pinned to today, TDD seam (QP-046 Scope #4; KD-1/KD-3) | `BASELINE` + `normalizeForBm25` in test | 4.4 | no-id probe ≥4 & recall floor green; id probe = 0; `search` char green |
+| `search` D1 false-empty characterization (QP-046 Scope #4; KD-2) | `search` assertion in test | 4.4 | `search(NO_ID_QUERY)` surfaces no incident id |
 | Regenerated corpus does not break e2e (QP-046 Acceptance #5; KD-5) | regenerated `.sql`; re-seeded `db-test` | 4.1, 4.5 | full `tests/` suite green |
 
 ---
@@ -98,8 +103,8 @@ Status: ✅ Ready for /continue — PO approved the rewrite and the three determ
 ## §3. Preconditions
 
 - Docker Compose **test** stack available (`docker compose --profile test up -d`); `db-test` seeded; `mcp-test` reachable on `:3001` internally.
-- `mcp-test` has `OPENROUTER_API_KEY` set (the one `search` characterization makes a live embedding call, as `e2e.test.ts` already does).
-- Working tree clean at start (QP-046 already committed as `a1d1c67`).
+- `mcp-test` has `OPENROUTER_API_KEY` set: the `search` D1 characterization and the complementary integration membership block make live embedding calls (~11 total), as `e2e.test.ts` already does. AC-7 itself is network-free.
+- Working tree clean at start (the ST-046 ExecPlan + board finalisation already committed as `78a92b3`).
 - Generator runs **in the container** so the bind-mounted `.sql` updates on the host: `docker compose --profile test exec mcp-test deno run --allow-write tests/fixtures/build-search-quality-corpus.ts`.
 
 ---
@@ -238,7 +243,72 @@ docker compose --profile test exec mcp-test deno check tests/_helpers/recall.ts
 
 ---
 
-### Task 4.3: Write the golden-set + incident-baseline test (with the TDD seam)
+### Task 4.3: Extract `rrfFuse` and rewire `search_thoughts`
+
+**Objective:** Extract the inline RRF fusion in `search_thoughts` into a pure, exported `rrfFuse(lanes, k)` in `server/src/searchQuality.ts`, and rewire `index.ts` to call it — a behaviour-preserving refactor that makes RRF k-sensitivity unit-testable without the network.
+
+**Working directory:** `c:\projects\ai-memory\`
+
+**Steps:**
+
+1. In `server/src/searchQuality.ts`, add the pure helper just above `mmrRerank`:
+   ```typescript
+   export interface RrfLaneRow { id: string; rank: number; }
+
+   /**
+    * Reciprocal Rank Fusion. Sums 1/(k + rank) for each id across all lanes.
+    * Pure and deterministic — no I/O. Used by search_thoughts and by the
+    * ST-046 regression harness to prove k-sensitivity without the network.
+    */
+   export function rrfFuse(lanes: RrfLaneRow[][], k = 60): Map<string, number> {
+     const scores = new Map<string, number>();
+     for (const lane of lanes) {
+       for (const r of lane) {
+         scores.set(r.id, (scores.get(r.id) ?? 0) + 1 / (k + r.rank));
+       }
+     }
+     return scores;
+   }
+   ```
+
+2. In `server/index.ts`, add `rrfFuse` to the existing import from `./src/searchQuality.ts` (which already imports `mmrRerank`, `logRecall`, `parseVector`, `MmrCandidate`), then replace the inline fusion loop:
+   ```typescript
+   // RRF fusion in application layer (unchanged)
+   const scores = new Map<string, number>();
+   for (const r of bm25)   scores.set(r.id as string, (scores.get(r.id as string) ?? 0) + 1 / (60 + Number(r.bm25_rank)));
+   for (const r of vector) scores.set(r.id as string, (scores.get(r.id as string) ?? 0) + 1 / (60 + Number(r.vector_rank)));
+   ```
+   with the call:
+   ```typescript
+   // RRF fusion via the pure rrfFuse helper (k=60). Extracted so the regression harness
+   // can prove k-sensitivity deterministically without the network. Behaviour-identical.
+   const scores = rrfFuse([
+     bm25.map((r) => ({ id: r.id as string, rank: Number(r.bm25_rank) })),
+     vector.map((r) => ({ id: r.id as string, rank: Number(r.vector_rank) })),
+   ], 60);
+   ```
+   Leave everything downstream (`scores.size` guard, top-N selection, boost, MMR) unchanged — `scores` is the same `Map<string, number>` it was before.
+
+3. Restart `mcp-test` so the running Deno process loads the edited modules (bind mount updates files but does not hot-reload):
+   ```powershell
+   docker compose --profile test restart mcp-test
+   ```
+
+**Expected output:** `rrfFuse` exported from `searchQuality.ts`; `index.ts` uses it; identical search results.
+
+**Requirement mapping:** §2d row 2 (extraction)
+
+**Verification:**
+```powershell
+# Type-check and confirm the rewire is behaviour-preserving (existing search/RRF/MMR tests still pass):
+docker compose --profile test exec mcp-test deno check index.ts src/searchQuality.ts
+docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/e2e.test.ts
+# Expect: no type errors; e2e search assertions still green
+```
+
+---
+
+### Task 4.4: Write the golden-set + incident-baseline test (with the TDD seam)
 
 **Objective:** Create `server/tests/search-golden-set.test.ts` containing the RRF/MMR golden-set regression, the structural incident baselines, the tool-level recall@k floor, the `search` D1 characterization, and the named `BASELINE` / `normalizeForBm25` seam.
 
@@ -250,7 +320,8 @@ docker compose --profile test exec mcp-test deno check tests/_helpers/recall.ts
    ```typescript
    import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
    import { extractText, mcpCall } from "./_helpers/mcpClient.ts";
-   import { parseIds, recallAtK, searchThoughtIds } from "./_helpers/recall.ts";
+   import { recallAtK, searchThoughtIds } from "./_helpers/recall.ts";
+   import { mmrRerank, rrfFuse } from "../src/searchQuality.ts";
    import { sql } from "../src/db.ts";
 
    // ──────────────────────────────────────────────────────────────────────────
@@ -277,8 +348,11 @@ docker compose --profile test exec mcp-test deno check tests/_helpers/recall.ts
      noIdFormBm25Rows: 4, // all build_failure memories match the lexical query
      idFormBm25Rows: 0,   // D2 gap: unmatched identifier tokens AND the query to zero rows.
                           //   ST-054 flips this to >= noIdFormBm25Rows.
-     // Tool-level recall@k floor (search_thoughts): MMR's top pick is always a build_failure
-     // row (it dominates RRF), so at least one incident memory surfaces deterministically.
+     // Tool-level recall@k floor (search_thoughts). The four build_failure rows share ONE
+     // synthetic embedding, so MMR's diversity penalty (λ=0.7) deterministically keeps only
+     // ONE of them in the top-k (the other three are near-duplicates and get suppressed).
+     // The BM25 lane guarantees the surviving pick IS a build_failure row, so recall@k >=
+     // 1/4 = 0.25 holds without network. A higher floor would flake on the suppressed dups.
      noIdFormRecallAtKMin: 0.25,
      // search (vector-only) D1 characterization: the synthetic corpus never clears the 0.5
      // cosine floor against a live query embedding, so the incident memory is not surfaced today.
@@ -292,9 +366,41 @@ docker compose --profile test exec mcp-test deno check tests/_helpers/recall.ts
      assertEquals(recallAtK(["x"], ["a"], 10), 0);
    });
 
-   // ── RRF/MMR golden-set regression (reads the committed query pairs) ───────
-   // Excludes the deliberately vector-only pair (zoom-recording → …004), which has no BM25
-   // overlap and is therefore non-deterministic under the live-embedding path.
+   // ── Deterministic RRF/MMR drift detection (pure functions, no network; AC-7) ──
+   // RRF k-sensitivity by construction: a single-lane rank-1 row vs a row present in BOTH
+   // lanes at rank 15. The two-lane row wins iff 15 < k + 2 — so it leads at k=60 (flat RRF
+   // curve rewards multi-lane presence) and loses to the rank-1 single-lane row at k=10
+   // (steep curve rewards top ranks). This crossover is the parameter drift AC-7 must catch.
+   Deno.test("RRF drift: rrfFuse top result flips between k=60 and k=10", () => {
+     const lanes = [
+       [{ id: "single", rank: 1 }, { id: "both", rank: 15 }], // BM25 lane
+       [{ id: "both", rank: 15 }],                            // vector lane
+     ];
+     const top = (k: number) =>
+       [...rrfFuse(lanes, k).entries()].sort((a, b) => b[1] - a[1])[0][0];
+     assertEquals(top(60), "both");   // flat curve → multi-lane presence wins
+     assertEquals(top(10), "single"); // steep curve → rank-1 single lane wins
+   });
+
+   // MMR λ-sensitivity by construction: two rows share ONE embedding (near-duplicates), a
+   // third is orthogonal. High λ barely penalises redundancy and keeps the higher-scored
+   // duplicate; low λ lets diversity dominate and swaps in the orthogonal row.
+   Deno.test("MMR drift: mmrRerank swaps a near-duplicate for a diverse row as λ falls", () => {
+     const dup = [1, 0, 0];
+     const cands = [
+       { id: "a", score: 1.0, embedding: dup },
+       { id: "b", score: 0.9, embedding: dup },       // near-duplicate of a
+       { id: "c", score: 0.5, embedding: [0, 1, 0] }, // diverse
+     ];
+     assertEquals(mmrRerank(cands, 2, 0.95).map((r) => r.id), ["a", "b"]);
+     assertEquals(mmrRerank(cands, 2, 0.4).map((r) => r.id), ["a", "c"]);
+   });
+
+   // ── Integration golden-set membership (complementary live coverage; NOT the AC-7 gate) ──
+   // Confirms the wired search_thoughts path returns each BM25-deterministic pair's expected
+   // id in the top-N with default parameters. Drift detection itself is the pure-function
+   // tests above. Excludes the deliberately vector-only pair (zoom-recording → …004), which
+   // has no BM25 overlap and is non-deterministic under the live-embedding path.
    const VECTOR_ONLY_QUERY = "zoom recording auto archive";
    const GOLDEN_TOP_N = 3;
 
@@ -396,47 +502,17 @@ docker compose --profile test exec mcp-test deno check tests/_helpers/recall.ts
    ```powershell
    docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/search-golden-set.test.ts
    ```
-   Expected: all tests pass. If a golden-set pair fails because its expected id is not in top-3 (live-embedding ranking), note it and proceed to Task 4.4 step 1 to retune `GOLDEN_TOP_N` / pair selection.
+   Expected: all tests pass. If an integration membership pair fails because its expected id is not in top-3 (live-embedding ranking), drop or retune that pair / `GOLDEN_TOP_N` — the membership block is complementary coverage, so trimming a flaky pair is acceptable; the AC-7 guarantee lives in the pure-function tests, which must always pass. Record any trimmed pair in §6c.
 
 **Expected output:** A green test file encoding the baselines and the TDD seam.
 
-**Requirement mapping:** §2d rows 1, 4, 5, 6
+**Requirement mapping:** §2d — AC-7 (pure RRF/MMR drift), incident relevance + baselines + TDD seam, `search` D1 characterization, integration membership coverage
 
 **Verification:** the command above passes; `grep` confirms the seam:
 ```powershell
 docker compose --profile test exec mcp-test deno eval "const s = await Deno.readTextFile('tests/search-golden-set.test.ts'); console.log('seam ok:', /normalizeForBm25/.test(s) && /const BASELINE =/.test(s));"
 # Expect: seam ok: true
 ```
-
----
-
-### Task 4.4: Prove regression detection (RRF k 60→10) and finalise golden-pair selection
-
-**Objective:** Demonstrate the golden-set notices an RRF parameter change, and confirm the standing golden-set is green with defaults. (QP-046 Acceptance #2.)
-
-**Working directory:** `c:\projects\ai-memory\`
-
-**Steps:**
-
-1. (If needed from Task 4.3) Choose `GOLDEN_TOP_N` and the included pairs so that **with defaults** every retained pair's expected id is in top-N, and so the corpus is rich enough that an RRF change can perturb membership. Prefer the BM25-deterministic pairs (`postgres autovacuum`→`…0b`, `bcf manager review`→`…07`, `typescript switch exhaustive`→`…0a`, etc.). Document the final `GOLDEN_TOP_N` in §6c.
-
-2. Temporarily change RRF `k` from 60 to 10 in `server/index.ts` (the `1 / (60 + rank)` fusion terms), then restart `mcp-test` so the runtime picks up the change (bind mount updates the file but the running Deno process does not hot-reload):
-   ```powershell
-   docker compose --profile test restart mcp-test
-   docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/search-golden-set.test.ts
-   ```
-   Expected: **at least one** golden-set assertion fails. If none fail, tighten `GOLDEN_TOP_N` (e.g. 3→2) or include a pair whose expected id sits at the top-N boundary, then repeat. Record the configuration that exhibits the break in §6c.
-
-3. Revert the `k` change, restart `mcp-test`, and re-run:
-   ```powershell
-   docker compose --profile test restart mcp-test
-   docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/search-golden-set.test.ts
-   ```
-   Expected: all green.
-
-**Requirement mapping:** §2d row 1
-
-**Verification:** the k=10 run shows ≥1 failure; the reverted run is fully green. Capture both outcomes in §6.
 
 ---
 
@@ -454,8 +530,9 @@ docker compose --profile test exec mcp-test deno eval "const s = await Deno.read
    ```
    Expected: all green, including `e2e.test.ts`. If a pre-existing *vector-luck* test (e.g. the `…004` vector-lane case) flakes because the 4 new axis-5 candidate rows shifted the live-embedding ranking, re-run once to confirm flakiness vs. a real break; record the finding in §6b and, if it is a genuine regression, treat it as a blocker (do not weaken the e2e assertion without PO sign-off).
 
-2. **Cross-model review** (record notes in §6c): pass the diff (generator, `recall.ts`, `search-golden-set.test.ts`) to a second model and confirm:
-   - The determinism claims hold: every standing baseline is BM25-structural or a guaranteed MMR floor; only the `search` D1 assertion touches the live embedding path.
+2. **Cross-model review** (record notes in §6c): pass the diff (generator, `recall.ts`, `searchQuality.ts` extraction, `index.ts` rewire, `search-golden-set.test.ts`) to a second model and confirm:
+   - The `rrfFuse` extraction is **behaviour-preserving** (search results unchanged; `e2e.test.ts` green) and AC-7 is proven by the deterministic pure-function tests, not the live path.
+   - The determinism claims hold: every standing baseline is BM25-structural, a pure-function assertion, or a guaranteed MMR floor; only the `search` D1 assertion and the complementary membership block touch the live embedding path.
    - The TDD seam is a true one-edit flip: ST-054 swaps `normalizeForBm25` and flips two `BASELINE` constants, no test-body rewrite.
    - The stemming invariant holds: stored incident content and `NO_ID_QUERY` share the `failure → failur` stem.
    - The corpus change is strictly additive and the null-embedding row remains `…1d`.
@@ -481,7 +558,7 @@ docker compose --profile test exec mcp-test deno eval "const s = await Deno.read
 
 | # | Description | Rollback Point | Status |
 |---|-------------|---------------|--------|
-| 1 | BM25-deterministic baselines + MMR-floor recall@k + one `search` characterization; corpus extended additively; TDD seam via `BASELINE`/`normalizeForBm25` | git HEAD (a1d1c67) | 🟢 Active |
+| 1 | Deterministic AC-7 via pure `rrfFuse` / `mmrRerank` drift tests + behaviour-preserving extraction/rewire; BM25-structural incident baselines + MMR-floor recall@k + one `search` characterization; corpus extended additively; TDD seam via `BASELINE` / `normalizeForBm25`; integration membership retained as complementary coverage | git HEAD (78a92b3) | 🟢 Active |
 
 ---
 
@@ -499,9 +576,11 @@ docker compose --profile test exec mcp-test deno eval "const s = await Deno.read
 
 ## §7. Compound Step / Closeout
 
-1. Run the full verification suite (Task 4.5).
-2. Apply the LE-owned board edits (QP-046 "Board edits to apply at finalization"): strike ST-046's two target-flavoured ACs and replace with baseline/mechanism wording; reword ST-054's gate bullet and add its target ACs; move ST-046 Backlog → Refined.
-3. Commit (Conventional Commits, `Story: ST-046` trailer) and present results.
+> The LE-owned board edits (strike ST-046's target ACs, reword ST-054's gate + add its target ACs, move ST-046 → Refined) were already applied during planning finalisation (commit 78a92b3) — do **not** repeat them.
+
+1. Run the full verification suite (Task 4.5): full `tests/` suite green; the AC-7 pure-function `rrfFuse` / `mmrRerank` tests green; structural incident baselines + recall floor + `search` D1 green.
+2. Move ST-046 Refined → Review/Done per the board WIP rules.
+3. Commit the implementation (Conventional Commits; `Story: ST-046` + per-task `Task: §N.N` trailers) and present results.
 
 ---
 
@@ -515,3 +594,4 @@ docker compose --profile test exec mcp-test deno eval "const s = await Deno.read
 
 - 2026-05-31: Initial ExecPlan from QP-038 §4.11 (narrow: 3 query pairs, content-substring).
 - 2026-06-04: Full rewrite to the widened ST-054-gate scope per QP-046 (Option A): identifier-free `build_failure` corpus, recall@k helper, structural BM25 baselines, `search` D1 characterization, and the `BASELINE`/`normalizeForBm25` TDD seam.
+- 2026-06-05: Post cross-model-review revision. Made AC-7 deterministic via pure `rrfFuse` / `mmrRerank` drift tests (the integration k-flip could not reliably break a uniquely-matched pair, and forcing it would smuggle in a vector-noise-sensitive pair); extracted `rrfFuse(lanes,k)` into `searchQuality.ts` and rewired `index.ts` (behaviour-preserving); retained + reframed the integration membership checks as complementary coverage (PO chose to expand, not remove, accepting ~11 live calls); made the MMR identical-embedding 0.25-floor rationale explicit; removed the stale board-edit step from §7 (already applied in 78a92b3).
