@@ -1,7 +1,7 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
-> Next planning target: ST-054 (retrieval robustness). ST-046 (eval-harness gate) ExecPlan is Ready (Refined) — /continue it, or /plan ST-054 against the now-Ready harness.
+> Next planning target: ST-055 (MMR null-embedding BM25 recall preservation) to unblock ST-046; then resume ST-046 and plan ST-054 against the completed harness.
 > Unblocked: ST-023, ST-028, ST-029, ST-019 (all ST-005/ST-008/ST-022 blockers cleared)
 > Last updated: 2026-06-04
 
@@ -32,6 +32,24 @@
 - ce-plan artifact: `docs/plans/2026-06-04-001-feat-retrieval-robustness-plan.md`
 - Docs: `server/index.ts`, `server/db/search.sql`, `server/src/searchQuality.ts`
 - Notes: Next planning target — **Backlog until its ExecPlan is authored and marked Ready** by /plan Phase 2 (Refined ⟺ Ready ExecPlan, per plan.prompt.md; a Refined story with no ExecPlan would be wrongly auto-picked by /continue). Tooling-side fix for the build-failure false-empty incident. **Why:** a hyper-specific query (`build 65008 PRI-5751 pipeline failure`) returned `{"results":[]}` from `search` — indistinguishable from "memory is empty" — and `search_thoughts` returned 10 low-signal results. Three independent defects proven in-session against source + local instance: `search`'s hard 0.5 floor fails closed (D1); `plainto_tsquery` ANDs every lexeme so unique identifiers zero the BM25 lane while also skewing the vector (D2); zero-result queries leave no trace so the failure rate is unmeasurable (D3). PO decisions (2026-06-04): fix `search` floor **in place** + characterization test (the floor is an internal knob, not the MCP shape contract; a flag is riskier given ChatGPT's fixed single-arg call); **non-destructive** normalization (raw + derived retrieval text + facets); connected-retrieval deferred to reshaped ST-034; eval harness built in ST-046 and consumed here. Sequencing: /plan ST-046 first (gate), then ST-054. Corpus was also genuinely empty of build-failure memories — retrieval fix cannot conjure uncaptured data, which is why the ST-046 gate seeds a known corpus.
+
+### ST-055: MMR null-embedding BM25 recall preservation
+- Type: bug
+- Source: ST-046 plan-review resolution (2026-06-05 Task 4.3 e2e failure after expanded corpus)
+- phase: 2
+- Value: 5
+- Blocked by: —
+- Touches: `server/src/searchQuality.ts` (`mmrRerank` null-embedding merge behavior), `server/index.ts` only if caller-side merge is chosen during ExecPlan authoring, `server/tests/e2e.test.ts`, focused unit tests under `server/tests/`
+- Acceptance criteria:
+  - [ ] A deterministic unit test proves a null-embedding candidate with a higher fused/BM25 score than at least one embedded candidate remains in the final top-k
+  - [ ] Embedded candidates still receive MMR diversity ranking; existing MMR behavior is not collapsed into plain score sorting
+  - [ ] `e2e: capture_thought → search_thoughts returns via BM25 lane` passes against the ST-046 expanded seeded corpus
+  - [ ] Full `mcp-test` server tests pass, or any unrelated pre-existing failure is documented with evidence
+  - [ ] Cross-model critical review passes before the story moves to Review
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-055.md` (to be created by /plan Phase 2)
+- Query packet: `.github/planning/query-packets/QP-055-mmr-null-embedding-bm25-recall.md`
+- Blocks: ST-046 (eval harness Task 4.3 should not resume until current-state e2e is green with the expanded corpus)
+- Notes: The ST-046 corpus expansion revealed a runtime recall bug: newly captured BM25-only rows can have `embedding = NULL` while embedding generation is fire-and-forget. Current MMR selection fills `k` from embedded candidates before appending null-embedding candidates, so a high-scoring BM25-only hit can be dropped once the corpus has enough embedded rows. PO decision: split this out of ST-046; preferred fix direction is score-preserving null-embedding merge, not raising e2e limits or waiting synchronously for embeddings.
 
 <!-- Phase 1 — Cloud MCP Intelligence (extends OB1 fork shipped by ST-021) -->
 
@@ -431,7 +449,7 @@
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31); scope widened 2026-06-04 to serve as the ST-054 eval-harness gate (PO decision during ST-054 intake)
 - phase: 2
 - Value: 4
-- Blocked by: plan-review
+- Blocked by: ST-055
 - ExecPlan status: ✅ Ready for /continue (rewritten + approved 2026-06-04, Option A)
 - Touches: `server/tests/search-golden-set.test.ts` (new), `server/tests/_helpers/recall.ts` (new), `server/tests/fixtures/build-search-quality-corpus.ts`, `server/tests/fixtures/search-quality-corpus.sql`, `server/src/searchQuality.ts` (extract pure `rrfFuse`), `server/index.ts` (rewire `search_thoughts` to `rrfFuse` — no behaviour change)
 - Acceptance criteria:

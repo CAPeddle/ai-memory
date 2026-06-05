@@ -82,6 +82,7 @@ Status: ✅ Ready for /continue — PO approved the rewrite and the determinism 
 - Why AC-7 is a **deterministic pure-function test**, not an integration k-flip (revised 2026-06-05 after cross-model review): a uniquely-BM25-matched golden row receives an RRF term no vector-only row gets, and `1/(k+1)` only *grows* as `k` falls — so flipping `k` 60→10 would *not* drop a stable pair from the top-N, and forcing a break would require a boundary pair sensitive to the noisy vector lane (the exact flake the determinism strategy avoids). Extracting the pure `rrfFuse(lanes, k)` lets the regression prove k-sensitivity by direct construction (a two-lane mid-rank row overtakes a single-lane top row as `k` grows), with zero network. `mmrRerank` is tested the same way for `λ`.
 - Integration membership coverage is **retained and expanded** per PO (2026-06-05): the live-path golden-set membership checks confirm default-parameter correctness end-to-end. This keeps ~11 live OpenRouter calls in the suite; the PO accepted that coupling in exchange for broader coverage. AC-7 itself does *not* depend on those live calls.
 - 2026-06-05 plan-review blocker: Task 4.3 verification failed after the behaviour-preserving `rrfFuse` extraction/rewire. `deno check index.ts src/searchQuality.ts` passed, but `docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/e2e.test.ts` failed the existing `capture_thought → search_thoughts returns via BM25 lane` assertion. The returned top-3 omitted the freshly captured BM25 thought id/keyword and instead returned seeded rows (`00000000-0000-4000-8000-000000000009`, `...006`, `...021`). Per `/continue`, execution stopped; the uncommitted Task 4.3 code edits were reverted; ST-046 is marked `blocked_by: plan-review` on the board. Recommend `/plan` or `/recover` to decide whether this is caused by the new seeded corpus, the rewire, test flake, or a missing verification step.
+- 2026-06-05 plan-review resolution: PO chose to split the revealed runtime issue into ST-055 rather than fix it inside ST-046. Root-cause hypothesis from source inspection: the newly captured BM25-only row can still have `embedding = NULL`; `mmrRerank` currently fills `k` from embedded candidates before appending null-embedding candidates, so the four new embedded build-failure rows can push the null-embedding BM25 hit out of the final result set. ST-055 owns the score-preserving null-embedding merge fix. ST-046 is now blocked by ST-055, not by open plan-review. After ST-055 is Done and the board blocker is cleared, resume ST-046 at Task 4.3 and run the new current-state e2e preflight before reattempting the `rrfFuse` extraction.
 
 ---
 
@@ -251,6 +252,13 @@ docker compose --profile test exec mcp-test deno check tests/_helpers/recall.ts
 **Working directory:** `c:\projects\ai-memory\`
 
 **Steps:**
+
+0. **Preflight after ST-055:** before editing code, prove the expanded corpus no longer breaks the current runtime path:
+  ```powershell
+  docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/e2e.test.ts
+  ```
+  Expected: all `e2e.test.ts` tests pass, including `capture_thought → search_thoughts returns via BM25 lane`.
+  If this fails, stop immediately, record the failure in §6b, and route back to plan-review; do **not** reattempt the `rrfFuse` extraction while the current state is already red.
 
 1. In `server/src/searchQuality.ts`, add the pure helper just above `mmrRerank`:
    ```typescript
@@ -551,7 +559,7 @@ docker compose --profile test exec mcp-test deno eval "const s = await Deno.read
 | Field | Value |
 |---|---|
 | **Next task** | Task 4.3 |
-| **Known blockers** | plan-review: Task 4.3 e2e verification failed on the BM25 capture/search assertion after the `rrfFuse` rewire attempt. |
+| **Known blockers** | ST-055: fix `mmrRerank` / search finalization so high-scoring BM25-only rows with `embedding = NULL` remain returnable before ST-046 reattempts Task 4.3. |
 
 ---
 
