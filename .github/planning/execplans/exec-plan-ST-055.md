@@ -51,7 +51,7 @@ Out of scope:
 
 ## §1b. Outcomes & Conclusions
 
-Status: implementation and verification through Task 4.3 complete; cross-model review remains before moving ST-055 to Review.
+Status: implementation, verification, and cross-model critical review complete; ST-055 is ready for PO acceptance from Review.
 
 Delivered behavior: `mmrRerank` now selects from embedded and null-embedding candidates in one loop. Null embeddings participate with similarity-to-selected `0`, keeping fresh BM25-only hits returnable while preserving diversity among embedded rows.
 
@@ -62,6 +62,7 @@ Verification so far:
 - `docker compose --profile test exec mcp-test deno test --allow-env --allow-read tests/search-quality.test.ts` passed after Task 4.2: 5 passed, 0 failed.
 - `docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/e2e.test.ts` passed after restarting `mcp-test`: 16 passed, 0 failed. The named tests `e2e: capture_thought → search_thoughts returns via BM25 lane` and `e2e: MMR keeps null-embedding row returnable` both passed.
 - `docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/` passed: 53 passed, 0 failed.
+- Cross-model critical review (GPT-5.2 via `ce-correctness-reviewer`) passed. Reviewer confirmed the unified-loop implementation, null-row equal-score bias, embedded diversity coverage, degenerate input coverage, e2e ST-046 blocker evidence, and absence of out-of-scope changes. Residual notes were low risk: existing `cosineSim` assumes equal-length vectors, and exact MMR ties preserve input order.
 
 Downstream note: ST-046 remains blocked until ST-055 is accepted as Done by the PO; do not move or unblock ST-046 during ST-055 closeout.
 
@@ -408,12 +409,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.3 — Prove the e2e blocker is gone and run the full suite |
-| **Last successful command** | `docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/` |
-| **Expected outputs produced** | Restarted `mcp-test`; `tests/e2e.test.ts` passed with 16/16 tests green including the two named ST-055 checks; full `tests/` suite passed with 53 passed, 0 failed. |
-| **Next task** | Task 4.4 — Cross-model review and closeout |
+| **Last completed task** | Task 4.4 — Cross-model review and closeout |
+| **Last successful command** | Cross-model review PASS from GPT-5.2 `ce-correctness-reviewer`; `git diff -- .github/planning/story-board.md .github/planning/execplans/exec-plan-ST-055.md` reviewed the final board/ExecPlan closeout diff. |
+| **Expected outputs produced** | Cross-model critical review passed; §1b and §6c updated; ST-055 moved to Review on the board; ST-046 intentionally remains blocked by ST-055 until PO accepts Done. |
+| **Next task** | Await PO acceptance; after acceptance, move ST-055 to Done and clear ST-046 blocker. |
 | **Known blockers** | None |
-| **Last updated** | 2026-06-05T14:25:47.9319942+02:00 |
+| **Last updated** | 2026-06-05T14:29:27.8997679+02:00 |
 
 ### Progress History
 
@@ -422,6 +423,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-06-05T14:21:10.4091848+02:00 | Task 4.1 | Completed — expected RED | Added `server/tests/search-quality.test.ts`; targeted test command exited non-zero with exactly two expected failures: `mmrRerank keeps a high-scoring null-embedding candidate in top-k` returned `embedded-redundant` instead of `fresh-bm25-null`, and `mmrRerank documents null-embedding equal-score bias` returned `redundant-equal` instead of `null-equal`; 3 tests passed. | Task 4.2 — replace `mmrRerank` with unified loop. |
 | 2026-06-05T14:21:58.9774984+02:00 | Task 4.2 | Completed | Replaced `mmrRerank` with one selection loop over all candidates and updated the required comment. `deno check src/searchQuality.ts tests/search-quality.test.ts` passed; `deno test --allow-env --allow-read tests/search-quality.test.ts` passed with 5/5 tests green. | Task 4.3 — restart `mcp-test`, run e2e, then full suite. |
 | 2026-06-05T14:25:47.9319942+02:00 | Task 4.3 | Completed | Restarted `mcp-test`; `deno test --allow-net --allow-env --allow-read tests/e2e.test.ts` passed with 16/16 tests green, including `capture_thought → search_thoughts returns via BM25 lane` and `MMR keeps null-embedding row returnable`; full `deno test --allow-net --allow-env --allow-read tests/` passed with 53 passed, 0 failed. | Task 4.4 — cross-model review and closeout. |
+| 2026-06-05T14:29:27.8997679+02:00 | Task 4.4 | Completed | Cross-model reviewer returned PASS. Reviewer confirmed the null-embedding unified-loop contract, equal-score bias pinning, embedded-diversity coverage, degenerate coverage, e2e blocker evidence, and no out-of-scope changes to RRF, SQL, capture timing, response formatting, or e2e limits. Low residual notes: equal-length vector assumption and input-order tie behavior. | Await PO acceptance from Review. |
 
 ### Avoidance
 
@@ -471,6 +473,9 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - Decision: Null candidates may beat equal-score embedded candidates when the embedded candidate is redundancy-penalized.
   Rationale: The PO accepted this as an intentional recency/lexical-recall bias for freshly captured thoughts.
   Date: 2026-06-05
+- Decision: Cross-model critical review passed before moving ST-055 to Review.
+  Rationale: GPT-5.2 `ce-correctness-reviewer` found no blocking issues and confirmed the implementation/tests satisfy the ExecPlan contract. Residual risks were low and preexisting: fixed-dimension vector assumptions in `cosineSim`, and input-order tie behavior for exact equal MMR scores.
+  Date: 2026-06-05
 
 ---
 
@@ -489,11 +494,11 @@ At story completion:
 
 ## §7b. Outcomes & Retrospective
 
-Achieved: *(populated on completion)*
+Achieved: ST-055 completed through implementation, verification, and cross-model review on 2026-06-05. The fix stayed inside `mmrRerank`: null-embedding candidates now remain in the same MMR selection pool as embedded candidates, with missing pairwise similarity treated as `0`.
 
-Remains: *(populated on completion)*
+Remains: PO acceptance from Review. After PO accepts ST-055 as Done, clear ST-055 from ST-046's blocker and restore ST-046 according to the board notes.
 
-Lesson: *(populated on completion)*
+Lesson: The RED pure tests were the clean proof point for this recall bug; e2e confirmed the production path after the ranking behavior was fixed without changing capture timing, e2e limits, SQL, or response formatting.
 
 ---
 

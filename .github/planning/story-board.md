@@ -466,6 +466,12 @@
 
 ## In Progress
 
+(Empty)
+
+---
+
+## Review
+
 ### ST-055: MMR null-embedding BM25 recall preservation
 - Type: bug
 - Source: ST-046 plan-review resolution (2026-06-05 Task 4.3 e2e failure after expanded corpus)
@@ -474,25 +480,19 @@
 - Blocked by: —
 - Touches: `server/src/searchQuality.ts` (`mmrRerank` null-embedding merge behavior), `server/index.ts` only if caller-side merge is chosen during ExecPlan authoring, `server/tests/e2e.test.ts`, focused unit tests under `server/tests/`
 - Acceptance criteria:
-  - [ ] A deterministic unit test proves a null-embedding candidate with a higher fused/BM25 score than at least one embedded candidate remains in the final top-k
-  - [ ] `mmrRerank` uses one selection loop over embedded and null-embedding candidates; null candidates participate with similarity-to-selected = `0`, making their MMR score `λ * score`
-  - [ ] The intentional equal-score bias is pinned: a null candidate may beat an embedded candidate when the embedded candidate is redundancy-penalized and their fused scores are equal
-  - [ ] The all-null degenerate case remains pure score order
-  - [ ] Embedded candidates still receive MMR diversity ranking; existing MMR behavior is not collapsed into plain score sorting
-  - [ ] `e2e: capture_thought → search_thoughts returns via BM25 lane` passes against the ST-046 expanded seeded corpus
-  - [ ] Existing e2e `MMR keeps null-embedding row returnable` still passes
-  - [ ] Full `mcp-test` server tests pass, or any unrelated pre-existing failure is documented with evidence
-  - [ ] Cross-model critical review passes before the story moves to Review
+  - [x] A deterministic unit test proves a null-embedding candidate with a higher fused/BM25 score than at least one embedded candidate remains in the final top-k
+  - [x] `mmrRerank` uses one selection loop over embedded and null-embedding candidates; null candidates participate with similarity-to-selected = `0`, making their MMR score `λ * score`
+  - [x] The intentional equal-score bias is pinned: a null candidate may beat an embedded candidate when the embedded candidate is redundancy-penalized and their fused scores are equal
+  - [x] The all-null degenerate case remains pure score order
+  - [x] Embedded candidates still receive MMR diversity ranking; existing MMR behavior is not collapsed into plain score sorting
+  - [x] `e2e: capture_thought → search_thoughts returns via BM25 lane` passes against the ST-046 expanded seeded corpus
+  - [x] Existing e2e `MMR keeps null-embedding row returnable` still passes
+  - [x] Full `mcp-test` server tests pass, or any unrelated pre-existing failure is documented with evidence
+  - [x] Cross-model critical review passes before the story moves to Review
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-055.md` (Ready)
 - Query packet: `.github/planning/query-packets/QP-055-mmr-null-embedding-bm25-recall.md`
 - Blocks: ST-046 (eval harness Task 4.3 should not resume until current-state e2e is green with the expanded corpus)
-- Notes: The ST-046 corpus expansion revealed a runtime recall bug: newly captured BM25-only rows can have `embedding = NULL` while embedding generation is fire-and-forget. Current MMR selection fills `k` from embedded candidates before appending null-embedding candidates, so a high-scoring BM25-only hit can be dropped once the corpus has enough embedded rows. PO decision: split this out of ST-046; fix via a unified MMR selection loop where null-embedding candidates participate with similarity-to-selected = `0` (intentional recency/lexical-recall bias), not by raising e2e limits or waiting synchronously for embeddings.
-
----
-
-## Review
-
-(Empty)
+- Notes: The ST-046 corpus expansion revealed a runtime recall bug: newly captured BM25-only rows can have `embedding = NULL` while embedding generation is fire-and-forget. Current MMR selection fills `k` from embedded candidates before appending null-embedding candidates, so a high-scoring BM25-only hit can be dropped once the corpus has enough embedded rows. PO decision: split this out of ST-046; fix via a unified MMR selection loop where null-embedding candidates participate with similarity-to-selected = `0` (intentional recency/lexical-recall bias), not by raising e2e limits or waiting synchronously for embeddings. Implementation, full verification, and cross-model critical review passed 2026-06-05; awaiting PO acceptance before moving Done and clearing ST-046's blocker.
 
 ## Done
 
