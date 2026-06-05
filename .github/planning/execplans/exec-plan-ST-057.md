@@ -64,7 +64,7 @@ Acceptance criteria phrased as observable behaviour:
 4. After calling `prompts/get` for an unsupported prompt name, the response is a JSON-RPC error other than `-32601` (for example `Invalid params` / prompt not found), proving the prompt method exists while unknown names are rejected.
 5. After calling `resources/list`, the response has a `result.resources` array containing `ai-memory://server-info` and does **not** have an `error.code = -32601`.
 6. After calling `resources/templates/list`, the response has a `result.resourceTemplates` array and does **not** have an `error.code = -32601`. It is acceptable for this array to be empty because ST-057 does not add dynamic resource templates.
-7. After calling `resources/read` for `ai-memory://server-info`, the response contains one JSON text resource with non-secret server metadata; it must not expose `MEMORY_API_KEY`, `OPENROUTER_API_KEY`, database credentials, or environment values.
+7. After calling `resources/read` for `ai-memory://server-info`, the response contains one JSON text resource whose parsed JSON object has exactly these top-level keys: `name`, `version`, `protocolSurfaces`, `promptNames`, `resourceUris`, and `toolNames`. It must not expose `MEMORY_API_KEY`, `OPENROUTER_API_KEY`, database credentials, environment values, hostnames, deployment identifiers, or provider configuration.
 8. After calling `resources/read` for an unsupported resource URI, the response is a JSON-RPC error other than `-32601`, proving the resource method exists while unknown URIs are rejected.
 9. After calling `ping`, the response succeeds without `-32601`.
 10. Existing `tools/list` and at least one existing `tools/call` smoke path still succeed, proving prompt/resource registration did not regress the existing tool surface.
@@ -114,7 +114,7 @@ PO approval means accepting this minimal prompt/resource approach. If the PO wan
 | `prompts/get` behavior decided/tested (QP-057 AC2) | `memory_search_guidance` prompt in `server/index.ts`; tests for valid and invalid prompt names | 4.1, 4.2 | Valid `prompts/get` returns messages; invalid name returns error code not `-32601` |
 | Resource compatibility researched/decided (QP-057 AC3) | `ai-memory://server-info` resource; no dynamic templates; tests for list/templates/read | 4.1, 4.2 | `resources/list`, `resources/templates/list`, and `resources/read` tests pass without `-32601` |
 | Protocol audit maps relevant methods (QP-057 AC4) | §1 and §2c in this ExecPlan; test file covers chosen method set | 4.1, 4.2, 4.4 | Tests cover `initialize`, `tools/list`, `tools/call`, `prompts/*`, `resources/*`, `ping` |
-| OpenCode-style startup probes do not produce `-32601` for accepted endpoints (QP-057 AC5) | Protocol compatibility tests use raw JSON-RPC calls rather than tool-only helper | 4.1 | Red tests fail before implementation and pass after Task 4.2 |
+| OpenCode-style startup probes do not produce `-32601` for accepted endpoints (QP-057 AC5) | Protocol compatibility tests use raw JSON-RPC calls and an SDK-client smoke path rather than the tool-only helper alone | 4.1, 4.4 | Red tests fail before implementation and pass after Task 4.2; SDK client can list prompts/resources and ping after Task 4.4 |
 | Existing tools behavior unchanged (QP-057 AC5) | Tests include existing `tools/list` and `tools/call` smoke path | 4.1, 4.2 | `tools/list` includes `thought_stats`; `tools/call thought_stats` returns `Total active thoughts:` |
 | README troubleshooting distinguishes ai-memory vs OpenCode-side errors (QP-057 open question accepted in plan) | `README.md` client troubleshooting subsection | 4.3 | `Select-String` verifies `-32601`, `ProviderModelNotFoundError`, and `@opencode-ai/plugin@local` appear in README |
 | Cross-model review gate (plan prompt) | §4.5 review step and §6c review outcome | 4.5 | Cross-model reviewer verdict recorded in §6c before board moves to Review |
@@ -138,7 +138,11 @@ No orphan requirements: every QP-057 scoped requirement maps to tasks and verifi
 The existing `server/tests/_helpers/mcpClient.ts` only supports `tools/call`. Add a raw helper in Task 4.1 with this shape:
 
 ```ts
+export const MCP_BASE = Deno.env.get("MCP_BASE_URL") ?? "http://localhost:3000";
+export const API_KEY = Deno.env.get("MEMORY_API_KEY") ?? "test-key";
+
 export async function mcpRequest(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
+  const id = crypto.randomUUID();
   const res = await fetch(`${MCP_BASE}/mcp`, {
     method: "POST",
     headers: {
@@ -148,7 +152,7 @@ export async function mcpRequest(method: string, params: Record<string, unknown>
     },
     body: JSON.stringify({
       jsonrpc: "2.0",
-      id: crypto.randomUUID(),
+      id,
       method,
       params,
     }),
@@ -157,9 +161,12 @@ export async function mcpRequest(method: string, params: Record<string, unknown>
   const contentType = res.headers.get("content-type") ?? "";
   if (contentType.includes("text/event-stream")) {
     const text = await res.text();
-    const dataLine = text.split("\n").find((l) => l.startsWith("data:"));
-    if (!dataLine) throw new Error(`No data line in SSE response: ${text.slice(0, 200)}`);
-    return JSON.parse(dataLine.slice(5).trim());
+    const messages = text
+      .split("\n")
+      .filter((l) => l.startsWith("data:"))
+      .map((l) => JSON.parse(l.slice(5).trim()));
+    if (!messages.length) throw new Error(`No data line in SSE response: ${text.slice(0, 200)}`);
+    return messages.find((m) => m.id === id) ?? messages[0];
   }
   return await res.json();
 }
@@ -244,7 +251,7 @@ server.registerResource(
 **Working directory:** `c:\projects\ai-memory\`
 
 **Steps:**
-1. Edit `server/tests/_helpers/mcpClient.ts` and add the `mcpRequest(method, params = {})` helper from §3 after `mcpCall`.
+1. Edit `server/tests/_helpers/mcpClient.ts`; export the existing `MCP_BASE` and `API_KEY` constants, then add the `mcpRequest(method, params = {})` helper from §3 after `mcpCall`.
 2. Keep `mcpCall`, `extractText`, and `sleep` unchanged.
 3. Create `server/tests/mcp-protocol-compat.test.ts`.
 4. In the new test file, import `assert`, `assertArrayIncludes`, `assertEquals`, `assertExists`, `assertStringIncludes`, and `assertNotEquals` from Deno std asserts following the style already used in the repo.
@@ -269,8 +276,9 @@ server.registerResource(
    - Call `mcpRequest("resources/list")` and assert `errorCode(response) !== -32601`.
    - Assert `result.resources` includes `uri: "ai-memory://server-info"`.
    - Call `mcpRequest("resources/templates/list")` and assert `errorCode(response) !== -32601` and `result.resourceTemplates` is an array.
-   - Call `mcpRequest("resources/read", { uri: "ai-memory://server-info" })` and assert first content has `mimeType: "application/json"`; parse `text` as JSON and assert it contains `name: "ai-memory"` and `promptNames` containing `memory_search_guidance`.
-   - Assert the raw text does not include `MEMORY_API_KEY`, `OPENROUTER_API_KEY`, `DB_PASSWORD`, or `DATABASE_URL`.
+    - Call `mcpRequest("resources/read", { uri: "ai-memory://server-info" })` and assert first content has `mimeType: "application/json"`; parse `text` as JSON and assert it contains `name: "ai-memory"` and `promptNames` containing `memory_search_guidance`.
+    - Assert `Object.keys(parsedJson).sort()` exactly equals `["name", "promptNames", "protocolSurfaces", "resourceUris", "toolNames", "version"]` so the resource has a positive metadata allowlist.
+    - Assert the raw text does not include `MEMORY_API_KEY`, `OPENROUTER_API_KEY`, `DB_PASSWORD`, `DATABASE_URL`, hostnames such as `localhost` or `.local`, deployment identifiers, or provider names such as `OPENROUTER`.
    - Call `mcpRequest("resources/read", { uri: "ai-memory://missing" })` and assert it has an error but `error.code !== -32601`.
 10. Add test `ping and existing tools remain compatible`:
     - Call `mcpRequest("ping")` and assert no error.
@@ -394,6 +402,34 @@ Expected result: all four patterns are found.
      Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:3000/mcp' -Headers $headers -ContentType 'application/json' -Body $body -TimeoutSec 10
    }
    ```
+5. Add and run an SDK-client smoke test inside `tests/mcp-protocol-compat.test.ts` or a separate focused file. Use the pinned SDK client APIs so at least one verification path exercises real MCP client behavior instead of only raw JSON-RPC parsing:
+
+   ```ts
+   import { Client } from "npm:@modelcontextprotocol/sdk@1.24.3/client/index.js";
+   import { StreamableHTTPClientTransport } from "npm:@modelcontextprotocol/sdk@1.24.3/client/streamableHttp.js";
+    import { API_KEY, MCP_BASE } from "./_helpers/mcpClient.ts";
+
+   Deno.test("SDK client can list prompts/resources and ping", async () => {
+     const client = new Client({ name: "st-057-sdk-client-test", version: "0.1.0" });
+     const transport = new StreamableHTTPClientTransport(new URL(`${MCP_BASE}/mcp`), {
+       requestInit: {
+         headers: { Authorization: `Bearer ${API_KEY}` },
+       },
+     });
+     try {
+       await client.connect(transport);
+       await client.ping();
+       const prompts = await client.listPrompts();
+       assert(prompts.prompts.some((p) => p.name === "memory_search_guidance"));
+       const resources = await client.listResources();
+       assert(resources.resources.some((r) => r.uri === "ai-memory://server-info"));
+     } finally {
+       await client.close();
+     }
+   });
+   ```
+
+   If the SDK client smoke needs a different import path or close method at execution time, fix it using the pinned SDK types and record the adjustment in §6b before continuing.
 
 **Expected output:** Full server tests pass or unrelated failures are documented; focused protocol smoke confirms `prompts/list` no longer returns method-not-found when dev service is available.
 
@@ -523,6 +559,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
   Date: 2026-06-05
 - Decision: Do not expose thought rows as MCP resources in ST-057.
   Rationale: Thought resources would be a product/API surface change beyond compatibility hardening.
+  Date: 2026-06-05
+- Decision: Strengthen compatibility verification with both bounded raw SSE parsing and an SDK-client smoke test.
+  Rationale: Raw JSON-RPC probes reproduce the observed OpenCode symptom, while the SDK client path catches client-visible Streamable HTTP/session/content-negotiation issues that a first-frame parser could miss.
+  Date: 2026-06-05
+- Decision: Treat `ai-memory://server-info` as a positively allowlisted static schema.
+  Rationale: Negative secret-name checks are not enough to prevent future metadata expansion; tests must keep the resource limited to the explicit public keys approved in this plan.
   Date: 2026-06-05
 
 ---
