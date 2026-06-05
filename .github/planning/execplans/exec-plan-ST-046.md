@@ -549,8 +549,16 @@ docker compose --profile test exec mcp-test deno eval "const s = await Deno.read
 
 | Field | Value |
 |---|---|
-| **Next task** | Task 4.1 |
+| **Next task** | Task 4.2 |
 | **Known blockers** | None |
+
+---
+
+### Progress History
+
+| Timestamp | Task | Status | Evidence | Next step |
+|---|---|---|---|---|
+| 2026-06-05T11:00:46.6981917+02:00 | Task 4.1 | Complete | Generator wrote `33 thoughts and 10 query pairs`; test profile re-seeded successfully; INSERT-only check reported `build insert rows: 4 has identifier: false`; fixture diff scope limited to `build-search-quality-corpus.ts` and `search-quality-corpus.sql` with `search-quality-queries.json` unchanged. | Commit Task 4.1, then start Task 4.2. |
 
 ---
 
@@ -567,6 +575,9 @@ docker compose --profile test exec mcp-test deno eval "const s = await Deno.read
 ---
 
 ## §6b. Surprises & Discoveries
+
+- 2026-06-05: Worktree had an unrelated untracked `opencode.json` before edits. PO approved ignoring it; do not stage it with ST-046 commits.
+- 2026-06-05: The plan's broad id-count verification regex matched both the SQL DELETE list and INSERT blocks, reporting `build rows: 8`. The INSERT-only check verified the intended four new corpus rows and no incident identifiers.
 
 ---
 
