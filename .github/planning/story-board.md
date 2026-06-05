@@ -1,7 +1,7 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
-> Next planning target: ST-046 (eval harness — gate for ST-054), then ST-054 (retrieval robustness). Both in Backlog until their ExecPlans are Ready.
+> Next planning target: ST-054 (retrieval robustness). ST-046 (eval-harness gate) ExecPlan is Ready (Refined) — /continue it, or /plan ST-054 against the now-Ready harness.
 > Unblocked: ST-023, ST-028, ST-029, ST-019 (all ST-005/ST-008/ST-022 blockers cleared)
 > Last updated: 2026-06-04
 
@@ -23,7 +23,9 @@
   - [ ] **D2** — high-entropy identifiers (Jira-style tickets, build numbers) are normalized out of the embedding + BM25 retrieval text via a non-destructive helper; raw `content` is preserved verbatim; identifiers are retained as exact-match `metadata` facets. Token-class boundary reconciled with ST-049 (error codes/UUIDs/versions stay BM25-precise)
   - [ ] **D3** — zero-result queries are logged for both `search` and `search_thoughts` (currently invisible: [server/index.ts:166](../../server/index.ts#L166), [server/src/searchQuality.ts:62](../../server/src/searchQuality.ts#L62))
   - [ ] **D3b** — `search_thoughts` results carry a machine-parseable per-result quality signal so consumers can distinguish authoritative hits from thin-corpus best-guesses
-  - [ ] **Gate** — passes the ST-046 eval harness: recall@k on incident-style queries (with/without identifiers) meets threshold; no-false-empty regression green
+  - [ ] **Gate** — adds and greens the **target** assertions on ST-046's harness: flips the `normalizeForBm25` hook + `BASELINE` constants so the identifier-form and `search` D1 baselines move from today's degraded values to the improved thresholds (red→green)
+  - [ ] **Target — identifier-form recall@k:** after D2 normalization, recall@k on the identifier form (`build 65008 PRI-5751 pipeline failure`) meets the defined threshold (the ST-046 identifier-form BM25 baseline of 0 rows is flipped to match the no-identifier form)
+  - [ ] **Target — no false empty:** with a relevant memory present, `search` never returns `[]` (the ST-046 `search` D1 characterization is flipped from "not surfaced" to "surfaced")
   - [ ] Cross-model critical review passes (different model reviews implementation against the ExecPlan contract before the story moves to Review)
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-054.md` (to be created by /plan)
 - Query packet: `.github/planning/query-packets/QP-054-retrieval-robustness.md`
@@ -329,22 +331,6 @@
 - Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
 - Notes: 🟡 Should fix. Depends on ST-042 for migration infrastructure. Prevents duplicate processing after crash.
 
-### ST-046: Golden-set regression tests (search-quality eval harness)
-- Type: quality
-- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31); scope widened 2026-06-04 to serve as the ST-054 eval-harness gate (PO decision during ST-054 intake)
-- phase: 2
-- Value: 4
-- Blocked by: —
-- Touches: `server/tests/search-golden-set.test.ts` (new), `server/tests/fixtures/search-quality-corpus.sql`
-- Acceptance criteria:
-  - [ ] Search quality golden-set test catches regressions (AC-7)
-  - [ ] **Eval harness (added 2026-06-04):** the seeded corpus includes known build-failure-class memories, and the golden set includes **incident-style queries with and without identifiers** (e.g. `build 65008 PRI-5751 pipeline failure` vs `build pipeline failure`); asserts **recall@k** meets a defined threshold on both forms
-  - [ ] **No-false-empty regression (added 2026-06-04):** with a seeded related memory present, `search` never returns an empty result set — pins the ST-054 D1 fix so it cannot regress
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-046.md`
-- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
-- Blocks: ST-054 (retrieval robustness) — ST-054 consumes this harness as its proof gate
-- Notes: 🟡 Should fix → elevated to Value 4 (2026-06-04). Uses existing seeded test corpus. Verifies that tuning RRF/MMR parameters doesn't silently degrade recall quality. **Why widened:** during ST-054 intake the PO chose to build the retrieval-robustness eval harness here rather than duplicate it inside ST-054 — so ST-046 now owns the incident-query relevance set + no-false-empty regression, and ST-054 is blocked_by ST-046. Without a *seeded* corpus, "0 results" stays ambiguous between broken ranking and an empty store — the exact ambiguity that made the original incident hard to diagnose.
-
 ### ST-047: Tool descriptions
 - Type: dx
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
@@ -440,7 +426,22 @@
 
 ## Refined
 
-(Empty)
+### ST-046: Golden-set regression tests (search-quality eval harness)
+- Type: quality
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31); scope widened 2026-06-04 to serve as the ST-054 eval-harness gate (PO decision during ST-054 intake)
+- phase: 2
+- Value: 4
+- Blocked by: —
+- ExecPlan status: ✅ Ready for /continue (rewritten + approved 2026-06-04, Option A)
+- Touches: `server/tests/search-golden-set.test.ts` (new), `server/tests/_helpers/recall.ts` (new), `server/tests/fixtures/build-search-quality-corpus.ts`, `server/tests/fixtures/search-quality-corpus.sql`
+- Acceptance criteria:
+  - [ ] Search quality golden-set test catches regressions (AC-7): the RRF/MMR golden set is green with default parameters, and temporarily changing RRF `k` (60→10) breaks ≥1 assertion
+  - [ ] **Incident relevance + recall@k machinery (revised 2026-06-04, Option A):** the seeded corpus includes identifier-free build-failure-class memories, and the harness defines the incident relevance set + queries in **both forms** (`build 65008 PRI-5751 pipeline failure` vs `build pipeline failure`) with a reusable recall@k helper — consumable by ST-054
+  - [ ] **Baselines pinned to today's behaviour (revised 2026-06-04, Option A):** no-identifier form matches the full build-failure set via the deterministic BM25 lane; identifier form deterministically records the degraded value (BM25 ANDs unmatched id tokens to **0 rows**); a `search` D1 false-empty **characterization** pins that the incident memory is not surfaced by `search` today. A named `BASELINE`/`normalizeForBm25` TDD seam lets ST-054 flip these to targets. *(Target thresholds themselves are ST-054 ACs, not ST-046.)*
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-046.md`
+- Query packet: `.github/planning/query-packets/QP-046-search-quality-eval-harness.md`
+- Blocks: ST-054 (retrieval robustness) — ST-054 consumes this harness as its proof gate
+- Notes: 🟡 Should fix → elevated to Value 4 (2026-06-04). Uses existing seeded test corpus. Verifies that tuning RRF/MMR parameters doesn't silently degrade recall quality. **Why widened:** during ST-054 intake the PO chose to build the retrieval-robustness eval harness here rather than duplicate it inside ST-054 — so ST-046 now owns the incident-query relevance set + no-false-empty regression, and ST-054 is blocked_by ST-046. Without a *seeded* corpus, "0 results" stays ambiguous between broken ranking and an empty store — the exact ambiguity that made the original incident hard to diagnose.
 
 ---
 
