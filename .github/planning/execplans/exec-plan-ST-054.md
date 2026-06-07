@@ -308,12 +308,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.1 - Establish red checkpoint and contract baselines |
-| **Last successful command** | `docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/search-golden-set.test.ts` |
-| **Expected outputs produced** | `server/tests/search-tool-contract.test.ts` added; red checkpoint captured and golden-set baseline restored |
-| **Next task** | Task 4.2 - Implement identifier normalization module and unit tests |
+| **Last completed task** | Task 4.2 - Implement identifier normalization module and unit tests |
+| **Last successful command** | `docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/identifier-normalization.test.ts` |
+| **Expected outputs produced** | `server/src/identifierNormalization.ts` added with versioned pure normalization; `server/tests/identifier-normalization.test.ts` covers strip/preserve boundaries |
+| **Next task** | Task 4.3 - Wire runtime + schema changes (D1, D2, D3, D3b) |
 | **Known blockers** | None |
-| **Last updated** | 2026-06-07T22:52:52+02:00 |
+| **Last updated** | 2026-06-07T22:54:29+02:00 |
 
 ### Progress History
 
@@ -321,6 +321,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 |---|---|---|---|---|
 | 2026-06-05T00:00:00Z | Planning | Complete | ExecPlan created and marked Ready | Task 4.1 |
 | 2026-06-07T22:52:52+02:00 | Task 4.1 | Complete | Added `tests/search-tool-contract.test.ts`; red checkpoint failed only on D1 with `Expected search surfacing incident == true; got false`; restored golden-set baseline and re-ran Task 4.1 verification green | Task 4.2 |
+| 2026-06-07T22:54:29+02:00 | Task 4.2 | Complete | Added `src/identifierNormalization.ts` and `tests/identifier-normalization.test.ts`; unit suite passed 6/6 covering ticket/build stripping, UUID/semver/error-code preservation, empty/identifier-only input, and idempotence | Task 4.3 |
 
 ### Avoidance
 
@@ -354,6 +355,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - 2026-06-07T22:52:52+02:00 - Task 4.1: added `server/tests/search-tool-contract.test.ts` to pin the `search` JSON-text payload shape and current below-floor empty-result baseline for the incident query.
 - 2026-06-07T22:52:52+02:00 - Task 4.1 red checkpoint: temporarily flipped `server/tests/search-golden-set.test.ts` seam to ST-054 target values, ran the golden-set harness, and captured the required failure: `AssertionError: Values are not equal: Expected search surfacing incident == true; got false` at `tests/search-golden-set.test.ts:176:5`.
 - 2026-06-07T22:52:52+02:00 - Task 4.1 restore/verify: restored the pre-flip golden-set baseline, re-ran `tests/search-tool-contract.test.ts` and `tests/search-golden-set.test.ts`, and confirmed the temporary edit was gone before closeout.
+- 2026-06-07T22:54:29+02:00 - Task 4.2: added `server/src/identifierNormalization.ts` with versioned, pure strip/preserve logic and `server/tests/identifier-normalization.test.ts`; verified the boundary suite green in `mcp-test`.
 
 ---
 
@@ -379,6 +381,10 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 - Decision: Define generated-column migration mechanics in the plan.
   Rationale: PostgreSQL generated-column expressions cannot be altered in place; the implementation must drop/recreate `search_vector` and its index deliberately.
+  Date: 2026-06-07
+
+- Decision: Treat "error-code-like" preservation conservatively as exact uppercase-letter-plus-digits tokens such as `E0123`.
+  Rationale: This satisfies the plan's explicit example without colliding with Jira-ticket stripping in Task 4.2.
   Date: 2026-06-07
 
 ---
