@@ -9,47 +9,25 @@
 
 ## Backlog
 
-<!-- Retrieval quality (from 2026-06-04 build-failure false-empty incident analysis) -->
-
 ### ST-054: Retrieval robustness (false-empty, identifier dilution, zero-result observability)
 - Type: hardening
 - Source: Session analysis 2026-06-04 (build-failure false-empty incident) + adversarial design review + local-instance validation
 - phase: 2
 - Value: 5
 - Blocked by: —
-- Touches: `server/index.ts` (`search` floor, `search_thoughts` response signal, capture/query normalization), `server/src/identifierNormalization.ts` (new), `server/src/searchQuality.ts` (zero-result logging), possibly `server/db/` (`search_text` column + metadata facets — schema-vs-inline decided in /plan), `server/tests/`
+- Touches: `server/index.ts` (`search` floor fallback, structured `search_thoughts` output, capture/query normalization), `server/src/identifierNormalization.ts` (new), `server/src/searchQuality.ts` (query-level recall logging), `server/db/schema.sql`, `server/db/003_search_text_and_recall_queries.sql` (new), `server/tests/`
 - Acceptance criteria:
-  - [ ] **D1** — `search` no longer returns an empty set when relevant memories exist below the legacy 0.5 floor; a characterization test pins the `{results:[{id,title,url}]}` response shape ([server/index.ts:43-65](../../server/index.ts#L43-L65))
-  - [ ] **D2** — high-entropy identifiers (Jira-style tickets, build numbers) are normalized out of the embedding + BM25 retrieval text via a non-destructive helper; raw `content` is preserved verbatim; identifiers are retained as exact-match `metadata` facets. Token-class boundary reconciled with ST-049 (error codes/UUIDs/versions stay BM25-precise)
-  - [ ] **D3** — zero-result queries are logged for both `search` and `search_thoughts` (currently invisible: [server/index.ts:166](../../server/index.ts#L166), [server/src/searchQuality.ts:62](../../server/src/searchQuality.ts#L62))
-  - [ ] **D3b** — `search_thoughts` results carry a machine-parseable per-result quality signal so consumers can distinguish authoritative hits from thin-corpus best-guesses
-  - [ ] **Gate** — adds and greens the **target** assertions on ST-046's harness: flips the `normalizeForBm25` hook + `BASELINE` constants so the identifier-form and `search` D1 baselines move from today's degraded values to the improved thresholds (red→green)
-  - [ ] **Target — identifier-form recall@k:** after D2 normalization, recall@k on the identifier form (`build 65008 PRI-5751 pipeline failure`) meets the defined threshold (the ST-046 identifier-form BM25 baseline of 0 rows is flipped to match the no-identifier form)
-  - [ ] **Target — no false empty:** with a relevant memory present, `search` never returns `[]` (the ST-046 `search` D1 characterization is flipped from "not surfaced" to "surfaced")
+  - [ ] **D1** — `search` no longer returns an empty set when relevant memories exist below the legacy 0.5 floor; response shape `{results:[{id,title,url}]}` remains pinned
+  - [ ] **D2** — non-destructive identifier normalization persists retrieval text (`search_text`) and `normalizer_version` while preserving raw `content`; identifier facets are retained in `metadata`
+  - [ ] **D3** — both `search` and `search_thoughts` write query-level observability rows including zero-result queries
+  - [ ] **D3b** — `search_thoughts` returns machine-parseable structured JSON with per-result `score` and `quality_band`
+  - [ ] **Gate** — ST-046 harness ST-054 flip-points are green (`normalizeForBm25`, identifier-form BM25 baseline, and `search` D1 baseline)
   - [ ] Cross-model critical review passes (different model reviews implementation against the ExecPlan contract before the story moves to Review)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-054.md` (to be created by /plan)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-054.md` (✅ Ready for /continue)
 - Query packet: `.github/planning/query-packets/QP-054-retrieval-robustness.md`
 - ce-plan artifact: `docs/plans/2026-06-04-001-feat-retrieval-robustness-plan.md`
 - Docs: `server/index.ts`, `server/db/search.sql`, `server/src/searchQuality.ts`
-- Notes: Next planning target — **Backlog until its ExecPlan is authored and marked Ready** by /plan Phase 2 (Refined ⟺ Ready ExecPlan, per plan.prompt.md; a Refined story with no ExecPlan would be wrongly auto-picked by /continue). Tooling-side fix for the build-failure false-empty incident. **Why:** a hyper-specific query (`build 65008 PRI-5751 pipeline failure`) returned `{"results":[]}` from `search` — indistinguishable from "memory is empty" — and `search_thoughts` returned 10 low-signal results. Three independent defects proven in-session against source + local instance: `search`'s hard 0.5 floor fails closed (D1); `plainto_tsquery` ANDs every lexeme so unique identifiers zero the BM25 lane while also skewing the vector (D2); zero-result queries leave no trace so the failure rate is unmeasurable (D3). PO decisions (2026-06-04): fix `search` floor **in place** + characterization test (the floor is an internal knob, not the MCP shape contract; a flag is riskier given ChatGPT's fixed single-arg call); **non-destructive** normalization (raw + derived retrieval text + facets); connected-retrieval deferred to reshaped ST-034; completed ST-046 eval harness is now available as the proof gate. Corpus was also genuinely empty of build-failure memories — retrieval fix cannot conjure uncaptured data, which is why the ST-046 gate seeds a known corpus.
-
-<!-- Phase 1 — Cloud MCP Intelligence (extends OB1 fork shipped by ST-021) -->
-
-(ST-008 moved to Refined 2026-05-20)
-
-
-<!-- Phase 2 — Production Deployment & Hardening -->
-
-### ST-023: Cloud deployment (managed Postgres + container hosting)
-- Type: infrastructure
-- Source: ST-021 spike outcome
-- phase: 2
-- Value: 5
-- Blocked by: —
-- Touches: deployment config (`fly.toml` / `railway.json` / `.do/app.yaml`), `.github/workflows/`
-- Acceptance criteria:
-  - [ ] Container hosting target chosen and documented (Fly.io / Railway / DigitalOcean Apps)
-  - [ ] Managed Postgres provisioned with `pgvector` + `age` extensions enabled (or self-hosted on same provider VPC if no managed option supports AGE)
+- Notes: Planned and ready 2026-06-05. Scope lock: floor-with-fallback for `search`; persisted `search_text` + `normalizer_version`; token boundary strips Jira/build identifiers but preserves UUID/error-code/version tokens; zero-result observability via `recall_queries`; `search_thoughts` response moves to structured JSON score+band. Full historical re-normalization/backfill is deferred (old rows continue via `coalesce(search_text,content)`).
   - [ ] Secrets (`MEMORY_API_KEY`, `DB_PASSWORD`, `OPENROUTER_API_KEY`) stored in provider secret vault; never in `.env` files or repo
   - [ ] Custom domain + TLS termination
   - [ ] `/health` reachable from internet; `/mcp` requires Bearer auth
@@ -464,6 +442,26 @@
 - Docs: MCP 2025-06-18 server specs for prompts/resources/tools; README client setup section
 - Notes: Direct diagnostic probes showed `initialize` advertises only `capabilities.tools`, `tools/list` works, while `prompts/list` and `resources/list` return `-32601`. OpenCode logged `MCP error -32601: Method not found failed to get prompts`, so the immediate interop gap is prompts capability compatibility. PO requested the story also research other expected MCP server endpoints instead of patching only `prompts/list`. ProviderModelNotFoundError and `@opencode-ai/plugin@local` install failures are OpenCode-side issues, not ai-memory MCP failures, but this story should remove ai-memory's avoidable protocol-probe noise.
 
+### ST-054: Retrieval robustness (false-empty, identifier dilution, zero-result observability)
+- Type: hardening
+- Source: Session analysis 2026-06-04 (build-failure false-empty incident) + adversarial design review + local-instance validation
+- phase: 2
+- Value: 5
+- Blocked by: —
+- Touches: `server/index.ts` (`search` floor fallback, structured `search_thoughts` output, capture/query normalization), `server/src/identifierNormalization.ts` (new), `server/src/searchQuality.ts` (query-level recall logging), `server/db/schema.sql`, `server/db/003_search_text_and_recall_queries.sql` (new), `server/tests/`
+- Acceptance criteria:
+  - [ ] **D1** — `search` no longer returns an empty set when relevant memories exist below the legacy 0.5 floor; response shape `{results:[{id,title,url}]}` remains pinned
+  - [ ] **D2** — non-destructive identifier normalization persists retrieval text (`search_text`) and `normalizer_version` while preserving raw `content`; identifier facets are retained in `metadata`
+  - [ ] **D3** — both `search` and `search_thoughts` write query-level observability rows including zero-result queries
+  - [ ] **D3b** — `search_thoughts` returns machine-parseable structured JSON with per-result `score` and `quality_band`
+  - [ ] **Gate** — ST-046 harness ST-054 flip-points are green (`normalizeForBm25`, identifier-form BM25 baseline, and `search` D1 baseline)
+  - [ ] Cross-model critical review passes (different model reviews implementation against the ExecPlan contract before the story moves to Review)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-054.md` (✅ Ready for /continue)
+- Query packet: `.github/planning/query-packets/QP-054-retrieval-robustness.md`
+- ce-plan artifact: `docs/plans/2026-06-04-001-feat-retrieval-robustness-plan.md`
+- Docs: `server/index.ts`, `server/db/search.sql`, `server/src/searchQuality.ts`
+- Notes: Planned and ready 2026-06-05. Scope lock: floor-with-fallback for `search`; persisted `search_text` + `normalizer_version`; token boundary strips Jira/build identifiers but preserves UUID/error-code/version tokens; zero-result observability via `recall_queries`; `search_thoughts` response moves to structured JSON score+band. Full historical re-normalization/backfill is deferred (old rows continue via `coalesce(search_text,content)`).
+
 ---
 
 ## In Progress
@@ -477,24 +475,6 @@
 (Empty)
 
 ## Done
-
-### ST-046: Golden-set regression tests (search-quality eval harness)
-- Type: quality
-- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31); scope widened 2026-06-04 to serve as the ST-054 eval-harness gate (PO decision during ST-054 intake)
-- phase: 2
-- Value: 4
-- Completed: 2026-06-05
-- Blocked by: —
-- ExecPlan status: ✅ Completed
-- Touches: `server/tests/search-golden-set.test.ts` (new), `server/tests/_helpers/recall.ts` (new), `server/tests/fixtures/build-search-quality-corpus.ts`, `server/tests/fixtures/search-quality-corpus.sql`, `server/src/searchQuality.ts` (extract pure `rrfFuse`), `server/index.ts` (rewire `search_thoughts` to `rrfFuse` — no behaviour change)
-- Acceptance criteria:
-  - [x] Search quality regression catches RRF/MMR parameter drift (AC-7): a **deterministic pure-function test** asserts `rrfFuse` ordering flips between k=60 and k=10 and `mmrRerank` ordering changes with λ (no network); a complementary integration golden-set confirms default-parameter correctness end-to-end
-  - [x] **Incident relevance + recall@k machinery (revised 2026-06-04, Option A):** the seeded corpus includes identifier-free build-failure-class memories, and the harness defines the incident relevance set + queries in **both forms** (`build 65008 PRI-5751 pipeline failure` vs `build pipeline failure`) with a reusable recall@k helper — consumable by ST-054
-  - [x] **Baselines pinned to today's behaviour (revised 2026-06-04, Option A):** no-identifier form matches the full build-failure set via the deterministic BM25 lane; identifier form deterministically records the degraded value (BM25 ANDs unmatched id tokens to **0 rows**); a `search` D1 false-empty **characterization** pins that the incident memory is not surfaced by `search` today. A named `BASELINE`/`normalizeForBm25` TDD seam lets ST-054 flip these to targets. *(Target thresholds themselves are ST-054 ACs, not ST-046.)*
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-046.md`
-- Query packet: `.github/planning/query-packets/QP-046-search-quality-eval-harness.md`
-- Blocks: ST-054 (retrieval robustness) — ST-054 consumes this harness as its proof gate
-- Notes: Completed 2026-06-05. Uses existing seeded test corpus. Verifies that tuning RRF/MMR parameters doesn't silently degrade recall quality. **Why widened:** during ST-054 intake the PO chose to build the retrieval-robustness eval harness here rather than duplicate it inside ST-054 — so ST-046 owns the incident-query relevance set + no-false-empty regression consumed by ST-054. Without a *seeded* corpus, "0 results" stays ambiguous between broken ranking and an empty store — the exact ambiguity that made the original incident hard to diagnose.
 
 ### ST-055: MMR null-embedding BM25 recall preservation
 - Type: bug
