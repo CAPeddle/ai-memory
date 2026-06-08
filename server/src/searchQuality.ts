@@ -43,6 +43,42 @@ export function rrfFuse(lanes: RrfLaneRow[][], k = 60): Map<string, number> {
 
 export interface MmrCandidate { id: string; score: number; embedding: number[] | null; }
 
+export interface QualityBandInput {
+  bm25Rank: number | null;
+  vectorRank: number | null;
+  vectorSimilarity: number | null;
+}
+
+export function deriveQualityBand(input: QualityBandInput): "high" | "medium" | "low" {
+  const inBm25Top10 = input.bm25Rank !== null && input.bm25Rank <= 10;
+  const inVectorTop10 = input.vectorRank !== null && input.vectorRank <= 10;
+  const vectorSimilarity = input.vectorSimilarity;
+  const hasVectorSimilarity = vectorSimilarity !== null;
+
+  if (hasVectorSimilarity && (vectorSimilarity >= 0.5 || (inBm25Top10 && inVectorTop10))) {
+    return "high";
+  }
+
+  if ((hasVectorSimilarity && vectorSimilarity >= 0.35) || inBm25Top10) {
+    return "medium";
+  }
+
+  return "low";
+}
+
+export function truncateQueryLogText(input: string, maxLength = 2048): string {
+  return input.length <= maxLength ? input : input.slice(0, maxLength);
+}
+
+export interface RecallQueryLogInput {
+  tool: "search" | "search_thoughts";
+  query: string;
+  normalizedQuery: string;
+  project: string | null;
+  profile: string | null;
+  resultIds: string[];
+}
+
 export function mmrRerank(candidates: MmrCandidate[], k: number, lambda = 0.7): { id: string; score: number }[] {
   const selected: MmrCandidate[] = [];
   const remaining = [...candidates];
@@ -83,6 +119,27 @@ export function logRecall(query: string, project: string | null, results: { id: 
     const ids = results.map((r) => r.id);
     await sql`UPDATE thoughts SET recall_count = recall_count + 1, last_recalled_at = now() WHERE id = ANY(${ids}::uuid[])`;
   })().catch((err) => console.error("[search_thoughts] recall log failed:", err));
+}
+
+export function logRecallQuery(input: RecallQueryLogInput): void {
+  const topResultIds = input.resultIds.slice(0, 10);
+  const query = truncateQueryLogText(input.query);
+  const normalizedQuery = truncateQueryLogText(input.normalizedQuery);
+
+  (async () => {
+    await sql`
+      INSERT INTO recall_queries (tool, query, normalized_query, project, profile, result_count, top_result_ids)
+      VALUES (
+        ${input.tool},
+        ${query},
+        ${normalizedQuery},
+        ${input.project},
+        ${input.profile},
+        ${input.resultIds.length},
+        ${topResultIds}::uuid[]
+      )
+    `;
+  })().catch((err) => console.error(`[${input.tool}] recall query log failed:`, err));
 }
 
 // ---------------------------------------------------------------------------

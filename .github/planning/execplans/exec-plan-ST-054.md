@@ -308,12 +308,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.2 - Implement identifier normalization module and unit tests |
-| **Last successful command** | `docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/identifier-normalization.test.ts` |
-| **Expected outputs produced** | `server/src/identifierNormalization.ts` added with versioned pure normalization; `server/tests/identifier-normalization.test.ts` covers strip/preserve boundaries |
-| **Next task** | Task 4.3 - Wire runtime + schema changes (D1, D2, D3, D3b) |
+| **Last completed task** | Task 4.3 - Wire runtime + schema changes (D1, D2, D3, D3b) |
+| **Last successful command** | `docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/e2e.test.ts` |
+| **Expected outputs produced** | Runtime now applies normalized retrieval text on capture/query paths, `search` uses floor-with-fallback, `search_thoughts` returns structured JSON score/band payloads, and query-level telemetry writes to `recall_queries` via `server/db/schema.sql` + `server/db/003_search_text_and_recall_queries.sql` |
+| **Next task** | Task 4.4 - Flip ST-046 gate assertions to target values and run focused + full verification |
 | **Known blockers** | None |
-| **Last updated** | 2026-06-07T22:54:29+02:00 |
+| **Last updated** | 2026-06-08T03:37:55+02:00 |
 
 ### Progress History
 
@@ -322,6 +322,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-06-05T00:00:00Z | Planning | Complete | ExecPlan created and marked Ready | Task 4.1 |
 | 2026-06-07T22:52:52+02:00 | Task 4.1 | Complete | Added `tests/search-tool-contract.test.ts`; red checkpoint failed only on D1 with `Expected search surfacing incident == true; got false`; restored golden-set baseline and re-ran Task 4.1 verification green | Task 4.2 |
 | 2026-06-07T22:54:29+02:00 | Task 4.2 | Complete | Added `src/identifierNormalization.ts` and `tests/identifier-normalization.test.ts`; unit suite passed 6/6 covering ticket/build stripping, UUID/semver/error-code preservation, empty/identifier-only input, and idempotence | Task 4.3 |
+| 2026-06-08T03:37:55+02:00 | Task 4.3 | Complete | Implemented D1/D2/D3/D3b across runtime and schema (`index.ts`, `searchQuality.ts`, `schema.sql`, `003_search_text_and_recall_queries.sql`) and updated contract/e2e tests; verification green: `tests/search-tool-contract.test.ts` 2/2, `tests/search-quality.test.ts` 9/9, `tests/e2e.test.ts` 17/17 | Task 4.4 |
 
 ### Avoidance
 
@@ -356,12 +357,15 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - 2026-06-07T22:52:52+02:00 - Task 4.1 red checkpoint: temporarily flipped `server/tests/search-golden-set.test.ts` seam to ST-054 target values, ran the golden-set harness, and captured the required failure: `AssertionError: Values are not equal: Expected search surfacing incident == true; got false` at `tests/search-golden-set.test.ts:176:5`.
 - 2026-06-07T22:52:52+02:00 - Task 4.1 restore/verify: restored the pre-flip golden-set baseline, re-ran `tests/search-tool-contract.test.ts` and `tests/search-golden-set.test.ts`, and confirmed the temporary edit was gone before closeout.
 - 2026-06-07T22:54:29+02:00 - Task 4.2: added `server/src/identifierNormalization.ts` with versioned, pure strip/preserve logic and `server/tests/identifier-normalization.test.ts`; verified the boundary suite green in `mcp-test`.
+- 2026-06-08T03:37:55+02:00 - Task 4.3: wired floor-with-fallback in `search`, structured JSON response + quality bands in `search_thoughts`, capture-time `search_text`/`normalizer_version`/identifier facets, and query-level telemetry via `logRecallQuery` + `recall_queries` schema.
+- 2026-06-08T03:37:55+02:00 - Task 4.3 verification: rebuilt test profile services (`db-test`, `seed`, `mcp-test`) so schema updates were present, then re-ran focused and e2e verification to green.
 
 ---
 
 ## §6b. Surprises & Discoveries
 
 - 2026-06-07: The first focused validation failed because the test profile stack was not running; `docker compose --profile test up -d` was required before Task 4.1 verification could execute inside `mcp-test`.
+- 2026-06-08: Task 4.3 initially failed on `search_text`/`recall_queries` missing in `db-test`; the fix required rebuilding the `db-test` image with `--build --force-recreate` so the updated schema/init SQL was applied.
 
 ---
 

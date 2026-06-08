@@ -21,25 +21,35 @@ function parseSearchPayload(result: unknown): { results: Array<{ id: string; tit
 }
 
 Deno.test({
-  name: "search contract: returns JSON text with a results array",
+  name: "search contract: returns JSON text with the pinned results array shape",
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
     const result = await mcpCall("search", { query: "definitely-no-match-contract-probe" });
     const payload = parseSearchPayload(result);
 
-    assertEquals(payload.results, []);
+    assert(Array.isArray(payload.results));
+    for (const item of payload.results) {
+      assert(item.id.length > 0, "Expected each search result to include an id");
+      assert(item.title.length > 0, "Expected each search result to include a title");
+      assert(item.url.length > 0, "Expected each search result to include a url");
+    }
   },
 });
 
 Deno.test({
-  name: "search contract: incident query currently falls below the legacy floor",
+  name: "search contract: incident query returns non-empty pinned results after fallback",
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
     const result = await mcpCall("search", { query: INCIDENT_QUERY });
     const payload = parseSearchPayload(result);
 
-    assertEquals(payload.results.length, 0);
+    assert(payload.results.length > 0, "Expected the incident query to return at least one fallback result");
+    for (const item of payload.results) {
+      assert(item.id.length > 0, "Expected each search result to include an id");
+      assert(item.title.length > 0, "Expected each search result to include a title");
+      assert(item.url.length > 0, "Expected each search result to include a url");
+    }
   },
 });

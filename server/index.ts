@@ -8,10 +8,23 @@ import { parseContext } from "./src/parseContext.ts";
 import { sql } from "./src/db.ts";
 import { startEntityWorker } from "./src/entityWorker.ts";
 import { startConsolidationWorker, drainPendingOnce } from "./src/consolidationWorker.ts";
-import { cosineSim, mmrRerank, logRecall, parseVector, rrfFuse, MmrCandidate } from "./src/searchQuality.ts";
+import {
+  cosineSim,
+  deriveQualityBand,
+  logRecall,
+  logRecallQuery,
+  mmrRerank,
+  parseVector,
+  rrfFuse,
+  MmrCandidate,
+} from "./src/searchQuality.ts";
 import { ensureRequiredEnv } from "./src/startupValidation.ts";
 import { getEmbedding, EMBEDDING_MODEL } from "./src/embeddings.ts";
 import { startEmbeddingBackfill } from "./src/embeddingBackfill.ts";
+import {
+  IDENTIFIER_NORMALIZER_VERSION,
+  normalizeIdentifiers,
+} from "./src/identifierNormalization.ts";
 
 // ---------------------------------------------------------------------------
 // Startup validation — fail fast if required config is missing
@@ -42,21 +55,46 @@ server.registerTool(
   },
   async ({ query }) => {
     try {
-      const qEmb = await getEmbedding(query);
-      const rows = await sql`
-        SELECT id, content, created_at,
-               1 - (embedding <=> ${sql.unsafe(`'[${qEmb.join(",")}]'`)}::vector) AS similarity
-        FROM thoughts
-        WHERE active = true AND embedding IS NOT NULL
-          AND 1 - (embedding <=> ${sql.unsafe(`'[${qEmb.join(",")}]'`)}::vector) >= 0.5
-        ORDER BY similarity DESC
-        LIMIT 10
-      `;
+      const normalizedQuery = normalizeIdentifiers(query).retrievalText;
+      const qEmb = normalizedQuery
+        ? await getEmbedding(normalizedQuery)
+        : null;
+      const rows = qEmb
+        ? await sql`
+            WITH ranked AS (
+              SELECT id, content, created_at,
+                     1 - (embedding <=> ${sql.unsafe(`'[${qEmb.join(",")}]'`)}::vector) AS similarity
+              FROM thoughts
+              WHERE active = true AND embedding IS NOT NULL
+              ORDER BY similarity DESC
+              LIMIT 10
+            )
+            SELECT id, content, created_at, similarity
+            FROM ranked
+            WHERE similarity >= 0.5
+            UNION ALL
+            SELECT id, content, created_at, similarity
+            FROM ranked
+            WHERE NOT EXISTS (SELECT 1 FROM ranked WHERE similarity >= 0.5)
+            ORDER BY similarity DESC
+            LIMIT 10
+          `
+        : [];
       const results = rows.map((t) => ({
         id: t.id,
         title: (t.content as string).slice(0, 80),
         url: `${CITATION_BASE_URL.replace(/\/$/, "")}/${t.id}`,
       }));
+
+      logRecallQuery({
+        tool: "search",
+        query,
+        normalizedQuery,
+        project: null,
+        profile: null,
+        resultIds: results.map((result) => result.id as string),
+      });
+
       return { content: [{ type: "text" as const, text: JSON.stringify({ results }) }] };
     } catch (err) {
       return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }], isError: true };
@@ -119,26 +157,32 @@ server.registerTool(
     try {
       const scope = parseContext(context);
       const project = scope?.projects?.[0] ?? null;
+      const profile = scope?.profile ?? null;
       const strict = scope?.strict === true;
       const n = limit ?? 10;
+      const normalizedQuery = normalizeIdentifiers(query).retrievalText;
 
-      const qEmb = await getEmbedding(query).catch(() => null);
+      const qEmb = normalizedQuery
+        ? await getEmbedding(normalizedQuery).catch(() => null)
+        : null;
 
       // BM25 lane — drop the hard project filter unless strict
-      const bm25 = strict
+      const bm25 = normalizedQuery
+        ? (strict
         ? await sql`
             SELECT id, row_number() OVER (ORDER BY ts_rank_cd(search_vector, q) DESC) AS bm25_rank
-            FROM thoughts, plainto_tsquery('english', ${query}) AS q
+            FROM thoughts, plainto_tsquery('english', ${normalizedQuery}) AS q
             WHERE search_vector @@ q AND active = true
               AND (${project}::text IS NULL OR project = ${project})
             LIMIT 60
           `
         : await sql`
             SELECT id, row_number() OVER (ORDER BY ts_rank_cd(search_vector, q) DESC) AS bm25_rank
-            FROM thoughts, plainto_tsquery('english', ${query}) AS q
+            FROM thoughts, plainto_tsquery('english', ${normalizedQuery}) AS q
             WHERE search_vector @@ q AND active = true
             LIMIT 60
-          `;
+          `)
+        : [];
 
       // Vector lane (skipped if no embedding) — drop hard project filter unless strict
       const vector = qEmb
@@ -165,7 +209,22 @@ server.registerTool(
         vector.map((r) => ({ id: r.id as string, rank: Number(r.vector_rank) })),
       ], 60);
 
-      if (!scores.size) return { content: [{ type: "text" as const, text: `No thoughts found matching "${query}".` }] };
+      if (!scores.size) {
+        logRecallQuery({
+          tool: "search_thoughts",
+          query,
+          normalizedQuery,
+          project,
+          profile,
+          resultIds: [],
+        });
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({ query, normalized_query: normalizedQuery, results: [] }),
+          }],
+        };
+      }
 
       // Pull top-N (3× requested, capped at 60) for boost + MMR
       const N = Math.min(60, Math.max(n * 3, n));
@@ -188,6 +247,9 @@ server.registerTool(
       }
 
       // Apply project boost (only when !strict — strict already filtered to in-project only)
+      const bm25Ranks = new Map<string, number>(bm25.map((row) => [row.id as string, Number(row.bm25_rank)]));
+      const vectorRanks = new Map<string, number>(vector.map((row) => [row.id as string, Number(row.vector_rank)]));
+
       const boosted: MmrCandidate[] = topIds.map((id) => {
         const r = rowMap.get(id)!;
         let score = scores.get(id)!;
@@ -198,17 +260,56 @@ server.registerTool(
       // MMR re-rank top-N to final n
       const reranked = mmrRerank(boosted, n, 0.7);
 
-      // Build response from rowMap
-      const lines = reranked.map((res, i) => {
+      const responseResults = reranked.map((res) => {
         const t = rowMap.get(res.id);
-        if (!t) return "";
-        return `--- Result ${i + 1} (rrf: ${res.score.toFixed(4)}) [${t.memory_type}${t.project ? " / " + t.project : ""}] ---\nID: ${t.id}\n${t.content}`;
-      }).filter(Boolean);
+        if (!t) return null;
+
+        const vectorSimilarity = qEmb && t.embedding
+          ? cosineSim(qEmb, t.embedding)
+          : null;
+
+        return {
+          id: t.id,
+          content: t.content as string,
+          memory_type: t.memory_type as "shard" | "wiki",
+          project: t.project,
+          score: res.score,
+          quality_band: deriveQualityBand({
+            bm25Rank: bm25Ranks.get(res.id) ?? null,
+            vectorRank: vectorRanks.get(res.id) ?? null,
+            vectorSimilarity,
+          }),
+        };
+      }).filter((result): result is {
+        id: string;
+        content: string;
+        memory_type: "shard" | "wiki";
+        project: string | null;
+        score: number;
+        quality_band: "high" | "medium" | "low";
+      } => result !== null);
 
       // Fire-and-forget recall log (never awaited)
       logRecall(query, project, reranked);
+      logRecallQuery({
+        tool: "search_thoughts",
+        query,
+        normalizedQuery,
+        project,
+        profile,
+        resultIds: responseResults.map((result) => result.id),
+      });
 
-      return { content: [{ type: "text" as const, text: lines.join("\n\n") }] };
+      return {
+        content: [{
+          type: "text" as const,
+          text: JSON.stringify({
+            query,
+            normalized_query: normalizedQuery,
+            results: responseResults,
+          }),
+        }],
+      };
     } catch (err) {
       return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }], isError: true };
     }
@@ -242,23 +343,51 @@ server.registerTool(
       const scope = parseContext(context);
       const project = scope?.projects?.[0] ?? null;
       const profile = scope?.profile ?? null;
+      const normalized = normalizeIdentifiers(content);
+      const searchText = normalized.retrievalText;
+      const metadata = {
+        identifiers: normalized.facets,
+      };
 
       const fingerprint = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(content.trim().toLowerCase().replace(/\s+/g, " ")))
         .then((buf) => Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join(""));
 
       const [insertResult] = await sql`
-        INSERT INTO thoughts (content, memory_type, project, profile, content_fingerprint, source)
-        VALUES (${content}, ${memory_type ?? "shard"}, ${project}, ${profile}, ${fingerprint}, 'user-taught')
+        INSERT INTO thoughts (
+          content,
+          search_text,
+          normalizer_version,
+          metadata,
+          memory_type,
+          project,
+          profile,
+          content_fingerprint,
+          source
+        )
+        VALUES (
+          ${content},
+          ${searchText},
+          ${IDENTIFIER_NORMALIZER_VERSION},
+          ${metadata},
+          ${memory_type ?? "shard"},
+          ${project},
+          ${profile},
+          ${fingerprint},
+          'user-taught'
+        )
         ON CONFLICT (content_fingerprint) DO UPDATE
           SET updated_at = now(),
-              active     = true
+              active     = true,
+              search_text = EXCLUDED.search_text,
+              normalizer_version = EXCLUDED.normalizer_version,
+              metadata = thoughts.metadata || EXCLUDED.metadata
         RETURNING id, memory_type, project
       `;
 
       // Fire-and-forget embedding update. On success, record the model and clear the
       // needs_embedding flag; on failure, log only — the backfill sweep owns retries
       // and the embedding_attempts counter (this inline attempt is best-effort).
-      getEmbedding(content).then((emb) =>
+      getEmbedding(searchText || content).then((emb) =>
         sql`
           UPDATE thoughts
           SET embedding       = ${sql.unsafe(`'[${emb.join(",")}]'`)}::vector,

@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { mmrRerank } from "../src/searchQuality.ts";
+import { deriveQualityBand, mmrRerank, truncateQueryLogText } from "../src/searchQuality.ts";
 
 const axisA = [1, 0, 0];
 const axisB = [0, 1, 0];
@@ -57,4 +57,24 @@ Deno.test("mmrRerank handles empty input and k larger than candidate count", () 
   ], 10, 0.7).map((r) => r.id);
 
   assertEquals(result, ["first", "second"]);
+});
+
+Deno.test("deriveQualityBand returns high for strong vector similarity or dual-lane evidence", () => {
+  assertEquals(deriveQualityBand({ bm25Rank: 12, vectorRank: 3, vectorSimilarity: 0.5 }), "high");
+  assertEquals(deriveQualityBand({ bm25Rank: 5, vectorRank: 4, vectorSimilarity: 0.2 }), "high");
+});
+
+Deno.test("deriveQualityBand returns medium for moderate vector similarity or BM25 top-10", () => {
+  assertEquals(deriveQualityBand({ bm25Rank: null, vectorRank: 20, vectorSimilarity: 0.4 }), "medium");
+  assertEquals(deriveQualityBand({ bm25Rank: 8, vectorRank: null, vectorSimilarity: null }), "medium");
+});
+
+Deno.test("deriveQualityBand returns low when neither vector nor BM25 evidence is strong", () => {
+  assertEquals(deriveQualityBand({ bm25Rank: 11, vectorRank: 15, vectorSimilarity: 0.2 }), "low");
+  assertEquals(deriveQualityBand({ bm25Rank: null, vectorRank: null, vectorSimilarity: null }), "low");
+});
+
+Deno.test("truncateQueryLogText enforces the telemetry length cap", () => {
+  assertEquals(truncateQueryLogText("short"), "short");
+  assertEquals(truncateQueryLogText("abcdef", 4), "abcd");
 });
