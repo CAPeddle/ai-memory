@@ -168,6 +168,14 @@ data: {"result":{"content":[{"type":"text","text":"Total active thoughts: ..."}]
 
 If you get HTTP 406, ensure the `Accept` header includes both `application/json` and `text/event-stream`.
 
+#### Client troubleshooting
+
+`MCP error -32601` on `prompts/list` or `resources/list` means a client probed an MCP method the server did not implement. After ST-057, `prompts/list`, `resources/list`, and `resources/templates/list` are compatibility-safe on ai-memory.
+
+`ProviderModelNotFoundError` is an OpenCode provider/model configuration issue, not an ai-memory MCP server error.
+
+`@opencode-ai/plugin@local` install failure is an OpenCode plugin/dependency configuration issue, not an ai-memory MCP server error.
+
 ### Running tests
 
 ```bash

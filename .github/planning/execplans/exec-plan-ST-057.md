@@ -497,12 +497,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.2 — Register minimal prompt and static resource |
-| **Last successful command** | `docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/mcp-protocol-compat.test.ts` |
-| **Expected outputs produced** | Red checkpoint confirmed (`-32601` before implementation), then protocol compatibility tests passed after prompt/resource registration and `mcp-test` restart |
-| **Next task** | Task 4.3 — Document client troubleshooting distinction |
+| **Last completed task** | Task 4.3 — Document client troubleshooting distinction |
+| **Last successful command** | `Select-String -Path README.md -Pattern 'Client troubleshooting','MCP error -32601','ProviderModelNotFoundError','@opencode-ai/plugin@local'` |
+| **Expected outputs produced** | README now includes `#### Client troubleshooting` with all required protocol-vs-client error distinctions |
+| **Next task** | Task 4.4 — Run full server verification |
 | **Known blockers** | None |
-| **Last updated** | 2026-06-10T11:28:16+02:00 |
+| **Last updated** | 2026-06-10T11:28:41+02:00 |
 
 ### Progress History
 
@@ -512,6 +512,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-06-05 | Planning | Approved by PO | Status set to Ready for `/continue` | Task 4.1 |
 | 2026-06-10T11:28:16+02:00 | 4.1 | Completed | `tests/mcp-protocol-compat.test.ts` executed red: initialize/prompt/resource assertions failed with `-32601` as expected | Task 4.2 |
 | 2026-06-10T11:28:16+02:00 | 4.2 | Completed | Added `memory_search_guidance` prompt + `ai-memory://server-info` resource in `server/index.ts`; focused protocol test green after `mcp-test` restart | Task 4.3 |
+| 2026-06-10T11:28:41+02:00 | 4.3 | Completed | Added README troubleshooting section and verified required strings with `Select-String` | Task 4.4 |
 
 ### Avoidance
 
