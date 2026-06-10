@@ -14,7 +14,7 @@
 - Source: Session analysis 2026-06-04 (build-failure false-empty incident) + adversarial design review + local-instance validation
 - phase: 2
 - Value: 5
-- Blocked by: —
+- Blocked by: plan-review
 - Touches: `server/index.ts` (`search` floor fallback, structured `search_thoughts` output, capture/query normalization), `server/src/identifierNormalization.ts` (new), `server/src/searchQuality.ts` (query-level recall logging), `server/db/schema.sql`, `server/db/003_search_text_and_recall_queries.sql` (new), `server/tests/`
 - Acceptance criteria:
   - [ ] **D1** — `search` no longer returns an empty set when relevant memories exist below the legacy 0.5 floor; response shape `{results:[{id,title,url}]}` remains pinned
@@ -421,6 +421,30 @@
 
 ---
 
+## Backlog
+
+### ST-054: Retrieval robustness (false-empty, identifier dilution, zero-result observability)
+- Type: hardening
+- Source: Session analysis 2026-06-04 (build-failure false-empty incident) + adversarial design review + local-instance validation
+- phase: 2
+- Value: 5
+- Blocked by: ST-057 (plan-review resolved 2026-06-10: execute ST-057 first to clear verification gate)
+- Touches: `server/index.ts` (`search` floor fallback, structured `search_thoughts` output, capture/query normalization), `server/src/identifierNormalization.ts` (new), `server/src/searchQuality.ts` (query-level recall logging), `server/db/schema.sql`, `server/db/003_search_text_and_recall_queries.sql` (new), `server/tests/`
+- Acceptance criteria:
+  - [ ] **D1** — `search` no longer returns an empty set when relevant memories exist below the legacy 0.5 floor; response shape `{results:[{id,title,url}]}` remains pinned
+  - [ ] **D2** — non-destructive identifier normalization persists retrieval text (`search_text`) and `normalizer_version` while preserving raw `content`; identifier facets are retained in `metadata`
+  - [ ] **D3** — both `search` and `search_thoughts` write query-level observability rows including zero-result queries
+  - [ ] **D3b** — `search_thoughts` returns machine-parseable structured JSON with per-result `score` and `quality_band`
+  - [ ] **Gate** — ST-046 harness ST-054 flip-points are green (`normalizeForBm25`, identifier-form BM25 baseline, and `search` D1 baseline)
+  - [ ] Cross-model critical review passes (different model reviews implementation against the ExecPlan contract before the story moves to Review)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-054.md` (✅ Ready for /continue after ST-057 ships)
+- Query packet: `.github/planning/query-packets/QP-054-retrieval-robustness.md`
+- ce-plan artifact: `docs/plans/2026-06-04-001-feat-retrieval-robustness-plan.md`
+- Docs: `server/index.ts`, `server/db/search.sql`, `server/src/searchQuality.ts`
+- Notes: Planned and ready 2026-06-05. Execution paused 2026-06-08 at Task 4.4 when full test suite failed on `tests/mcp-protocol-compat.test.ts` (out-of-scope for ST-054). Plan review 2026-06-10: these stories are functionally independent; ST-057 is lower-complexity (protocol stubs only). Executing ST-057 first clears the verification gate and lets ST-054 proceed without scope expansion. Scope lock: floor-with-fallback for `search`; persisted `search_text` + `normalizer_version`; token boundary strips Jira/build identifiers but preserves UUID/error-code/version tokens; zero-result observability via `recall_queries`; `search_thoughts` response moves to structured JSON score+band. Full historical re-normalization/backfill is deferred (old rows continue via `coalesce(search_text,content)`).
+
+---
+
 ## Refined
 
 ### ST-057: MCP compatibility hardening
@@ -429,6 +453,7 @@
 - phase: 2
 - Value: 5
 - Blocked by: —
+- Notes (execution order, 2026-06-10): Execute ST-057 first, then ST-054. These stories are functionally independent; ST-057 is lower-complexity (protocol stubs only). Clearing MCP compatibility issues first lets ST-054's verification gate (`deno test tests/`) pass cleanly without scope expansion. PO approved 2026-06-10.
 - Touches: `server/index.ts` (MCP server capability/registration surface), possibly new protocol-compat helper under `server/src/`, focused protocol tests under `server/tests/`, README/client troubleshooting docs if behavior changes
 - Acceptance criteria:
   - [ ] `prompts/list` no longer returns JSON-RPC `-32601 Method not found` for clients that probe prompts; it returns an MCP-compatible empty prompt list or a minimal intentional prompt surface as decided during `/plan`
@@ -441,26 +466,6 @@
 - Query packet: `.github/planning/query-packets/QP-057-mcp-compatibility-hardening.md`
 - Docs: MCP 2025-06-18 server specs for prompts/resources/tools; README client setup section
 - Notes: Direct diagnostic probes showed `initialize` advertises only `capabilities.tools`, `tools/list` works, while `prompts/list` and `resources/list` return `-32601`. OpenCode logged `MCP error -32601: Method not found failed to get prompts`, so the immediate interop gap is prompts capability compatibility. PO requested the story also research other expected MCP server endpoints instead of patching only `prompts/list`. ProviderModelNotFoundError and `@opencode-ai/plugin@local` install failures are OpenCode-side issues, not ai-memory MCP failures, but this story should remove ai-memory's avoidable protocol-probe noise.
-
-### ST-054: Retrieval robustness (false-empty, identifier dilution, zero-result observability)
-- Type: hardening
-- Source: Session analysis 2026-06-04 (build-failure false-empty incident) + adversarial design review + local-instance validation
-- phase: 2
-- Value: 5
-- Blocked by: —
-- Touches: `server/index.ts` (`search` floor fallback, structured `search_thoughts` output, capture/query normalization), `server/src/identifierNormalization.ts` (new), `server/src/searchQuality.ts` (query-level recall logging), `server/db/schema.sql`, `server/db/003_search_text_and_recall_queries.sql` (new), `server/tests/`
-- Acceptance criteria:
-  - [ ] **D1** — `search` no longer returns an empty set when relevant memories exist below the legacy 0.5 floor; response shape `{results:[{id,title,url}]}` remains pinned
-  - [ ] **D2** — non-destructive identifier normalization persists retrieval text (`search_text`) and `normalizer_version` while preserving raw `content`; identifier facets are retained in `metadata`
-  - [ ] **D3** — both `search` and `search_thoughts` write query-level observability rows including zero-result queries
-  - [ ] **D3b** — `search_thoughts` returns machine-parseable structured JSON with per-result `score` and `quality_band`
-  - [ ] **Gate** — ST-046 harness ST-054 flip-points are green (`normalizeForBm25`, identifier-form BM25 baseline, and `search` D1 baseline)
-  - [ ] Cross-model critical review passes (different model reviews implementation against the ExecPlan contract before the story moves to Review)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-054.md` (✅ Ready for /continue)
-- Query packet: `.github/planning/query-packets/QP-054-retrieval-robustness.md`
-- ce-plan artifact: `docs/plans/2026-06-04-001-feat-retrieval-robustness-plan.md`
-- Docs: `server/index.ts`, `server/db/search.sql`, `server/src/searchQuality.ts`
-- Notes: Planned and ready 2026-06-05. Scope lock: floor-with-fallback for `search`; persisted `search_text` + `normalizer_version`; token boundary strips Jira/build identifiers but preserves UUID/error-code/version tokens; zero-result observability via `recall_queries`; `search_thoughts` response moves to structured JSON score+band. Full historical re-normalization/backfill is deferred (old rows continue via `coalesce(search_text,content)`).
 
 ---
 
