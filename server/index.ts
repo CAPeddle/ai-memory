@@ -573,8 +573,112 @@ function extractAgeRows(result: Record<string, unknown>[]): Record<string, unkno
 
 // --- Tool 5: graph_traverse (AGE / openCypher) ------------------------------
 
-const ALLOWED_MATCH_RE = /^match\s/i;
-const DOLLAR_QUOTE_RE = /\$\$/g;
+const CYPHER_MUST_START_WITH = /^\s*match\b/i;
+const CYPHER_DENIED_KEYWORDS = /\b(CREATE|SET|DELETE|REMOVE|MERGE|DETACH|DROP|CALL|LOAD)\b/i;
+const CYPHER_DOLLAR_QUOTE_RE = /\$\$/g;
+const CYPHER_MAX_LENGTH = 4096;
+
+function maskCypherLiteralsAndComments(cypher: string): { masked: string; error: string | null } {
+  const chars = [...cypher];
+  const masked = [...cypher];
+
+  let i = 0;
+  let state: "normal" | "single" | "double" | "lineComment" | "blockComment" = "normal";
+
+  while (i < chars.length) {
+    const ch = chars[i];
+    const next = i + 1 < chars.length ? chars[i + 1] : "";
+
+    if (state === "normal") {
+      if (ch === "'" ) {
+        masked[i] = " ";
+        state = "single";
+        i += 1;
+        continue;
+      }
+      if (ch === '"') {
+        masked[i] = " ";
+        state = "double";
+        i += 1;
+        continue;
+      }
+      if (ch === "-" && next === "-") {
+        masked[i] = " ";
+        masked[i + 1] = " ";
+        state = "lineComment";
+        i += 2;
+        continue;
+      }
+      if (ch === "/" && next === "*") {
+        masked[i] = " ";
+        masked[i + 1] = " ";
+        state = "blockComment";
+        i += 2;
+        continue;
+      }
+
+      i += 1;
+      continue;
+    }
+
+    if (state === "single") {
+      masked[i] = " ";
+      if (ch === "\\" && i + 1 < chars.length) {
+        masked[i + 1] = " ";
+        i += 2;
+        continue;
+      }
+      if (ch === "'") {
+        state = "normal";
+      }
+      i += 1;
+      continue;
+    }
+
+    if (state === "double") {
+      masked[i] = " ";
+      if (ch === "\\" && i + 1 < chars.length) {
+        masked[i + 1] = " ";
+        i += 2;
+        continue;
+      }
+      if (ch === '"') {
+        state = "normal";
+      }
+      i += 1;
+      continue;
+    }
+
+    if (state === "lineComment") {
+      if (ch === "\n" || ch === "\r") {
+        state = "normal";
+      } else {
+        masked[i] = " ";
+      }
+      i += 1;
+      continue;
+    }
+
+    // blockComment
+    masked[i] = " ";
+    if (ch === "*" && next === "/") {
+      masked[i + 1] = " ";
+      state = "normal";
+      i += 2;
+      continue;
+    }
+    i += 1;
+  }
+
+  if (state === "single" || state === "double") {
+    return { masked: masked.join(""), error: "Unterminated string literal in Cypher query." };
+  }
+  if (state === "blockComment") {
+    return { masked: masked.join(""), error: "Unterminated block comment in Cypher query." };
+  }
+
+  return { masked: masked.join(""), error: null };
+}
 
 server.registerTool(
   "graph_traverse",
@@ -589,11 +693,50 @@ server.registerTool(
   async ({ cypher }) => {
     try {
       const trimmed = cypher.trim();
-      if (!ALLOWED_MATCH_RE.test(trimmed)) {
-        return { content: [{ type: "text" as const, text: "Only MATCH queries are accepted. Mutating statements (CREATE, MERGE, SET, DELETE) are not allowed." }], isError: true };
+      if (trimmed.length > CYPHER_MAX_LENGTH) {
+        return {
+          content: [{ type: "text" as const, text: `Error: Query exceeds maximum length of ${CYPHER_MAX_LENGTH} characters.` }],
+          isError: true,
+        };
       }
-      // Strip $$ to prevent dollar-quote injection in the sql.unsafe block
-      const safeCypher = trimmed.replace(DOLLAR_QUOTE_RE, "");
+
+      const { masked, error } = maskCypherLiteralsAndComments(trimmed);
+      if (error) {
+        return {
+          content: [{ type: "text" as const, text: `Error: ${error}` }],
+          isError: true,
+        };
+      }
+
+      if (!CYPHER_MUST_START_WITH.test(masked)) {
+        return {
+          content: [{ type: "text" as const, text: "Only MATCH queries are accepted. Query must start with MATCH." }],
+          isError: true,
+        };
+      }
+
+      const denied = masked.match(CYPHER_DENIED_KEYWORDS);
+      if (denied) {
+        return {
+          content: [{
+            type: "text" as const,
+            text: `Error: Query contains disallowed keyword "${denied[0]}". Only read-only MATCH...RETURN queries are accepted. Mutating statements (CREATE, MERGE, SET, DELETE, REMOVE, DETACH, DROP, CALL, LOAD) are not allowed.`,
+          }],
+          isError: true,
+        };
+      }
+
+      // Parameter binding is not used here because the AGE cypher(...) call is
+      // executed inside a multi-statement sql.unsafe wrapper. Keep the wrapper
+      // narrow and strip dollar-quotes to avoid $$ delimiter breakouts.
+      const safeCypher = trimmed.replace(CYPHER_DOLLAR_QUOTE_RE, "");
+
+      if (!CYPHER_MUST_START_WITH.test(safeCypher)) {
+        return {
+          content: [{ type: "text" as const, text: "Only MATCH queries are accepted. Query must start with MATCH." }],
+          isError: true,
+        };
+      }
 
       const rawRows = await sql.unsafe(`
         LOAD 'age';

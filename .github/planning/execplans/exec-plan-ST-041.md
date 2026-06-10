@@ -376,18 +376,18 @@ Expected: All tests pass.
 
 | Field | Value |
 |---|---|
-| **Last completed task** | — |
-| **Last successful command** | — |
-| **Expected outputs produced** | — |
-| **Next task** | Task 4.1 — Replace Cypher validation |
+| **Last completed task** | Task 4.1 — Replace Cypher validation with token-aware deny-list |
+| **Last successful command** | `docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/e2e.test.ts --filter graph_traverse` |
+| **Expected outputs produced** | `server/index.ts` hardened with token-aware masking, deny-list rejection, 4096-char cap, and fail-closed malformed literal/comment handling |
+| **Next task** | Task 4.2 — Write injection prevention tests |
 | **Known blockers** | None |
-| **Last updated** | — |
+| **Last updated** | 2026-06-10T17:24:17+02:00 |
 
 ### Progress History
 
 | Timestamp (ISO) | Task | Status | Evidence / outputs | Next step |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| 2026-06-10T17:24:17+02:00 | Task 4.1 | ✅ Completed | Focused graph regression: `e2e: ... graph_traverse ... ok (13s)`; `server/index.ts` now enforces token-aware deny-list + max length + fail-closed parser | Execute Task 4.2 and add dedicated `cypher-injection.test.ts` coverage |
 
 ### Avoidance
 
@@ -407,7 +407,11 @@ Expected: All tests pass.
 
 ## §6. Execution Log
 
-(Populated during execution)
+- 2026-06-10: Completed Task 4.1 in `server/index.ts`.
+  - Replaced `ALLOWED_MATCH_RE`/`DOLLAR_QUOTE_RE` gate with token-aware validation constants.
+  - Added `maskCypherLiteralsAndComments(...)` helper to neutralize strings/comments before deny-list checks.
+  - Added 4096-character limit and fail-closed rejection for unterminated string/block comment input.
+  - Preserved SQL-wrapper hardening by stripping `$$` before `sql.unsafe` execution.
 
 ---
 
