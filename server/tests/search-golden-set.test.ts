@@ -2,6 +2,7 @@ import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.t
 import { extractText, mcpCall } from "./_helpers/mcpClient.ts";
 import { recallAtK, searchThoughtIds } from "./_helpers/recall.ts";
 import { mmrRerank, rrfFuse } from "../src/searchQuality.ts";
+import { normalizeIdentifiers } from "../src/identifierNormalization.ts";
 import { sql } from "../src/db.ts";
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -11,7 +12,7 @@ import { sql } from "../src/db.ts";
 //   • BASELINE: today's pinned values; ST-054 flips idFormBm25Rows 0→(≥ noIdFormBm25Rows)
 //     and searchSurfacesIncident false→true.
 // ──────────────────────────────────────────────────────────────────────────
-const normalizeForBm25 = (q: string): string => q; // ST-054: swap for the real normalizer.
+const normalizeForBm25 = (q: string): string => normalizeIdentifiers(q).retrievalText;
 
 const RECALL_K = 10;
 const NO_ID_QUERY = "build pipeline failure";
@@ -26,8 +27,7 @@ const INCIDENT_RELEVANT_IDS = [
 const BASELINE = {
   // Structural BM25 lane (deterministic, lane-isolated via plainto_tsquery):
   noIdFormBm25Rows: 4, // all build_failure memories match the lexical query
-  idFormBm25Rows: 0,   // D2 gap: unmatched identifier tokens AND the query to zero rows.
-                       //   ST-054 flips this to >= noIdFormBm25Rows.
+  idFormBm25Rows: 4,
   // Tool-level recall@k floor (search_thoughts). The four build_failure rows share ONE
   // synthetic embedding, so MMR's diversity penalty (λ=0.7) deterministically keeps only
   // ONE of them in the top-k (the other three are near-duplicates and get suppressed).
@@ -36,7 +36,7 @@ const BASELINE = {
   noIdFormRecallAtKMin: 0.25,
   // search (vector-only) D1 characterization: the synthetic corpus never clears the 0.5
   // cosine floor against a live query embedding, so the incident memory is not surfaced today.
-  searchSurfacesIncident: false, // ST-054 (floor-with-fallback) flips this to true.
+  searchSurfacesIncident: true,
 };
 
 // ── recall@k helper self-check (no network) ──────────────────────────────

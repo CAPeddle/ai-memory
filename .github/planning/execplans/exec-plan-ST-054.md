@@ -309,10 +309,10 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.3 - Wire runtime + schema changes (D1, D2, D3, D3b) |
-| **Last successful command** | `docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/e2e.test.ts` |
-| **Expected outputs produced** | Runtime now applies normalized retrieval text on capture/query paths, `search` uses floor-with-fallback, `search_thoughts` returns structured JSON score/band payloads, and query-level telemetry writes to `recall_queries` via `server/db/schema.sql` + `server/db/003_search_text_and_recall_queries.sql` |
-| **Next task** | Task 4.4 - Flip ST-046 gate assertions to target values and run focused + full verification |
+| **Last completed task** | Task 4.4 - Flip ST-046 gate assertions to target values and run focused + full verification |
+| **Last successful command** | `docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/` |
+| **Expected outputs produced** | ST-054 gate assertions are now green in `tests/search-golden-set.test.ts`, focused golden-set verification passed 16/16, and full server suite passed 87/0 including `tests/mcp-protocol-compat.test.ts` |
+| **Next task** | Task 4.5 - Closeout, cross-model review gate, and board transitions |
 | **Known blockers** | None |
 | **Last updated** | 2026-06-10 |
 
@@ -325,6 +325,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-06-07T22:54:29+02:00 | Task 4.2 | Complete | Added `src/identifierNormalization.ts` and `tests/identifier-normalization.test.ts`; unit suite passed 6/6 covering ticket/build stripping, UUID/semver/error-code preservation, empty/identifier-only input, and idempotence | Task 4.3 |
 | 2026-06-08T03:37:55+02:00 | Task 4.3 | Complete | Implemented D1/D2/D3/D3b across runtime and schema (`index.ts`, `searchQuality.ts`, `schema.sql`, `003_search_text_and_recall_queries.sql`) and updated contract/e2e tests; verification green: `tests/search-tool-contract.test.ts` 2/2, `tests/search-quality.test.ts` 9/9, `tests/e2e.test.ts` 17/17 | Task 4.4 |
 | 2026-06-08T04:00:00+02:00 | Task 4.4 | Blocked (plan-review) | ST-054 gate assertions flipped and focused verification green, but full-suite still fails in `tests/mcp-protocol-compat.test.ts` (ST-057 scope). PO instructed "stop and resolve mcp-protocol-compat failures" before continuing. | Escalate to `/plan` |
+| 2026-06-10T00:00:00Z | Task 4.4 | Complete | Re-ran required verification after plan-review clearance: `tests/search-golden-set.test.ts` 16/16 and full suite `tests/` 87/0 (including `tests/mcp-protocol-compat.test.ts`); gate is green | Task 4.5 |
 
 ### Avoidance
 
@@ -363,6 +364,8 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - 2026-06-08T03:37:55+02:00 - Task 4.3 verification: rebuilt test profile services (`db-test`, `seed`, `mcp-test`) so schema updates were present, then re-ran focused and e2e verification to green.
 - 2026-06-08T04:00:00+02:00 - Task 4.4: flipped ST-046 seam to use `normalizeIdentifiers` and target baselines; updated `tests/_helpers/recall.ts` to parse structured JSON first with legacy fallback.
 - 2026-06-08T04:00:00+02:00 - Task 4.4 escalation: full-suite command remains red only on `tests/mcp-protocol-compat.test.ts` (prompts/resources compatibility expectations). PO requested those failures be resolved before continuation; execution halted and escalated to plan-review because ST-057 fixes are out of this ExecPlan scope.
+- 2026-06-10T00:00:00Z - Task 4.4 resume: resumed after plan-review clearance noted in §2c and re-ran focused ST-054 verification (`tests/search-golden-set.test.ts`) to confirm seam assertions are green.
+- 2026-06-10T00:00:00Z - Task 4.4 verification: ran full suite `tests/` in `mcp-test`; all 87 tests passed including `tests/mcp-protocol-compat.test.ts`, closing the previous blocker without scope changes.
 
 ---
 

@@ -5,6 +5,17 @@ const ID_RE = /ID:\s*([0-9a-f-]{36})/gi;
 
 /** Extract thought ids (in result order) from a search_thoughts text response. */
 export function parseIds(text: string): string[] {
+  try {
+    const payload = JSON.parse(text) as { results?: Array<{ id?: string }> };
+    if (Array.isArray(payload.results)) {
+      return payload.results
+        .map((result) => result.id ?? "")
+        .filter((id) => id.length > 0);
+    }
+  } catch {
+    // Keep the legacy parser path for tests not yet migrated.
+  }
+
   return [...text.matchAll(ID_RE)].map((m) => m[1]);
 }
 
