@@ -49,6 +49,7 @@ This story replaces the insufficient check with a **token-aware keyword deny-lis
 - `graph_traverse` rejects queries containing `CREATE`, `SET`, `DELETE`, `REMOVE`, `MERGE`, `DETACH`, `DROP`, `CALL`, or `LOAD` (case-insensitive, word-boundary match).
 - `graph_traverse` rejects queries exceeding 4096 characters.
 - `graph_traverse` rejects queries that don't start with `MATCH` (existing behaviour preserved).
+- `graph_traverse` fails closed on malformed literal/comment input (for example unterminated strings or block comments) and does not execute the query.
 - Legitimate `MATCH ... RETURN` queries continue to work.
 - All existing tests pass.
 
@@ -86,6 +87,7 @@ Status: ✅ Ready — approved 2026-06-10
 | Reject executable mutation keywords (QP-041 AC-1) | Token-aware deny-list in `graph_traverse` | Task 4.1 | `tests/cypher-injection.test.ts` mutation cases fail closed |
 | Enforce query length cap at 4096 (QP-041 AC-2) | Length guard in `graph_traverse` | Task 4.1 | `tests/cypher-injection.test.ts` long-query rejection |
 | Preserve MATCH-only gate (QP-041 AC-3) | Start-token validation in `graph_traverse` | Task 4.1 | `tests/cypher-injection.test.ts` non-MATCH rejection |
+| Fail closed on malformed literal/comment input (derived from QP-041 token-aware policy) | Masking helper rejects ambiguous parse state before execution | Task 4.1, Task 4.2 | `tests/cypher-injection.test.ts` unterminated quote/comment rejection |
 | Preserve read-only MATCH query success (QP-041 AC-4) | Validation allows safe read-only Cypher | Task 4.2 | `tests/cypher-injection.test.ts` accepted read-only and literal/comment edge cases |
 | Cross-model critical review before Review transition (planning rule) | Explicit reviewer task with contract checklist | Task 4.3 | Logged cross-model review result in §6 and PASS before board move |
 
@@ -95,13 +97,13 @@ Status: ✅ Ready — approved 2026-06-10
 
 - Docker Compose test stack running
 - No DDL or schema changes needed
-- Graph must have at least one node for the positive test (the seeded test corpus should provide this)
+- Focused tests must not rely on ambient graph state for validation-only assertions; if a positive execution-path fixture is required, create or seed the minimal graph fixture inside the test/helper.
 
 ---
 
 ## §4. Task Definitions
 
-### Task 4.1: Replace Cypher validation with keyword deny-list
+### Task 4.1: Replace Cypher validation with token-aware deny-list
 
 **Objective:** Reject mutation keywords only when they are executable Cypher tokens (not text inside string literals/comments).
 
@@ -129,8 +131,13 @@ Status: ✅ Ready — approved 2026-06-10
   - Single-quoted strings (`'...'`) with escaped quotes
   - Double-quoted strings (`"..."`) if present
   - Line comments (`-- ...`) and block comments (`/* ... */`)
+  - Unterminated string/comment sequences must be treated as invalid input and reported before any DB call
 
-4. In the `graph_traverse` handler, validate against the masked query text:
+4. Before shipping the validation path, check whether the AGE `cypher(...)` call can be executed with bound SQL parameters for the user-supplied query string.
+   - If parameter binding is supported by the current SQL client + AGE call shape, use it instead of interpolating user Cypher into `sql.unsafe`.
+   - If parameter binding is not supported in this path, retain the narrow wrapper but add explicit invariant tests proving the wrapper cannot be escaped by quote or dollar-quote content in user input.
+
+5. In the `graph_traverse` handler, validate against the masked query text:
    ```typescript
    async ({ cypher }) => {
      try {
@@ -145,7 +152,7 @@ Status: ✅ Ready — approved 2026-06-10
          };
        }
 
-       // Must start with MATCH
+       // Must start with MATCH after leading whitespace/comments are masked
        if (!CYPHER_MUST_START_WITH.test(masked)) {
          return {
            content: [{ type: "text" as const, text: "Only MATCH queries are accepted. Query must start with MATCH." }],
@@ -182,17 +189,18 @@ Status: ✅ Ready — approved 2026-06-10
    }
    ```
 
-4. Remove the old `ALLOWED_MATCH_RE` and `DOLLAR_QUOTE_RE` constants (replaced by the new ones above).
+6. Remove the old `ALLOWED_MATCH_RE` and `DOLLAR_QUOTE_RE` constants (replaced by the new ones above).
 
 **Design decisions:**
 - **Token-aware masking before deny-list** honors PO scope lock: keywords in literals/comments do not trigger rejection.
 - **Word boundary (`\b`)** ensures standalone keyword matching (e.g., avoids matching `DELETED_AT`).
 - **LOAD in deny-list:** Prevents `LOAD CSV`-style injection; this does not affect wrapper SQL `LOAD 'age'`.
-- **$$ stripping retained:** defense in depth for `sql.unsafe` Cypher wrapper.
+- **SQL wrapper boundary:** prefer bound parameters if the AGE call shape supports them; otherwise keep the narrowest possible wrapper and prove escaping invariants with focused tests.
+- **Fail-closed parser rule:** if masking cannot deterministically classify the query, reject it instead of attempting execution.
 
 **Expected output:** Mutation queries are rejected with a specific error naming the disallowed keyword.
 
-**Requirement mapping:** §2d row 1 (AC-12)
+**Requirement mapping:** §2d row 1 (QP-041 AC-1)
 
 **Verification:**
 ```powershell
@@ -253,6 +261,14 @@ docker compose --profile test exec mcp-test deno test --allow-net --allow-env --
      assertEquals(result.content[0].text.includes("must start with MATCH"), true);
    });
 
+   Deno.test("graph_traverse rejects when MATCH is not the leading executable token", async () => {
+     const result = await callTool("graph_traverse", {
+       cypher: "WITH 1 AS ignored MATCH (n) RETURN n",
+     });
+     assertEquals(result.isError, true);
+     assertEquals(result.content[0].text.includes("must start with MATCH"), true);
+   });
+
    // --- Length limit ---
 
    Deno.test("graph_traverse rejects queries exceeding 4096 chars", async () => {
@@ -268,7 +284,7 @@ docker compose --profile test exec mcp-test deno test --allow-net --allow-env --
      const result = await callTool("graph_traverse", {
        cypher: "MATCH (n) RETURN n LIMIT 5",
      });
-     // May return results or "No results." depending on graph state — both are valid
+     // This assertion should validate the guard only; do not depend on pre-existing graph rows.
      assertEquals(result.isError, undefined);
    });
 
@@ -287,9 +303,23 @@ docker compose --profile test exec mcp-test deno test --allow-net --allow-env --
      });
      assertEquals(result.isError, undefined);
    });
+
+   Deno.test("graph_traverse rejects unterminated string literal", async () => {
+     const result = await callTool("graph_traverse", {
+       cypher: "MATCH (n) WHERE n.status = 'DELETE RETURN n",
+     });
+     assertEquals(result.isError, true);
+   });
+
+   Deno.test("graph_traverse rejects unterminated block comment", async () => {
+     const result = await callTool("graph_traverse", {
+       cypher: "MATCH (n) /* DELETE should not parse RETURN n",
+     });
+     assertEquals(result.isError, true);
+   });
    ```
 
-**Expected output:** All mutation attempts are rejected; legitimate queries pass; edge cases documented.
+**Expected output:** All mutation attempts are rejected; legitimate queries pass; malformed literal/comment input fails closed; edge cases documented.
 
 **Requirement mapping:** §2d row 1 (verification evidence)
 
@@ -368,7 +398,7 @@ Expected: All tests pass.
 ### Approach Registry
 | # | Description | Rollback Point | Status |
 |---|-------------|---------------|--------|
-| 1 | Keyword deny-list with word-boundary regex + length cap | git HEAD | 🟢 Active |
+| 1 | Token-aware deny-list + 4096 length cap | git HEAD | 🟢 Active |
 
 ### Approach Failure Log
 (Empty)
