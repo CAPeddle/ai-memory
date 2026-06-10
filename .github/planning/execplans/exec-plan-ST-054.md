@@ -310,8 +310,8 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 |---|---|
 | **Last completed task** | Task 4.5 - Closeout, cross-model review gate, and board transitions |
 | **Last successful command** | `git status --short` |
-| **Expected outputs produced** | §1b populated with completion evidence, cross-model critical review completed with PASS verdict against §2/§2d contract, and board card moved from Refined to Review |
-| **Next task** | Await PO acceptance decision for ST-054 in Review |
+| **Expected outputs produced** | §1b populated with completion evidence, cross-model critical review completed with PASS verdict against §2/§2d contract, board card moved from Refined to Review, and then Review to Done after PO acceptance |
+| **Next task** | Story complete (no remaining execution tasks) |
 | **Known blockers** | None |
 | **Last updated** | 2026-06-10 |
 
@@ -326,6 +326,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-06-08T04:00:00+02:00 | Task 4.4 | Blocked (plan-review) | ST-054 gate assertions flipped and focused verification green, but full-suite still fails in `tests/mcp-protocol-compat.test.ts` (ST-057 scope). PO instructed "stop and resolve mcp-protocol-compat failures" before continuing. | Escalate to `/plan` |
 | 2026-06-10T00:00:00Z | Task 4.4 | Complete | Re-ran required verification after plan-review clearance: `tests/search-golden-set.test.ts` 16/16 and full suite `tests/` 87/0 (including `tests/mcp-protocol-compat.test.ts`); gate is green | Task 4.5 |
 | 2026-06-10T00:00:00Z | Task 4.5 | Complete | Populated §1b, completed cross-model contract review with PASS verdict, and moved ST-054 board card Refined -> Review after gate pass | Await PO acceptance |
+| 2026-06-10T00:00:00Z | Story closeout | Complete | PO accepted ST-054; board card moved Review -> Done | No further action |
 
 ### Avoidance
 
@@ -369,6 +370,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - 2026-06-10T00:00:00Z - Task 4.5: populated §1b outcomes with concrete completion evidence mapped to D1/D2/D3/D3b and gate requirements.
 - 2026-06-10T00:00:00Z - Task 4.5 cross-model review: independent contract review against §2 and §2d returned PASS with no blocking findings; reviewer confirmed behavioral coverage across floor fallback, normalization boundaries, structured output, and zero-result telemetry.
 - 2026-06-10T00:00:00Z - Task 4.5 board transition: moved ST-054 from Refined to Review after review gate pass; prepared acceptance evidence for PO decision.
+- 2026-06-10T00:00:00Z - PO acceptance: ST-054 accepted and board card moved from Review to Done.
 
 ---
 
@@ -403,6 +405,10 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 - Decision: Accept cross-model critical review PASS and advance ST-054 to Review.
   Rationale: Independent reviewer validated implementation/test behavior against §2 acceptance criteria and §2d traceability with no contract-breaking gaps.
+  Date: 2026-06-10
+
+- Decision: Move ST-054 to Done after PO acceptance.
+  Rationale: All acceptance criteria were already complete and verified; PO approved final closure.
   Date: 2026-06-10
 
 ---

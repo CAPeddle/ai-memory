@@ -1,7 +1,7 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
-> Next planning target: ST-054 resuming at Task 4.4 (plan-review cleared 2026-06-10).
+> Next planning target: None (no Ready ExecPlan in In Progress/Refined).
 > Unblocked: ST-023, ST-028, ST-029, ST-019 (all ST-005/ST-008/ST-022 blockers cleared)
 > Last updated: 2026-06-10
 
@@ -407,11 +407,16 @@
 
 ## Review
 
+(Empty)
+
+## Done
+
 ### ST-054: Retrieval robustness (false-empty, identifier dilution, zero-result observability)
 - Type: hardening
 - Source: Session analysis 2026-06-04 (build-failure false-empty incident) + adversarial design review + local-instance validation
 - phase: 2
 - Value: 5
+- Completed: 2026-06-10
 - Blocked by: —
 - Touches: `server/index.ts` (`search` floor fallback, structured `search_thoughts` output, capture/query normalization), `server/src/identifierNormalization.ts` (new), `server/src/searchQuality.ts` (query-level recall logging), `server/db/schema.sql`, `server/db/003_search_text_and_recall_queries.sql` (new), `server/tests/`
 - Acceptance criteria:
@@ -421,13 +426,11 @@
   - [x] **D3b** — `search_thoughts` returns machine-parseable structured JSON with per-result `score` and `quality_band`
   - [x] **Gate** — ST-046 harness ST-054 flip-points are green (`normalizeForBm25`, identifier-form BM25 baseline, and `search` D1 baseline)
   - [x] Cross-model critical review passes (different model reviews implementation against the ExecPlan contract before the story moves to Review)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-054.md` (Task 4.5 complete; awaiting PO acceptance)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-054.md`
 - Query packet: `.github/planning/query-packets/QP-054-retrieval-robustness.md`
 - ce-plan artifact: `docs/plans/2026-06-04-001-feat-retrieval-robustness-plan.md`
 - Docs: `server/index.ts`, `server/db/search.sql`, `server/src/searchQuality.ts`
-- Notes: Planned and ready 2026-06-05. ST-057 completed 2026-06-10 (full suite 87/0), plan-review block cleared, ST-054 resumed and verification passed (`tests/search-golden-set.test.ts` 16/16; full suite 87/0). Cross-model critical review PASS recorded in ExecPlan §6. Scope lock preserved: floor-with-fallback for `search`; persisted `search_text` + `normalizer_version`; token boundary strips Jira/build identifiers but preserves UUID/error-code/version tokens; zero-result observability via `recall_queries`; `search_thoughts` response uses structured JSON score+band. Full historical re-normalization/backfill remains deferred via `coalesce(search_text,content)` compatibility.
-
-## Done
+- Notes: Planned and ready 2026-06-05. ST-057 completed 2026-06-10 (full suite 87/0), plan-review block cleared, ST-054 resumed and verification passed (`tests/search-golden-set.test.ts` 16/16; full suite 87/0). Cross-model critical review PASS recorded in ExecPlan §6. Scope lock preserved: floor-with-fallback for `search`; persisted `search_text` + `normalizer_version`; token boundary strips Jira/build identifiers but preserves UUID/error-code/version tokens; zero-result observability via `recall_queries`; `search_thoughts` response uses structured JSON score+band. Full historical re-normalization/backfill remains deferred via `coalesce(search_text,content)` compatibility. PO accepted and story moved to Done on 2026-06-10.
 
 ### ST-057: MCP compatibility hardening
 - Type: hardening
