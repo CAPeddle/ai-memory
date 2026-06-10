@@ -1,28 +1,30 @@
 # FollowUpSessionLog — ai-memory
 
-## Last Session: 2026-06-05 (/continue ST-055 + ST-046 complete)
+## Last Session: 2026-06-10 (/plan scope resolution for ST-054 vs ST-057)
 
 ### Accomplished
-- Executed ST-055 from Ready through Done. Added pure MMR null-embedding tests, fixed `mmrRerank` to use one unified loop with null-pair similarity `0`, verified e2e/full suite, passed cross-model review, PO accepted Done.
-- ST-055 commits: 094100d, 65ff132, 8cd16c5, e7a28b5, f65e049.
-- Cleared ST-055 blocker and resumed ST-046.
-- Executed ST-046 Tasks 4.3–4.5 from the post-ST-055 resume point. Extracted pure `rrfFuse(lanes,k)`, rewired `search_thoughts`, added `search-golden-set.test.ts`, stabilized complementary live membership at top-10, verified full suite, passed cross-model review, PO accepted Done.
-- ST-046 commits this session: f8cdbea, 3bc7bf6, 590a0c6, 66965c8, a6a0823.
+- Resolved plan-review blocker on ST-054 (paused 2026-06-08 at Task 4.4 due to test suite failing on ST-057-scoped `tests/mcp-protocol-compat.test.ts`).
+- Investigated ST-054 and ST-057 dependency via subagent: confirmed they are functionally independent with no blocking relationships.
+- ST-057 is lower-complexity (protocol method stubs only) with no database schema changes; ST-054 is higher-complexity (algorithmic fixes + schema + response format changes).
+- **Recommendation:** Execute ST-057 first, then ST-054. This clears the verification gate and avoids scope expansion.
+- **PO approval:** Confirmed 2026-06-10 via vscode_askQuestions.
+- Board updated: ST-054 moved from Refined → Backlog with blocker `ST-057`; ST-057 remains Refined, ready for `/continue`.
+- Committed plan-review resolution to board in commit `c5bedcc`.
 
-### Verification
-- ST-055: targeted pure tests 5/5, e2e 16/16, full suite 53/53 before ST-046 harness was added.
-- ST-046: e2e 16/16 after `rrfFuse` rewire; `search-golden-set.test.ts` 16/16; final full suite 69/69.
-- Cross-model reviews: PASS for ST-055 and ST-046.
-
-### Board State
+### Board State After This Session
+- Refined: ST-057 (MCP compatibility hardening) — ready for `/continue`.
+- Backlog: ST-054 (blocker: ST-057 must ship first) — ready for `/continue` after ST-057 completes.
 - In Progress: empty.
 - Review: empty.
 - Done: ST-055, ST-046.
-- Newly unblocked: ST-054 and ST-050.
-- Next planning target: ST-054 (retrieval robustness) — still Backlog because ExecPlan must be authored by `/plan` before `/continue` can execute it.
 
-### Avoidance / Lessons
-- Live embedding membership checks are complementary coverage only; deterministic AC-7 lives in pure `rrfFuse` / `mmrRerank` tests.
-- Full-suite e2e tests can insert transient rows before golden-set tests; use top-10 membership rather than top-3 for live-path coverage.
-- Do not clear ST-054 from Backlog until `/plan` creates and marks its ExecPlan Ready.
-- Continue running Deno commands inside `mcp-test`; restart `mcp-test` after runtime code changes.
+### Next Steps for Executor
+- `/continue` should pick up ST-057 (Refined, Value 5, no blockers). When ST-057 completes, ST-054 verification gate becomes clean.
+- After ST-057 ships, promote ST-054 from Backlog → Refined (optional; `/continue` may pick up Backlog with no blockers).
+- ST-054 ExecPlan is already marked ✅ Ready for /continue; no further planning required.
+
+### Working Tree State
+- `.github/planning/story-board.md` committed.
+- Unstaged changes from attempted ST-054 execution: `server/index.ts`, `server/tests/search-golden-set.test.ts`, `server/tests/_helpers/recall.ts`, `exec-plan-ST-054.md`.
+  These are not cleaned up because they may be useful context for the executor; the executor should decide whether to stash or integrate.
+  ST-054 execution should not resume until ST-057 is complete and the full test suite passes.
