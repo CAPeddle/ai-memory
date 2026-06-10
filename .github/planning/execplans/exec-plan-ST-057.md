@@ -45,12 +45,12 @@ This story does **not** fix OpenCode `ProviderModelNotFoundError` or `@opencode-
 
 *(Populated during/after execution. Required for completion visibility.)*
 
-- completion status: not completed
-- key findings/achievements: —
-- requirements met vs unmet: —
-- architectural impact: —
-- supporting evidence: —
-- downstream changes: —
+- completion status: completed (moved to Review)
+- key findings/achievements: Added first-class MCP prompt/resource surfaces (`memory_search_guidance`, `ai-memory://server-info`), eliminated `-32601` for prompt/resource compatibility probes, added raw+SDK protocol compatibility coverage, and documented client troubleshooting distinctions in README.
+- requirements met vs unmet: All §2 acceptance criteria met; no unmet requirements.
+- architectural impact: No architectural change to retrieval/storage pipeline. MCP capability surface expanded safely via SDK APIs only.
+- supporting evidence: Focused protocol tests green (including SDK client smoke), full server suite green (`87 passed, 0 failed`), raw dev `prompts/list` smoke returns prompt list without `-32601`, cross-model review verdict PASS.
+- downstream changes: ST-057 moved from Refined to Review; ST-054 verification gate unblocked to resume `/continue` execution.
 
 ---
 
@@ -497,12 +497,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.4 — Run full server verification |
-| **Last successful command** | `docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/` |
-| **Expected outputs produced** | Full server suite passed (`87 passed, 0 failed`); focused protocol tests and SDK client smoke pass; dev raw `prompts/list` smoke returns prompt list after `mcp` restart |
-| **Next task** | Task 4.5 — Cross-model review and closeout |
+| **Last completed task** | Task 4.5 — Cross-model review and closeout |
+| **Last successful command** | `git commit -m "chore(board): move ST-057 to review after gate" ...` |
+| **Expected outputs produced** | Cross-model review PASS recorded; §1b outcomes populated; ST-057 moved to Review on story board |
+| **Next task** | Await PO acceptance (Review gate) |
 | **Known blockers** | None |
-| **Last updated** | 2026-06-10T11:29:03+02:00 |
+| **Last updated** | 2026-06-10T11:34:05+02:00 |
 
 ### Progress History
 
@@ -514,6 +514,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-06-10T11:28:16+02:00 | 4.2 | Completed | Added `memory_search_guidance` prompt + `ai-memory://server-info` resource in `server/index.ts`; focused protocol test green after `mcp-test` restart | Task 4.3 |
 | 2026-06-10T11:28:41+02:00 | 4.3 | Completed | Added README troubleshooting section and verified required strings with `Select-String` | Task 4.4 |
 | 2026-06-10T11:29:03+02:00 | 4.4 | Completed | Added SDK-client smoke test; full suite green (`87 passed`); dev raw `prompts/list` smoke green after restarting `mcp` | Task 4.5 |
+| 2026-06-10T11:34:05+02:00 | 4.5 | Completed | Cross-model critical review PASS; §1b outcomes updated; board moved ST-057 Refined → Review | Await PO acceptance |
 
 ### Avoidance
 
@@ -573,6 +574,9 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - Decision: Treat `ai-memory://server-info` as a positively allowlisted static schema.
   Rationale: Negative secret-name checks are not enough to prevent future metadata expansion; tests must keep the resource limited to the explicit public keys approved in this plan.
   Date: 2026-06-05
+- Decision: Accept cross-model review verdict PASS (Explore agent reviewer) as the review gate completion signal for ST-057.
+  Rationale: Reviewer validated implementation against §2 ACs and §2d traceability, including method-existence assertions, SDK API usage, allowlisted resource schema, and tool-surface non-regression.
+  Date: 2026-06-10
 
 ---
 
@@ -590,9 +594,9 @@ At story completion:
 
 (Use this section for retrospective depth only. The primary at-a-glance outcomes summary belongs in §1b.)
 
-Achieved: —
-Remains: —
-Lesson: —
+Achieved: Prompt/resource compatibility endpoints implemented with first-class SDK APIs; OpenCode-style startup probe noise (`-32601`) removed for accepted endpoints; full suite remained green.
+Remains: PO acceptance and transition from Review to Done.
+Lesson: In this compose setup, protocol-surface changes may require explicit `mcp`/`mcp-test` restarts before compatibility probes reflect updated handlers.
 
 ---
 
