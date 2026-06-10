@@ -428,7 +428,7 @@
 - Source: Session analysis 2026-06-04 (build-failure false-empty incident) + adversarial design review + local-instance validation
 - phase: 2
 - Value: 5
-- Blocked by: ST-057 (plan-review resolved 2026-06-10: execute ST-057 first to clear verification gate)
+- Blocked by: —
 - Touches: `server/index.ts` (`search` floor fallback, structured `search_thoughts` output, capture/query normalization), `server/src/identifierNormalization.ts` (new), `server/src/searchQuality.ts` (query-level recall logging), `server/db/schema.sql`, `server/db/003_search_text_and_recall_queries.sql` (new), `server/tests/`
 - Acceptance criteria:
   - [ ] **D1** — `search` no longer returns an empty set when relevant memories exist below the legacy 0.5 floor; response shape `{results:[{id,title,url}]}` remains pinned
@@ -459,11 +459,16 @@
 
 ## Review
 
+(Empty)
+
+## Done
+
 ### ST-057: MCP compatibility hardening
 - Type: hardening
 - Source: OpenCode ai-memory MCP investigation 2026-06-05 (`prompts/list` returned JSON-RPC -32601)
 - phase: 2
 - Value: 5
+- Completed: 2026-06-10
 - Blocked by: —
 - Notes (execution order, 2026-06-10): Execute ST-057 first, then ST-054. These stories are functionally independent; ST-057 is lower-complexity (protocol stubs only). Clearing MCP compatibility issues first lets ST-054's verification gate (`deno test tests/`) pass cleanly without scope expansion. PO approved 2026-06-10.
 - Touches: `server/index.ts` (MCP server capability/registration surface), possibly new protocol-compat helper under `server/src/`, focused protocol tests under `server/tests/`, README/client troubleshooting docs if behavior changes
@@ -477,9 +482,7 @@
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-057.md`
 - Query packet: `.github/planning/query-packets/QP-057-mcp-compatibility-hardening.md`
 - Docs: MCP 2025-06-18 server specs for prompts/resources/tools; README client setup section
-- Notes: Direct diagnostic probes showed `initialize` advertises only `capabilities.tools`, `tools/list` works, while `prompts/list` and `resources/list` returned `-32601`. Implemented first-class SDK `registerPrompt` and `registerResource`, added protocol compatibility tests (including SDK client smoke), and updated README troubleshooting guidance. Cross-model critical review passed on 2026-06-10.
-
-## Done
+- Notes: Direct diagnostic probes showed `initialize` advertises only `capabilities.tools`, `tools/list` works, while `prompts/list` and `resources/list` returned `-32601`. Implemented first-class SDK `registerPrompt` and `registerResource`, added protocol compatibility tests (including SDK client smoke), and updated README troubleshooting guidance. Cross-model critical review passed on 2026-06-10. PO accepted and story moved to Done on 2026-06-10.
 
 ### ST-055: MMR null-embedding BM25 recall preservation
 - Type: bug
