@@ -1,41 +1,13 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
-> Next planning target: plan ST-054 against the completed ST-046 harness.
+> Next planning target: ST-054 resuming at Task 4.4 (plan-review cleared 2026-06-10).
 > Unblocked: ST-023, ST-028, ST-029, ST-019 (all ST-005/ST-008/ST-022 blockers cleared)
-> Last updated: 2026-06-05
+> Last updated: 2026-06-10
 
 ---
 
 ## Backlog
-
-### ST-054: Retrieval robustness (false-empty, identifier dilution, zero-result observability)
-- Type: hardening
-- Source: Session analysis 2026-06-04 (build-failure false-empty incident) + adversarial design review + local-instance validation
-- phase: 2
-- Value: 5
-- Blocked by: plan-review
-- Touches: `server/index.ts` (`search` floor fallback, structured `search_thoughts` output, capture/query normalization), `server/src/identifierNormalization.ts` (new), `server/src/searchQuality.ts` (query-level recall logging), `server/db/schema.sql`, `server/db/003_search_text_and_recall_queries.sql` (new), `server/tests/`
-- Acceptance criteria:
-  - [ ] **D1** — `search` no longer returns an empty set when relevant memories exist below the legacy 0.5 floor; response shape `{results:[{id,title,url}]}` remains pinned
-  - [ ] **D2** — non-destructive identifier normalization persists retrieval text (`search_text`) and `normalizer_version` while preserving raw `content`; identifier facets are retained in `metadata`
-  - [ ] **D3** — both `search` and `search_thoughts` write query-level observability rows including zero-result queries
-  - [ ] **D3b** — `search_thoughts` returns machine-parseable structured JSON with per-result `score` and `quality_band`
-  - [ ] **Gate** — ST-046 harness ST-054 flip-points are green (`normalizeForBm25`, identifier-form BM25 baseline, and `search` D1 baseline)
-  - [ ] Cross-model critical review passes (different model reviews implementation against the ExecPlan contract before the story moves to Review)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-054.md` (✅ Ready for /continue)
-- Query packet: `.github/planning/query-packets/QP-054-retrieval-robustness.md`
-- ce-plan artifact: `docs/plans/2026-06-04-001-feat-retrieval-robustness-plan.md`
-- Docs: `server/index.ts`, `server/db/search.sql`, `server/src/searchQuality.ts`
-- Notes: Planned and ready 2026-06-05. Scope lock: floor-with-fallback for `search`; persisted `search_text` + `normalizer_version`; token boundary strips Jira/build identifiers but preserves UUID/error-code/version tokens; zero-result observability via `recall_queries`; `search_thoughts` response moves to structured JSON score+band. Full historical re-normalization/backfill is deferred (old rows continue via `coalesce(search_text,content)`).
-  - [ ] Secrets (`MEMORY_API_KEY`, `DB_PASSWORD`, `OPENROUTER_API_KEY`) stored in provider secret vault; never in `.env` files or repo
-  - [ ] Custom domain + TLS termination
-  - [ ] `/health` reachable from internet; `/mcp` requires Bearer auth
-  - [ ] CI workflow builds and pushes Docker image on push to main
-  - [ ] Deployment runbook in `docs/runbooks/deployment.md`
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-023.md` (to be created)
-- Docs: `docs/design/adr/ADR-009-deployment-model.md`, `docs/investigations/ST-021-findings.md`
-- Notes: Open question: AGE availability on managed Postgres. Supabase/Neon ship `pgvector` but not `age`; may require self-hosted Postgres alongside the MCP container, or waiting for AGE managed-service support. Decide during planning.
 
 ### ST-028: Worker observability and `stats` MCP tool
 - Type: feature
@@ -421,7 +393,7 @@
 
 ---
 
-## Backlog
+## Refined
 
 ### ST-054: Retrieval robustness (false-empty, identifier dilution, zero-result observability)
 - Type: hardening
@@ -437,17 +409,11 @@
   - [ ] **D3b** — `search_thoughts` returns machine-parseable structured JSON with per-result `score` and `quality_band`
   - [ ] **Gate** — ST-046 harness ST-054 flip-points are green (`normalizeForBm25`, identifier-form BM25 baseline, and `search` D1 baseline)
   - [ ] Cross-model critical review passes (different model reviews implementation against the ExecPlan contract before the story moves to Review)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-054.md` (✅ Ready for /continue after ST-057 ships)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-054.md` (✅ Ready for /continue)
 - Query packet: `.github/planning/query-packets/QP-054-retrieval-robustness.md`
 - ce-plan artifact: `docs/plans/2026-06-04-001-feat-retrieval-robustness-plan.md`
 - Docs: `server/index.ts`, `server/db/search.sql`, `server/src/searchQuality.ts`
-- Notes: Planned and ready 2026-06-05. Execution paused 2026-06-08 at Task 4.4 when full test suite failed on `tests/mcp-protocol-compat.test.ts` (out-of-scope for ST-054). Plan review 2026-06-10: these stories are functionally independent; ST-057 is lower-complexity (protocol stubs only). Executing ST-057 first clears the verification gate and lets ST-054 proceed without scope expansion. Scope lock: floor-with-fallback for `search`; persisted `search_text` + `normalizer_version`; token boundary strips Jira/build identifiers but preserves UUID/error-code/version tokens; zero-result observability via `recall_queries`; `search_thoughts` response moves to structured JSON score+band. Full historical re-normalization/backfill is deferred (old rows continue via `coalesce(search_text,content)`).
-
----
-
-## Refined
-
-(Empty)
+- Notes: Planned and ready 2026-06-05. ST-057 completed 2026-06-10 (full suite 87/0), plan-review block cleared. Resuming at Task 4.4. Scope lock: floor-with-fallback for `search`; persisted `search_text` + `normalizer_version`; token boundary strips Jira/build identifiers but preserves UUID/error-code/version tokens; zero-result observability via `recall_queries`; `search_thoughts` response moves to structured JSON score+band. Full historical re-normalization/backfill is deferred (old rows continue via `coalesce(search_text,content)`).
 
 ---
 

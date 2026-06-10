@@ -89,7 +89,8 @@ Status: ✅ Ready for /continue
 
 ## §2c. Plan Review Notes
 
-(Empty - populated by /continue when escalating issues)
+- 2026-06-08: Execution paused during Task 4.4 governance verification. Focused ST-054 checks are green, but full-suite `deno test tests/` was failing on `tests/mcp-protocol-compat.test.ts` (ST-057 scope). PO requested ST-057 be completed first.
+- 2026-06-10: **Plan-review resolved.** ST-057 completed (commit `cadd6e1`, full suite 87 passed / 0 failed). Block cleared. ST-054 resumes at Task 4.4 — no scope change. PO approved 2026-06-10.
 
 ---
 
@@ -313,7 +314,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | **Expected outputs produced** | Runtime now applies normalized retrieval text on capture/query paths, `search` uses floor-with-fallback, `search_thoughts` returns structured JSON score/band payloads, and query-level telemetry writes to `recall_queries` via `server/db/schema.sql` + `server/db/003_search_text_and_recall_queries.sql` |
 | **Next task** | Task 4.4 - Flip ST-046 gate assertions to target values and run focused + full verification |
 | **Known blockers** | None |
-| **Last updated** | 2026-06-08T03:37:55+02:00 |
+| **Last updated** | 2026-06-10 |
 
 ### Progress History
 
@@ -323,6 +324,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-06-07T22:52:52+02:00 | Task 4.1 | Complete | Added `tests/search-tool-contract.test.ts`; red checkpoint failed only on D1 with `Expected search surfacing incident == true; got false`; restored golden-set baseline and re-ran Task 4.1 verification green | Task 4.2 |
 | 2026-06-07T22:54:29+02:00 | Task 4.2 | Complete | Added `src/identifierNormalization.ts` and `tests/identifier-normalization.test.ts`; unit suite passed 6/6 covering ticket/build stripping, UUID/semver/error-code preservation, empty/identifier-only input, and idempotence | Task 4.3 |
 | 2026-06-08T03:37:55+02:00 | Task 4.3 | Complete | Implemented D1/D2/D3/D3b across runtime and schema (`index.ts`, `searchQuality.ts`, `schema.sql`, `003_search_text_and_recall_queries.sql`) and updated contract/e2e tests; verification green: `tests/search-tool-contract.test.ts` 2/2, `tests/search-quality.test.ts` 9/9, `tests/e2e.test.ts` 17/17 | Task 4.4 |
+| 2026-06-08T04:00:00+02:00 | Task 4.4 | Blocked (plan-review) | ST-054 gate assertions flipped and focused verification green, but full-suite still fails in `tests/mcp-protocol-compat.test.ts` (ST-057 scope). PO instructed "stop and resolve mcp-protocol-compat failures" before continuing. | Escalate to `/plan` |
 
 ### Avoidance
 
@@ -359,6 +361,8 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - 2026-06-07T22:54:29+02:00 - Task 4.2: added `server/src/identifierNormalization.ts` with versioned, pure strip/preserve logic and `server/tests/identifier-normalization.test.ts`; verified the boundary suite green in `mcp-test`.
 - 2026-06-08T03:37:55+02:00 - Task 4.3: wired floor-with-fallback in `search`, structured JSON response + quality bands in `search_thoughts`, capture-time `search_text`/`normalizer_version`/identifier facets, and query-level telemetry via `logRecallQuery` + `recall_queries` schema.
 - 2026-06-08T03:37:55+02:00 - Task 4.3 verification: rebuilt test profile services (`db-test`, `seed`, `mcp-test`) so schema updates were present, then re-ran focused and e2e verification to green.
+- 2026-06-08T04:00:00+02:00 - Task 4.4: flipped ST-046 seam to use `normalizeIdentifiers` and target baselines; updated `tests/_helpers/recall.ts` to parse structured JSON first with legacy fallback.
+- 2026-06-08T04:00:00+02:00 - Task 4.4 escalation: full-suite command remains red only on `tests/mcp-protocol-compat.test.ts` (prompts/resources compatibility expectations). PO requested those failures be resolved before continuation; execution halted and escalated to plan-review because ST-057 fixes are out of this ExecPlan scope.
 
 ---
 
