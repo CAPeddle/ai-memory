@@ -1,6 +1,6 @@
 # ExecPlan - ST-054: Retrieval robustness (false-empty, identifier dilution, zero-result observability)
 
-> Status: ✅ Ready for /continue
+> Status: ✅ Completed (in Review pending PO acceptance)
 > Story: ST-054
 > Created: 2026-06-05
 > Parent: `.github/planning/query-packets/QP-054-retrieval-robustness.md`
@@ -44,13 +44,12 @@ Key implementation files for this story:
 
 ## §1b. Outcomes & Conclusions
 
-Required fields:
-- completion status: not completed
-- key findings/achievements: pending execution
-- requirements met vs unmet: pending execution
-- architectural impact: pending execution
-- supporting evidence: pending execution
-- downstream changes: pending execution
+- completion status: implementation complete; moved to Review after cross-model critical review PASS
+- key findings/achievements: D1 floor-with-fallback now surfaces incident-relevant memories without changing the `search` response shape; D2 identifier normalization is persisted in derived fields (`search_text`, `normalizer_version`, identifier facets) while raw `content` remains unchanged; D3 query-level telemetry now captures both zero-result and non-zero-result calls for `search` and `search_thoughts`; D3b `search_thoughts` now returns machine-parseable JSON with per-result `score` and `quality_band`
+- requirements met vs unmet: all scoped requirements in §2/§2d met; no unmet requirements recorded
+- architectural impact: retrieval path now uses derived normalization with backward compatibility via `coalesce(search_text, content)`; observability expanded with `recall_queries`; no architecture divergence from ADR defaults and no full historical backfill introduced in this story
+- supporting evidence: `docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/search-golden-set.test.ts` (16/16 pass); `docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/` (87/0 pass); cross-model contract review verdict PASS recorded in §6 execution logs and §6c
+- downstream changes: ST-054 board card moved to Review; no additional unblock sweep yet (Done transition pending PO acceptance)
 
 ---
 
@@ -309,10 +308,10 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.4 - Flip ST-046 gate assertions to target values and run focused + full verification |
-| **Last successful command** | `docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/` |
-| **Expected outputs produced** | ST-054 gate assertions are now green in `tests/search-golden-set.test.ts`, focused golden-set verification passed 16/16, and full server suite passed 87/0 including `tests/mcp-protocol-compat.test.ts` |
-| **Next task** | Task 4.5 - Closeout, cross-model review gate, and board transitions |
+| **Last completed task** | Task 4.5 - Closeout, cross-model review gate, and board transitions |
+| **Last successful command** | `git status --short` |
+| **Expected outputs produced** | §1b populated with completion evidence, cross-model critical review completed with PASS verdict against §2/§2d contract, and board card moved from Refined to Review |
+| **Next task** | Await PO acceptance decision for ST-054 in Review |
 | **Known blockers** | None |
 | **Last updated** | 2026-06-10 |
 
@@ -326,6 +325,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-06-08T03:37:55+02:00 | Task 4.3 | Complete | Implemented D1/D2/D3/D3b across runtime and schema (`index.ts`, `searchQuality.ts`, `schema.sql`, `003_search_text_and_recall_queries.sql`) and updated contract/e2e tests; verification green: `tests/search-tool-contract.test.ts` 2/2, `tests/search-quality.test.ts` 9/9, `tests/e2e.test.ts` 17/17 | Task 4.4 |
 | 2026-06-08T04:00:00+02:00 | Task 4.4 | Blocked (plan-review) | ST-054 gate assertions flipped and focused verification green, but full-suite still fails in `tests/mcp-protocol-compat.test.ts` (ST-057 scope). PO instructed "stop and resolve mcp-protocol-compat failures" before continuing. | Escalate to `/plan` |
 | 2026-06-10T00:00:00Z | Task 4.4 | Complete | Re-ran required verification after plan-review clearance: `tests/search-golden-set.test.ts` 16/16 and full suite `tests/` 87/0 (including `tests/mcp-protocol-compat.test.ts`); gate is green | Task 4.5 |
+| 2026-06-10T00:00:00Z | Task 4.5 | Complete | Populated §1b, completed cross-model contract review with PASS verdict, and moved ST-054 board card Refined -> Review after gate pass | Await PO acceptance |
 
 ### Avoidance
 
@@ -366,6 +366,9 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 - 2026-06-08T04:00:00+02:00 - Task 4.4 escalation: full-suite command remains red only on `tests/mcp-protocol-compat.test.ts` (prompts/resources compatibility expectations). PO requested those failures be resolved before continuation; execution halted and escalated to plan-review because ST-057 fixes are out of this ExecPlan scope.
 - 2026-06-10T00:00:00Z - Task 4.4 resume: resumed after plan-review clearance noted in §2c and re-ran focused ST-054 verification (`tests/search-golden-set.test.ts`) to confirm seam assertions are green.
 - 2026-06-10T00:00:00Z - Task 4.4 verification: ran full suite `tests/` in `mcp-test`; all 87 tests passed including `tests/mcp-protocol-compat.test.ts`, closing the previous blocker without scope changes.
+- 2026-06-10T00:00:00Z - Task 4.5: populated §1b outcomes with concrete completion evidence mapped to D1/D2/D3/D3b and gate requirements.
+- 2026-06-10T00:00:00Z - Task 4.5 cross-model review: independent contract review against §2 and §2d returned PASS with no blocking findings; reviewer confirmed behavioral coverage across floor fallback, normalization boundaries, structured output, and zero-result telemetry.
+- 2026-06-10T00:00:00Z - Task 4.5 board transition: moved ST-054 from Refined to Review after review gate pass; prepared acceptance evidence for PO decision.
 
 ---
 
@@ -398,6 +401,10 @@ If a session is interrupted, the executor reads §5b to determine where to resum
   Rationale: This satisfies the plan's explicit example without colliding with Jira-ticket stripping in Task 4.2.
   Date: 2026-06-07
 
+- Decision: Accept cross-model critical review PASS and advance ST-054 to Review.
+  Rationale: Independent reviewer validated implementation/test behavior against §2 acceptance criteria and §2d traceability with no contract-breaking gaps.
+  Date: 2026-06-10
+
 ---
 
 ## §7. Compound Step / Closeout
@@ -410,4 +417,6 @@ At story completion:
 
 ### §7b. Outcomes & Retrospective
 
-(Populate at completion)
+- Story achieved its retrieval-robustness goals without expanding scope into historical backfill.
+- The prior Task 4.4 blocker was external to ST-054 scope (ST-057 protocol compatibility) and is now closed; resume path worked as designed.
+- Regression safety is strong for this scope: focused gate plus full suite green and contract-level review PASS.

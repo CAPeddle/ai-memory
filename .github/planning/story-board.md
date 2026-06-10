@@ -395,25 +395,7 @@
 
 ## Refined
 
-### ST-054: Retrieval robustness (false-empty, identifier dilution, zero-result observability)
-- Type: hardening
-- Source: Session analysis 2026-06-04 (build-failure false-empty incident) + adversarial design review + local-instance validation
-- phase: 2
-- Value: 5
-- Blocked by: —
-- Touches: `server/index.ts` (`search` floor fallback, structured `search_thoughts` output, capture/query normalization), `server/src/identifierNormalization.ts` (new), `server/src/searchQuality.ts` (query-level recall logging), `server/db/schema.sql`, `server/db/003_search_text_and_recall_queries.sql` (new), `server/tests/`
-- Acceptance criteria:
-  - [ ] **D1** — `search` no longer returns an empty set when relevant memories exist below the legacy 0.5 floor; response shape `{results:[{id,title,url}]}` remains pinned
-  - [ ] **D2** — non-destructive identifier normalization persists retrieval text (`search_text`) and `normalizer_version` while preserving raw `content`; identifier facets are retained in `metadata`
-  - [ ] **D3** — both `search` and `search_thoughts` write query-level observability rows including zero-result queries
-  - [ ] **D3b** — `search_thoughts` returns machine-parseable structured JSON with per-result `score` and `quality_band`
-  - [ ] **Gate** — ST-046 harness ST-054 flip-points are green (`normalizeForBm25`, identifier-form BM25 baseline, and `search` D1 baseline)
-  - [ ] Cross-model critical review passes (different model reviews implementation against the ExecPlan contract before the story moves to Review)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-054.md` (✅ Ready for /continue)
-- Query packet: `.github/planning/query-packets/QP-054-retrieval-robustness.md`
-- ce-plan artifact: `docs/plans/2026-06-04-001-feat-retrieval-robustness-plan.md`
-- Docs: `server/index.ts`, `server/db/search.sql`, `server/src/searchQuality.ts`
-- Notes: Planned and ready 2026-06-05. ST-057 completed 2026-06-10 (full suite 87/0), plan-review block cleared. Resuming at Task 4.4. Scope lock: floor-with-fallback for `search`; persisted `search_text` + `normalizer_version`; token boundary strips Jira/build identifiers but preserves UUID/error-code/version tokens; zero-result observability via `recall_queries`; `search_thoughts` response moves to structured JSON score+band. Full historical re-normalization/backfill is deferred (old rows continue via `coalesce(search_text,content)`).
+(Empty)
 
 ---
 
@@ -425,7 +407,25 @@
 
 ## Review
 
-(Empty)
+### ST-054: Retrieval robustness (false-empty, identifier dilution, zero-result observability)
+- Type: hardening
+- Source: Session analysis 2026-06-04 (build-failure false-empty incident) + adversarial design review + local-instance validation
+- phase: 2
+- Value: 5
+- Blocked by: —
+- Touches: `server/index.ts` (`search` floor fallback, structured `search_thoughts` output, capture/query normalization), `server/src/identifierNormalization.ts` (new), `server/src/searchQuality.ts` (query-level recall logging), `server/db/schema.sql`, `server/db/003_search_text_and_recall_queries.sql` (new), `server/tests/`
+- Acceptance criteria:
+  - [x] **D1** — `search` no longer returns an empty set when relevant memories exist below the legacy 0.5 floor; response shape `{results:[{id,title,url}]}` remains pinned
+  - [x] **D2** — non-destructive identifier normalization persists retrieval text (`search_text`) and `normalizer_version` while preserving raw `content`; identifier facets are retained in `metadata`
+  - [x] **D3** — both `search` and `search_thoughts` write query-level observability rows including zero-result queries
+  - [x] **D3b** — `search_thoughts` returns machine-parseable structured JSON with per-result `score` and `quality_band`
+  - [x] **Gate** — ST-046 harness ST-054 flip-points are green (`normalizeForBm25`, identifier-form BM25 baseline, and `search` D1 baseline)
+  - [x] Cross-model critical review passes (different model reviews implementation against the ExecPlan contract before the story moves to Review)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-054.md` (Task 4.5 complete; awaiting PO acceptance)
+- Query packet: `.github/planning/query-packets/QP-054-retrieval-robustness.md`
+- ce-plan artifact: `docs/plans/2026-06-04-001-feat-retrieval-robustness-plan.md`
+- Docs: `server/index.ts`, `server/db/search.sql`, `server/src/searchQuality.ts`
+- Notes: Planned and ready 2026-06-05. ST-057 completed 2026-06-10 (full suite 87/0), plan-review block cleared, ST-054 resumed and verification passed (`tests/search-golden-set.test.ts` 16/16; full suite 87/0). Cross-model critical review PASS recorded in ExecPlan §6. Scope lock preserved: floor-with-fallback for `search`; persisted `search_text` + `normalizer_version`; token boundary strips Jira/build identifiers but preserves UUID/error-code/version tokens; zero-result observability via `recall_queries`; `search_thoughts` response uses structured JSON score+band. Full historical re-normalization/backfill remains deferred via `coalesce(search_text,content)` compatibility.
 
 ## Done
 
