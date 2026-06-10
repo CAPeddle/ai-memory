@@ -497,12 +497,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | — |
-| **Last successful command** | — |
-| **Expected outputs produced** | — |
-| **Next task** | Task 4.1 — Add red protocol compatibility tests |
+| **Last completed task** | Task 4.2 — Register minimal prompt and static resource |
+| **Last successful command** | `docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/mcp-protocol-compat.test.ts` |
+| **Expected outputs produced** | Red checkpoint confirmed (`-32601` before implementation), then protocol compatibility tests passed after prompt/resource registration and `mcp-test` restart |
+| **Next task** | Task 4.3 — Document client troubleshooting distinction |
 | **Known blockers** | None |
-| **Last updated** | 2026-06-05 |
+| **Last updated** | 2026-06-10T11:28:16+02:00 |
 
 ### Progress History
 
@@ -510,6 +510,8 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 |---|---|---|---|---|
 | 2026-06-05 | Planning | ExecPlan drafted | `.github/planning/execplans/exec-plan-ST-057.md` | PO review |
 | 2026-06-05 | Planning | Approved by PO | Status set to Ready for `/continue` | Task 4.1 |
+| 2026-06-10T11:28:16+02:00 | 4.1 | Completed | `tests/mcp-protocol-compat.test.ts` executed red: initialize/prompt/resource assertions failed with `-32601` as expected | Task 4.2 |
+| 2026-06-10T11:28:16+02:00 | 4.2 | Completed | Added `memory_search_guidance` prompt + `ai-memory://server-info` resource in `server/index.ts`; focused protocol test green after `mcp-test` restart | Task 4.3 |
 
 ### Avoidance
 

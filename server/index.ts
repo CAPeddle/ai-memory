@@ -41,6 +41,61 @@ const MAX_CONTENT_BYTES = 32_768; // 32 KB content limit per thought
 
 const server = new McpServer({ name: "ai-memory", version: "0.1.0" });
 
+server.registerPrompt(
+  "memory_search_guidance",
+  {
+    title: "Search AI Memory Before Answering",
+    description: "Guidance for clients that want to use ai-memory recall before answering.",
+  },
+  () => ({
+    description: "Use ai-memory tools to recall relevant project memory before answering.",
+    messages: [{
+      role: "user" as const,
+      content: {
+        type: "text" as const,
+        text:
+          "Before answering from memory, call ai-memory search_thoughts for project-scoped recall. Use search for ChatGPT-compatible semantic lookup, list_thoughts for recent entries, and fetch when you already have a thought id.",
+      },
+    }],
+  }),
+);
+
+const SERVER_INFO_RESOURCE_URI = "ai-memory://server-info";
+
+server.registerResource(
+  "server-info",
+  SERVER_INFO_RESOURCE_URI,
+  {
+    title: "AI Memory Server Info",
+    description: "Safe static MCP compatibility metadata for ai-memory clients.",
+    mimeType: "application/json",
+  },
+  (uri) => ({
+    contents: [{
+      uri: uri.toString(),
+      mimeType: "application/json",
+      text: JSON.stringify({
+        name: "ai-memory",
+        version: "0.1.0",
+        protocolSurfaces: ["tools", "prompts", "resources"],
+        promptNames: ["memory_search_guidance"],
+        resourceUris: [SERVER_INFO_RESOURCE_URI],
+        toolNames: [
+          "search",
+          "fetch",
+          "search_thoughts",
+          "capture_thought",
+          "list_thoughts",
+          "thought_stats",
+          "graph_traverse",
+          "graph_search",
+          "consolidate",
+        ],
+      }, null, 2),
+    }],
+  }),
+);
+
 // --- ChatGPT compatibility: search + fetch -----------------------------------
 
 server.registerTool(
@@ -59,27 +114,45 @@ server.registerTool(
       const qEmb = normalizedQuery
         ? await getEmbedding(normalizedQuery)
         : null;
-      const rows = qEmb
+      const aboveFloorRows = qEmb
         ? await sql`
-            WITH ranked AS (
-              SELECT id, content, created_at,
-                     1 - (embedding <=> ${sql.unsafe(`'[${qEmb.join(",")}]'`)}::vector) AS similarity
-              FROM thoughts
-              WHERE active = true AND embedding IS NOT NULL
-              ORDER BY similarity DESC
-              LIMIT 10
-            )
-            SELECT id, content, created_at, similarity
-            FROM ranked
-            WHERE similarity >= 0.5
-            UNION ALL
-            SELECT id, content, created_at, similarity
-            FROM ranked
-            WHERE NOT EXISTS (SELECT 1 FROM ranked WHERE similarity >= 0.5)
+            SELECT id, content, created_at,
+                   1 - (embedding <=> ${sql.unsafe(`'[${qEmb.join(",")}]'`)}::vector) AS similarity
+            FROM thoughts
+            WHERE active = true AND embedding IS NOT NULL
+              AND 1 - (embedding <=> ${sql.unsafe(`'[${qEmb.join(",")}]'`)}::vector) >= 0.5
             ORDER BY similarity DESC
             LIMIT 10
           `
         : [];
+
+      const lexicalFallbackRows = normalizedQuery
+        ? await sql`
+            SELECT id, content, created_at, 0::float AS similarity
+            FROM thoughts, plainto_tsquery('english', ${normalizedQuery}) AS q
+            WHERE active = true
+              AND search_vector @@ q
+            ORDER BY ts_rank_cd(search_vector, q) DESC
+            LIMIT 10
+          `
+        : [];
+
+      const nearestNeighborFallbackRows = qEmb
+        ? await sql`
+            SELECT id, content, created_at,
+                   1 - (embedding <=> ${sql.unsafe(`'[${qEmb.join(",")}]'`)}::vector) AS similarity
+            FROM thoughts
+            WHERE active = true AND embedding IS NOT NULL
+            ORDER BY similarity DESC
+            LIMIT 10
+          `
+        : [];
+
+      const rows = aboveFloorRows.length
+        ? aboveFloorRows
+        : lexicalFallbackRows.length
+          ? lexicalFallbackRows
+          : nearestNeighborFallbackRows;
       const results = rows.map((t) => ({
         id: t.id,
         title: (t.content as string).slice(0, 80),
