@@ -1,9 +1,10 @@
 # ExecPlan — ST-041: Cypher Injection Hardening
 
-> Status: ⬜ Not Ready
+> Status: ✅ Ready for /continue
 > Story: ST-041
 > Created: 2026-05-31
-> Parent: QP-038-Vectorize-MCP-Repo-Review.md
+> Approved: 2026-06-10
+> Parent: .github/planning/query-packets/QP-041-cypher-injection-hardening.md
 > PLANS.md: This document must be maintained per `.github/planning/execplans/_TEMPLATE.md`
 
 This ExecPlan is a living document. Keep §1b Outcomes & Conclusions current as the primary completion summary, and keep §6b Surprises & Discoveries, §6c Decision Log, and §7b Outcomes & Retrospective up to date as supporting execution detail.
@@ -29,7 +30,7 @@ const safeCypher = trimmed.replace(DOLLAR_QUOTE_RE, "");
 3. `MATCH (n) CALL apoc.export.csv.all()` (if APOC were loaded) passes.
 4. The `$$` stripping prevents dollar-quote injection but doesn't prevent inline mutations after MATCH.
 
-This story replaces the insufficient check with a **keyword deny-list** that tokenizes the query and rejects any occurrence of mutation keywords regardless of position. It also adds a max query length limit.
+This story replaces the insufficient check with a **token-aware keyword deny-list** that rejects executable mutation keywords while permitting keyword text inside quoted strings and comments. It also adds a max query length limit.
 
 **Key file:** `server/index.ts` — `graph_traverse` tool registration (around line 385).
 
@@ -64,14 +65,17 @@ This story replaces the insufficient check with a **keyword deny-list** that tok
 - [x] Scoped requirements are mapped to concrete outputs in §2d (no orphan requirements)
 - [x] Every task ends with a verification step (command or assertion)
 - [x] Acceptance criteria phrased as observable behaviour
+- [x] Final verification task includes cross-model critical review by a different model before story transition to Review
 
-Status: ⬜ Not ready — requires /plan
+Status: ✅ Ready — approved 2026-06-10
 
 ---
 
 ## §2c. Plan Review Notes
 
-(Empty)
+- 2026-06-10: PO locked deny-list behavior to token-aware validation (do not reject mutation keywords when they appear only in quoted strings/comments).
+- 2026-06-10: PO kept max query length cap at 4096 characters.
+- 2026-06-10: Scope lock confirmed: graph_traverse hardening + focused tests only. Rate limiting and all non-ST-041 work remain out of scope.
 
 ---
 
@@ -79,7 +83,11 @@ Status: ⬜ Not ready — requires /plan
 
 | Requirement (source) | Must appear in output artifact(s) | Implemented by task(s) | Verification evidence |
 |---|---|---|---|
-| `graph_traverse` rejects mutation keywords (QP-038 AC-12) | Keyword deny-list in tool handler | Task 4.1 | Test: `MATCH (n) DELETE n` returns error |
+| Reject executable mutation keywords (QP-041 AC-1) | Token-aware deny-list in `graph_traverse` | Task 4.1 | `tests/cypher-injection.test.ts` mutation cases fail closed |
+| Enforce query length cap at 4096 (QP-041 AC-2) | Length guard in `graph_traverse` | Task 4.1 | `tests/cypher-injection.test.ts` long-query rejection |
+| Preserve MATCH-only gate (QP-041 AC-3) | Start-token validation in `graph_traverse` | Task 4.1 | `tests/cypher-injection.test.ts` non-MATCH rejection |
+| Preserve read-only MATCH query success (QP-041 AC-4) | Validation allows safe read-only Cypher | Task 4.2 | `tests/cypher-injection.test.ts` accepted read-only and literal/comment edge cases |
+| Cross-model critical review before Review transition (planning rule) | Explicit reviewer task with contract checklist | Task 4.3 | Logged cross-model review result in §6 and PASS before board move |
 
 ---
 
@@ -95,7 +103,7 @@ Status: ⬜ Not ready — requires /plan
 
 ### Task 4.1: Replace Cypher validation with keyword deny-list
 
-**Objective:** Reject any Cypher query containing mutation keywords, regardless of position.
+**Objective:** Reject mutation keywords only when they are executable Cypher tokens (not text inside string literals/comments).
 
 **Input:** `server/index.ts` — `graph_traverse` tool handler.
 
@@ -109,7 +117,7 @@ Status: ⬜ Not ready — requires /plan
    const DOLLAR_QUOTE_RE = /\$\$/g;
    ```
 
-2. Replace with a more robust validation:
+2. Replace with a token-aware validation shape:
    ```typescript
    // --- Cypher injection mitigation (graph_traverse) ---
    const CYPHER_MUST_START_WITH = /^match\s/i;
@@ -117,11 +125,17 @@ Status: ⬜ Not ready — requires /plan
    const CYPHER_MAX_LENGTH = 4096;
    ```
 
-3. In the `graph_traverse` handler, replace the existing validation block:
+3. Add a small helper in `server/index.ts` that returns a copy of the query with string literal and comment spans replaced by whitespace while preserving character offsets. Cover:
+  - Single-quoted strings (`'...'`) with escaped quotes
+  - Double-quoted strings (`"..."`) if present
+  - Line comments (`-- ...`) and block comments (`/* ... */`)
+
+4. In the `graph_traverse` handler, validate against the masked query text:
    ```typescript
    async ({ cypher }) => {
      try {
        const trimmed = cypher.trim();
+     const masked = maskCypherLiteralsAndComments(trimmed);
 
        // Length limit
        if (trimmed.length > CYPHER_MAX_LENGTH) {
@@ -132,15 +146,15 @@ Status: ⬜ Not ready — requires /plan
        }
 
        // Must start with MATCH
-       if (!CYPHER_MUST_START_WITH.test(trimmed)) {
+       if (!CYPHER_MUST_START_WITH.test(masked)) {
          return {
            content: [{ type: "text" as const, text: "Only MATCH queries are accepted. Query must start with MATCH." }],
            isError: true,
          };
        }
 
-       // Deny-list: reject mutation keywords anywhere in the query
-       const denied = trimmed.match(CYPHER_DENIED_KEYWORDS);
+       // Deny-list: reject executable mutation keywords only
+       const denied = masked.match(CYPHER_DENIED_KEYWORDS);
        if (denied) {
          return {
            content: [{
@@ -171,9 +185,10 @@ Status: ⬜ Not ready — requires /plan
 4. Remove the old `ALLOWED_MATCH_RE` and `DOLLAR_QUOTE_RE` constants (replaced by the new ones above).
 
 **Design decisions:**
-- **Word boundary (`\b`)** ensures we don't reject queries containing "DELETED_AT" or "SETTINGS" as property names. Only standalone keywords match.
-- **LOAD in deny-list:** Prevents `LOAD CSV` or `LOAD 'extension'` injection. Our own `LOAD 'age'` is in the SQL wrapper (outside the user's Cypher), so it's unaffected.
-- **$$ stripping retained:** Belt-and-suspenders. Even though the deny-list catches most attacks, stripping `$$` prevents escaping the Cypher block into raw SQL.
+- **Token-aware masking before deny-list** honors PO scope lock: keywords in literals/comments do not trigger rejection.
+- **Word boundary (`\b`)** ensures standalone keyword matching (e.g., avoids matching `DELETED_AT`).
+- **LOAD in deny-list:** Prevents `LOAD CSV`-style injection; this does not affect wrapper SQL `LOAD 'age'`.
+- **$$ stripping retained:** defense in depth for `sql.unsafe` Cypher wrapper.
 
 **Expected output:** Mutation queries are rejected with a specific error naming the disallowed keyword.
 
@@ -184,13 +199,13 @@ Status: ⬜ Not ready — requires /plan
 docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/cypher-injection.test.ts
 ```
 
-**Failure handling:** If a legitimate query uses `SET` or `DELETE` as a property value (e.g. `MATCH (n) WHERE n.status = 'DELETE' RETURN n`), the word-boundary regex will match it. This is an acceptable false positive for a security control — the user can use `graph_search` instead or abbreviate the value.
+**Failure handling:** If the masking helper mis-parses malformed quote/comment sequences, fail closed by returning a validation error and do not execute the query.
 
 ---
 
 ### Task 4.2: Write injection prevention tests
 
-**Objective:** Comprehensive test coverage for the Cypher validation.
+**Objective:** Comprehensive test coverage for executable-keyword rejection and literal/comment safety.
 
 **Input:** Test infrastructure in `server/tests/`.
 
@@ -257,18 +272,20 @@ docker compose --profile test exec mcp-test deno test --allow-net --allow-env --
      assertEquals(result.isError, undefined);
    });
 
-   // --- Word boundary: property values containing keywords should NOT trigger ---
-   // NOTE: This is a known false-positive limitation. The regex matches word
-   // boundaries, so `SET` inside a string literal like WHERE n.x = 'SET' WILL match.
-   // This test documents the current behaviour (reject). If future work implements
-   // proper token-level parsing, this test should be updated.
+   // --- Token-aware behavior: keywords in literals/comments should not trigger ---
 
-   Deno.test("graph_traverse rejects SET even in property context (documented limitation)", async () => {
+   Deno.test("graph_traverse allows keyword inside string literal", async () => {
      const result = await callTool("graph_traverse", {
        cypher: "MATCH (n) WHERE n.status = 'DELETE' RETURN n",
      });
-     // Current implementation: rejects because DELETE appears as a word
-     assertEquals(result.isError, true);
+     assertEquals(result.isError, undefined);
+   });
+
+   Deno.test("graph_traverse allows keyword inside comment", async () => {
+     const result = await callTool("graph_traverse", {
+       cypher: "MATCH (n) -- DELETE should be ignored\nRETURN n LIMIT 1",
+     });
+     assertEquals(result.isError, undefined);
    });
    ```
 
@@ -297,9 +314,17 @@ Expected: All tests pass (12+ tests depending on MUTATION_QUERIES length).
    docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/
    ```
 
-2. **Cross-model review checklist:**
+2. **Mandatory cross-model critical review (different model than executor):**
+  - Ask a different model to review the shipped implementation against this ExecPlan's §2 Definition of Done and §2d matrix.
+  - Reviewer must explicitly answer:
+    - Do tests validate the contract, not only happy-path pass/fail?
+    - Are there executable mutation paths or parser edge cases still untested?
+    - Does runtime behavior match token-aware scope lock (literals/comments allowed, executable keywords denied)?
+  - If any contract gap is found, fix and re-run verification before story move to Review.
+
+3. **Cross-model review checklist guidance:**
    - Does the regex `\b` word boundary work correctly for Cypher? (Yes — Cypher keywords are always standalone words separated by whitespace or punctuation.)
-   - Could an attacker bypass with Unicode homoglyphs? (Low risk — AGE's parser wouldn't recognize homoglyphs as keywords either, so the attack would fail at execution.)
+  - Could an attacker bypass with Unicode homoglyphs? (Low risk — AGE parser should reject them as keywords, but reviewer should still confirm no bypass through masking logic.)
    - Is there a time-of-check/time-of-use issue? (No — the check and the query execution happen synchronously in the same function.)
    - Does `LOAD` in the deny-list conflict with the `LOAD 'age'` in the SQL wrapper? (No — the deny-list checks only the user's Cypher string, not the surrounding SQL.)
 
@@ -387,3 +412,4 @@ At story completion:
 ## Revision Notes
 
 - 2026-05-31: Initial ExecPlan from QP-038 §4.15.
+- 2026-06-10: Re-scoped to dedicated QP-041 and PO scope lock (token-aware deny-list, 4096 cap, graph_traverse-only boundary).

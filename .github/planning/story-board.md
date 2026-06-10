@@ -225,9 +225,8 @@
 - Acceptance criteria:
   - [ ] `graph_traverse` rejects mutation keywords (AC-12)
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-041.md`
-- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Query packet: `.github/planning/query-packets/QP-041-cypher-injection-hardening.md`
 - Notes: 🔴 Must fix. Current mitigation (`$$` stripping + MATCH-start check) is insufficient — mutation keywords after MATCH bypass it.
-
 ### ST-042: Migration framework
 - Type: infrastructure
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
@@ -395,7 +394,18 @@
 
 ## Refined
 
-(Empty)
+### ST-041: Cypher injection hardening
+- Type: security
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 5
+- Blocked by: —
+- Touches: `server/index.ts` (graph_traverse tool handler)
+- Acceptance criteria:
+  - [ ] `graph_traverse` rejects mutation keywords (AC-12)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-041.md`
+- Query packet: `.github/planning/query-packets/QP-041-cypher-injection-hardening.md`
+- Notes: Ready for /continue on 2026-06-10. Scope lock: token-aware deny-list (keywords in literals/comments allowed), 4096-char cap, graph_traverse-only hardening with focused tests.
 
 ---
 
