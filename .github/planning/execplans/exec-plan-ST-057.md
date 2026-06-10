@@ -497,12 +497,12 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 
 | Field | Value |
 |---|---|
-| **Last completed task** | Task 4.3 — Document client troubleshooting distinction |
-| **Last successful command** | `Select-String -Path README.md -Pattern 'Client troubleshooting','MCP error -32601','ProviderModelNotFoundError','@opencode-ai/plugin@local'` |
-| **Expected outputs produced** | README now includes `#### Client troubleshooting` with all required protocol-vs-client error distinctions |
-| **Next task** | Task 4.4 — Run full server verification |
+| **Last completed task** | Task 4.4 — Run full server verification |
+| **Last successful command** | `docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/` |
+| **Expected outputs produced** | Full server suite passed (`87 passed, 0 failed`); focused protocol tests and SDK client smoke pass; dev raw `prompts/list` smoke returns prompt list after `mcp` restart |
+| **Next task** | Task 4.5 — Cross-model review and closeout |
 | **Known blockers** | None |
-| **Last updated** | 2026-06-10T11:28:41+02:00 |
+| **Last updated** | 2026-06-10T11:29:03+02:00 |
 
 ### Progress History
 
@@ -513,6 +513,7 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 | 2026-06-10T11:28:16+02:00 | 4.1 | Completed | `tests/mcp-protocol-compat.test.ts` executed red: initialize/prompt/resource assertions failed with `-32601` as expected | Task 4.2 |
 | 2026-06-10T11:28:16+02:00 | 4.2 | Completed | Added `memory_search_guidance` prompt + `ai-memory://server-info` resource in `server/index.ts`; focused protocol test green after `mcp-test` restart | Task 4.3 |
 | 2026-06-10T11:28:41+02:00 | 4.3 | Completed | Added README troubleshooting section and verified required strings with `Select-String` | Task 4.4 |
+| 2026-06-10T11:29:03+02:00 | 4.4 | Completed | Added SDK-client smoke test; full suite green (`87 passed`); dev raw `prompts/list` smoke green after restarting `mcp` | Task 4.5 |
 
 ### Avoidance
 
@@ -549,6 +550,9 @@ If a session is interrupted, the executor reads §5b to determine where to resum
 ## §6b. Surprises & Discoveries
 
 (Document unexpected behaviours, performance tradeoffs, bugs, or insights. Provide evidence.)
+
+- 2026-06-10: `mcp-test` and `mcp` containers required restart to pick up updated `server/index.ts` despite bind mount; before restart, raw and focused protocol checks still showed `-32601`. Evidence: first focused run failed on `prompts/list/resources/list`, then passed after `docker compose --profile test restart mcp-test`; raw dev smoke changed from `-32601` to prompt list after `docker compose restart mcp`.
+- 2026-06-10: `deno check index.ts tests/mcp-protocol-compat.test.ts` fails on a pre-existing ST-054-branch type error in `index.ts` (line ~428, SQL tuple type mismatch), unrelated to ST-057 compatibility behavior. Full integration suite remained green (`87 passed`).
 
 ---
 

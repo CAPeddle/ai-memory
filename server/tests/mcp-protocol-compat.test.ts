@@ -6,8 +6,10 @@ import {
   assertNotEquals,
   assertStringIncludes,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { Client } from "npm:@modelcontextprotocol/sdk@1.24.3/client/index.js";
+import { StreamableHTTPClientTransport } from "npm:@modelcontextprotocol/sdk@1.24.3/client/streamableHttp.js";
 
-import { extractText, mcpCall, mcpRequest } from "./_helpers/mcpClient.ts";
+import { API_KEY, MCP_BASE, extractText, mcpCall, mcpRequest } from "./_helpers/mcpClient.ts";
 
 interface JsonRpcResponse {
   result?: unknown;
@@ -111,4 +113,26 @@ Deno.test("ping and existing tools remain compatible", async () => {
 
   const statsResponse = await mcpCall("thought_stats", {});
   assertStringIncludes(extractText(statsResponse), "Total active thoughts:");
+});
+
+Deno.test("SDK client can list prompts/resources and ping", async () => {
+  const client = new Client({ name: "st-057-sdk-client-test", version: "0.1.0" });
+  const transport = new StreamableHTTPClientTransport(new URL(`${MCP_BASE}/mcp`), {
+    requestInit: {
+      headers: { Authorization: `Bearer ${API_KEY}` },
+    },
+  });
+
+  try {
+    await client.connect(transport);
+    await client.ping();
+
+    const prompts = await client.listPrompts();
+    assert(prompts.prompts.some((p) => p.name === "memory_search_guidance"));
+
+    const resources = await client.listResources();
+    assert(resources.resources.some((r) => r.uri === "ai-memory://server-info"));
+  } finally {
+    await client.close();
+  }
 });
