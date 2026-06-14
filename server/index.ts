@@ -180,6 +180,7 @@ server.registerTool(
       setActiveEmbeddingLane(qEmb ? "full" : "bm25_only");
       return { content: [{ type: "text" as const, text: JSON.stringify({ results }) }] };
     } catch (err) {
+      setActiveEmbeddingLane("n/a");
       return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }], isError: true };
     }
   }
@@ -301,6 +302,7 @@ server.registerTool(
           profile,
           resultIds: [],
         });
+        setActiveEmbeddingLane(qEmb ? "full" : "bm25_only");
         return {
           content: [{
             type: "text" as const,
@@ -395,6 +397,7 @@ server.registerTool(
         }],
       };
     } catch (err) {
+      setActiveEmbeddingLane("n/a");
       return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }], isError: true };
     }
   }
@@ -905,11 +908,13 @@ app.all("/mcp", async (c) => {
   }
 });
 
-Deno.serve({ port: 3000 }, app.fetch);
-
 // Startup repair: ensure recall_queries table exists on running instances
-// that pre-date the schema migration adding this table.
-ensureRecallQueriesTable((query) => sql.unsafe(query));
+// that pre-date the schema migration adding this table. Must complete before
+// the server starts accepting requests so the first /mcp call can write
+// recall query rows without hitting "relation does not exist".
+await ensureRecallQueriesTable((query) => sql.unsafe(query));
+
+Deno.serve({ port: 3000 }, app.fetch);
 
 // Start entity extraction background worker
 startEntityWorker();

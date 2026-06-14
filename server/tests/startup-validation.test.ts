@@ -91,7 +91,7 @@ Deno.test("ensureRecallQueriesTable: executes CREATE TABLE IF NOT EXISTS queries
   assertEquals(executed[0].includes("recall_queries"), true);
   assertEquals(executed[1].includes("CREATE INDEX IF NOT EXISTS"), true);
   assertEquals(executed[1].includes("idx_recall_queries_tool_created"), true);
-  assertEquals(logs.some((l) => l.includes("recall_queries table verified")), true);
+  assertEquals(logs.some((l) => l.includes("recall_queries DDL applied")), true);
 });
 
 Deno.test("ensureRecallQueriesTable: swallows SQL errors without throwing", async () => {
@@ -104,4 +104,20 @@ Deno.test("ensureRecallQueriesTable: swallows SQL errors without throwing", asyn
 
   // Must not throw — error is caught and logged to console.error
   assertEquals(errorLogged, false); // errorLogged would be set if we captured console.error; absence of throw is the primary signal
+});
+
+Deno.test("ensureRecallQueriesTable: swallows error on second DDL statement without throwing", async () => {
+  let callCount = 0;
+  const logs: string[] = [];
+
+  await ensureRecallQueriesTable(
+    async (_query) => {
+      callCount++;
+      if (callCount === 2) throw new Error("duplicate index"); // CREATE INDEX fails
+    },
+    (msg) => logs.push(msg),
+  );
+
+  // Must not throw; the 'DDL applied' log should NOT be emitted since the catch fired
+  assertEquals(logs.some((l) => l.includes("DDL applied")), false);
 });

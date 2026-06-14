@@ -60,6 +60,15 @@ export async function extractSafeBodyFields(
  * The route handler calls takeActiveEmbeddingLane() in the finally block to
  * include the lane in the log entry. This is safe for the sequential
  * per-request MCP model (one JSON-RPC call per HTTP request lifecycle).
+ *
+ * ⚠ Concurrency caveat: Deno.serve handles multiple HTTP connections
+ * concurrently. If two /mcp requests are in flight simultaneously (e.g.,
+ * two agents calling search at the same time), their setActiveEmbeddingLane
+ * calls will race. The concrete wrong-answer outcome: both requests receive
+ * each other's lane value (not just one losing). Under typical single-agent
+ * use this race window is negligible, but at agent load (parallel tool calls,
+ * 10 s embedding timeout windows) it is a practical concern. The field is
+ * advisory telemetry, not a correctness invariant.
  */
 let _activeEmbeddingLane: EmbeddingLane = "n/a";
 

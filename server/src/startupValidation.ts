@@ -55,7 +55,7 @@ export async function ensureRecallQueriesTable(
       CREATE INDEX IF NOT EXISTS idx_recall_queries_tool_created
         ON public.recall_queries(tool, created_at DESC)
     `);
-    log("[startup] recall_queries table verified");
+    log("[startup] recall_queries DDL applied (IF NOT EXISTS — schema not validated)");
   } catch (err) {
     // Log the error but never crash the server — the table may already exist
     // in a form we cannot easily detect, or the database may be temporarily
