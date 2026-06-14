@@ -136,3 +136,18 @@ Deno.test("SDK client can list prompts/resources and ping", async () => {
     await client.close();
   }
 });
+
+Deno.test("X-Correlation-ID header is accepted and does not break the request", async () => {
+  // Requests with a valid X-Correlation-ID header should process identically to those without.
+  const correlationId = "test-trace-2025-06-14";
+  const response = await mcpRequest("ping", undefined, {
+    headers: { "X-Correlation-ID": correlationId },
+  }) as JsonRpcResponse;
+  assertEquals(response.error, undefined);
+});
+
+Deno.test("requests without X-Correlation-ID still succeed", async () => {
+  // Absence of the header must not cause errors — server generates a UUID.
+  const response = await mcpRequest("ping") as JsonRpcResponse;
+  assertEquals(response.error, undefined);
+});

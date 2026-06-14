@@ -25,6 +25,15 @@ import {
   IDENTIFIER_NORMALIZER_VERSION,
   normalizeIdentifiers,
 } from "./src/identifierNormalization.ts";
+import {
+  type EmbeddingLane,
+  emitRequestLog,
+  extractSafeBodyFields,
+  isBodyLoggingEnabled,
+  resolveCorrelationId,
+  setActiveEmbeddingLane,
+  takeActiveEmbeddingLane,
+} from "./src/mcpDiagnostics.ts";
 
 // ---------------------------------------------------------------------------
 // Startup validation — fail fast if required config is missing
@@ -168,6 +177,7 @@ server.registerTool(
         resultIds: results.map((result) => result.id as string),
       });
 
+      setActiveEmbeddingLane(qEmb ? "full" : "bm25_only");
       return { content: [{ type: "text" as const, text: JSON.stringify({ results }) }] };
     } catch (err) {
       return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }], isError: true };
@@ -373,6 +383,7 @@ server.registerTool(
         resultIds: responseResults.map((result) => result.id),
       });
 
+      setActiveEmbeddingLane(qEmb ? "full" : "bm25_only");
       return {
         content: [{
           type: "text" as const,
@@ -856,13 +867,42 @@ app.options("*", (c) => c.text("ok", 200));
 app.get("/health", (c) => c.text("ok"));
 
 app.all("/mcp", async (c) => {
-  const denied = requireApiKey(c.req.raw);
-  if (denied) return c.text("Unauthorized", 401);
+  const startMs = Date.now();
+  const request_id = resolveCorrelationId(c.req.raw);
 
-  // @hono/mcp's StreamableHTTPTransport is Fetch/Hono-compatible (unlike the SDK's Node-style transport)
-  const transport = new StreamableHTTPTransport();
-  await server.connect(transport);
-  return transport.handleRequest(c);
+  // Extract safe method/id from body for logging (clones stream — does not consume original).
+  const bodyFields = isBodyLoggingEnabled()
+    ? await extractSafeBodyFields(c.req.raw)
+    : undefined;
+  const method = typeof bodyFields === "object" ? bodyFields.method : undefined;
+
+  const denied = requireApiKey(c.req.raw);
+  if (denied) {
+    emitRequestLog({ ts: new Date().toISOString(), request_id, method, status: 401, duration_ms: Date.now() - startMs, embedding_lane: "n/a" });
+    return c.text("Unauthorized", 401);
+  }
+
+  // embedding_lane is populated by search tools when they complete.
+  // Default to "n/a" for non-search requests or requests that error before reaching a tool.
+  let embedding_lane: EmbeddingLane = "n/a";
+  let status = 200;
+  let error_class: string | undefined;
+
+  try {
+    // @hono/mcp's StreamableHTTPTransport is Fetch/Hono-compatible (unlike the SDK's Node-style transport)
+    const transport = new StreamableHTTPTransport();
+    await server.connect(transport);
+    const response = await transport.handleRequest(c);
+    status = response instanceof Response ? response.status : 200;
+    embedding_lane = takeActiveEmbeddingLane();
+    return response;
+  } catch (err) {
+    status = 500;
+    error_class = (err as Error)?.constructor?.name ?? "Error";
+    throw err;
+  } finally {
+    emitRequestLog({ ts: new Date().toISOString(), request_id, method, status, duration_ms: Date.now() - startMs, embedding_lane, error_class });
+  }
 });
 
 Deno.serve({ port: 3000 }, app.fetch);

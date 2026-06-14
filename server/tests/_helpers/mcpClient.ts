@@ -28,7 +28,7 @@ export async function mcpCall(tool: string, args: Record<string, unknown>): Prom
   return await res.json();
 }
 
-export async function mcpRequest(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
+export async function mcpRequest(method: string, params: Record<string, unknown> = {}, init?: { headers?: Record<string, string> }): Promise<unknown> {
   const id = crypto.randomUUID();
   const res = await fetch(`${MCP_BASE}/mcp`, {
     method: "POST",
@@ -36,6 +36,7 @@ export async function mcpRequest(method: string, params: Record<string, unknown>
       Authorization: `Bearer ${API_KEY}`,
       "Content-Type": "application/json",
       "Accept": "application/json, text/event-stream",
+      ...init?.headers,
     },
     body: JSON.stringify({
       jsonrpc: "2.0",
