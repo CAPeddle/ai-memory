@@ -18,7 +18,7 @@ import {
   rrfFuse,
   MmrCandidate,
 } from "./src/searchQuality.ts";
-import { ensureRequiredEnv } from "./src/startupValidation.ts";
+import { ensureRequiredEnv, ensureRecallQueriesTable } from "./src/startupValidation.ts";
 import { getEmbedding, EMBEDDING_MODEL } from "./src/embeddings.ts";
 import { startEmbeddingBackfill } from "./src/embeddingBackfill.ts";
 import {
@@ -906,6 +906,10 @@ app.all("/mcp", async (c) => {
 });
 
 Deno.serve({ port: 3000 }, app.fetch);
+
+// Startup repair: ensure recall_queries table exists on running instances
+// that pre-date the schema migration adding this table.
+ensureRecallQueriesTable((query) => sql.unsafe(query));
 
 // Start entity extraction background worker
 startEntityWorker();
