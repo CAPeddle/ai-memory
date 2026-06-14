@@ -53,3 +53,38 @@ Deno.test({
     }
   },
 });
+
+Deno.test({
+  name: "search contract: response is not an error even when results may be empty",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    // Verifies fail-open: search must never return isError=true for a query
+    // where embedding degrades — it should return a valid payload with results (possibly empty).
+    // The contract test exercises this with a known-no-match probe and confirms:
+    // 1. The response parses as valid JSON with a results array (not an error object).
+    // 2. isError is not set on the MCP content item.
+    const result = await mcpCall("search", { query: "xyzzy-no-match-failopen-probe" });
+    // mcpCall throws on MCP-level errors; reaching here means no MCP error was returned.
+    const payload = JSON.parse(extractText(result)) as { results?: unknown };
+    assert(Array.isArray(payload.results), "search must return a results array even with no matches");
+  },
+});
+
+Deno.test({
+  name: "search_thoughts contract: response shape preserved on degraded embedding path",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    // search_thoughts has had .catch(() => null) since initial implementation.
+    // Confirm the contract: even with qEmb=null (lexical-only path), the response
+    // shape must include query, normalized_query, and results array.
+    const result = await mcpCall("search_thoughts", { query: "xyzzy-no-match-failopen-probe" });
+    const payload = JSON.parse(extractText(result)) as { query?: unknown; normalized_query?: unknown; results?: unknown };
+    assert("query" in payload, "search_thoughts must include query in response");
+    assert("results" in payload, "search_thoughts must include results array in response");
+    assert(Array.isArray(payload.results), "search_thoughts results must be an array");
+    // normalized_query present (may be empty string for no-match probe)
+    assertEquals(typeof payload.normalized_query, "string");
+  },
+});

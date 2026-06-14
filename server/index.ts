@@ -112,7 +112,7 @@ server.registerTool(
     try {
       const normalizedQuery = normalizeIdentifiers(query).retrievalText;
       const qEmb = normalizedQuery
-        ? await getEmbedding(normalizedQuery)
+        ? await getEmbedding(normalizedQuery).catch(() => null)
         : null;
       const aboveFloorRows = qEmb
         ? await sql`
