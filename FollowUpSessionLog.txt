@@ -1,40 +1,37 @@
 # FollowUpSessionLog — ai-memory
 
-## Last Session: 2026-06-02 (ST-038 execution complete)
+## Last Session: 2026-06-10 (/continue execution of ST-057)
 
 ### Accomplished
-- Executed ST-038 end-to-end from .github/planning/execplans/exec-plan-ST-038.md (Tasks 4.1–4.4).
-- Task 4.1: Added startup fail-fast required-env validation for OPENROUTER_API_KEY and MEMORY_API_KEY before server startup.
-- Task 4.1: Updated entity worker to remove OPENROUTER_API_KEY fallback/disable path that is now unreachable.
-- Task 4.2: Added UTF-8 byte-size guard in capture_thought with MAX_CONTENT_BYTES=32768 and MCP isError response.
-- Task 4.3: Added server/tests/capture-size-limit.test.ts with ASCII and UTF-8 boundary coverage plus oversized non-insert assertion.
-- Task 4.4: Added server/src/startupValidation.ts and server/tests/startup-validation.test.ts, including explicit ensureRequiredEnv fatal-log + exit(1) assertions.
-- Verification: Process-level fail-fast check returns FATAL + EXIT_CODE:1 when OPENROUTER_API_KEY is unset.
-- Verification: Full test suite passes via docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/ (39 passed, 0 failed).
-- Cross-model gate: PASS (no acceptance-criteria violations).
-- Board updates: ST-038 moved Refined -> Review -> Done after PO acceptance.
+- Executed ST-057 Tasks 4.1-4.5 end-to-end from `.github/planning/execplans/exec-plan-ST-057.md`.
+- Verified red checkpoint for protocol compatibility (`prompts/list` and `resources/list` returned `-32601` before implementation).
+- Implemented minimal MCP prompt/resource using first-class SDK APIs in `server/index.ts`:
+  - `memory_search_guidance` prompt
+  - `ai-memory://server-info` static resource
+- Added SDK-client compatibility smoke test in `server/tests/mcp-protocol-compat.test.ts`.
+- Updated README client troubleshooting section with required OpenCode vs ai-memory error distinctions.
+- Verification evidence:
+  - Focused protocol test: 5 passed, 0 failed
+  - Full server suite: 87 passed, 0 failed
+  - Raw dev `prompts/list` smoke returns prompt list (no `-32601`) after container restart
+- Cross-model critical review completed with PASS verdict; recorded in ST-057 ExecPlan §6c.
+- Board moved ST-057 from Refined to Review.
 
-### Commits (ST-038)
-- 1afb15f fix(startup): fail fast on missing required env vars
-- 997b8a7 fix(capture): enforce 32kb content byte limit
-- cb5f739 test(capture): add 32kb boundary coverage
-- 00914d2 refactor(startup): harden validation and close review gaps
-- 3dfd4be chore(board): move st-038 to review
-- 3b91a96 docs(execplan): record final cross-model pass
-- 2ac1790 chore(board): move st-038 to done
+### Commits (atomic by task)
+- `ae59190` feat(mcp): register minimal prompt and resource (Story: ST-057, Task: §4.2)
+- `2d4e8e4` docs(readme): clarify MCP client troubleshooting (Story: ST-057, Task: §4.3)
+- `bf63d42` test(mcp): add SDK protocol compatibility smoke (Story: ST-057, Task: §4.4)
+- `773cddb` chore(board): move ST-057 to review after gate (Story: ST-057, Task: §4.5)
 
 ### Resume Point
-- No story In Progress.
-- No story in Review.
-- Next planning target on board remains ST-039 (embedding resilience).
+- Await PO acceptance decision for ST-057 in Review.
+- Next execution story: ST-054 (`.github/planning/execplans/exec-plan-ST-054.md`), resume at Task 4.4 once PO directs `/continue`.
 
-### Avoidance
-- If mcp-test is not running, start test profile first: docker compose --profile test up -d.
-- After server runtime code changes, restart mcp-test: docker compose --profile test restart mcp-test.
-- Keep process-level startup fail-fast check in verification evidence (unset OPENROUTER_API_KEY -> FATAL + EXIT_CODE:1).
-- Preserve task-scoped commits with Story/Task trailers; do not stage unrelated local changes.
+### Avoidance / Learnings
+- For protocol-surface changes in this compose setup, restart `mcp-test` and `mcp` to ensure handlers are reloaded before compatibility probes.
+- Do not touch pre-existing ST-054 in-progress files while executing ST-057 task commits.
 
-### Board State
-- In Progress: empty
-- Review: empty
-- Done: includes ST-038 (completed 2026-06-02)
+### Current Board Snapshot
+- Review: ST-057.
+- In Progress: empty.
+- Backlog: ST-054 (blocked_by ST-057 until PO accepts ST-057/advances board).

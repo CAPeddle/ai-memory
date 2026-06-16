@@ -1,6 +1,6 @@
 // server/tests/_helpers/mcpClient.ts
-const MCP_BASE = Deno.env.get("MCP_BASE_URL") ?? "http://localhost:3000";
-const API_KEY = Deno.env.get("MEMORY_API_KEY") ?? "test-key";
+export const MCP_BASE = Deno.env.get("MCP_BASE_URL") ?? "http://localhost:3000";
+export const API_KEY = Deno.env.get("MEMORY_API_KEY") ?? "test-key";
 
 export async function mcpCall(tool: string, args: Record<string, unknown>): Promise<unknown> {
   const res = await fetch(`${MCP_BASE}/mcp`, {
@@ -24,6 +24,37 @@ export async function mcpCall(tool: string, args: Record<string, unknown>): Prom
     const dataLine = text.split("\n").find((l) => l.startsWith("data:"));
     if (!dataLine) throw new Error(`No data line in SSE response: ${text.slice(0, 200)}`);
     return JSON.parse(dataLine.slice(5).trim());
+  }
+  return await res.json();
+}
+
+export async function mcpRequest(method: string, params: Record<string, unknown> = {}, init?: { headers?: Record<string, string> }): Promise<unknown> {
+  const id = crypto.randomUUID();
+  const res = await fetch(`${MCP_BASE}/mcp`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${API_KEY}`,
+      "Content-Type": "application/json",
+      "Accept": "application/json, text/event-stream",
+      ...init?.headers,
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id,
+      method,
+      params,
+    }),
+  });
+  if (!res.ok) throw new Error(`MCP request failed: ${res.status} ${await res.text()}`);
+  const contentType = res.headers.get("content-type") ?? "";
+  if (contentType.includes("text/event-stream")) {
+    const text = await res.text();
+    const messages = text
+      .split("\n")
+      .filter((l) => l.startsWith("data:"))
+      .map((l) => JSON.parse(l.slice(5).trim()));
+    if (!messages.length) throw new Error(`No data line in SSE response: ${text.slice(0, 200)}`);
+    return messages.find((m) => m.id === id) ?? messages[0];
   }
   return await res.json();
 }

@@ -1,39 +1,13 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
-> Next planning target: ST-039 (embedding resilience)
+> Next planning target: None (no Ready ExecPlan in In Progress/Refined).
 > Unblocked: ST-023, ST-028, ST-029, ST-019 (all ST-005/ST-008/ST-022 blockers cleared)
-> Last updated: 2026-06-02
+> Last updated: 2026-06-10
 
 ---
 
 ## Backlog
-
-<!-- Phase 1 — Cloud MCP Intelligence (extends OB1 fork shipped by ST-021) -->
-
-(ST-008 moved to Refined 2026-05-20)
-
-
-<!-- Phase 2 — Production Deployment & Hardening -->
-
-### ST-023: Cloud deployment (managed Postgres + container hosting)
-- Type: infrastructure
-- Source: ST-021 spike outcome
-- phase: 2
-- Value: 5
-- Blocked by: —
-- Touches: deployment config (`fly.toml` / `railway.json` / `.do/app.yaml`), `.github/workflows/`
-- Acceptance criteria:
-  - [ ] Container hosting target chosen and documented (Fly.io / Railway / DigitalOcean Apps)
-  - [ ] Managed Postgres provisioned with `pgvector` + `age` extensions enabled (or self-hosted on same provider VPC if no managed option supports AGE)
-  - [ ] Secrets (`MEMORY_API_KEY`, `DB_PASSWORD`, `OPENROUTER_API_KEY`) stored in provider secret vault; never in `.env` files or repo
-  - [ ] Custom domain + TLS termination
-  - [ ] `/health` reachable from internet; `/mcp` requires Bearer auth
-  - [ ] CI workflow builds and pushes Docker image on push to main
-  - [ ] Deployment runbook in `docs/runbooks/deployment.md`
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-023.md` (to be created)
-- Docs: `docs/design/adr/ADR-009-deployment-model.md`, `docs/investigations/ST-021-findings.md`
-- Notes: Open question: AGE availability on managed Postgres. Supabase/Neon ship `pgvector` but not `age`; may require self-hosted Postgres alongside the MCP container, or waiting for AGE managed-service support. Decide during planning.
 
 ### ST-028: Worker observability and `stats` MCP tool
 - Type: feature
@@ -57,9 +31,9 @@
 
 
 
-### ST-034: Spike — Bounding cardinality of graph-expanded search
+### ST-034: Spike — Graph-expanded "connected" retrieval: cardinality bounding + orchestration design
 - Type: spike
-- Source: PO (brainstorming session 2026-05-22, entity↔thought provenance design)
+- Source: PO (brainstorming session 2026-05-22, entity↔thought provenance design); scope widened 2026-06-04 to carry the connected-retrieval orchestration outcome (PO decision during ST-054 intake)
 - phase: 2
 - Value: 3
 - Blocked by: ST-037 (needs accumulated real data from dogfooding)
@@ -69,9 +43,11 @@
   - [ ] At least 3 bounding strategies evaluated with trade-offs: hard limits (top-N per hop), score-based ranking (shared-entity count / edge confidence / recency / recall_count), and edge-type allow-listing (e.g. exclude `RELATED_TO` from expansion; weight `CAUSED_BY` higher than `LIKES`)
   - [ ] One strategy recommended for graph-expanded search v1 with rationale grounded in the observed dev-data distribution (not a guess)
   - [ ] Findings note explicitly addresses: does a popular entity (e.g. "TypeScript" if it appears in many thoughts) reliably get pruned, or does it dominate results?
+  - [ ] **Orchestration design (added 2026-06-04):** recommend *when* graph expansion fires and *how* its candidates fuse with the lexical/vector path — specifically a **conditional** trigger on thin/low-confidence results (not always-on, to protect latency and ranking predictability) plus a **bounded-boost** fusion into the existing RRF/MMR ranker. Grounds the "surface connected memories" requirement that motivated ST-054 but is out of ST-054's scope
   - [ ] Out of scope: implementing the strategy (a follow-on feature story owns the graph-expanded search tool itself)
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-034.md` (to be created)
-- Notes: Surfaced 2026-05-22 during entity↔thought provenance brainstorming. Without a bounding strategy, 1-hop expansion over popular entities returns hairballs and drowns out the high-signal hits that motivate the graph lane. Foundational design — settle before any graph-expanded search tool ships, not retrofitted after users hit noise.
+- Relates to: ST-054 (retrieval robustness) — ST-054's thin-corpus / low-confidence result signal is the trigger condition this spike designs the graph expansion against; ST-034 owns the "connected memories" answer ST-054 explicitly defers
+- Notes: Surfaced 2026-05-22 during entity↔thought provenance brainstorming. Without a bounding strategy, 1-hop expansion over popular entities returns hairballs and drowns out the high-signal hits that motivate the graph lane. Foundational design — settle before any graph-expanded search tool ships, not retrofitted after users hit noise. **Why widened 2026-06-04:** the build-failure false-empty incident (ST-054) showed the conceptually-correct mechanism for "surface *connected* memories" is the AGE graph, but it is built and orphaned from the default search path. Rather than spawn a duplicate "Story B", this spike now also designs the orchestration (conditional trigger + bounded-boost fusion) so the connected-retrieval feature story that follows has a settled design, not just cardinality numbers.
 
 <!-- Phase 3 — Local Companion Services -->
 
@@ -249,9 +225,8 @@
 - Acceptance criteria:
   - [ ] `graph_traverse` rejects mutation keywords (AC-12)
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-041.md`
-- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Query packet: `.github/planning/query-packets/QP-041-cypher-injection-hardening.md`
 - Notes: 🔴 Must fix. Current mitigation (`$$` stripping + MATCH-start check) is insufficient — mutation keywords after MATCH bypass it.
-
 ### ST-042: Migration framework
 - Type: infrastructure
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
@@ -292,6 +267,25 @@
 - Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
 - Notes: 🟡 Should fix. Additive to ST-028 (worker observability). ST-028 covers worker-specific logs; this covers tool invocation timing.
 
+### ST-056: Embedding request timeout resilience
+- Type: hardening
+- Source: MCP stall investigation 2026-06-05 (VS Code agent fetch failures + embedding-call timeout risk)
+- phase: 2
+- Value: 4
+- Blocked by: —
+- Touches: `server/src/embeddings.ts`, `server/index.ts` (`search`, `search_thoughts`, `capture_thought` call sites), `server/src/embeddingBackfill.ts`, focused tests under `server/tests/`
+- Acceptance criteria:
+  - [ ] `getEmbedding` aborts OpenRouter embedding requests after a configurable timeout and returns a clear timeout error without leaking secrets
+  - [ ] `search_thoughts` does not hang when query embedding times out; it falls back to BM25/null-vector behavior and returns a bounded response
+  - [ ] `capture_thought` and `embeddingBackfill` preserve ST-039 recovery semantics on timeout: rows remain recoverable via `needs_embedding`, attempts/error state is handled by the backfill path, and capture remains non-blocking
+  - [ ] Timeout events produce an operator-visible log/error signal that distinguishes upstream timeout from no-results/no-memory outcomes
+  - [ ] Focused tests cover timeout/cancellation behavior without real OpenRouter calls
+  - [ ] Cross-model critical review passes (different model reviews implementation against ExecPlan contract before story moves to Review)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-056.md` (to be created by /plan)
+- Query packet: `.github/planning/query-packets/QP-056-embedding-request-timeout-resilience.md`
+- Relates to: ST-039 (embedding recoverability/backfill), ST-044 (general tool logging), ST-049 (query routing / vector-lane skipping), ST-053 (deep health check)
+- Notes: Focused follow-up from 2026-06-05 MCP stall investigation. The service was healthy for direct `list_thoughts`, `search`, and `search_thoughts` probes, while VS Code logs showed client-side `fetch failed` / SSE termination during connection windows. Separately, source review found `server/src/embeddings.ts` uses `fetch` with no timeout; if OpenRouter or the network stalls, embedding-backed tools can appear to hang even though non-embedding tools stay fast. PO scoped this story to embedding calls only; entity extraction and consolidation OpenRouter timeouts are out of scope unless later pulled into a shared HTTP client story.
+
 ### ST-045: Worker idempotency
 - Type: hardening
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
@@ -304,19 +298,6 @@
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-045.md`
 - Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
 - Notes: 🟡 Should fix. Depends on ST-042 for migration infrastructure. Prevents duplicate processing after crash.
-
-### ST-046: Golden-set regression tests
-- Type: quality
-- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
-- phase: 2
-- Value: 3
-- Blocked by: —
-- Touches: `server/tests/search-golden-set.test.ts` (new), `server/tests/fixtures/search-quality-corpus.sql`
-- Acceptance criteria:
-  - [ ] Search quality golden-set test catches regressions (AC-7)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-046.md`
-- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
-- Notes: 🟡 Should fix. Uses existing seeded test corpus. Verifies that tuning RRF/MMR parameters doesn't silently degrade recall quality.
 
 ### ST-047: Tool descriptions
 - Type: dx
@@ -362,7 +343,7 @@
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
 - phase: 2
 - Value: 2
-- Blocked by: ST-046 (needs golden-set tests to exist)
+- Blocked by: —
 - Touches: `server/tests/search-golden-set.test.ts`
 - Acceptance criteria:
   - [ ] Search tests include latency assertions (AC-8)
@@ -413,7 +394,18 @@
 
 ## Refined
 
-(Empty)
+### ST-041: Cypher injection hardening
+- Type: security
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 5
+- Blocked by: —
+- Touches: `server/index.ts` (graph_traverse tool handler)
+- Acceptance criteria:
+  - [ ] `graph_traverse` rejects mutation keywords (AC-12)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-041.md`
+- Query packet: `.github/planning/query-packets/QP-041-cypher-injection-hardening.md`
+- Notes: Ready for /continue on 2026-06-10. Scope lock: token-aware deny-list (keywords in literals/comments allowed), 4096-char cap, graph_traverse-only hardening with focused tests.
 
 ---
 
@@ -428,6 +420,71 @@
 (Empty)
 
 ## Done
+
+### ST-054: Retrieval robustness (false-empty, identifier dilution, zero-result observability)
+- Type: hardening
+- Source: Session analysis 2026-06-04 (build-failure false-empty incident) + adversarial design review + local-instance validation
+- phase: 2
+- Value: 5
+- Completed: 2026-06-10
+- Blocked by: —
+- Touches: `server/index.ts` (`search` floor fallback, structured `search_thoughts` output, capture/query normalization), `server/src/identifierNormalization.ts` (new), `server/src/searchQuality.ts` (query-level recall logging), `server/db/schema.sql`, `server/db/003_search_text_and_recall_queries.sql` (new), `server/tests/`
+- Acceptance criteria:
+  - [x] **D1** — `search` no longer returns an empty set when relevant memories exist below the legacy 0.5 floor; response shape `{results:[{id,title,url}]}` remains pinned
+  - [x] **D2** — non-destructive identifier normalization persists retrieval text (`search_text`) and `normalizer_version` while preserving raw `content`; identifier facets are retained in `metadata`
+  - [x] **D3** — both `search` and `search_thoughts` write query-level observability rows including zero-result queries
+  - [x] **D3b** — `search_thoughts` returns machine-parseable structured JSON with per-result `score` and `quality_band`
+  - [x] **Gate** — ST-046 harness ST-054 flip-points are green (`normalizeForBm25`, identifier-form BM25 baseline, and `search` D1 baseline)
+  - [x] Cross-model critical review passes (different model reviews implementation against the ExecPlan contract before the story moves to Review)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-054.md`
+- Query packet: `.github/planning/query-packets/QP-054-retrieval-robustness.md`
+- ce-plan artifact: `docs/plans/2026-06-04-001-feat-retrieval-robustness-plan.md`
+- Docs: `server/index.ts`, `server/db/search.sql`, `server/src/searchQuality.ts`
+- Notes: Planned and ready 2026-06-05. ST-057 completed 2026-06-10 (full suite 87/0), plan-review block cleared, ST-054 resumed and verification passed (`tests/search-golden-set.test.ts` 16/16; full suite 87/0). Cross-model critical review PASS recorded in ExecPlan §6. Scope lock preserved: floor-with-fallback for `search`; persisted `search_text` + `normalizer_version`; token boundary strips Jira/build identifiers but preserves UUID/error-code/version tokens; zero-result observability via `recall_queries`; `search_thoughts` response uses structured JSON score+band. Full historical re-normalization/backfill remains deferred via `coalesce(search_text,content)` compatibility. PO accepted and story moved to Done on 2026-06-10.
+
+### ST-057: MCP compatibility hardening
+- Type: hardening
+- Source: OpenCode ai-memory MCP investigation 2026-06-05 (`prompts/list` returned JSON-RPC -32601)
+- phase: 2
+- Value: 5
+- Completed: 2026-06-10
+- Blocked by: —
+- Notes (execution order, 2026-06-10): Execute ST-057 first, then ST-054. These stories are functionally independent; ST-057 is lower-complexity (protocol stubs only). Clearing MCP compatibility issues first lets ST-054's verification gate (`deno test tests/`) pass cleanly without scope expansion. PO approved 2026-06-10.
+- Touches: `server/index.ts` (MCP server capability/registration surface), possibly new protocol-compat helper under `server/src/`, focused protocol tests under `server/tests/`, README/client troubleshooting docs if behavior changes
+- Acceptance criteria:
+  - [x] `prompts/list` no longer returns JSON-RPC `-32601 Method not found` for clients that probe prompts; it returns an MCP-compatible empty prompt list or a minimal intentional prompt surface as decided during `/plan`
+  - [x] `prompts/get` behavior is explicitly decided and tested: either a valid minimal prompt is retrievable, or unsupported prompt names return the protocol-appropriate error while `prompts/list` remains safe
+  - [x] `resources/list` and `resources/templates/list` compatibility expectations are researched and either implemented as safe empty lists or deliberately left unsupported with documented rationale
+  - [x] A protocol audit in the ExecPlan maps the server-side MCP 2025-06-18 methods relevant to ai-memory (`tools/*`, `prompts/*`, `resources/*`, ping, and any optional completion/subscribe behavior) to implemented/deferred decisions
+  - [x] Focused tests prove OpenCode-style startup probes do not produce `-32601` for accepted compatibility endpoints and that existing `tools/list` / `tools/call` behavior is unchanged
+  - [x] Cross-model critical review passes (different model reviews implementation against ExecPlan contract before story moves to Review)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-057.md`
+- Query packet: `.github/planning/query-packets/QP-057-mcp-compatibility-hardening.md`
+- Docs: MCP 2025-06-18 server specs for prompts/resources/tools; README client setup section
+- Notes: Direct diagnostic probes showed `initialize` advertises only `capabilities.tools`, `tools/list` works, while `prompts/list` and `resources/list` returned `-32601`. Implemented first-class SDK `registerPrompt` and `registerResource`, added protocol compatibility tests (including SDK client smoke), and updated README troubleshooting guidance. Cross-model critical review passed on 2026-06-10. PO accepted and story moved to Done on 2026-06-10.
+
+### ST-055: MMR null-embedding BM25 recall preservation
+- Type: bug
+- Source: ST-046 plan-review resolution (2026-06-05 Task 4.3 e2e failure after expanded corpus)
+- phase: 2
+- Value: 5
+- Completed: 2026-06-05
+- Blocked by: —
+- Touches: `server/src/searchQuality.ts` (`mmrRerank` null-embedding merge behavior), `server/index.ts` only if caller-side merge is chosen during ExecPlan authoring, `server/tests/e2e.test.ts`, focused unit tests under `server/tests/`
+- Acceptance criteria:
+  - [x] A deterministic unit test proves a null-embedding candidate with a higher fused/BM25 score than at least one embedded candidate remains in the final top-k
+  - [x] `mmrRerank` uses one selection loop over embedded and null-embedding candidates; null candidates participate with similarity-to-selected = `0`, making their MMR score `λ * score`
+  - [x] The intentional equal-score bias is pinned: a null candidate may beat an embedded candidate when the embedded candidate is redundancy-penalized and their fused scores are equal
+  - [x] The all-null degenerate case remains pure score order
+  - [x] Embedded candidates still receive MMR diversity ranking; existing MMR behavior is not collapsed into plain score sorting
+  - [x] `e2e: capture_thought → search_thoughts returns via BM25 lane` passes against the ST-046 expanded seeded corpus
+  - [x] Existing e2e `MMR keeps null-embedding row returnable` still passes
+  - [x] Full `mcp-test` server tests pass, or any unrelated pre-existing failure is documented with evidence
+  - [x] Cross-model critical review passes before the story moves to Review
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-055.md`
+- Query packet: `.github/planning/query-packets/QP-055-mmr-null-embedding-bm25-recall.md`
+- Blocks: ST-046 (eval harness Task 4.3 should not resume until current-state e2e is green with the expanded corpus)
+- Notes: Completed 2026-06-05. The ST-046 corpus expansion revealed a runtime recall bug: newly captured BM25-only rows can have `embedding = NULL` while embedding generation is fire-and-forget. Current MMR selection fills `k` from embedded candidates before appending null-embedding candidates, so a high-scoring BM25-only hit can be dropped once the corpus has enough embedded rows. Fixed via a unified MMR selection loop where null-embedding candidates participate with similarity-to-selected = `0` (intentional recency/lexical-recall bias), not by raising e2e limits or waiting synchronously for embeddings. Implementation, full verification, cross-model critical review, and PO acceptance passed 2026-06-05.
 
 ### ST-038: Startup safety & input guards
 - Type: hardening

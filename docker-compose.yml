@@ -90,6 +90,9 @@ services:
       # Disable background LISTEN/NOTIFY auto-drain so integration tests
       # can call the consolidate MCP tool explicitly without races.
       CONSOLIDATION_WORKER_DISABLED: "true"
+      # Disable the embedding backfill auto-sweep so the server process does not
+      # race explicit runBackfillSweep() calls in tests against the shared db-test.
+      EMBEDDING_BACKFILL_DISABLED: "true"
     volumes:
       - ./server:/app
     ports:

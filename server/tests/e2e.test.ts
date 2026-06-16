@@ -12,7 +12,7 @@
  *     --allow-net --allow-env --allow-read tests/e2e.test.ts
  */
 
-import { assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assert, assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { mcpCall, extractText, sleep } from "./_helpers/mcpClient.ts";
 import { sql } from "../src/db.ts";
 
@@ -28,22 +28,111 @@ const VECTOR_EXPECTED_ID = "00000000-0000-4000-8000-000000000004";
 // ---------------------------------------------------------------------------
 
 function parseIds(text: string): string[] {
+  try {
+    const payload = JSON.parse(text) as { results?: Array<{ id?: string }> };
+    if (Array.isArray(payload.results)) {
+      return payload.results.map((result) => result.id ?? "").filter((id) => id.length > 0);
+    }
+  } catch {
+    // Fall back to the legacy text parser during the response-contract transition.
+  }
+
   return [...text.matchAll(/ID:\s*([0-9a-f-]{36})/gi)].map((m) => m[1]);
 }
 
+function parseSearchThoughtsPayload(text: string): {
+  query: string;
+  normalized_query: string;
+  results: Array<{
+    id: string;
+    content: string;
+    memory_type: "shard" | "wiki";
+    project: string | null;
+    score: number;
+    quality_band: "high" | "medium" | "low";
+  }>;
+} {
+  return JSON.parse(text) as {
+    query: string;
+    normalized_query: string;
+    results: Array<{
+      id: string;
+      content: string;
+      memory_type: "shard" | "wiki";
+      project: string | null;
+      score: number;
+      quality_band: "high" | "medium" | "low";
+    }>;
+  };
+}
+
 async function waitForEntityExtraction(thoughtId: string, maxSec = 40): Promise<void> {
-  for (let i = 0; i < maxSec; i++) {
-    const rows = await sql<{ status: string }[]>`
-      SELECT status FROM entity_extraction_queue WHERE thought_id = ${thoughtId}
+  const [initialQueueProbe] = await sql<{ ahead: number }[]>`
+    SELECT COUNT(*)::int AS ahead
+    FROM entity_extraction_queue q0
+    JOIN entity_extraction_queue q
+      ON q.thought_id = ${thoughtId}
+    WHERE q0.status IN ('pending', 'processing')
+      AND q0.queued_at <= q.queued_at
+  `;
+
+  // The seeded corpus can leave a deep extraction backlog at test start.
+  // Add bounded slack so this helper waits for queue progression instead of
+  // flaking at a fixed 40s threshold.
+  const backlogSlackSec = Math.min((initialQueueProbe?.ahead ?? 0) * 2, 60);
+  const timeoutSec = maxSec + backlogSlackSec;
+
+  let lastStatus = "missing";
+  let lastAttemptCount = 0;
+  let lastError = "";
+  let lastStartedAt: string | null = null;
+
+  for (let i = 0; i < timeoutSec; i++) {
+    const [row] = await sql<{
+      status: string;
+      attempt_count: number;
+      last_error: string | null;
+      started_at: string | null;
+    }[]>`
+      SELECT
+        status,
+        attempt_count,
+        last_error,
+        to_char(started_at, 'HH24:MI:SS') AS started_at
+      FROM entity_extraction_queue
+      WHERE thought_id = ${thoughtId}
     `;
-    const row = rows[0];
+
     if (row?.status === "done") return;
     if (row?.status === "failed") {
-      throw new Error(`Entity extraction failed for thought ${thoughtId}`);
+      throw new Error(
+        `Entity extraction failed for thought ${thoughtId}: ${row.last_error ?? "unknown error"}`,
+      );
     }
+
+    if (row) {
+      lastStatus = row.status;
+      lastAttemptCount = row.attempt_count;
+      lastError = row.last_error ?? "";
+      lastStartedAt = row.started_at;
+    }
+
     await sleep(1_000);
   }
-  throw new Error(`Entity extraction did not complete within ${maxSec}s for thought ${thoughtId}`);
+
+  const [queueSnapshot] = await sql<{ pending: number; processing: number }[]>`
+    SELECT
+      COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
+      COUNT(*) FILTER (WHERE status = 'processing')::int AS processing
+    FROM entity_extraction_queue
+  `;
+
+  throw new Error(
+    `Entity extraction did not complete within ${timeoutSec}s for thought ${thoughtId} ` +
+      `(base=${maxSec}s, backlog_slack=${backlogSlackSec}s). ` +
+      `Last observed status=${lastStatus}, attempts=${lastAttemptCount}, started_at=${lastStartedAt ?? "null"}, ` +
+      `last_error=${lastError || "none"}, queue(pending=${queueSnapshot?.pending ?? 0}, processing=${queueSnapshot?.processing ?? 0})`,
+  );
 }
 
 async function cleanupNonCorpusState(): Promise<void> {
@@ -94,7 +183,7 @@ Deno.test({
   sanitizeOps: false,
   fn: async () => {
     const keyword = `bm25test${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
-    const content = `Unique BM25 marker phrase ${keyword} for integration test`;
+    const content = `Unique BM25 marker phrase ${keyword} build 65008 PRI-5751 for integration test`;
 
     const captureResult = await mcpCall("capture_thought", {
       content,
@@ -104,6 +193,26 @@ Deno.test({
     const idMatch = captureText.match(/id:\s*([0-9a-f-]{36})/i);
     if (!idMatch) throw new Error(`Could not extract thought id from: ${captureText.slice(0, 300)}`);
     const thoughtId = idMatch[1];
+
+    const [capturedRow] = await sql<{
+      content: string;
+      search_text: string | null;
+      normalizer_version: number | null;
+      metadata: { identifiers?: { tickets?: string[]; builds?: string[] } };
+    }[]>`
+      SELECT content, search_text, normalizer_version, metadata
+      FROM thoughts
+      WHERE id = ${thoughtId}::uuid
+    `;
+
+    assertEquals(capturedRow.content, content);
+    assertEquals(
+      capturedRow.search_text,
+      `Unique BM25 marker phrase ${keyword} build for integration test`,
+    );
+    assertEquals(capturedRow.normalizer_version, 1);
+    assertEquals(capturedRow.metadata.identifiers?.tickets ?? [], ["PRI-5751"]);
+    assertEquals(capturedRow.metadata.identifiers?.builds ?? [], ["65008"]);
 
     // Verify search_vector was populated (generated column sanity check)
     const svCheck = await sql<{ has_sv: boolean }[]>`
@@ -121,6 +230,15 @@ Deno.test({
       limit: 30,
     });
     const searchText = extractText(searchResult);
+    const searchPayload = parseSearchThoughtsPayload(searchText);
+
+    assertEquals(searchPayload.query, keyword);
+    assertEquals(searchPayload.normalized_query, keyword);
+    assert(searchPayload.results.some((result) => result.id === thoughtId));
+    const matchedResult = searchPayload.results.find((result) => result.id === thoughtId);
+    assertExists(matchedResult);
+    assert(typeof matchedResult.score === "number");
+    assert(["high", "medium", "low"].includes(matchedResult.quality_band));
 
     if (!searchText.includes(thoughtId) && !searchText.includes(keyword)) {
       throw new Error(
@@ -542,7 +660,8 @@ Deno.test({
       limit: 10,
     });
     const text = extractText(result);
-    if (!/\/ bcf-managers/.test(text)) {
+    const payload = parseSearchThoughtsPayload(text);
+    if (!payload.results.some((entry) => entry.project === "bcf-managers")) {
       throw new Error(
         `Expected at least one bcf-managers cross-project result under non-strict. Got: ${text.slice(0, 400)}`,
       );
@@ -644,7 +763,8 @@ Deno.test({
     const query = "postgres autovacuum";
 
     const result = await mcpCall("search_thoughts", { query, limit: 5 });
-    const returnedIds = parseIds(extractText(result));
+    const payload = parseSearchThoughtsPayload(extractText(result));
+    const returnedIds = payload.results.map((entry) => entry.id);
     if (returnedIds.length === 0) {
       throw new Error(`Expected non-empty search result for '${query}'; got: ${extractText(result).slice(0, 300)}`);
     }
@@ -669,9 +789,96 @@ Deno.test({
       );
     }
 
+    let queryRows = 0;
+    for (let i = 0; i < 10; i++) {
+      await sleep(500);
+      const [row] = await sql<{ cnt: number }[]>`
+        SELECT count(*)::int AS cnt
+        FROM recall_queries
+        WHERE tool = 'search_thoughts'
+          AND query = ${query}
+          AND result_count = ${returnedIds.length}
+          AND created_at >= to_timestamp(${testStart / 1000})
+      `;
+      queryRows = row.cnt;
+      if (queryRows > 0) break;
+    }
+
+    if (queryRows !== 1) {
+      throw new Error(
+        `Expected one recall_queries row for search_thoughts query '${query}' with result_count ${returnedIds.length}; observed ${queryRows}`,
+      );
+    }
+
     // Cleanup
     await sql`
       DELETE FROM recall_events
+      WHERE query = ${query}
+        AND created_at >= to_timestamp(${testStart / 1000})
+    `;
+    await sql`
+      DELETE FROM recall_queries
+      WHERE query = ${query}
+        AND created_at >= to_timestamp(${testStart / 1000})
+    `;
+  },
+});
+
+Deno.test({
+  name: "e2e: search and search_thoughts log zero-result recall_queries rows",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    const testStart = Date.now();
+    const query = "65008 PRI-5751";
+
+    const searchResult = await mcpCall("search", { query });
+    const searchPayload = JSON.parse(extractText(searchResult)) as { results: Array<unknown> };
+    assertEquals(searchPayload.results.length, 0);
+
+    const thoughtsResult = await mcpCall("search_thoughts", { query, limit: 5 });
+    const thoughtsPayload = parseSearchThoughtsPayload(extractText(thoughtsResult));
+    assertEquals(thoughtsPayload.normalized_query, "");
+    assertEquals(thoughtsPayload.results.length, 0);
+
+    let searchLogged = 0;
+    let thoughtsLogged = 0;
+    for (let i = 0; i < 10; i++) {
+      await sleep(500);
+      const rows = await sql<{ tool: string; cnt: number }[]>`
+        SELECT tool, count(*)::int AS cnt
+        FROM recall_queries
+        WHERE query = ${query}
+          AND created_at >= to_timestamp(${testStart / 1000})
+        GROUP BY tool
+      `;
+      searchLogged = rows.find((row) => row.tool === "search")?.cnt ?? 0;
+      thoughtsLogged = rows.find((row) => row.tool === "search_thoughts")?.cnt ?? 0;
+      if (searchLogged > 0 && thoughtsLogged > 0) break;
+    }
+
+    assertEquals(searchLogged, 1);
+    assertEquals(thoughtsLogged, 1);
+
+    const rows = await sql<{
+      tool: string;
+      result_count: number;
+      top_result_ids: string[];
+    }[]>`
+      SELECT tool, result_count, top_result_ids::text[] AS top_result_ids
+      FROM recall_queries
+      WHERE query = ${query}
+        AND created_at >= to_timestamp(${testStart / 1000})
+      ORDER BY tool ASC
+    `;
+
+    for (const row of rows) {
+      assertEquals(row.result_count, 0);
+      assertEquals(row.top_result_ids, []);
+    }
+
+    await sql`
+      DELETE FROM recall_queries
       WHERE query = ${query}
         AND created_at >= to_timestamp(${testStart / 1000})
     `;

@@ -13,6 +13,8 @@
 CREATE TABLE IF NOT EXISTS public.thoughts (
   id                  uuid        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   content             text        NOT NULL,
+  search_text         text,
+  normalizer_version  integer,
   embedding           vector(512),
   metadata            jsonb       NOT NULL DEFAULT '{}'::jsonb,
   content_fingerprint text,
@@ -38,7 +40,7 @@ CREATE TABLE IF NOT EXISTS public.thoughts (
   confidence          float       CHECK (confidence BETWEEN 0 AND 1),
 
   -- Generated tsvector for BM25 full-text search (PG15+, requires STORED)
-  search_vector       tsvector    GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
+  search_vector       tsvector    GENERATED ALWAYS AS (to_tsvector('english', coalesce(search_text, content))) STORED,
 
   -- Global deduplication: same normalised content = same memory, regardless of project/profile.
   -- Capturing the same text in two projects returns the original row (not a second copy).
@@ -141,6 +143,21 @@ CREATE TABLE IF NOT EXISTS public.recall_events (
 
 CREATE INDEX IF NOT EXISTS idx_recall_events_thought_created
   ON public.recall_events(thought_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.recall_queries (
+  id               bigserial   PRIMARY KEY,
+  tool             text        NOT NULL CHECK (tool IN ('search', 'search_thoughts')),
+  query            text        NOT NULL,
+  normalized_query text        NOT NULL,
+  project          text,
+  profile          text,
+  result_count     int         NOT NULL CHECK (result_count >= 0),
+  top_result_ids   uuid[]      NOT NULL DEFAULT '{}'::uuid[],
+  created_at       timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_recall_queries_tool_created
+  ON public.recall_queries(tool, created_at DESC);
 
 -- ============================================================
 -- 7. CONSOLIDATION EVENT NOTIFICATION ON RECALL (added by ST-008)

@@ -8,8 +8,32 @@ import { parseContext } from "./src/parseContext.ts";
 import { sql } from "./src/db.ts";
 import { startEntityWorker } from "./src/entityWorker.ts";
 import { startConsolidationWorker, drainPendingOnce } from "./src/consolidationWorker.ts";
-import { cosineSim, mmrRerank, logRecall, parseVector, MmrCandidate } from "./src/searchQuality.ts";
-import { ensureRequiredEnv } from "./src/startupValidation.ts";
+import {
+  cosineSim,
+  deriveQualityBand,
+  logRecall,
+  logRecallQuery,
+  mmrRerank,
+  parseVector,
+  rrfFuse,
+  MmrCandidate,
+} from "./src/searchQuality.ts";
+import { ensureRequiredEnv, ensureRecallQueriesTable } from "./src/startupValidation.ts";
+import { getEmbedding, EMBEDDING_MODEL } from "./src/embeddings.ts";
+import { startEmbeddingBackfill } from "./src/embeddingBackfill.ts";
+import {
+  IDENTIFIER_NORMALIZER_VERSION,
+  normalizeIdentifiers,
+} from "./src/identifierNormalization.ts";
+import {
+  type EmbeddingLane,
+  emitRequestLog,
+  extractSafeBodyFields,
+  isBodyLoggingEnabled,
+  resolveCorrelationId,
+  setActiveEmbeddingLane,
+  takeActiveEmbeddingLane,
+} from "./src/mcpDiagnostics.ts";
 
 // ---------------------------------------------------------------------------
 // Startup validation — fail fast if required config is missing
@@ -17,41 +41,69 @@ import { ensureRequiredEnv } from "./src/startupValidation.ts";
 
 ensureRequiredEnv();
 
-const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY")!;
-const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 const CITATION_BASE_URL = Deno.env.get("AI_MEMORY_CITATION_BASE_URL") ?? "https://ai-memory.local/thoughts";
 const MAX_CONTENT_BYTES = 32_768; // 32 KB content limit per thought
-
-// ---------------------------------------------------------------------------
-// Embedding via OpenRouter (512-dim via text-embedding-3-small truncation)
-// ---------------------------------------------------------------------------
-
-async function getEmbedding(text: string): Promise<number[]> {
-  const r = await fetch(`${OPENROUTER_BASE}/embeddings`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "openai/text-embedding-3-small",
-      input: text,
-      dimensions: 512,
-    }),
-  });
-  if (!r.ok) {
-    const msg = await r.text().catch(() => "");
-    throw new Error(`OpenRouter embeddings failed: ${r.status} ${msg}`);
-  }
-  const d = await r.json();
-  return d.data[0].embedding;
-}
 
 // ---------------------------------------------------------------------------
 // MCP Server
 // ---------------------------------------------------------------------------
 
 const server = new McpServer({ name: "ai-memory", version: "0.1.0" });
+
+server.registerPrompt(
+  "memory_search_guidance",
+  {
+    title: "Search AI Memory Before Answering",
+    description: "Guidance for clients that want to use ai-memory recall before answering.",
+  },
+  () => ({
+    description: "Use ai-memory tools to recall relevant project memory before answering.",
+    messages: [{
+      role: "user" as const,
+      content: {
+        type: "text" as const,
+        text:
+          "Before answering from memory, call ai-memory search_thoughts for project-scoped recall. Use search for ChatGPT-compatible semantic lookup, list_thoughts for recent entries, and fetch when you already have a thought id.",
+      },
+    }],
+  }),
+);
+
+const SERVER_INFO_RESOURCE_URI = "ai-memory://server-info";
+
+server.registerResource(
+  "server-info",
+  SERVER_INFO_RESOURCE_URI,
+  {
+    title: "AI Memory Server Info",
+    description: "Safe static MCP compatibility metadata for ai-memory clients.",
+    mimeType: "application/json",
+  },
+  (uri) => ({
+    contents: [{
+      uri: uri.toString(),
+      mimeType: "application/json",
+      text: JSON.stringify({
+        name: "ai-memory",
+        version: "0.1.0",
+        protocolSurfaces: ["tools", "prompts", "resources"],
+        promptNames: ["memory_search_guidance"],
+        resourceUris: [SERVER_INFO_RESOURCE_URI],
+        toolNames: [
+          "search",
+          "fetch",
+          "search_thoughts",
+          "capture_thought",
+          "list_thoughts",
+          "thought_stats",
+          "graph_traverse",
+          "graph_search",
+          "consolidate",
+        ],
+      }, null, 2),
+    }],
+  }),
+);
 
 // --- ChatGPT compatibility: search + fetch -----------------------------------
 
@@ -67,23 +119,68 @@ server.registerTool(
   },
   async ({ query }) => {
     try {
-      const qEmb = await getEmbedding(query);
-      const rows = await sql`
-        SELECT id, content, created_at,
-               1 - (embedding <=> ${sql.unsafe(`'[${qEmb.join(",")}]'`)}::vector) AS similarity
-        FROM thoughts
-        WHERE active = true AND embedding IS NOT NULL
-          AND 1 - (embedding <=> ${sql.unsafe(`'[${qEmb.join(",")}]'`)}::vector) >= 0.5
-        ORDER BY similarity DESC
-        LIMIT 10
-      `;
+      const normalizedQuery = normalizeIdentifiers(query).retrievalText;
+      const qEmb = normalizedQuery
+        ? await getEmbedding(normalizedQuery).catch(() => null)
+        : null;
+      const aboveFloorRows = qEmb
+        ? await sql`
+            SELECT id, content, created_at,
+                   1 - (embedding <=> ${sql.unsafe(`'[${qEmb.join(",")}]'`)}::vector) AS similarity
+            FROM thoughts
+            WHERE active = true AND embedding IS NOT NULL
+              AND 1 - (embedding <=> ${sql.unsafe(`'[${qEmb.join(",")}]'`)}::vector) >= 0.5
+            ORDER BY similarity DESC
+            LIMIT 10
+          `
+        : [];
+
+      const lexicalFallbackRows = normalizedQuery
+        ? await sql`
+            SELECT id, content, created_at, 0::float AS similarity
+            FROM thoughts, plainto_tsquery('english', ${normalizedQuery}) AS q
+            WHERE active = true
+              AND search_vector @@ q
+            ORDER BY ts_rank_cd(search_vector, q) DESC
+            LIMIT 10
+          `
+        : [];
+
+      const nearestNeighborFallbackRows = qEmb
+        ? await sql`
+            SELECT id, content, created_at,
+                   1 - (embedding <=> ${sql.unsafe(`'[${qEmb.join(",")}]'`)}::vector) AS similarity
+            FROM thoughts
+            WHERE active = true AND embedding IS NOT NULL
+            ORDER BY similarity DESC
+            LIMIT 10
+          `
+        : [];
+
+      const rows = aboveFloorRows.length
+        ? aboveFloorRows
+        : lexicalFallbackRows.length
+          ? lexicalFallbackRows
+          : nearestNeighborFallbackRows;
       const results = rows.map((t) => ({
         id: t.id,
         title: (t.content as string).slice(0, 80),
         url: `${CITATION_BASE_URL.replace(/\/$/, "")}/${t.id}`,
       }));
+
+      logRecallQuery({
+        tool: "search",
+        query,
+        normalizedQuery,
+        project: null,
+        profile: null,
+        resultIds: results.map((result) => result.id as string),
+      });
+
+      setActiveEmbeddingLane(qEmb ? "full" : "bm25_only");
       return { content: [{ type: "text" as const, text: JSON.stringify({ results }) }] };
     } catch (err) {
+      setActiveEmbeddingLane("n/a");
       return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }], isError: true };
     }
   }
@@ -144,26 +241,32 @@ server.registerTool(
     try {
       const scope = parseContext(context);
       const project = scope?.projects?.[0] ?? null;
+      const profile = scope?.profile ?? null;
       const strict = scope?.strict === true;
       const n = limit ?? 10;
+      const normalizedQuery = normalizeIdentifiers(query).retrievalText;
 
-      const qEmb = await getEmbedding(query).catch(() => null);
+      const qEmb = normalizedQuery
+        ? await getEmbedding(normalizedQuery).catch(() => null)
+        : null;
 
       // BM25 lane — drop the hard project filter unless strict
-      const bm25 = strict
+      const bm25 = normalizedQuery
+        ? (strict
         ? await sql`
             SELECT id, row_number() OVER (ORDER BY ts_rank_cd(search_vector, q) DESC) AS bm25_rank
-            FROM thoughts, plainto_tsquery('english', ${query}) AS q
+            FROM thoughts, plainto_tsquery('english', ${normalizedQuery}) AS q
             WHERE search_vector @@ q AND active = true
               AND (${project}::text IS NULL OR project = ${project})
             LIMIT 60
           `
         : await sql`
             SELECT id, row_number() OVER (ORDER BY ts_rank_cd(search_vector, q) DESC) AS bm25_rank
-            FROM thoughts, plainto_tsquery('english', ${query}) AS q
+            FROM thoughts, plainto_tsquery('english', ${normalizedQuery}) AS q
             WHERE search_vector @@ q AND active = true
             LIMIT 60
-          `;
+          `)
+        : [];
 
       // Vector lane (skipped if no embedding) — drop hard project filter unless strict
       const vector = qEmb
@@ -183,12 +286,30 @@ server.registerTool(
               `)
         : [];
 
-      // RRF fusion in application layer (unchanged)
-      const scores = new Map<string, number>();
-      for (const r of bm25)   scores.set(r.id as string, (scores.get(r.id as string) ?? 0) + 1 / (60 + Number(r.bm25_rank)));
-      for (const r of vector) scores.set(r.id as string, (scores.get(r.id as string) ?? 0) + 1 / (60 + Number(r.vector_rank)));
+      // RRF fusion via the pure rrfFuse helper (k=60). Extracted so the regression harness
+      // can prove k-sensitivity deterministically without the network. Behaviour-identical.
+      const scores = rrfFuse([
+        bm25.map((r) => ({ id: r.id as string, rank: Number(r.bm25_rank) })),
+        vector.map((r) => ({ id: r.id as string, rank: Number(r.vector_rank) })),
+      ], 60);
 
-      if (!scores.size) return { content: [{ type: "text" as const, text: `No thoughts found matching "${query}".` }] };
+      if (!scores.size) {
+        logRecallQuery({
+          tool: "search_thoughts",
+          query,
+          normalizedQuery,
+          project,
+          profile,
+          resultIds: [],
+        });
+        setActiveEmbeddingLane(qEmb ? "full" : "bm25_only");
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({ query, normalized_query: normalizedQuery, results: [] }),
+          }],
+        };
+      }
 
       // Pull top-N (3× requested, capped at 60) for boost + MMR
       const N = Math.min(60, Math.max(n * 3, n));
@@ -211,6 +332,9 @@ server.registerTool(
       }
 
       // Apply project boost (only when !strict — strict already filtered to in-project only)
+      const bm25Ranks = new Map<string, number>(bm25.map((row) => [row.id as string, Number(row.bm25_rank)]));
+      const vectorRanks = new Map<string, number>(vector.map((row) => [row.id as string, Number(row.vector_rank)]));
+
       const boosted: MmrCandidate[] = topIds.map((id) => {
         const r = rowMap.get(id)!;
         let score = scores.get(id)!;
@@ -221,18 +345,59 @@ server.registerTool(
       // MMR re-rank top-N to final n
       const reranked = mmrRerank(boosted, n, 0.7);
 
-      // Build response from rowMap
-      const lines = reranked.map((res, i) => {
+      const responseResults = reranked.map((res) => {
         const t = rowMap.get(res.id);
-        if (!t) return "";
-        return `--- Result ${i + 1} (rrf: ${res.score.toFixed(4)}) [${t.memory_type}${t.project ? " / " + t.project : ""}] ---\nID: ${t.id}\n${t.content}`;
-      }).filter(Boolean);
+        if (!t) return null;
+
+        const vectorSimilarity = qEmb && t.embedding
+          ? cosineSim(qEmb, t.embedding)
+          : null;
+
+        return {
+          id: t.id,
+          content: t.content as string,
+          memory_type: t.memory_type as "shard" | "wiki",
+          project: t.project,
+          score: res.score,
+          quality_band: deriveQualityBand({
+            bm25Rank: bm25Ranks.get(res.id) ?? null,
+            vectorRank: vectorRanks.get(res.id) ?? null,
+            vectorSimilarity,
+          }),
+        };
+      }).filter((result): result is {
+        id: string;
+        content: string;
+        memory_type: "shard" | "wiki";
+        project: string | null;
+        score: number;
+        quality_band: "high" | "medium" | "low";
+      } => result !== null);
 
       // Fire-and-forget recall log (never awaited)
       logRecall(query, project, reranked);
+      logRecallQuery({
+        tool: "search_thoughts",
+        query,
+        normalizedQuery,
+        project,
+        profile,
+        resultIds: responseResults.map((result) => result.id),
+      });
 
-      return { content: [{ type: "text" as const, text: lines.join("\n\n") }] };
+      setActiveEmbeddingLane(qEmb ? "full" : "bm25_only");
+      return {
+        content: [{
+          type: "text" as const,
+          text: JSON.stringify({
+            query,
+            normalized_query: normalizedQuery,
+            results: responseResults,
+          }),
+        }],
+      };
     } catch (err) {
+      setActiveEmbeddingLane("n/a");
       return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }], isError: true };
     }
   }
@@ -265,22 +430,59 @@ server.registerTool(
       const scope = parseContext(context);
       const project = scope?.projects?.[0] ?? null;
       const profile = scope?.profile ?? null;
+      const normalized = normalizeIdentifiers(content);
+      const searchText = normalized.retrievalText;
+      const metadata = {
+        identifiers: normalized.facets,
+      };
 
       const fingerprint = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(content.trim().toLowerCase().replace(/\s+/g, " ")))
         .then((buf) => Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join(""));
 
       const [insertResult] = await sql`
-        INSERT INTO thoughts (content, memory_type, project, profile, content_fingerprint, source)
-        VALUES (${content}, ${memory_type ?? "shard"}, ${project}, ${profile}, ${fingerprint}, 'user-taught')
+        INSERT INTO thoughts (
+          content,
+          search_text,
+          normalizer_version,
+          metadata,
+          memory_type,
+          project,
+          profile,
+          content_fingerprint,
+          source
+        )
+        VALUES (
+          ${content},
+          ${searchText},
+          ${IDENTIFIER_NORMALIZER_VERSION},
+          ${metadata},
+          ${memory_type ?? "shard"},
+          ${project},
+          ${profile},
+          ${fingerprint},
+          'user-taught'
+        )
         ON CONFLICT (content_fingerprint) DO UPDATE
           SET updated_at = now(),
-              active     = true
+              active     = true,
+              search_text = EXCLUDED.search_text,
+              normalizer_version = EXCLUDED.normalizer_version,
+              metadata = thoughts.metadata || EXCLUDED.metadata
         RETURNING id, memory_type, project
       `;
 
-      // Fire-and-forget embedding update; log failure so misconfigured deployments surface the issue
-      getEmbedding(content).then((emb) =>
-        sql`UPDATE thoughts SET embedding = ${sql.unsafe(`'[${emb.join(",")}]'`)}::vector WHERE id = ${insertResult.id}`
+      // Fire-and-forget embedding update. On success, record the model and clear the
+      // needs_embedding flag; on failure, log only — the backfill sweep owns retries
+      // and the embedding_attempts counter (this inline attempt is best-effort).
+      getEmbedding(searchText || content).then((emb) =>
+        sql`
+          UPDATE thoughts
+          SET embedding       = ${sql.unsafe(`'[${emb.join(",")}]'`)}::vector,
+              needs_embedding = false,
+              embedding_model = ${EMBEDDING_MODEL},
+              embedding_error = NULL
+          WHERE id = ${insertResult.id}
+        `
       ).catch((err) => console.error(`[capture_thought] embedding update failed for ${insertResult.id}:`, err));
 
       return {
@@ -385,8 +587,112 @@ function extractAgeRows(result: Record<string, unknown>[]): Record<string, unkno
 
 // --- Tool 5: graph_traverse (AGE / openCypher) ------------------------------
 
-const ALLOWED_MATCH_RE = /^match\s/i;
-const DOLLAR_QUOTE_RE = /\$\$/g;
+const CYPHER_MUST_START_WITH = /^\s*match\b/i;
+const CYPHER_DENIED_KEYWORDS = /\b(CREATE|SET|DELETE|REMOVE|MERGE|DETACH|DROP|CALL|LOAD)\b/i;
+const CYPHER_DOLLAR_QUOTE_RE = /\$\$/g;
+const CYPHER_MAX_LENGTH = 4096;
+
+function maskCypherLiteralsAndComments(cypher: string): { masked: string; error: string | null } {
+  const chars = [...cypher];
+  const masked = [...cypher];
+
+  let i = 0;
+  let state: "normal" | "single" | "double" | "lineComment" | "blockComment" = "normal";
+
+  while (i < chars.length) {
+    const ch = chars[i];
+    const next = i + 1 < chars.length ? chars[i + 1] : "";
+
+    if (state === "normal") {
+      if (ch === "'" ) {
+        masked[i] = " ";
+        state = "single";
+        i += 1;
+        continue;
+      }
+      if (ch === '"') {
+        masked[i] = " ";
+        state = "double";
+        i += 1;
+        continue;
+      }
+      if (ch === "-" && next === "-") {
+        masked[i] = " ";
+        masked[i + 1] = " ";
+        state = "lineComment";
+        i += 2;
+        continue;
+      }
+      if (ch === "/" && next === "*") {
+        masked[i] = " ";
+        masked[i + 1] = " ";
+        state = "blockComment";
+        i += 2;
+        continue;
+      }
+
+      i += 1;
+      continue;
+    }
+
+    if (state === "single") {
+      masked[i] = " ";
+      if (ch === "\\" && i + 1 < chars.length) {
+        masked[i + 1] = " ";
+        i += 2;
+        continue;
+      }
+      if (ch === "'") {
+        state = "normal";
+      }
+      i += 1;
+      continue;
+    }
+
+    if (state === "double") {
+      masked[i] = " ";
+      if (ch === "\\" && i + 1 < chars.length) {
+        masked[i + 1] = " ";
+        i += 2;
+        continue;
+      }
+      if (ch === '"') {
+        state = "normal";
+      }
+      i += 1;
+      continue;
+    }
+
+    if (state === "lineComment") {
+      if (ch === "\n" || ch === "\r") {
+        state = "normal";
+      } else {
+        masked[i] = " ";
+      }
+      i += 1;
+      continue;
+    }
+
+    // blockComment
+    masked[i] = " ";
+    if (ch === "*" && next === "/") {
+      masked[i + 1] = " ";
+      state = "normal";
+      i += 2;
+      continue;
+    }
+    i += 1;
+  }
+
+  if (state === "single" || state === "double") {
+    return { masked: masked.join(""), error: "Unterminated string literal in Cypher query." };
+  }
+  if (state === "blockComment") {
+    return { masked: masked.join(""), error: "Unterminated block comment in Cypher query." };
+  }
+
+  return { masked: masked.join(""), error: null };
+}
 
 server.registerTool(
   "graph_traverse",
@@ -401,11 +707,50 @@ server.registerTool(
   async ({ cypher }) => {
     try {
       const trimmed = cypher.trim();
-      if (!ALLOWED_MATCH_RE.test(trimmed)) {
-        return { content: [{ type: "text" as const, text: "Only MATCH queries are accepted. Mutating statements (CREATE, MERGE, SET, DELETE) are not allowed." }], isError: true };
+      if (trimmed.length > CYPHER_MAX_LENGTH) {
+        return {
+          content: [{ type: "text" as const, text: `Error: Query exceeds maximum length of ${CYPHER_MAX_LENGTH} characters.` }],
+          isError: true,
+        };
       }
-      // Strip $$ to prevent dollar-quote injection in the sql.unsafe block
-      const safeCypher = trimmed.replace(DOLLAR_QUOTE_RE, "");
+
+      const { masked, error } = maskCypherLiteralsAndComments(trimmed);
+      if (error) {
+        return {
+          content: [{ type: "text" as const, text: `Error: ${error}` }],
+          isError: true,
+        };
+      }
+
+      if (!CYPHER_MUST_START_WITH.test(masked)) {
+        return {
+          content: [{ type: "text" as const, text: "Only MATCH queries are accepted. Query must start with MATCH." }],
+          isError: true,
+        };
+      }
+
+      const denied = masked.match(CYPHER_DENIED_KEYWORDS);
+      if (denied) {
+        return {
+          content: [{
+            type: "text" as const,
+            text: `Error: Query contains disallowed keyword "${denied[0]}". Only read-only MATCH...RETURN queries are accepted. Mutating statements (CREATE, MERGE, SET, DELETE, REMOVE, DETACH, DROP, CALL, LOAD) are not allowed.`,
+          }],
+          isError: true,
+        };
+      }
+
+      // Parameter binding is not used here because the AGE cypher(...) call is
+      // executed inside a multi-statement sql.unsafe wrapper. Keep the wrapper
+      // narrow and strip dollar-quotes to avoid $$ delimiter breakouts.
+      const safeCypher = trimmed.replace(CYPHER_DOLLAR_QUOTE_RE, "");
+
+      if (!CYPHER_MUST_START_WITH.test(safeCypher)) {
+        return {
+          content: [{ type: "text" as const, text: "Only MATCH queries are accepted. Query must start with MATCH." }],
+          isError: true,
+        };
+      }
 
       const rawRows = await sql.unsafe(`
         LOAD 'age';
@@ -525,14 +870,49 @@ app.options("*", (c) => c.text("ok", 200));
 app.get("/health", (c) => c.text("ok"));
 
 app.all("/mcp", async (c) => {
-  const denied = requireApiKey(c.req.raw);
-  if (denied) return c.text("Unauthorized", 401);
+  const startMs = Date.now();
+  const request_id = resolveCorrelationId(c.req.raw);
 
-  // @hono/mcp's StreamableHTTPTransport is Fetch/Hono-compatible (unlike the SDK's Node-style transport)
-  const transport = new StreamableHTTPTransport();
-  await server.connect(transport);
-  return transport.handleRequest(c);
+  // Extract safe method/id from body for logging (clones stream — does not consume original).
+  const bodyFields = isBodyLoggingEnabled()
+    ? await extractSafeBodyFields(c.req.raw)
+    : undefined;
+  const method = typeof bodyFields === "object" ? bodyFields.method : undefined;
+
+  const denied = requireApiKey(c.req.raw);
+  if (denied) {
+    emitRequestLog({ ts: new Date().toISOString(), request_id, method, status: 401, duration_ms: Date.now() - startMs, embedding_lane: "n/a" });
+    return c.text("Unauthorized", 401);
+  }
+
+  // embedding_lane is populated by search tools when they complete.
+  // Default to "n/a" for non-search requests or requests that error before reaching a tool.
+  let embedding_lane: EmbeddingLane = "n/a";
+  let status = 200;
+  let error_class: string | undefined;
+
+  try {
+    // @hono/mcp's StreamableHTTPTransport is Fetch/Hono-compatible (unlike the SDK's Node-style transport)
+    const transport = new StreamableHTTPTransport();
+    await server.connect(transport);
+    const response = await transport.handleRequest(c);
+    status = response instanceof Response ? response.status : 200;
+    embedding_lane = takeActiveEmbeddingLane();
+    return response;
+  } catch (err) {
+    status = 500;
+    error_class = (err as Error)?.constructor?.name ?? "Error";
+    throw err;
+  } finally {
+    emitRequestLog({ ts: new Date().toISOString(), request_id, method, status, duration_ms: Date.now() - startMs, embedding_lane, error_class });
+  }
 });
+
+// Startup repair: ensure recall_queries table exists on running instances
+// that pre-date the schema migration adding this table. Must complete before
+// the server starts accepting requests so the first /mcp call can write
+// recall query rows without hitting "relation does not exist".
+await ensureRecallQueriesTable((query) => sql.unsafe(query));
 
 Deno.serve({ port: 3000 }, app.fetch);
 
@@ -543,3 +923,6 @@ startEntityWorker();
 startConsolidationWorker().catch((err) =>
   console.error("[server] consolidation worker failed to start:", err)
 );
+
+// Start embedding backfill worker (recovers rows whose embedding call failed)
+startEmbeddingBackfill();

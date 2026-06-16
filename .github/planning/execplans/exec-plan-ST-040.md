@@ -1,8 +1,9 @@
 # ExecPlan — ST-040: Worker Crash Isolation
 
-> Status: ⬜ Not Ready
+> Status: ✅ Ready for /continue
 > Story: ST-040
 > Created: 2026-05-31
+> Approved: 2026-06-03 (PO approved during /plan review)
 > Parent: QP-038-Vectorize-MCP-Repo-Review.md
 > PLANS.md: This document must be maintained per `.github/planning/execplans/_TEMPLATE.md`
 
@@ -64,13 +65,14 @@ This story wraps the poll loop with:
 - [x] Every task ends with a verification step (command or assertion)
 - [x] Acceptance criteria phrased as observable behaviour
 
-Status: ⬜ Not ready — requires /plan
+Status: ✅ Ready — validated 2026-06-03
 
 ---
 
 ## §2c. Plan Review Notes
 
-(Empty)
+- 2026-06-03: Validated against current codebase. Fixed Task 4.2 — test code referenced non-existent `callTool`/`getDbConnection` helpers; corrected to use actual `mcpCall`/`sleep` exports from `_helpers/mcpClient.ts`. Health endpoint URL now derived from `MCP_BASE_URL` env var (port-agnostic). ST-038 startup validation confirmed shipped — the `OPENROUTER_API_KEY` guard in Task 4.1 is redundant but retained as defense-in-depth per existing plan note. (Superseded in part by the ce-doc-review revisions below.)
+- 2026-06-03 (ce-doc-review): Tightened Task 4.2/4.3 evidence mapping to AC-10. Removed placeholder unit-test guidance, required deterministic throw-path assertions, and added explicit checks for structured error output plus continued polling after failure.
 
 ---
 
@@ -115,24 +117,36 @@ Status: ⬜ Not ready — requires /plan
      return Math.min(BASE_INTERVAL_MS * Math.pow(2, consecutiveFailures - 1), MAX_BACKOFF_MS);
    }
 
-   async function safePoll(): Promise<void> {
+   interface SafePollDeps {
+     runQueue?: () => Promise<void>;
+     onError?: (msg: string) => void;
+     onRecover?: (msg: string) => void;
+     schedule?: (next: () => void, delayMs: number) => void;
+   }
+
+   async function safePoll(deps: SafePollDeps = {}): Promise<void> {
+     const runQueue = deps.runQueue ?? processQueue;
+     const onError = deps.onError ?? ((msg: string) => console.error(msg));
+     const onRecover = deps.onRecover ?? ((msg: string) => console.log(msg));
+     const schedule = deps.schedule ?? ((next: () => void, delayMs: number) => setTimeout(next, delayMs));
+
      try {
-       await processQueue();
+       await runQueue();
        if (consecutiveFailures > 0) {
-         console.log(`[entityWorker] recovered after ${consecutiveFailures} consecutive failures`);
+         onRecover(`[entityWorker] recovered after ${consecutiveFailures} consecutive failures`);
        }
        consecutiveFailures = 0;
      } catch (err) {
        consecutiveFailures++;
        const msg = (err as Error).message?.slice(0, 300) ?? "Unknown error";
        if (consecutiveFailures >= 5) {
-         console.error(`[entityWorker] ALERT: ${consecutiveFailures} consecutive failures — ${msg}`);
+         onError(`[entityWorker] ALERT: ${consecutiveFailures} consecutive failures — ${msg}`);
        } else {
-         console.error(`[entityWorker] poll failed (attempt ${consecutiveFailures}, next retry in ${getBackoffMs()}ms): ${msg}`);
+         onError(`[entityWorker] poll failed (attempt ${consecutiveFailures}, next retry in ${getBackoffMs()}ms): ${msg}`);
        }
      }
      // Schedule next poll with backoff
-     setTimeout(safePoll, getBackoffMs());
+     schedule(() => void safePoll(deps), getBackoffMs());
    }
 
    export function startEntityWorker(): void {
@@ -170,50 +184,107 @@ docker compose --profile test exec mcp-test deno test --allow-net --allow-env --
 
 ---
 
-### Task 4.2: Write crash isolation test
+### Task 4.2: Write crash isolation tests (integration + unit)
 
-**Objective:** Verify the worker doesn't crash the server process when errors occur.
+**Objective:** Verify AC-10 end-to-end and unit-level behavior: a thrown poll cycle error is contained, structured error output is emitted, and polling continues successfully on subsequent cycles.
 
-**Input:** Existing test infrastructure in `server/tests/`.
+**Input:** Existing test infrastructure in `server/tests/`, test helpers (`mcpCall`, `sleep` from `./_helpers/mcpClient.ts`), and Deno std assertions.
 
 **Working directory:** `c:\projects\ai-memory\`
 
 **Steps:**
 
-1. Create `server/tests/entity-worker-crash-isolation.test.ts`:
+1. **Add a test-only seam for deterministic unit assertions.** In `server/src/entityWorker.ts`, keep runtime behavior unchanged but expose a test-only hook object used by `tests/entity-worker-crash-isolation.test.ts`. The hook must be explicitly marked as test-only (not a stable public API):
 
    ```typescript
-   import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-   import { callTool, getDbConnection } from "./_helpers/mcpClient.ts";
+   // Test-only surface for deterministic assertions; not a runtime contract.
+   export const __entityWorkerTestHooks = {
+     safePoll,
+     resetWorkerState(): void {
+       consecutiveFailures = 0;
+     },
+     getConsecutiveFailures(): number {
+       return consecutiveFailures;
+     },
+   };
+   ```
+
+2. Create `server/tests/entity-worker-crash-isolation.test.ts`:
+
+   ```typescript
+    import { assertEquals, assertNotEquals, assertMatch } from "https://deno.land/std@0.224.0/assert/mod.ts";
+   import { mcpCall, sleep } from "./_helpers/mcpClient.ts";
+
+   // --- Integration tests: server survives worker activity ---
 
    Deno.test("entity worker survives processing errors without crashing server", async () => {
      // Insert a thought that will be queued for entity extraction
-     const result = await callTool("capture_thought", {
+     const result = await mcpCall("capture_thought", {
        content: `Crash isolation test ${Date.now()} — this thought tests worker resilience`,
        memory_type: "shard",
      });
-     assertEquals(result.isError, undefined, "capture should succeed");
+     const parsed = result as { result?: { content?: Array<{ text?: string }> } };
+     assertNotEquals(parsed.result, undefined, "capture should succeed");
 
      // Wait for the worker to attempt processing (poll interval is 10s in test)
-     await new Promise((r) => setTimeout(r, 12000));
+     await sleep(12_000);
 
      // Verify the server is still responding (hasn't crashed)
-     const statsResult = await callTool("thought_stats", {});
-     assertEquals(statsResult.isError, undefined, "Server should still be responding after worker processes");
+     const statsResult = await mcpCall("thought_stats", {});
+     const statsParsed = statsResult as { result?: unknown };
+     assertNotEquals(statsParsed.result, undefined, "Server should still be responding after worker processes");
    });
 
    Deno.test("server health endpoint responds after worker activity", async () => {
-     // Simple health check to verify the process is alive
-     const resp = await fetch("http://localhost:3001/health");
+     const MCP_BASE = Deno.env.get("MCP_BASE_URL") ?? "http://localhost:3000";
+     const healthUrl = MCP_BASE.replace(/\/mcp$/, "").replace(/\/$/, "") + "/health";
+     const resp = await fetch(healthUrl);
      assertEquals(resp.status, 200);
      const body = await resp.text();
      assertEquals(body, "ok");
    });
+
+   // --- Unit test: deterministic throw-path coverage ---
+
+   Deno.test("safePoll contains a thrown poll cycle and recovers on next cycle", async () => {
+     const { __entityWorkerTestHooks } = await import("../src/entityWorker.ts");
+     __entityWorkerTestHooks.resetWorkerState();
+
+     let calls = 0;
+     const errors: string[] = [];
+     const runQueue = async () => {
+       calls++;
+       if (calls === 1) throw new Error("synthetic queue claim failure");
+     };
+
+     // First cycle fails but must be contained.
+     await __entityWorkerTestHooks.safePoll({
+       runQueue,
+       onError: (msg: string) => errors.push(msg),
+       schedule: () => {},
+     });
+     assertEquals(__entityWorkerTestHooks.getConsecutiveFailures(), 1);
+
+     // Next cycle succeeds and resets consecutive failure counter.
+     await __entityWorkerTestHooks.safePoll({
+       runQueue,
+       onError: (msg: string) => errors.push(msg),
+       schedule: () => {},
+     });
+     assertEquals(__entityWorkerTestHooks.getConsecutiveFailures(), 0);
+     assertNotEquals(errors.length, 0);
+     assertMatch(errors[0], /poll failed|ALERT/i);
+   });
    ```
 
-2. **Note:** This test verifies the worker doesn't crash the server during normal processing. To test actual error scenarios (e.g. DB connection drop), a more sophisticated test would be needed — but that's out of scope. The key contract is: after worker activity, the server still responds.
+3. **DoD evidence mapping (required):**
+   - DoD bullet 1 (error contained, no crash): unit test above must force a thrown cycle and complete without uncaught rejection.
+   - DoD bullet 2 (error logging): assertions must validate error log output appears with expected failure-path wording.
+  - DoD bullet 3 (continued polling): unit test above must demonstrate a successful second cycle after a forced failure; integration test must confirm the server remains healthy while worker polling is active.
 
-**Expected output:** Tests confirm the server remains healthy during and after worker processing.
+4. **Scope guard:** Keep `__entityWorkerTestHooks` test-only and local to this story's test file. Do not treat it as a stable runtime API.
+
+**Expected output:** Tests prove AC-10 behavior explicitly: contained throw-path error, structured error evidence, and successful subsequent polling.
 
 **Requirement mapping:** §2d row 1 (verification evidence)
 
@@ -221,9 +292,9 @@ docker compose --profile test exec mcp-test deno test --allow-net --allow-env --
 ```powershell
 docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/entity-worker-crash-isolation.test.ts
 ```
-Expected: 2 tests pass.
+Expected: 3 tests pass.
 
-**Failure handling:** If the 12-second wait isn't enough for the worker to poll, increase to 15s. If the worker isn't running in the test container, check that `OPENROUTER_API_KEY` is set in the test environment.
+**Failure handling:** If timing-based integration assertions are flaky at 12 seconds, increase wait windows to 15 seconds and assert using state transitions (`done`/`failed`) rather than sleep-only checks where possible.
 
 ---
 
@@ -243,6 +314,8 @@ Expected: 2 tests pass.
    - Could `getBackoffMs()` return 0 or negative? (No — minimum is `BASE_INTERVAL_MS` when `consecutiveFailures === 0`.)
    - Does the alert at 5+ failures also continue retrying? (Yes — it logs and then schedules the next poll.)
    - Is there a memory leak from repeated `setTimeout`? (No — each timeout fires once, no accumulation.)
+    - Do tests explicitly assert expected error log output for the failure path (not only process liveness)?
+    - Do tests prove continued polling by observing a successful post-failure cycle (unit) plus server liveness under worker activity (integration)?
 
 **Verification:**
 ```powershell

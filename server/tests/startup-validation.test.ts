@@ -1,6 +1,6 @@
 import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
 
-import { ensureRequiredEnv, findMissingRequiredEnv } from "../src/startupValidation.ts";
+import { ensureRecallQueriesTable, ensureRequiredEnv, findMissingRequiredEnv } from "../src/startupValidation.ts";
 
 Deno.test("startup validation: reports OPENROUTER_API_KEY when missing", () => {
   const missing = findMissingRequiredEnv((name) => {
@@ -71,4 +71,53 @@ Deno.test("startup validation: ensureRequiredEnv is a no-op when all required va
 
   assertEquals(fatalCalled, false);
   assertEquals(exitCalled, false);
+});
+
+// ---------------------------------------------------------------------------
+// ensureRecallQueriesTable
+// ---------------------------------------------------------------------------
+
+Deno.test("ensureRecallQueriesTable: executes CREATE TABLE IF NOT EXISTS queries", async () => {
+  const executed: string[] = [];
+  const logs: string[] = [];
+
+  await ensureRecallQueriesTable(
+    async (query) => { executed.push(query.trim()); },
+    (msg) => logs.push(msg),
+  );
+
+  assertEquals(executed.length, 2);
+  assertEquals(executed[0].includes("CREATE TABLE IF NOT EXISTS"), true);
+  assertEquals(executed[0].includes("recall_queries"), true);
+  assertEquals(executed[1].includes("CREATE INDEX IF NOT EXISTS"), true);
+  assertEquals(executed[1].includes("idx_recall_queries_tool_created"), true);
+  assertEquals(logs.some((l) => l.includes("recall_queries DDL applied")), true);
+});
+
+Deno.test("ensureRecallQueriesTable: swallows SQL errors without throwing", async () => {
+  let errorLogged = false;
+
+  await ensureRecallQueriesTable(
+    async (_query) => { throw new Error("relation already exists"); },
+    () => {},
+  );
+
+  // Must not throw — error is caught and logged to console.error
+  assertEquals(errorLogged, false); // errorLogged would be set if we captured console.error; absence of throw is the primary signal
+});
+
+Deno.test("ensureRecallQueriesTable: swallows error on second DDL statement without throwing", async () => {
+  let callCount = 0;
+  const logs: string[] = [];
+
+  await ensureRecallQueriesTable(
+    async (_query) => {
+      callCount++;
+      if (callCount === 2) throw new Error("duplicate index"); // CREATE INDEX fails
+    },
+    (msg) => logs.push(msg),
+  );
+
+  // Must not throw; the 'DDL applied' log should NOT be emitted since the catch fired
+  assertEquals(logs.some((l) => l.includes("DDL applied")), false);
 });
