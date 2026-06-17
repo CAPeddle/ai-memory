@@ -3,6 +3,7 @@ import {
   type EmbeddingLane,
   extractSafeBodyFields,
   resolveCorrelationId,
+  runWithMcpRequestContext,
   setActiveEmbeddingLane,
   takeActiveEmbeddingLane,
 } from "../src/mcpDiagnostics.ts";
@@ -74,15 +75,20 @@ Deno.test("resolveCorrelationId: rejects values over 128 chars", () => {
 // extractSafeBodyFields
 // ---------------------------------------------------------------------------
 
-Deno.test("extractSafeBodyFields: extracts method and id from valid JSON-RPC body", async () => {
-  const body = JSON.stringify({ jsonrpc: "2.0", method: "tools/call", id: 42, params: { query: "secret content" } });
+Deno.test("extractSafeBodyFields: extracts method tool and id from valid JSON-RPC body", async () => {
+  const body = JSON.stringify({
+    jsonrpc: "2.0",
+    method: "tools/call",
+    id: 42,
+    params: { name: "search_thoughts", arguments: { query: "secret content" } },
+  });
   const req = new Request("http://localhost/mcp", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body,
   });
   const fields = await extractSafeBodyFields(req);
-  assertEquals(fields, { method: "tools/call", id: 42 });
+  assertEquals(fields, { method: "tools/call", tool: "search_thoughts", id: 42 });
 });
 
 Deno.test("extractSafeBodyFields: never includes params or content fields", async () => {
@@ -117,14 +123,48 @@ Deno.test("embedding lane cell: defaults to n/a when not set", () => {
 });
 
 Deno.test("embedding lane cell: reflects value set by search tool", () => {
-  setActiveEmbeddingLane("full");
-  assertEquals(takeActiveEmbeddingLane(), "full");
-  // After take, resets to n/a
-  assertEquals(takeActiveEmbeddingLane(), "n/a");
+  return runWithMcpRequestContext(() => {
+    setActiveEmbeddingLane("full");
+    assertEquals(takeActiveEmbeddingLane(), "full");
+    // After take, resets to n/a
+    assertEquals(takeActiveEmbeddingLane(), "n/a");
+  });
 });
 
 Deno.test("embedding lane cell: bm25_only is preserved through take", () => {
-  setActiveEmbeddingLane("bm25_only");
-  const lane: EmbeddingLane = takeActiveEmbeddingLane();
-  assertEquals(lane, "bm25_only");
+  return runWithMcpRequestContext(() => {
+    setActiveEmbeddingLane("bm25_only");
+    const lane: EmbeddingLane = takeActiveEmbeddingLane();
+    assertEquals(lane, "bm25_only");
+  });
+});
+
+Deno.test("embedding lane context: concurrent requests do not overwrite each other", async () => {
+  let releaseFirst!: () => void;
+  const firstReady = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+
+  let allowFirstToFinish!: () => void;
+  const allowFirst = new Promise<void>((resolve) => {
+    allowFirstToFinish = resolve;
+  });
+
+  const first = runWithMcpRequestContext(async () => {
+    setActiveEmbeddingLane("full");
+    releaseFirst();
+    await allowFirst;
+    return takeActiveEmbeddingLane();
+  });
+
+  const second = runWithMcpRequestContext(async () => {
+    await firstReady;
+    setActiveEmbeddingLane("bm25_only");
+    allowFirstToFinish();
+    return takeActiveEmbeddingLane();
+  });
+
+  const [firstLane, secondLane] = await Promise.all([first, second]);
+  assertEquals(firstLane, "full");
+  assertEquals(secondLane, "bm25_only");
 });
