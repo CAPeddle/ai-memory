@@ -1,37 +1,37 @@
-# FollowUpSessionLog — ai-memory
+Session: 2026-06-17 ST-058 sync-alignment wrap-up
+Branch: feat/ST-058-sync-alignment (7 commits ahead, 56a492c cherry-picked onto origin/main)
+Completed: Tasks 4.1–4.11 (pending: cross-model review, PR)
 
-## Last Session: 2026-06-10 (/continue execution of ST-057)
+ACCOMPLISHED THIS SESSION
+- Branch created off origin/main, cherry-picked 56a492c for cypher baseline consistency
+- ST-056 diagnostics committed: AsyncLocalStorage refactor of mcpDiagnostics.ts
+- ST-042 migration framework committed: migrate.ts, 001_initial.sql, 002_needs_embedding.sql, 003_recall_queries.sql
+- Governance artifacts committed: STRATEGY.md, .opencode/, opencode-mcp.json
+- .worktrees/ added to .gitignore and committed
+- Full suite 131/131 tests pass, lint clean
+- ExecPlans: ST-056 created, ST-042 promoted to Ready, ST-041 populated with completion notes
+- story-board.md: ST-041/ST-042/ST-056 moved to Done, ST-058 added
+- cypher-injection.test.ts still untracked — needs manual stage (ST-041 evidence)
+- FollowUpSessionLog.txt replaced with this handoff
 
-### Accomplished
-- Executed ST-057 Tasks 4.1-4.5 end-to-end from `.github/planning/execplans/exec-plan-ST-057.md`.
-- Verified red checkpoint for protocol compatibility (`prompts/list` and `resources/list` returned `-32601` before implementation).
-- Implemented minimal MCP prompt/resource using first-class SDK APIs in `server/index.ts`:
-  - `memory_search_guidance` prompt
-  - `ai-memory://server-info` static resource
-- Added SDK-client compatibility smoke test in `server/tests/mcp-protocol-compat.test.ts`.
-- Updated README client troubleshooting section with required OpenCode vs ai-memory error distinctions.
-- Verification evidence:
-  - Focused protocol test: 5 passed, 0 failed
-  - Full server suite: 87 passed, 0 failed
-  - Raw dev `prompts/list` smoke returns prompt list (no `-32601`) after container restart
-- Cross-model critical review completed with PASS verdict; recorded in ST-057 ExecPlan §6c.
-- Board moved ST-057 from Refined to Review.
+COMMITS MADE (chronological)
+  4ccd0ad refactor(diagnostics): AsyncLocalStorage for embedding lane isolation
+  8a7a608 feat(migrations): add migration framework (migrate.ts + 3 SQL files)
+  8027f5e docs(governance): add STRATEGY.md, .opencode config, opencode-mcp.json
+  8269d0e chore(gitignore): add .worktrees/ entry
+  cefb7ad docs(plans): create exec-plan-ST-056.md, promote ST-042 to Ready
+  0490253 docs(plans): update ST-041 ExecPlan with completion notes
+  06afda8 docs(board): mark ST-041/ST-042/ST-056 Done, add ST-058
 
-### Commits (atomic by task)
-- `ae59190` feat(mcp): register minimal prompt and resource (Story: ST-057, Task: §4.2)
-- `2d4e8e4` docs(readme): clarify MCP client troubleshooting (Story: ST-057, Task: §4.3)
-- `bf63d42` test(mcp): add SDK protocol compatibility smoke (Story: ST-057, Task: §4.4)
-- `773cddb` chore(board): move ST-057 to review after gate (Story: ST-057, Task: §4.5)
+KEY DISCOVERIES
+- 56a492c NOT on origin/main (plan claimed it was); cherry-picked locally
+- Cypher hardening function: maskCypherLiteralsAndComments (not stripCypherComments per plan)
+- Schema path: server/db/ (not server/db/migrations/), direct-path loader — accepted as-is
+- gh CLI token mismatch: cpeddle ≠ CAPeddle owner — cannot create PR via CLI (open manually)
 
-### Resume Point
-- Await PO acceptance decision for ST-057 in Review.
-- Next execution story: ST-054 (`.github/planning/execplans/exec-plan-ST-054.md`), resume at Task 4.4 once PO directs `/continue`.
-
-### Avoidance / Learnings
-- For protocol-surface changes in this compose setup, restart `mcp-test` and `mcp` to ensure handlers are reloaded before compatibility probes.
-- Do not touch pre-existing ST-054 in-progress files while executing ST-057 task commits.
-
-### Current Board Snapshot
-- Review: ST-057.
-- In Progress: empty.
-- Backlog: ST-054 (blocked_by ST-057 until PO accepts ST-057/advances board).
+NEXT SESSION START
+1. Stage server/tests/cypher-injection.test.ts and commit
+2. Run final test + lint re-verification (Task 4.12)
+3. Execute cross-model review (Task 4.13)
+4. Open PR manually at https://github.com/CAPeddle/ai-memory/pull/new/feat/ST-058-sync-alignment
+5. Wait for CI, merge
