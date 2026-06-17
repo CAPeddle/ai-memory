@@ -120,10 +120,4 @@ export function emitRequestLog(entry: McpRequestLog): void {
   console.log("[mcp]", JSON.stringify(entry));
 }
 
-/**
- * Whether optional body logging is enabled. Off by default.
- * Set ENABLE_BODY_LOGGING=true in the environment to enable.
- */
-export function isBodyLoggingEnabled(): boolean {
-  return Deno.env.get("ENABLE_BODY_LOGGING") === "true";
-}
+

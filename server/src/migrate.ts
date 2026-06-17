@@ -164,6 +164,11 @@ async function repairMissingMigration003Artifacts(tx: SqlExecutor, migration003:
   `;
   if (recallQueriesTable) return;
 
-  console.warn("[migrate] version 003 recorded but recall_queries is missing - reapplying 003_search_text_and_recall_queries.sql");
-  await tx.unsafe(migration003.content);
+  try {
+    console.warn("[migrate] version 003 recorded but recall_queries is missing - reapplying 003_search_text_and_recall_queries.sql");
+    await tx.unsafe(migration003.content);
+  } catch (err) {
+    console.error("[migrate] FATAL: repair migration 003 failed:", err);
+    Deno.exit(1);
+  }
 }

@@ -599,53 +599,55 @@ const CYPHER_DENIED_KEYWORDS = /\b(CREATE|SET|DELETE|REMOVE|MERGE|DETACH|DROP|CA
 const CYPHER_DOLLAR_QUOTE_RE = /\$\$/g;
 const CYPHER_MAX_LENGTH = 4096;
 
-function maskCypherLiteralsAndComments(cypher: string): { masked: string; error: string | null } {
-  const chars = [...cypher];
-  const masked = [...cypher];
+type CypherWalkState = "normal" | "single" | "double" | "lineComment" | "blockComment";
+type CypherCharAction = { type: "char"; ch: string } | { type: "advance" };
 
+function* walkCypherTokens(cypher: string): Generator<{ char: string; state: CypherWalkState }, { error: string | null }> {
+  const chars = [...cypher];
   let i = 0;
-  let state: "normal" | "single" | "double" | "lineComment" | "blockComment" = "normal";
+  let state: CypherWalkState = "normal";
 
   while (i < chars.length) {
     const ch = chars[i];
     const next = i + 1 < chars.length ? chars[i + 1] : "";
 
     if (state === "normal") {
-      if (ch === "'" ) {
-        masked[i] = " ";
+      if (ch === "'") {
         state = "single";
+        yield { char: ch, state };
         i += 1;
         continue;
       }
       if (ch === '"') {
-        masked[i] = " ";
         state = "double";
+        yield { char: ch, state };
         i += 1;
         continue;
       }
       if (ch === "-" && next === "-") {
-        masked[i] = " ";
-        masked[i + 1] = " ";
+        yield { char: ch, state };
+        yield { char: next, state };
         state = "lineComment";
         i += 2;
         continue;
       }
       if (ch === "/" && next === "*") {
-        masked[i] = " ";
-        masked[i + 1] = " ";
+        yield { char: ch, state };
+        yield { char: next, state };
         state = "blockComment";
         i += 2;
         continue;
       }
 
+      yield { char: ch, state };
       i += 1;
       continue;
     }
 
     if (state === "single") {
-      masked[i] = " ";
+      yield { char: ch, state };
       if (ch === "\\" && i + 1 < chars.length) {
-        masked[i + 1] = " ";
+        yield { char: chars[i + 1], state };
         i += 2;
         continue;
       }
@@ -657,9 +659,9 @@ function maskCypherLiteralsAndComments(cypher: string): { masked: string; error:
     }
 
     if (state === "double") {
-      masked[i] = " ";
+      yield { char: ch, state };
       if (ch === "\\" && i + 1 < chars.length) {
-        masked[i + 1] = " ";
+        yield { char: chars[i + 1], state };
         i += 2;
         continue;
       }
@@ -671,19 +673,18 @@ function maskCypherLiteralsAndComments(cypher: string): { masked: string; error:
     }
 
     if (state === "lineComment") {
+      yield { char: ch, state };
       if (ch === "\n" || ch === "\r") {
         state = "normal";
-      } else {
-        masked[i] = " ";
       }
       i += 1;
       continue;
     }
 
     // blockComment
-    masked[i] = " ";
+    yield { char: ch, state };
     if (ch === "*" && next === "/") {
-      masked[i + 1] = " ";
+      yield { char: next, state };
       state = "normal";
       i += 2;
       continue;
@@ -691,105 +692,52 @@ function maskCypherLiteralsAndComments(cypher: string): { masked: string; error:
     i += 1;
   }
 
+  let error: string | null = null;
   if (state === "single" || state === "double") {
-    return { masked: masked.join(""), error: "Unterminated string literal in Cypher query." };
-  }
-  if (state === "blockComment") {
-    return { masked: masked.join(""), error: "Unterminated block comment in Cypher query." };
+    error = "Unterminated string literal in Cypher query.";
+  } else if (state === "blockComment") {
+    error = "Unterminated block comment in Cypher query.";
   }
 
-  return { masked: masked.join(""), error: null };
+  return { error };
+}
+
+function maskCypherLiteralsAndComments(cypher: string): { masked: string; error: string | null } {
+  const result: string[] = [];
+  const iter = walkCypherTokens(cypher);
+  let item = iter.next();
+
+  while (!item.done) {
+    const { char, state } = item.value;
+    if (state === "normal") {
+      result.push(char);
+    } else {
+      result.push(" ");
+    }
+    item = iter.next();
+  }
+
+  return { masked: result.join(""), error: item.value.error };
 }
 
 function stripCypherComments(cypher: string): string {
-  const chars = [...cypher];
-  const stripped: string[] = [];
+  const result: string[] = [];
+  const iter = walkCypherTokens(cypher);
+  let item = iter.next();
 
-  let i = 0;
-  let state: "normal" | "single" | "double" | "lineComment" | "blockComment" = "normal";
-
-  while (i < chars.length) {
-    const ch = chars[i];
-    const next = i + 1 < chars.length ? chars[i + 1] : "";
-
-    if (state === "normal") {
-      if (ch === "'") {
-        stripped.push(ch);
-        state = "single";
-        i += 1;
-        continue;
+  while (!item.done) {
+    const { char, state } = item.value;
+    if (state === "lineComment" || state === "blockComment") {
+      if (state === "lineComment" && (char === "\n" || char === "\r")) {
+        result.push(char);
       }
-      if (ch === '"') {
-        stripped.push(ch);
-        state = "double";
-        i += 1;
-        continue;
-      }
-      if (ch === "-" && next === "-") {
-        stripped.push(" ");
-        state = "lineComment";
-        i += 2;
-        continue;
-      }
-      if (ch === "/" && next === "*") {
-        stripped.push(" ");
-        state = "blockComment";
-        i += 2;
-        continue;
-      }
-
-      stripped.push(ch);
-      i += 1;
-      continue;
+    } else {
+      result.push(char);
     }
-
-    if (state === "single") {
-      stripped.push(ch);
-      if (ch === "\\" && i + 1 < chars.length) {
-        stripped.push(chars[i + 1]);
-        i += 2;
-        continue;
-      }
-      if (ch === "'") {
-        state = "normal";
-      }
-      i += 1;
-      continue;
-    }
-
-    if (state === "double") {
-      stripped.push(ch);
-      if (ch === "\\" && i + 1 < chars.length) {
-        stripped.push(chars[i + 1]);
-        i += 2;
-        continue;
-      }
-      if (ch === '"') {
-        state = "normal";
-      }
-      i += 1;
-      continue;
-    }
-
-    if (state === "lineComment") {
-      if (ch === "\n" || ch === "\r") {
-        stripped.push(ch);
-        state = "normal";
-      }
-      i += 1;
-      continue;
-    }
-
-    // blockComment
-    if (ch === "*" && next === "/") {
-      state = "normal";
-      i += 2;
-      continue;
-    }
-    i += 1;
+    item = iter.next();
   }
 
-  return stripped.join("");
+  return result.join("");
 }
 
 server.registerTool(
