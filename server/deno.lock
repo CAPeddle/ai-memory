@@ -3,6 +3,7 @@
   "specifiers": {
     "npm:@hono/mcp@0.1.1": "0.1.1_@modelcontextprotocol+sdk@1.24.3__zod@4.1.13__ajv@8.20.0__express@5.2.1_hono@4.9.2_zod@4.1.13",
     "npm:@modelcontextprotocol/sdk@1.24.3": "1.24.3_zod@4.1.13_ajv@8.20.0_express@5.2.1",
+    "npm:@types/node@*": "22.5.4",
     "npm:hono@4.9.2": "4.9.2",
     "npm:postgres@3.4.4": "3.4.4",
     "npm:zod@4.1.13": "4.1.13"
@@ -32,6 +33,12 @@
         "raw-body",
         "zod",
         "zod-to-json-schema"
+      ]
+    },
+    "@types/node@22.5.4": {
+      "integrity": "sha512-FDuKUJQm/ju9fT/SeX/6+gBzoPzlVCzfzmGkwKvRHQVxi4BntVbyIwf6a4Xn62mrvndLiml6z/UBXIdEVjQLXg==",
+      "dependencies": [
+        "undici-types"
       ]
     },
     "accepts@2.0.0": {
@@ -487,6 +494,9 @@
         "media-typer",
         "mime-types"
       ]
+    },
+    "undici-types@6.19.8": {
+      "integrity": "sha512-ve2KP6f/JnbPBFyobGHuerC9g1FYGn/F8n1LWTwNxCEzd6IfqTwUQcNXgEtmmQ6DlRrC1hrSrBnCZPokRrDHjw=="
     },
     "unpipe@1.0.0": {
       "integrity": "sha512-pjy2bYhSsufwWlKwPc+l3cN7+wuJlK6uz0YdJEOlQDbl6jo/YlPi4mb8agUkVC8BF7V8NuzeyPNqRksA3hztKQ=="

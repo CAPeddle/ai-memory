@@ -16,10 +16,18 @@
  * can distinguish full (BM25+vector) from degraded (BM25-only) responses.
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
+
 /** Regex for acceptable correlation ID characters. Max 128 chars. */
 const CORRELATION_ID_RE = /^[A-Za-z0-9\-_.]{1,128}$/;
 
 export type EmbeddingLane = "full" | "bm25_only" | "n/a";
+
+interface McpRequestContext {
+  embeddingLane: EmbeddingLane;
+}
+
+const requestContext = new AsyncLocalStorage<McpRequestContext>();
 
 /**
  * Parse and sanitize the X-Correlation-ID header. Returns a server-generated
@@ -40,17 +48,27 @@ export function resolveCorrelationId(request: Request): string {
  */
 export async function extractSafeBodyFields(
   request: Request,
-): Promise<{ method?: string; id?: string | number } | string> {
+): Promise<{ method?: string; tool?: string; id?: string | number } | string> {
   try {
     const cloned = request.clone();
     const body = await cloned.json() as Record<string, unknown>;
-    const result: { method?: string; id?: string | number } = {};
+    const result: { method?: string; tool?: string; id?: string | number } = {};
     if (typeof body.method === "string") result.method = body.method;
+    if (
+      typeof body.params === "object" && body.params !== null &&
+      typeof (body.params as Record<string, unknown>).name === "string"
+    ) {
+      result.tool = (body.params as Record<string, string>).name;
+    }
     if (typeof body.id === "string" || typeof body.id === "number") result.id = body.id;
     return result;
   } catch {
     return "<parse-error>";
   }
+}
+
+export async function runWithMcpRequestContext<T>(fn: () => Promise<T> | T): Promise<T> {
+  return await requestContext.run({ embeddingLane: "n/a" }, fn);
 }
 
 /**
@@ -70,16 +88,20 @@ export async function extractSafeBodyFields(
  * 10 s embedding timeout windows) it is a practical concern. The field is
  * advisory telemetry, not a correctness invariant.
  */
-let _activeEmbeddingLane: EmbeddingLane = "n/a";
-
 export function setActiveEmbeddingLane(lane: EmbeddingLane): void {
-  _activeEmbeddingLane = lane;
+  const store = requestContext.getStore();
+  if (store) {
+    store.embeddingLane = lane;
+  }
 }
 
 /** Read and reset the active embedding lane. Returns "n/a" if not set. */
 export function takeActiveEmbeddingLane(): EmbeddingLane {
-  const lane = _activeEmbeddingLane;
-  _activeEmbeddingLane = "n/a";
+  const store = requestContext.getStore();
+  if (!store) return "n/a";
+
+  const lane = store.embeddingLane;
+  store.embeddingLane = "n/a";
   return lane;
 }
 
@@ -87,6 +109,7 @@ export interface McpRequestLog {
   ts: string;
   request_id: string;
   method?: string;
+  tool?: string;
   status: number;
   duration_ms: number;
   embedding_lane: EmbeddingLane;
@@ -97,10 +120,4 @@ export function emitRequestLog(entry: McpRequestLog): void {
   console.log("[mcp]", JSON.stringify(entry));
 }
 
-/**
- * Whether optional body logging is enabled. Off by default.
- * Set ENABLE_BODY_LOGGING=true in the environment to enable.
- */
-export function isBodyLoggingEnabled(): boolean {
-  return Deno.env.get("ENABLE_BODY_LOGGING") === "true";
-}
+

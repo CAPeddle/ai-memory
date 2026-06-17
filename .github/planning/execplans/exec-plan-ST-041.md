@@ -40,7 +40,17 @@ This story replaces the insufficient check with a **token-aware keyword deny-lis
 
 ## §1b. Outcomes & Conclusions
 
-*(populated on completion)*
+**Completion status:** Full — all acceptance criteria met via ST-058 wrap-up (feat/ST-058-sync-alignment).
+
+Key achievements:
+- Token-aware mutation-keyword deny-list implemented in `maskCypherLiteralsAndComments`
+- Max query length cap at 4096 enforced
+- MATCH-only gate preserved
+- Fails closed on malformed literal/comment input (unterminated strings/block comments)
+- All 20 cypher-injection tests pass, plus full suite 131/131
+- Lint clean (0 errors)
+
+Note: cypher hardening shipped as `maskCypherLiteralsAndComments` (not `stripCypherComments` per plan) — originally present via 72799b4 on origin/main, adopted as-is.
 
 ---
 
@@ -77,6 +87,7 @@ Status: ✅ Ready — approved 2026-06-10
 - 2026-06-10: PO locked deny-list behavior to token-aware validation (do not reject mutation keywords when they appear only in quoted strings/comments).
 - 2026-06-10: PO kept max query length cap at 4096 characters.
 - 2026-06-10: Scope lock confirmed: graph_traverse hardening + focused tests only. Rate limiting and all non-ST-041 work remain out of scope.
+- 2026-06-17: Executed via ST-058 wrap-up — cypher hardening baseline verified, 20/20 injection tests pass, full suite 131/131
 
 ---
 

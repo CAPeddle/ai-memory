@@ -1,6 +1,7 @@
 # Temporary directories
 /tmp/
 .tmp/
+.worktrees/
 
 # Build artifacts
 bin/

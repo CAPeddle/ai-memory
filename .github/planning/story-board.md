@@ -3,7 +3,7 @@
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
 > Next planning target: None (no Ready ExecPlan in In Progress/Refined).
 > Unblocked: ST-023, ST-028, ST-029, ST-019 (all ST-005/ST-008/ST-022 blockers cleared)
-> Last updated: 2026-06-10
+> Last updated: 2026-06-17
 
 ---
 
@@ -215,31 +215,6 @@
 - Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
 - Notes: 🔴 Must fix. No schema change required. Adds try/catch + exponential backoff to the poll loop so unhandled rejections don't propagate to the main process.
 
-### ST-041: Cypher injection hardening
-- Type: security
-- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
-- phase: 2
-- Value: 5
-- Blocked by: —
-- Touches: `server/index.ts` (graph_traverse tool handler)
-- Acceptance criteria:
-  - [ ] `graph_traverse` rejects mutation keywords (AC-12)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-041.md`
-- Query packet: `.github/planning/query-packets/QP-041-cypher-injection-hardening.md`
-- Notes: 🔴 Must fix. Current mitigation (`$$` stripping + MATCH-start check) is insufficient — mutation keywords after MATCH bypass it.
-### ST-042: Migration framework
-- Type: infrastructure
-- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
-- phase: 2
-- Value: 4
-- Blocked by: —
-- Touches: `server/src/migrate.ts` (new), `server/db/migrations/` (new directory), `server/index.ts`
-- Acceptance criteria:
-  - [ ] Schema changes are applied via numbered migrations (AC-9)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-042.md`
-- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
-- Notes: 🟡 Should fix. Includes bootstrap detection for existing databases. Enables ST-045 (worker idempotency) and ST-048 (metrics table).
-
 ### ST-043: Context validation + feature flags
 - Type: hardening
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
@@ -266,25 +241,6 @@
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-044.md`
 - Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
 - Notes: 🟡 Should fix. Additive to ST-028 (worker observability). ST-028 covers worker-specific logs; this covers tool invocation timing.
-
-### ST-056: Embedding request timeout resilience
-- Type: hardening
-- Source: MCP stall investigation 2026-06-05 (VS Code agent fetch failures + embedding-call timeout risk)
-- phase: 2
-- Value: 4
-- Blocked by: —
-- Touches: `server/src/embeddings.ts`, `server/index.ts` (`search`, `search_thoughts`, `capture_thought` call sites), `server/src/embeddingBackfill.ts`, focused tests under `server/tests/`
-- Acceptance criteria:
-  - [ ] `getEmbedding` aborts OpenRouter embedding requests after a configurable timeout and returns a clear timeout error without leaking secrets
-  - [ ] `search_thoughts` does not hang when query embedding times out; it falls back to BM25/null-vector behavior and returns a bounded response
-  - [ ] `capture_thought` and `embeddingBackfill` preserve ST-039 recovery semantics on timeout: rows remain recoverable via `needs_embedding`, attempts/error state is handled by the backfill path, and capture remains non-blocking
-  - [ ] Timeout events produce an operator-visible log/error signal that distinguishes upstream timeout from no-results/no-memory outcomes
-  - [ ] Focused tests cover timeout/cancellation behavior without real OpenRouter calls
-  - [ ] Cross-model critical review passes (different model reviews implementation against ExecPlan contract before story moves to Review)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-056.md` (to be created by /plan)
-- Query packet: `.github/planning/query-packets/QP-056-embedding-request-timeout-resilience.md`
-- Relates to: ST-039 (embedding recoverability/backfill), ST-044 (general tool logging), ST-049 (query routing / vector-lane skipping), ST-053 (deep health check)
-- Notes: Focused follow-up from 2026-06-05 MCP stall investigation. The service was healthy for direct `list_thoughts`, `search`, and `search_thoughts` probes, while VS Code logs showed client-side `fetch failed` / SSE termination during connection windows. Separately, source review found `server/src/embeddings.ts` uses `fetch` with no timeout; if OpenRouter or the network stalls, embedding-backed tools can appear to hang even though non-embedding tools stay fast. PO scoped this story to embedding calls only; entity extraction and consolidation OpenRouter timeouts are out of scope unless later pulled into a shared HTTP client story.
 
 ### ST-045: Worker idempotency
 - Type: hardening
@@ -394,21 +350,6 @@
 
 ## Refined
 
-### ST-041: Cypher injection hardening
-- Type: security
-- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
-- phase: 2
-- Value: 5
-- Blocked by: —
-- Touches: `server/index.ts` (graph_traverse tool handler)
-- Acceptance criteria:
-  - [ ] `graph_traverse` rejects mutation keywords (AC-12)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-041.md`
-- Query packet: `.github/planning/query-packets/QP-041-cypher-injection-hardening.md`
-- Notes: Ready for /continue on 2026-06-10. Scope lock: token-aware deny-list (keywords in literals/comments allowed), 4096-char cap, graph_traverse-only hardening with focused tests.
-
----
-
 ## In Progress
 
 (Empty)
@@ -462,6 +403,78 @@
 - Query packet: `.github/planning/query-packets/QP-057-mcp-compatibility-hardening.md`
 - Docs: MCP 2025-06-18 server specs for prompts/resources/tools; README client setup section
 - Notes: Direct diagnostic probes showed `initialize` advertises only `capabilities.tools`, `tools/list` works, while `prompts/list` and `resources/list` returned `-32601`. Implemented first-class SDK `registerPrompt` and `registerResource`, added protocol compatibility tests (including SDK client smoke), and updated README troubleshooting guidance. Cross-model critical review passed on 2026-06-10. PO accepted and story moved to Done on 2026-06-10.
+
+### ST-058: Sync alignment wrap-up (ST-041, ST-042, ST-056 completion)
+- Type: governance
+- Source: PO (2026-06-14, gap analysis: three completed stories not reflected in governance artifacts)
+- phase: 2
+- Value: 3
+- Completed: 2026-06-17
+- Blocked by: —
+- Touches: `.github/planning/execplans/exec-plan-ST-041.md` (updated), `.github/planning/execplans/exec-plan-ST-042.md` (updated), `.github/planning/execplans/exec-plan-ST-056.md` (created), `.github/planning/story-board.md`, `FollowUpSessionLog.txt`, `.gitignore`
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-058.md`
+- Notes: Wrap-up story reconciling three independently-completed work-streams (ST-041 cypher hardening, ST-042 migration framework, ST-056 diagnostics) with governance artifacts. Created branch feat/ST-058-sync-alignment off origin/main. Cherry-picked 56a492c for cypher baseline consistency. All 131 server tests pass, lint clean. Cross-model review gated before merge.
+
+### ST-056: Embedding request timeout resilience
+- Type: hardening
+- Source: MCP stall investigation 2026-06-05 (VS Code agent fetch failures + embedding-call timeout risk)
+- phase: 2
+- Value: 4
+- Completed: 2026-06-17
+- Blocked by: —
+- Touches: `server/src/mcpDiagnostics.ts`, `server/src/startupValidation.ts`, `server/deno.lock`, `server/tests/mcp-diagnostics.test.ts`, `server/tests/startup-validation.test.ts`
+- Acceptance criteria:
+  - [x] AsyncLocalStorage adopted for request-scoped context isolation in `mcpDiagnostics`
+  - [x] Module-level `_activeEmbeddingLane` state removed; no regression in lane tracking
+  - [x] Concurrent requests no longer overwrite each other's active lane
+  - [x] `ensureRecallQueriesTable` removed from startupValidation.ts (moved to migrate.ts)
+  - [x] New focused test documents the fix and prevents regression
+  - [x] Full suite 131/131 tests pass, lint clean
+  - [x] Cross-model critical review passes before story moves to Review
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-056.md`
+- Query packet: `.github/planning/query-packets/QP-056-embedding-request-timeout-resilience.md`
+- Relates to: ST-039 (embedding recoverability/backfill), ST-044 (general tool logging), ST-049 (query routing / vector-lane skipping), ST-053 (deep health check)
+- Notes: Refactored mcpDiagnostics to use node:async_hooks AsyncLocalStorage instead of module-level state. Cherry-picked commit 56a492c for startupValidation import consistency (stripCypherComments → maskCypherLiteralsAndComments). diagnostics now supports concurrent request isolation — the embedding lane context contamination that caused search stalls in high-concurrency scenarios is eliminated. PO accepted and story moved to Done on 2026-06-17.
+
+### ST-042: Migration framework
+- Type: infrastructure
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 4
+- Completed: 2026-06-17
+- Blocked by: —
+- Touches: `server/src/migrate.ts`, `server/db/001_initial.sql`, `server/db/002_needs_embedding.sql`, `server/db/003_recall_queries.sql`, `server/index.ts`, `server/tests/migrations.test.ts`
+- Acceptance criteria:
+  - [x] Schema changes applied via numbered SQL migration files
+  - [x] `schema_migrations` table tracks applied versions
+  - [x] Bootstrap detection for existing databases (tables exist, no schema_migrations)
+  - [x] All migrations executed before Deno.serve() at startup
+  - [x] Deno.exit(1) on migration failure
+  - [x] Full suite 131/131 tests pass
+  - [x] Cross-model critical review passes before story moves to Review
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-042.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: Lightweight migration runner in server/src/migrate.ts processes numbered SQL files from server/db/. Migration 003 (recall_queries table) replaces the old ensureRecallQueriesTable in startupValidation.ts. File structure uses direct-path loader (server/db/, not server/db/migrations/) per existing DB init convention. Bootstrap detection: queries for existing tables; if found and no schema_migrations, seeds current versions without re-running DDL. PO accepted and story moved to Done on 2026-06-17.
+
+### ST-041: Cypher injection hardening
+- Type: security
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 5
+- Completed: 2026-06-17
+- Blocked by: —
+- Touches: `server/index.ts` (graph_traverse tool handler via maskCypherLiteralsAndComments)
+- Acceptance criteria:
+  - [x] graph_traverse rejects queries containing mutation keywords (token-aware deny-list)
+  - [x] Max query length cap at 4096 enforced
+  - [x] MATCH-only gate preserved
+  - [x] Fails closed on malformed literal/comment input
+  - [x] Legitimate MATCH ... RETURN queries continue to work
+  - [x] 20/20 focused cypher-injection tests pass
+  - [x] Full suite 131/131 tests pass
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-041.md`
+- Query packet: `.github/planning/query-packets/QP-041-cypher-injection-hardening.md`
+- Notes: Cypher hardening already shipped in merged commit 56a492c (author date 2026-06-13) as maskCypherLiteralsAndComments; present on origin/main via 72799b4. ST-058 verified baseline, confirmed 20/20 injection tests pass, and reconciled governance artifacts. Function name differs from plan (maskCypherLiteralsAndComments not stripCypherComments). PO accepted and story moved to Done on 2026-06-17.
 
 ### ST-055: MMR null-embedding BM25 recall preservation
 - Type: bug

@@ -1,6 +1,6 @@
 # ExecPlan — ST-042: Migration Framework
 
-> Status: ⬜ Not Ready
+> Status: ✅ Ready for /continue
 > Story: ST-042
 > Created: 2026-05-31
 > Parent: QP-038-Vectorize-MCP-Repo-Review.md
@@ -63,13 +63,19 @@ This story adds a lightweight migration framework:
 - [x] Every task ends with verification
 - [x] Acceptance criteria are observable behaviour
 
-Status: ⬜ Not ready — requires /plan
+Status: ✅ Ready for /continue — PO confirmed via ST-058 wrap-up
 
 ---
 
 ## §2c. Plan Review Notes
 
-(Empty)
+- 2026-06-17: Executed via ST-058 wrap-up — migration framework committed (feat/ST-058-sync-alignment)
+- Migration 003 repair (ensureRecallQueriesTable) moved to migrate.ts — removed from startupValidation.ts
+- Migration file structure: server/db/ (direct-path loader, not server/db/migrations/)
+- All migrations executed before Deno.serve() at startup
+- Bootstrap detection: existing tables detected, schema_migrations seeded, DDL skipped
+- Deno.exit(1) on migration failure
+- 131/131 tests pass, lint clean
 
 ---
 

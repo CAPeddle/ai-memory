@@ -34,11 +34,12 @@ Deno.test("safePoll contains thrown poll cycle and recovers on next cycle", asyn
 
   let calls = 0;
   const errors: string[] = [];
-  const runQueue = async () => {
+  const runQueue = () => {
     calls++;
     if (calls === 1) {
-      throw new Error("synthetic queue claim failure");
+      return Promise.reject(new Error("synthetic queue claim failure"));
     }
+    return Promise.resolve();
   };
 
   // First cycle fails but must stay contained and increment failure counter.

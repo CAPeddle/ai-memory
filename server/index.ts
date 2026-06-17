@@ -18,9 +18,10 @@ import {
   rrfFuse,
   MmrCandidate,
 } from "./src/searchQuality.ts";
-import { ensureRequiredEnv, ensureRecallQueriesTable } from "./src/startupValidation.ts";
+import { ensureRequiredEnv } from "./src/startupValidation.ts";
 import { getEmbedding, EMBEDDING_MODEL } from "./src/embeddings.ts";
 import { startEmbeddingBackfill } from "./src/embeddingBackfill.ts";
+import { runMigrations } from "./src/migrate.ts";
 import {
   IDENTIFIER_NORMALIZER_VERSION,
   normalizeIdentifiers,
@@ -29,8 +30,8 @@ import {
   type EmbeddingLane,
   emitRequestLog,
   extractSafeBodyFields,
-  isBodyLoggingEnabled,
   resolveCorrelationId,
+  runWithMcpRequestContext,
   setActiveEmbeddingLane,
   takeActiveEmbeddingLane,
 } from "./src/mcpDiagnostics.ts";
@@ -40,9 +41,15 @@ import {
 // ---------------------------------------------------------------------------
 
 ensureRequiredEnv();
+await runMigrations();
 
 const CITATION_BASE_URL = Deno.env.get("AI_MEMORY_CITATION_BASE_URL") ?? "https://ai-memory.local/thoughts";
 const MAX_CONTENT_BYTES = 32_768; // 32 KB content limit per thought
+
+function resolveSearchEmbeddingLane(normalizedQuery: string, qEmb: number[] | null): EmbeddingLane {
+  if (!normalizedQuery) return "n/a";
+  return qEmb ? "full" : "bm25_only";
+}
 
 // ---------------------------------------------------------------------------
 // MCP Server
@@ -177,7 +184,7 @@ server.registerTool(
         resultIds: results.map((result) => result.id as string),
       });
 
-      setActiveEmbeddingLane(qEmb ? "full" : "bm25_only");
+      setActiveEmbeddingLane(resolveSearchEmbeddingLane(normalizedQuery, qEmb));
       return { content: [{ type: "text" as const, text: JSON.stringify({ results }) }] };
     } catch (err) {
       setActiveEmbeddingLane("n/a");
@@ -302,7 +309,7 @@ server.registerTool(
           profile,
           resultIds: [],
         });
-        setActiveEmbeddingLane(qEmb ? "full" : "bm25_only");
+        setActiveEmbeddingLane(resolveSearchEmbeddingLane(normalizedQuery, qEmb));
         return {
           content: [{
             type: "text" as const,
@@ -385,7 +392,7 @@ server.registerTool(
         resultIds: responseResults.map((result) => result.id),
       });
 
-      setActiveEmbeddingLane(qEmb ? "full" : "bm25_only");
+      setActiveEmbeddingLane(resolveSearchEmbeddingLane(normalizedQuery, qEmb));
       return {
         content: [{
           type: "text" as const,
@@ -592,53 +599,55 @@ const CYPHER_DENIED_KEYWORDS = /\b(CREATE|SET|DELETE|REMOVE|MERGE|DETACH|DROP|CA
 const CYPHER_DOLLAR_QUOTE_RE = /\$\$/g;
 const CYPHER_MAX_LENGTH = 4096;
 
-function maskCypherLiteralsAndComments(cypher: string): { masked: string; error: string | null } {
-  const chars = [...cypher];
-  const masked = [...cypher];
+type CypherWalkState = "normal" | "single" | "double" | "lineComment" | "blockComment";
+type CypherCharAction = { type: "char"; ch: string } | { type: "advance" };
 
+function* walkCypherTokens(cypher: string): Generator<{ char: string; state: CypherWalkState }, { error: string | null }> {
+  const chars = [...cypher];
   let i = 0;
-  let state: "normal" | "single" | "double" | "lineComment" | "blockComment" = "normal";
+  let state: CypherWalkState = "normal";
 
   while (i < chars.length) {
     const ch = chars[i];
     const next = i + 1 < chars.length ? chars[i + 1] : "";
 
     if (state === "normal") {
-      if (ch === "'" ) {
-        masked[i] = " ";
+      if (ch === "'") {
         state = "single";
+        yield { char: ch, state };
         i += 1;
         continue;
       }
       if (ch === '"') {
-        masked[i] = " ";
         state = "double";
+        yield { char: ch, state };
         i += 1;
         continue;
       }
       if (ch === "-" && next === "-") {
-        masked[i] = " ";
-        masked[i + 1] = " ";
+        yield { char: ch, state };
+        yield { char: next, state };
         state = "lineComment";
         i += 2;
         continue;
       }
       if (ch === "/" && next === "*") {
-        masked[i] = " ";
-        masked[i + 1] = " ";
+        yield { char: ch, state };
+        yield { char: next, state };
         state = "blockComment";
         i += 2;
         continue;
       }
 
+      yield { char: ch, state };
       i += 1;
       continue;
     }
 
     if (state === "single") {
-      masked[i] = " ";
+      yield { char: ch, state };
       if (ch === "\\" && i + 1 < chars.length) {
-        masked[i + 1] = " ";
+        yield { char: chars[i + 1], state };
         i += 2;
         continue;
       }
@@ -650,9 +659,9 @@ function maskCypherLiteralsAndComments(cypher: string): { masked: string; error:
     }
 
     if (state === "double") {
-      masked[i] = " ";
+      yield { char: ch, state };
       if (ch === "\\" && i + 1 < chars.length) {
-        masked[i + 1] = " ";
+        yield { char: chars[i + 1], state };
         i += 2;
         continue;
       }
@@ -664,19 +673,18 @@ function maskCypherLiteralsAndComments(cypher: string): { masked: string; error:
     }
 
     if (state === "lineComment") {
+      yield { char: ch, state };
       if (ch === "\n" || ch === "\r") {
         state = "normal";
-      } else {
-        masked[i] = " ";
       }
       i += 1;
       continue;
     }
 
     // blockComment
-    masked[i] = " ";
+    yield { char: ch, state };
     if (ch === "*" && next === "/") {
-      masked[i + 1] = " ";
+      yield { char: next, state };
       state = "normal";
       i += 2;
       continue;
@@ -684,14 +692,52 @@ function maskCypherLiteralsAndComments(cypher: string): { masked: string; error:
     i += 1;
   }
 
+  let error: string | null = null;
   if (state === "single" || state === "double") {
-    return { masked: masked.join(""), error: "Unterminated string literal in Cypher query." };
-  }
-  if (state === "blockComment") {
-    return { masked: masked.join(""), error: "Unterminated block comment in Cypher query." };
+    error = "Unterminated string literal in Cypher query.";
+  } else if (state === "blockComment") {
+    error = "Unterminated block comment in Cypher query.";
   }
 
-  return { masked: masked.join(""), error: null };
+  return { error };
+}
+
+function maskCypherLiteralsAndComments(cypher: string): { masked: string; error: string | null } {
+  const result: string[] = [];
+  const iter = walkCypherTokens(cypher);
+  let item = iter.next();
+
+  while (!item.done) {
+    const { char, state } = item.value;
+    if (state === "normal") {
+      result.push(char);
+    } else {
+      result.push(" ");
+    }
+    item = iter.next();
+  }
+
+  return { masked: result.join(""), error: item.value.error };
+}
+
+function stripCypherComments(cypher: string): string {
+  const result: string[] = [];
+  const iter = walkCypherTokens(cypher);
+  let item = iter.next();
+
+  while (!item.done) {
+    const { char, state } = item.value;
+    if (state === "lineComment" || state === "blockComment") {
+      if (state === "lineComment" && (char === "\n" || char === "\r")) {
+        result.push(char);
+      }
+    } else {
+      result.push(char);
+    }
+    item = iter.next();
+  }
+
+  return result.join("");
 }
 
 server.registerTool(
@@ -740,17 +786,18 @@ server.registerTool(
         };
       }
 
-      // Parameter binding is not used here because the AGE cypher(...) call is
-      // executed inside a multi-statement sql.unsafe wrapper. Keep the wrapper
-      // narrow and strip dollar-quotes to avoid $$ delimiter breakouts.
-      const safeCypher = trimmed.replace(CYPHER_DOLLAR_QUOTE_RE, "");
-
-      if (!CYPHER_MUST_START_WITH.test(safeCypher)) {
+      const executableCypher = stripCypherComments(trimmed).trim();
+      if (!CYPHER_MUST_START_WITH.test(executableCypher)) {
         return {
           content: [{ type: "text" as const, text: "Only MATCH queries are accepted. Query must start with MATCH." }],
           isError: true,
         };
       }
+
+      // Parameter binding is not used here because the AGE cypher(...) call is
+      // executed inside a multi-statement sql.unsafe wrapper. Keep the wrapper
+      // narrow and strip dollar-quotes to avoid $$ delimiter breakouts.
+      const safeCypher = executableCypher.replace(CYPHER_DOLLAR_QUOTE_RE, "");
 
       const rawRows = await sql.unsafe(`
         LOAD 'age';
@@ -873,15 +920,14 @@ app.all("/mcp", async (c) => {
   const startMs = Date.now();
   const request_id = resolveCorrelationId(c.req.raw);
 
-  // Extract safe method/id from body for logging (clones stream — does not consume original).
-  const bodyFields = isBodyLoggingEnabled()
-    ? await extractSafeBodyFields(c.req.raw)
-    : undefined;
+  // Extract safe method/tool/id fields for logging (clones stream — does not consume original).
+  const bodyFields = await extractSafeBodyFields(c.req.raw);
   const method = typeof bodyFields === "object" ? bodyFields.method : undefined;
+  const tool = typeof bodyFields === "object" ? bodyFields.tool : undefined;
 
   const denied = requireApiKey(c.req.raw);
   if (denied) {
-    emitRequestLog({ ts: new Date().toISOString(), request_id, method, status: 401, duration_ms: Date.now() - startMs, embedding_lane: "n/a" });
+    emitRequestLog({ ts: new Date().toISOString(), request_id, method, tool, status: 401, duration_ms: Date.now() - startMs, embedding_lane: "n/a" });
     return c.text("Unauthorized", 401);
   }
 
@@ -892,10 +938,12 @@ app.all("/mcp", async (c) => {
   let error_class: string | undefined;
 
   try {
-    // @hono/mcp's StreamableHTTPTransport is Fetch/Hono-compatible (unlike the SDK's Node-style transport)
-    const transport = new StreamableHTTPTransport();
-    await server.connect(transport);
-    const response = await transport.handleRequest(c);
+    const response = await runWithMcpRequestContext(async () => {
+      // @hono/mcp's StreamableHTTPTransport is Fetch/Hono-compatible (unlike the SDK's Node-style transport)
+      const transport = new StreamableHTTPTransport();
+      await server.connect(transport);
+      return await transport.handleRequest(c);
+    });
     status = response instanceof Response ? response.status : 200;
     embedding_lane = takeActiveEmbeddingLane();
     return response;
@@ -904,15 +952,9 @@ app.all("/mcp", async (c) => {
     error_class = (err as Error)?.constructor?.name ?? "Error";
     throw err;
   } finally {
-    emitRequestLog({ ts: new Date().toISOString(), request_id, method, status, duration_ms: Date.now() - startMs, embedding_lane, error_class });
+    emitRequestLog({ ts: new Date().toISOString(), request_id, method, tool, status, duration_ms: Date.now() - startMs, embedding_lane, error_class });
   }
 });
-
-// Startup repair: ensure recall_queries table exists on running instances
-// that pre-date the schema migration adding this table. Must complete before
-// the server starts accepting requests so the first /mcp call can write
-// recall query rows without hitting "relation does not exist".
-await ensureRecallQueriesTable((query) => sql.unsafe(query));
 
 Deno.serve({ port: 3000 }, app.fetch);
 
