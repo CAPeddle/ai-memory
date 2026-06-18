@@ -2,7 +2,25 @@
 applyTo: "**"
 ---
 
-# Dev Environment — Docker Compose Commands
+# Dev Environment — Native Deno + Docker Compose Commands
+
+## WSL2-Native dev (recommended inner loop)
+
+Requires one-time setup: see `docs/wsl2-setup.md`.
+
+```bash
+# Start the native dev server (starts Postgres if needed, enables hot reload)
+./dev.sh
+
+# Quick native test against the shared dev Postgres
+deno test --frozen --allow-net --allow-env --allow-read server/tests/search-mmr.test.ts
+
+# Native health check
+curl http://127.0.0.1:3000/health
+```
+
+> Native tests use the shared dev Postgres (`db`) and may leave test data
+> behind. For full isolation, continue using the Docker test profile below.
 
 ## Dev stack (persistent data)
 
@@ -34,7 +52,7 @@ docker compose --profile test exec mcp-test deno cache --lock=deno.lock --lock-w
 
 - **Tests run in `mcp-test`**, not `mcp`. The `mcp-test` service connects to `db-test` (ephemeral, tmpfs).
 - **Dev data is never wiped by tests.** The `db` service uses a persistent named volume; `db-test` uses tmpfs (RAM-only, wiped on container stop).
-- **Deno runs inside the container**, not on the host. Always use `docker compose exec mcp-test deno ...` or `docker compose exec mcp deno ...`.
+- **Deno runs natively on the host** for the WSL2-native dev workflow (see `docs/wsl2-setup.md`). For isolation tests, Deno runs inside the `mcp-test` container — use `docker compose exec mcp-test deno ...` or `docker compose exec mcp deno ...`.
 - **ExecPlan commands** should use `docker compose --profile test exec mcp-test deno test --frozen ...` for verification steps.
 - **Lockfile hygiene:** `server/deno.json` enforces frozen lock mode; if dependencies change, refresh `server/deno.lock` intentionally via `deno cache --lock-write` and commit it in the same change.
 - **Seed corpus** (`server/tests/fixtures/search-quality-corpus.sql`) is loaded into `db-test` by the `seed` service on startup.

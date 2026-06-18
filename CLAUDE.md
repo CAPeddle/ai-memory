@@ -37,7 +37,7 @@ Session handoff lives in [FollowUpSessionLog.txt](FollowUpSessionLog.txt) — re
 
 ## Common commands
 
-### Cloud MCP (Deno, runs in container — host Deno is NOT a prerequisite)
+### Cloud MCP server
 
 ```powershell
 # Bring up the dev stack (Postgres + pgvector + AGE, plus the Deno MCP server)
@@ -47,10 +47,10 @@ docker compose up -d
 docker compose --profile test up -d
 
 # Run a single Deno test file inside the mcp-test container
-docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/search-mmr.test.ts
+docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/search-mmr.test.ts
 
 # Run all server tests
-docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/
+docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/
 
 # Tail the MCP server logs
 docker compose logs -f mcp
@@ -62,6 +62,29 @@ curl http://localhost:3000/health
 **Dev vs Test isolation:** The default `docker compose up -d` starts only `db` + `mcp` (persistent dev data). The `--profile test` flag adds `db-test` (ephemeral, tmpfs — wiped on stop), `seed` (loads test corpus into `db-test`), and `mcp-test` (connects to `db-test`, port 3001). Tests never touch the dev database.
 
 The `./server` directory is bind-mounted to `/app` in the `mcp` container ([docker-compose.yml:33](docker-compose.yml#L33)), so file edits are picked up live without rebuilding. `.env` must define `MEMORY_API_KEY`, `DB_PASSWORD`, `OPENROUTER_API_KEY` (see [.env.example](.env.example)).
+
+### WSL2-Native Dev (recommended inner loop)
+
+This workflow requires a one-time WSL2 setup: see [docs/wsl2-setup.md](docs/wsl2-setup.md).
+
+```bash
+# Start the native dev server (starts Postgres if needed, enables hot reload)
+./dev.sh
+
+# Quick native test against the shared dev Postgres
+deno test --frozen --allow-net --allow-env --allow-read server/tests/search-mmr.test.ts
+
+# Native health check
+curl http://127.0.0.1:3000/health
+```
+
+> For full isolation tests, continue using the Docker test profile commands
+> above. Native tests use the shared dev Postgres and may leave test data
+> behind.
+>
+> `DATABASE_URL` in `.env.dev` must use `127.0.0.1`, not `localhost` —
+> see [docs/wsl2-setup.md §6](docs/wsl2-setup.md#6-create-the-envdev-file-for-native-deno)
+> for details.
 
 ### .NET (skeleton only at present)
 
