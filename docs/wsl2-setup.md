@@ -280,7 +280,7 @@ repository from within WSL2:
 
 ```powershell
 # From Windows PowerShell:
-wsl -- cd ~/projects/ai-memory && code .
+wsl bash -c "cd ~/projects/ai-memory && code ."
 ```
 
 The MCP server port (3000) is accessible from the Windows VS Code instance
