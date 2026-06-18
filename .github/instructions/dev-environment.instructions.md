@@ -6,21 +6,15 @@ applyTo: "**"
 
 ## WSL2-Native dev (recommended inner loop)
 
-Requires one-time setup: see `docs/wsl2-setup.md`.
+One-time setup: see `docs/wsl2-setup.md`. Full command reference: `CLAUDE.md §WSL2-Native Dev`.
 
 ```bash
-# Start the native dev server (starts Postgres if needed, enables hot reload)
-./dev.sh
-
-# Quick native test against the shared dev Postgres
-deno test --frozen --allow-net --allow-env --allow-read server/tests/search-mmr.test.ts
-
-# Native health check
-curl http://127.0.0.1:3000/health
+./dev.sh                                                                        # start native server (starts Postgres if needed, hot reload)
+deno test --frozen --allow-net --allow-env --allow-read server/tests/<file>.ts  # quick native test
+curl http://127.0.0.1:3000/health                                               # health check (use 127.0.0.1, not localhost)
 ```
 
-> Native tests use the shared dev Postgres (`db`) and may leave test data
-> behind. For full isolation, continue using the Docker test profile below.
+> Native tests share the dev Postgres — test data may persist. Use the Docker test profile below for full isolation.
 
 ## Dev stack (persistent data)
 
