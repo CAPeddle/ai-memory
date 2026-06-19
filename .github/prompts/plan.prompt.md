@@ -125,7 +125,7 @@ Lifecycle transitions (LE-owned):
 - **Backlog → Refined**: when an ExecPlan flips to `✅ Ready for /continue` (see Phase 2 above)
 - **Refined → In Progress**: owned by `/continue` on session start (WIP limit 1)
 - **In Progress → Review**: owned by `/continue` at story closeout
-- **Review → Done**: PO acceptance, executed by `/plan` during closeout
+- **Review → Done**: PO acceptance, executed by `/continue` on PO acceptance
 - **Any → `blocked_by: plan-review`**: set by `/continue` when escalating; cleared by `/plan` on resolution
 
 ## Key Files

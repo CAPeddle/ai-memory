@@ -217,6 +217,12 @@ At story completion:
 3. Present results to PO with artifact links
 4. Log any Tier 1 compound detections
 
+After PO accepts:
+5. Move story to Done column (add `Completed: YYYY-MM-DD`, check all ACs `[x]`)
+6. Scan Backlog for stories listing the completed story in `Blocked by:` and clear resolved references (change to `—`)
+7. Update board header metadata (remove from `Unblocked`, bump `Last updated`)
+8. Commit the board update
+
 ---
 
 ## §7b. Outcomes & Retrospective

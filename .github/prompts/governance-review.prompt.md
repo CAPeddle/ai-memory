@@ -42,7 +42,8 @@ Run every check below. Record result in the report.
 | 4 | The ExecPlan template at `.github/planning/execplans/_TEMPLATE.md` contains §5b Recovery Ledger with both "Current Resume State" and "Progress History" tables | Grep for both headings |
 | 5 | Every skill referenced in instructions or prompts has a `SKILL.md` file at the expected path | Search for skill references; verify paths |
 | 6 | Every story with a seed query packet reference in its Notes has that file on disk | Parse board Notes fields; check paths |
-| 7 | Cross-references between governance files (prompts referencing instructions, instructions referencing docs) resolve to existing files | Grep for relative paths; verify each |
+| 7 | Board freshness: stories merged to main have board status reflecting Done (not stuck in Backlog/In Progress/Review) | `git fetch origin && git log origin/main --oneline --since="7 days ago" | grep "ST-"` and cross-check against board |
+| 8 | Cross-references between governance files (prompts referencing instructions, instructions referencing docs) resolve to existing files | Grep for relative paths; verify each |
 
 ## Discretionary Checks (examples — not exhaustive)
 
