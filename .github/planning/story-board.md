@@ -2,7 +2,7 @@
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
 > Next planning target: None (no Ready ExecPlan in In Progress/Refined).
-> Unblocked: ST-023, ST-029, ST-019 (all ST-005/ST-008/ST-022 blockers cleared)
+> Unblocked: ST-023, ST-029, ST-019, ST-045, ST-047, ST-048, ST-049, ST-050, ST-051, ST-053 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared)
 > Last updated: 2026-06-19
 
 ---
@@ -171,13 +171,13 @@
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
 - phase: 2
 - Value: 3
-- Blocked by: ST-042 (needs migration framework)
+- Blocked by: — (ST-042 migration framework complete)
 - Touches: `server/src/entityWorker.ts`, `server/db/migrations/004_entity_extracted.sql` (new)
 - Acceptance criteria:
   - [ ] Entity worker uses `entity_extracted` flag for safe replay (AC-10 extended, AC-11)
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-045.md`
 - Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
-- Notes: 🟡 Should fix. Depends on ST-042 for migration infrastructure. Prevents duplicate processing after crash.
+- Notes: 🟡 Should fix. ST-042 (migration framework) complete — blocker cleared. Prevents duplicate processing after crash.
 
 ### ST-047: Tool descriptions
 - Type: dx
@@ -197,13 +197,13 @@
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
 - phase: 2
 - Value: 2
-- Blocked by: ST-042 (needs migration framework)
+- Blocked by: — (ST-042 migration framework complete)
 - Touches: `server/db/migrations/003_tool_metrics.sql` (new), `server/index.ts`
 - Acceptance criteria:
   - [ ] Tool metrics are persisted to a queryable `metrics` table (AC-4)
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-048.md`
 - Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
-- Notes: 🟢 Nice to have. Additive to ST-028 (worker observability) which covers worker-run metrics. This covers per-tool-invocation timing/error persistence.
+- Notes: 🟢 Nice to have. Additive to ST-028 (worker observability) which covers worker-run metrics. This covers per-tool-invocation timing/error persistence. ST-042 (migration framework) complete — blocker cleared.
 
 ### ST-049: Query routing (lane skipping)
 - Type: performance
@@ -276,28 +276,34 @@
 
 ## In Progress
 
+(Empty)
+
+## Review
+
+(Empty)
+
+## Done
+
 ### ST-044: Structured logging
 - Type: observability
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
 - phase: 2
 - Value: 3
+- Completed: 2026-06-19
 - Blocked by: —
 - Touches: `server/src/logging.ts` (new), `server/index.ts` (middleware)
 - Acceptance criteria:
   - [x] Every MCP tool invocation emits structured JSON log with timing (AC-3)
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-044.md`
 - Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
-- Notes: Additive to ST-028 (worker observability). ST-028 covers worker-specific logs; this covers tool invocation timing.
-
----
-
-## Review
+- Notes: Additive to ST-028 (worker observability). ST-028 covers worker-specific logs; this covers tool invocation timing. Merged via PR #11.
 
 ### ST-043: Context validation + feature flags
 - Type: hardening
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
 - phase: 2
 - Value: 3
+- Completed: 2026-06-19
 - Blocked by: —
 - Touches: `server/src/parseContext.ts`, `server/index.ts`
 - Acceptance criteria:
@@ -305,11 +311,7 @@
   - [x] Feature flags disable graph/entity features when toggled off (AC-16)
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-043.md`
 - Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
-- Notes: Context validation returns structured ContextParseError for unknown keys, bare tokens, empty values, invalid profile/visibility. Feature flags FEATURE_ENTITY_WORKER / FEATURE_CONSOLIDATION_WORKER default enabled; "false" disables. 21/21 tests pass.
-
-### ST-044: Structured logging
-
-## Done
+- Notes: Context validation returns structured ContextParseError for unknown keys, bare tokens, empty values, invalid profile/visibility. Feature flags FEATURE_ENTITY_WORKER / FEATURE_CONSOLIDATION_WORKER default enabled; "false" disables. 28/28 tests pass (24 unit + 4 integration). Merged via PR #12.
 
 ### ST-028: Worker observability and `stats` MCP tool
 - Type: feature
