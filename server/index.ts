@@ -4,7 +4,7 @@ import { Hono } from "npm:hono@4.9.2";
 import { z } from "npm:zod@4.1.13";
 
 import { requireApiKey } from "./src/auth.ts";
-import { parseContext } from "./src/parseContext.ts";
+import { parseContextOrError } from "./src/parseContext.ts";
 import { sql } from "./src/db.ts";
 import { startEntityWorker } from "./src/entityWorker.ts";
 import { startConsolidationWorker, drainPendingOnce } from "./src/consolidationWorker.ts";
@@ -248,7 +248,9 @@ server.registerTool(
   },
   withTiming("search_thoughts", async ({ query, context, limit }) => {
     try {
-      const scope = parseContext(context);
+      const scopeResult = parseContextOrError(context);
+      if ("isError" in scopeResult) return scopeResult;
+      const scope = scopeResult;
       const project = scope?.projects?.[0] ?? null;
       const profile = scope?.profile ?? null;
       const strict = scope?.strict === true;
@@ -436,7 +438,9 @@ server.registerTool(
         };
       }
 
-      const scope = parseContext(context);
+      const scopeResult = parseContextOrError(context);
+      if ("isError" in scopeResult) return scopeResult;
+      const scope = scopeResult;
       const project = scope?.projects?.[0] ?? null;
       const profile = scope?.profile ?? null;
       const normalized = normalizeIdentifiers(content);
@@ -523,7 +527,9 @@ server.registerTool(
   },
   withTiming("list_thoughts", async ({ limit, memory_type, context, days }) => {
     try {
-      const scope = parseContext(context);
+      const scopeResult = parseContextOrError(context);
+      if ("isError" in scopeResult) return scopeResult;
+      const scope = scopeResult;
       const project = scope?.projects?.[0] ?? null;
       const since = days ? new Date(Date.now() - days * 86_400_000).toISOString() : null;
       const n = limit ?? 10;
@@ -1042,13 +1048,23 @@ app.all("/mcp", async (c) => {
 
 Deno.serve({ port: 3000 }, app.fetch);
 
-// Start entity extraction background worker
-startEntityWorker();
+// Feature flags — set to "false" to disable
+const FEATURE_ENTITY_WORKER = Deno.env.get("FEATURE_ENTITY_WORKER") !== "false";
+const FEATURE_CONSOLIDATION_WORKER = Deno.env.get("FEATURE_CONSOLIDATION_WORKER") !== "false";
 
-// Start consolidation background worker
-startConsolidationWorker().catch((err) =>
-  console.error("[server] consolidation worker failed to start:", err)
-);
+if (FEATURE_ENTITY_WORKER) {
+  startEntityWorker();
+} else {
+  console.log("[server] Entity worker: disabled by feature flag (FEATURE_ENTITY_WORKER=false)");
+}
+
+if (FEATURE_CONSOLIDATION_WORKER) {
+  startConsolidationWorker().catch((err) =>
+    console.error("[server] consolidation worker failed to start:", err)
+  );
+} else {
+  console.log("[server] Consolidation worker: disabled by feature flag (FEATURE_CONSOLIDATION_WORKER=false)");
+}
 
 // Start embedding backfill worker (recovers rows whose embedding call failed)
 startEmbeddingBackfill();
