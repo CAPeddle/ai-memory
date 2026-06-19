@@ -1,4 +1,4 @@
-import { assertEquals, assertNotEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals, assertExists, assertNotEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { sql } from "../src/db.ts";
 import { drainPendingOnce } from "../src/consolidationWorker.ts";
 
@@ -66,11 +66,73 @@ Deno.test({
 });
 
 Deno.test({
+  name: "consolidation worker LLM error is recorded in worker_runs",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    const thoughtId = crypto.randomUUID();
+    const failingContent = `__TEST_LLM_FAIL__ Consolidation error test ${Date.now()}`;
+
+    try {
+      await sql`
+        INSERT INTO thoughts (id, content, memory_type, active)
+        VALUES (${thoughtId}::uuid, ${failingContent}, 'shard', true)
+        ON CONFLICT (id) DO NOTHING
+      `;
+
+      await sql`
+        INSERT INTO recall_events (thought_id, project)
+        VALUES (${thoughtId}::uuid, 'test'), (${thoughtId}::uuid, 'test')
+      `;
+
+      await sql`
+        INSERT INTO consolidation_queue (thought_id, status)
+        VALUES (${thoughtId}::uuid, 'pending')
+        ON CONFLICT (thought_id) DO NOTHING
+      `;
+
+      const processed = await drainPendingOnce(false, 1);
+
+      const [run] = await sql<{
+        run_id: string;
+        items_processed: number;
+        errors: number;
+        error_summary: unknown;
+      }[]>`
+        SELECT run_id, items_processed, errors, error_summary
+        FROM worker_runs
+        WHERE worker = 'consolidation'
+        ORDER BY started_at DESC
+        LIMIT 1
+      `;
+
+      assertExists(run, "worker_runs row should exist");
+      assertEquals(run.errors, 1, "LLM error should be recorded");
+      assertEquals(run.items_processed, 0, "no items should succeed when LLM fails");
+      assertExists(run.error_summary, "error_summary should be set");
+      assertEquals(
+        (run.error_summary as Record<string, unknown>)?.error as string,
+        "LLM failure simulated by __TEST_LLM_FAIL__ content prefix",
+      );
+
+      const [queueRow] = await sql<{ status: string }[]>`
+        SELECT status FROM consolidation_queue WHERE thought_id = ${thoughtId}::uuid
+      `;
+      assertEquals(queueRow?.status, "llm_error", "queue should be marked llm_error");
+    } finally {
+      await sql`DELETE FROM consolidation_queue WHERE thought_id = ${thoughtId}::uuid`;
+      await sql`DELETE FROM consolidation_log WHERE thought_id = ${thoughtId}::uuid`;
+      await sql`DELETE FROM recall_events WHERE thought_id = ${thoughtId}::uuid`;
+      await sql`DELETE FROM thoughts WHERE id = ${thoughtId}::uuid`;
+    }
+  },
+});
+
+Deno.test({
   name: "retention DELETE runs without error during drainPendingOnce",
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
-    // Insert a stale row well beyond 30 days
     const staleId = crypto.randomUUID();
     await sql`
       INSERT INTO worker_runs (run_id, worker, started_at, ended_at)
@@ -84,9 +146,15 @@ Deno.test({
     `;
     assertEquals(staleRow, undefined, "stale row should have been deleted");
 
-    // Clean up the fresh row created by drainPendingOnce
+    const freshRunId = crypto.randomUUID();
     await sql`
-      DELETE FROM worker_runs WHERE worker = 'consolidation' AND started_at > now() - interval '1 minute'
+      INSERT INTO worker_runs (run_id, worker, started_at, ended_at)
+      VALUES (${freshRunId}, 'consolidation', now(), now())
     `;
+    const [freshRow] = await sql<{ run_id: string }[]>`
+      SELECT run_id FROM worker_runs WHERE run_id = ${freshRunId}
+    `;
+    assertNotEquals(freshRow, undefined, "fresh row should survive retention DELETE");
+    await cleanupRun(freshRunId);
   },
 });

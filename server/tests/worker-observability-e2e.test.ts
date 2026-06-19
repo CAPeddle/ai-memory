@@ -9,77 +9,60 @@
  *     --allow-net --allow-env --allow-read tests/worker-observability-e2e.test.ts
  */
 
-import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assert, assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { mcpCall, extractText, sleep } from "./_helpers/mcpClient.ts";
 import { sql } from "../src/db.ts";
+
+function parseStats(text: string): Record<string, unknown> {
+  return JSON.parse(text) as Record<string, unknown>;
+}
 
 Deno.test({
   name: "worker-observability: worker failure reflected in stats",
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
-    // -----------------------------------------------------------------------
-    // Baseline: capture current errors_24h for the entity worker
-    // -----------------------------------------------------------------------
-    const baselineResult = await mcpCall("stats", {});
-    const baselineText = extractText(baselineResult);
-    const baseline = JSON.parse(baselineText) as {
-      workers: Record<string, { errors_24h: number }>;
-    };
-    const baselineErrors = baseline.workers?.entity?.errors_24h ?? 0;
-
-    // -----------------------------------------------------------------------
-    // Insert a test thought that will fail LLM extraction
-    // (OPENROUTER_API_KEY may not be available in the test container)
-    // -----------------------------------------------------------------------
     const suffix = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
     const thoughtId = crypto.randomUUID();
+    let baselineErrors = 0;
 
-    await sql`
-      INSERT INTO thoughts (id, content, memory_type, source, content_fingerprint)
-      VALUES (
-        ${thoughtId}::uuid,
-        ${`ObservabilityTestThought${suffix} — this should fail LLM extraction`},
-        'shard', 'user-taught',
-        ${`fp-obs-e2e-${suffix}`}
-      )
-    `;
+    try {
+      const baselineText = extractText(await mcpCall("stats", {}));
+      const baseline = parseStats(baselineText);
+      baselineErrors = (baseline.workers as Record<string, { errors_24h: number }>)?.entity?.errors_24h ?? 0;
 
-    await sql`
-      INSERT INTO entity_extraction_queue (thought_id, status, source_fingerprint)
-      VALUES (${thoughtId}::uuid, 'pending', ${`fp-obs-e2e-${suffix}`})
-    `;
+      await sql`
+        INSERT INTO thoughts (id, content, memory_type, source, content_fingerprint)
+        VALUES (
+          ${thoughtId}::uuid,
+          ${`__TEST_LLM_FAIL__ ObservabilityE2E${suffix}`},
+          'shard', 'user-taught',
+          ${`fp-obs-e2e-${suffix}`}
+        )
+      `;
 
-    // -----------------------------------------------------------------------
-    // Trigger processQueue directly (background worker is disabled)
-    // -----------------------------------------------------------------------
-    const { __entityWorkerTestHooks } = await import("../src/entityWorker.ts");
-    await __entityWorkerTestHooks.processQueue();
+      await sql`
+        INSERT INTO entity_extraction_queue (thought_id, status, source_fingerprint)
+        VALUES (${thoughtId}::uuid, 'pending', ${`fp-obs-e2e-${suffix}`})
+      `;
 
-    // Allow worker_runs INSERT/UPDATE to settle
-    await sleep(500);
+      const { __entityWorkerTestHooks } = await import("../src/entityWorker.ts");
+      await __entityWorkerTestHooks.processQueue();
+      await sleep(500);
 
-    // -----------------------------------------------------------------------
-    // Assert: stats reflects the error
-    // -----------------------------------------------------------------------
-    const afterResult = await mcpCall("stats", {});
-    const afterText = extractText(afterResult);
-    const after = JSON.parse(afterText) as {
-      workers: Record<string, { errors_24h: number }>;
-    };
-    const afterErrors = after.workers?.entity?.errors_24h ?? 0;
+      const afterText = extractText(await mcpCall("stats", {}));
+      const after = parseStats(afterText);
+      const afterErrors = (after.workers as Record<string, { errors_24h: number }>)?.entity?.errors_24h ?? 0;
 
-    assert(
-      afterErrors > baselineErrors,
-      `Expected entity worker errors_24h to increase after failed extraction ` +
-        `(baseline=${baselineErrors}, after=${afterErrors})`,
-    );
-
-    // -----------------------------------------------------------------------
-    // Cleanup
-    // -----------------------------------------------------------------------
-    await sql`DELETE FROM entity_extraction_queue WHERE thought_id = ${thoughtId}::uuid`;
-    await sql`DELETE FROM thoughts WHERE id = ${thoughtId}::uuid`;
+      assert(
+        afterErrors > baselineErrors,
+        `Expected entity worker errors_24h to increase after failed extraction ` +
+          `(baseline=${baselineErrors}, after=${afterErrors})`,
+      );
+    } finally {
+      await sql`DELETE FROM entity_extraction_queue WHERE thought_id = ${thoughtId}::uuid`;
+      await sql`DELETE FROM thoughts WHERE id = ${thoughtId}::uuid`;
+    }
   },
 });
 
@@ -88,58 +71,80 @@ Deno.test({
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
-    // -----------------------------------------------------------------------
-    // Baseline: capture current entity_extraction_pending queue depth
-    // -----------------------------------------------------------------------
-    const baselineResult = await mcpCall("stats", {});
-    const baselineText = extractText(baselineResult);
-    const baseline = JSON.parse(baselineText) as {
-      queues: { entity_extraction_pending: number };
-    };
-    const baselineDepth = baseline.queues?.entity_extraction_pending ?? 0;
-
-    // -----------------------------------------------------------------------
-    // Insert a test thought and a corresponding pending queue row
-    // -----------------------------------------------------------------------
     const suffix = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
     const thoughtId = crypto.randomUUID();
+    let baselineDepth = 0;
 
-    await sql`
-      INSERT INTO thoughts (id, content, memory_type, source, content_fingerprint)
-      VALUES (
-        ${thoughtId}::uuid,
-        ${`QueueDepthTest${suffix} — temporary thought for queue depth test`},
-        'shard', 'user-taught',
-        ${`fp-queue-depth-${suffix}`}
-      )
-    `;
+    try {
+      const baselineText = extractText(await mcpCall("stats", {}));
+      const baseline = parseStats(baselineText);
+      baselineDepth = (baseline.queues as Record<string, number>)?.entity_extraction_pending ?? 0;
 
-    await sql`
-      INSERT INTO entity_extraction_queue (thought_id, status, source_fingerprint)
-      VALUES (${thoughtId}::uuid, 'pending', ${`fp-queue-depth-${suffix}`})
-    `;
+      await sql`
+        INSERT INTO thoughts (id, content, memory_type, source, content_fingerprint)
+        VALUES (
+          ${thoughtId}::uuid,
+          ${`QueueDepthE2E${suffix}`},
+          'shard', 'user-taught',
+          ${`fp-queue-depth-${suffix}`}
+        )
+      `;
 
-    // -----------------------------------------------------------------------
-    // Assert: queue depth increased by 1
-    // -----------------------------------------------------------------------
-    const afterResult = await mcpCall("stats", {});
-    const afterText = extractText(afterResult);
-    const after = JSON.parse(afterText) as {
-      queues: { entity_extraction_pending: number };
-    };
-    const afterDepth = after.queues?.entity_extraction_pending ?? 0;
+      await sql`
+        INSERT INTO entity_extraction_queue (thought_id, status, source_fingerprint)
+        VALUES (${thoughtId}::uuid, 'pending', ${`fp-queue-depth-${suffix}`})
+      `;
 
-    assertEquals(
-      afterDepth,
-      baselineDepth + 1,
-      `Expected entity_extraction_pending to increase by 1 ` +
-        `(baseline=${baselineDepth}, after=${afterDepth})`,
-    );
+      const afterText = extractText(await mcpCall("stats", {}));
+      const after = parseStats(afterText);
+      const afterDepth = (after.queues as Record<string, number>)?.entity_extraction_pending ?? 0;
 
-    // -----------------------------------------------------------------------
-    // Cleanup
-    // -----------------------------------------------------------------------
-    await sql`DELETE FROM entity_extraction_queue WHERE thought_id = ${thoughtId}::uuid`;
-    await sql`DELETE FROM thoughts WHERE id = ${thoughtId}::uuid`;
+      assertEquals(
+        afterDepth,
+        baselineDepth + 1,
+        `Expected entity_extraction_pending to increase by 1 ` +
+          `(baseline=${baselineDepth}, after=${afterDepth})`,
+      );
+    } finally {
+      await sql`DELETE FROM entity_extraction_queue WHERE thought_id = ${thoughtId}::uuid`;
+      await sql`DELETE FROM thoughts WHERE id = ${thoughtId}::uuid`;
+    }
+  },
+});
+
+Deno.test({
+  name: "stats response contract — all expected keys and types are present",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    try {
+      const result = await mcpCall("stats", {});
+      const text = extractText(result);
+      const stats = JSON.parse(text) as {
+        queues: Record<string, number>;
+        workers: Record<string, { runs_24h: number; errors_24h: number; last_run_at: string | null; last_status?: string }>;
+        recall: Record<string, number>;
+        content: { total: number; by_type: Record<string, number> };
+      };
+
+      assertExists(stats.queues, "queues key");
+      assertEquals(typeof stats.queues.entity_extraction_pending, "number");
+      assertEquals(typeof stats.queues.consolidation_pending, "number");
+
+      assertExists(stats.workers, "workers key");
+      assertExists(stats.workers.entity, "workers.entity key");
+      assertExists(stats.workers.consolidation, "workers.consolidation key");
+      assertEquals(typeof stats.workers.entity.runs_24h, "number");
+      assertEquals(typeof stats.workers.entity.errors_24h, "number");
+
+      assertExists(stats.recall, "recall key");
+      assertEquals(typeof stats.recall.events_24h, "number");
+
+      assertExists(stats.content, "content key");
+      assertEquals(typeof stats.content.total, "number");
+      assertExists(stats.content.by_type, "content.by_type");
+    } finally {
+      // no cleanup needed — read-only test
+    }
   },
 });

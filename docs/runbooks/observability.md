@@ -56,6 +56,8 @@ Emitted after each item in the queue is handled (one per item per run).
 | `errors`         | yes            | errors encountered processing this item             |
 | `error_summary`  | sometimes      | details when errors > 0; omitted otherwise          |
 
+> **`items_processed` semantics** in `run_completed` / `run_failed` events: counts items that completed without error. Items where the per-item handler threw are subtracted. The `errors` field gives the number of failed items; `items_processed + errors = total items attempted` for that run.
+
 ### `run_completed`
 
 Emitted when a worker finishes a cycle with no fatal error.
@@ -66,7 +68,7 @@ Emitted when a worker finishes a cycle with no fatal error.
 | `event`           | yes            | `"run_completed"`                      |
 | `run_id`          | yes            | matches run_started                     |
 | `duration_ms`     | yes            | wall-clock time of the entire run       |
-| `items_processed` | yes            | total items in this run                 |
+| `items_processed` | yes            | items completed without error (total − errors) |
 | `errors`          | yes            | total errors across all items           |
 
 ### `run_failed`
@@ -79,7 +81,7 @@ Emitted when a worker catches an unexpected exception during a cycle.
 | `event`           | yes            | `"run_failed"`                         |
 | `run_id`          | yes            | matches run_started                     |
 | `duration_ms`     | yes            | wall-clock until the failure            |
-| `items_processed` | yes            | items completed before the failure      |
+| `items_processed` | yes            | items completed before the failure (all without error) |
 | `errors`          | yes            | errors before the failure               |
 | `error_summary`   | sometimes      | top-level exception info                |
 

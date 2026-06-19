@@ -63,6 +63,7 @@ Deno.test({
   sanitizeOps: false,
   fn: async () => {
     const thoughtId = crypto.randomUUID();
+    const failingContent = `__TEST_LLM_FAIL__ Entity worker error test ${Date.now()} — triggers deterministic LLM error.`;
     const logs: string[] = [];
     const originalLog = console.log;
     console.log = (...args) => {
@@ -72,7 +73,7 @@ Deno.test({
     try {
       await sql`
         INSERT INTO thoughts (id, content, memory_type)
-        VALUES (${thoughtId}, ${TEST_CONTENT}, 'shard')
+        VALUES (${thoughtId}, ${failingContent}, 'shard')
         ON CONFLICT (id) DO NOTHING
       `;
 
@@ -95,29 +96,64 @@ Deno.test({
       `;
       assertExists(run, "worker_runs row should exist");
       assertEquals(run.worker, "entity");
-      assertEquals(run.items_processed, 1);
-
-      // In the test environment OPENROUTER_API_KEY may be absent, causing
-      // callLLM to throw and increment errorCount. If it is present the
-      // LLM may succeed — we just verify the field is wired correctly.
-      assertEquals(typeof run.errors, "number");
-      if (run.errors > 0) {
-        assertEquals(typeof run.error_summary, "object");
-        assertEquals((run.error_summary as Record<string, unknown>)?.error !== undefined, true);
-      }
+      assertEquals(run.items_processed, 0, "no items should succeed when LLM fails");
+      assertEquals(run.errors, 1, "exactly one error should be recorded");
+      assertExists(run.error_summary, "error_summary should be set");
+      assertEquals(
+        (run.error_summary as Record<string, unknown>)?.error as string,
+        "LLM failure simulated by __TEST_LLM_FAIL__ content prefix",
+      );
 
       const logText = logs.join("\n");
       const hasItemProcessed = logText.includes('"event":"item_processed"');
       const hasRunCompleted = logText.includes('"event":"run_completed"');
-      if (run.errors > 0) {
-        assertEquals(hasItemProcessed, false, "no item_processed when item errored");
-      }
+      assertEquals(hasItemProcessed, false, "no item_processed when item errored");
       assertEquals(hasRunCompleted, true, "should log run_completed event");
     } finally {
       console.log = originalLog;
       await sql`DELETE FROM entity_extraction_queue WHERE thought_id = ${thoughtId}`;
       await sql`DELETE FROM entity_mentions WHERE thought_id = ${thoughtId}`;
       await sql`DELETE FROM thoughts WHERE id = ${thoughtId}`;
+    }
+  },
+});
+
+Deno.test({
+  name: "entity worker observability — retention DELETE cleans stale rows",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    const staleId = crypto.randomUUID();
+    await sql`
+      INSERT INTO worker_runs (run_id, worker, started_at, ended_at)
+      VALUES (${staleId}, 'entity', now() - interval '31 days', now() - interval '30 days')
+    `;
+
+    const happyThoughtId = crypto.randomUUID();
+    try {
+      await sql`
+        INSERT INTO thoughts (id, content, memory_type)
+        VALUES (${happyThoughtId}, ${TEST_CONTENT}, 'shard')
+        ON CONFLICT (id) DO NOTHING
+      `;
+      await sql`
+        INSERT INTO entity_extraction_queue (thought_id)
+        VALUES (${happyThoughtId})
+        ON CONFLICT (thought_id) DO NOTHING
+      `;
+
+      const { __entityWorkerTestHooks } = await import("../src/entityWorker.ts");
+      __entityWorkerTestHooks.resetWorkerState();
+      await __entityWorkerTestHooks.processQueue();
+
+      const [staleRow] = await sql<{ run_id: string }[]>`
+        SELECT run_id FROM worker_runs WHERE run_id = ${staleId}
+      `;
+      assertEquals(staleRow, undefined, "stale row should have been deleted by retention");
+    } finally {
+      await sql`DELETE FROM entity_extraction_queue WHERE thought_id = ${happyThoughtId}`;
+      await sql`DELETE FROM entity_mentions WHERE thought_id = ${happyThoughtId}`;
+      await sql`DELETE FROM thoughts WHERE id = ${happyThoughtId}`;
     }
   },
 });

@@ -374,10 +374,11 @@ export async function drainPendingOnce(dryRun = false, limit = BATCH_SIZE): Prom
     throw err;
   }
 
+  const itemsSucceeded = processed - runErrors.count;
   const errorSummaryValue = dryRun ? { dry_run: true } : (runErrors.summary || null);
   await sql`
     UPDATE worker_runs
-    SET ended_at = now(), items_processed = ${processed}, errors = ${runErrors.count},
+    SET ended_at = now(), items_processed = ${itemsSucceeded}, errors = ${runErrors.count},
         error_summary = ${errorSummaryValue !== null ? sql.json(errorSummaryValue as unknown as Record<string, unknown>) : null}
     WHERE run_id = ${workerRunId}
   `;
@@ -392,7 +393,7 @@ export async function drainPendingOnce(dryRun = false, limit = BATCH_SIZE): Prom
     run_id: workerRunId,
     event: "run_completed",
     duration_ms: Date.now() - runStartTime,
-    items_processed: processed,
+    items_processed: itemsSucceeded,
     errors: runErrors.count,
     error_summary: errorSummaryValue,
   });

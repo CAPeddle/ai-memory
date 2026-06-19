@@ -57,6 +57,11 @@ Rules:
 - If no entities or relationships are found, return {"nodes": [], "edges": []}`;
 
 async function callLLM(content: string): Promise<ExtractionResult> {
+  // Test stub: caller inserts content with this prefix to exercise the fail-hard path.
+  if (content.startsWith("__TEST_LLM_FAIL__")) {
+    throw new Error("LLM failure simulated by __TEST_LLM_FAIL__ content prefix");
+  }
+
   const truncated = content.slice(0, MAX_INPUT_CHARS);
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
@@ -242,9 +247,12 @@ async function processQueue(): Promise<void> {
     }
   }
 
+  const itemsAttempted = rows.length;
+  const itemsSucceeded = itemsAttempted - errorCount;
+
   await sql`
     UPDATE worker_runs
-    SET ended_at = now(), items_processed = ${rows.length}, errors = ${errorCount}, error_summary = ${errorSummary ? sql.json(errorSummary as Record<string, unknown>) : null}
+    SET ended_at = now(), items_processed = ${itemsSucceeded}, errors = ${errorCount}, error_summary = ${errorSummary ? sql.json(errorSummary as Record<string, unknown>) : null}
     WHERE run_id = ${runId}
   `;
 
@@ -255,7 +263,7 @@ async function processQueue(): Promise<void> {
     run_id: runId,
     event: "run_completed",
     duration_ms: Date.now() - runStartTime,
-    items_processed: rows.length,
+    items_processed: itemsSucceeded,
     errors: errorCount,
     error_summary: errorSummary,
   });

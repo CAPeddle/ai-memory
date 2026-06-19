@@ -150,6 +150,18 @@ export async function detectBootstrapVersions(tx: SqlExecutor): Promise<void> {
       ON CONFLICT (version) DO NOTHING
     `;
   }
+
+  const [workerRunsTable] = await tx`
+    SELECT 1 AS found FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'worker_runs'
+  `;
+  if (workerRunsTable) {
+    await tx`
+      INSERT INTO schema_migrations (version, filename)
+      VALUES (4, '004_worker_runs.sql')
+      ON CONFLICT (version) DO NOTHING
+    `;
+  }
 }
 
 async function repairMissingMigration003Artifacts(tx: SqlExecutor, migration003: MigrationFile): Promise<void> {
