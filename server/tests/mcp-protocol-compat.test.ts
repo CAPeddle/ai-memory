@@ -11,6 +11,15 @@ import { StreamableHTTPClientTransport } from "npm:@modelcontextprotocol/sdk@1.2
 
 import { API_KEY, MCP_BASE, extractText, mcpCall, mcpRequest } from "./_helpers/mcpClient.ts";
 
+const SERVER_SOURCE_PATH = new URL("../index.ts", import.meta.url).pathname;
+
+async function getRegisteredToolNamesFromSource(): Promise<string[]> {
+  const source = await Deno.readTextFile(SERVER_SOURCE_PATH);
+  const stripped = source.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  const matches = [...stripped.matchAll(/server\.registerTool\(\s*["']([^"']+)["']/g)];
+  return matches.map((m) => m[1]);
+}
+
 interface JsonRpcResponse {
   result?: unknown;
   error?: { code?: number; message?: string };
@@ -24,6 +33,50 @@ function resultOf<T>(response: unknown): T {
   const result = (response as JsonRpcResponse).result;
   assertExists(result);
   return result as T;
+}
+
+interface ToolListItem {
+  name?: string;
+  title?: string;
+  description?: string;
+  inputSchema?: {
+    properties?: Record<string, { description?: string }>;
+  };
+  annotations?: {
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+  };
+}
+
+function assertToolDescription(tool: ToolListItem): void {
+  const name = tool.name ?? "<unnamed>";
+  const description = tool.description ?? "";
+  assert(description.trim().length > 0, `${name} must have a description`);
+
+  const metadataSignals = [
+    { label: "usage guidance", pattern: /\b(use when|when to use|use for)\b/i },
+    { label: "parameter guidance", pattern: /\b(parameters?|inputs?|arguments?)\b/i },
+    { label: "example usage", pattern: /\b(example|e\.g\.)\b/i },
+    { label: "return expectations", pattern: /\b(returns?|response|outputs?)\b/i },
+    { label: "errors or edge cases", pattern: /\b(errors?|edge cases?|validation|not found|no matches)\b/i },
+  ];
+
+  for (const signal of metadataSignals) {
+    assert(signal.pattern.test(description), `${name} description must include ${signal.label}`);
+  }
+
+  const properties = tool.inputSchema?.properties ?? {};
+  const propertyEntries = Object.entries(properties);
+  if (!propertyEntries.length) {
+    assert(/\b(no parameters|no arguments)\b|\bcall with \{\}/i.test(description), `${name} must explicitly document that it has no parameters`);
+    return;
+  }
+
+  for (const [propertyName, propertySchema] of propertyEntries) {
+    assert(new RegExp(`\\b${propertyName}\\b`).test(description), `${name} description must mention ${propertyName}`);
+    assert((propertySchema.description ?? "").trim().length > 0, `${name}.${propertyName} must have a schema description`);
+  }
 }
 
 Deno.test("initialize advertises tools prompts and resources", async () => {
@@ -107,12 +160,146 @@ Deno.test("ping and existing tools remain compatible", async () => {
   assertEquals(pingResponse.error, undefined);
 
   const toolsResponse = await mcpRequest("tools/list");
-  const toolsResult = resultOf<{ tools?: Array<{ name?: string }> }>(toolsResponse);
+  const toolsResult = resultOf<{ tools?: ToolListItem[] }>(toolsResponse);
   const toolNames = toolsResult.tools?.map((tool) => tool.name ?? "") ?? [];
   assertArrayIncludes(toolNames, ["thought_stats", "search_thoughts"]);
 
+  const serverInfoResponse = await mcpRequest("resources/read", { uri: "ai-memory://server-info" });
+  const serverInfoResult = resultOf<{ contents?: Array<{ text?: string }> }>(serverInfoResponse);
+  const serverInfo = JSON.parse(serverInfoResult.contents?.[0]?.text ?? "{}") as { toolNames?: string[] };
+  assertEquals([...toolNames].sort(), [...(serverInfo.toolNames ?? [])].sort(), "tools/list should match server-info toolNames");
+
+  const sourceToolNames = await getRegisteredToolNamesFromSource();
+  const sourceSet = new Set(sourceToolNames);
+  for (const name of toolNames) {
+    assert(sourceSet.has(name), `${name} from tools/list not found in server/index.ts registerTool calls`);
+  }
+  for (const name of sourceToolNames) {
+    assert(toolNames.includes(name), `${name} from server/index.ts registerTool calls not found in tools/list`);
+  }
+
+  for (const tool of toolsResult.tools ?? []) {
+    assertToolDescription(tool);
+  }
+
   const statsResponse = await mcpCall("thought_stats", {});
   assertStringIncludes(extractText(statsResponse), "Total active thoughts:");
+});
+
+Deno.test("search metadata describes fallback behavior accurately", async () => {
+  const toolsResponse = await mcpRequest("tools/list");
+  const toolsResult = resultOf<{ tools?: ToolListItem[] }>(toolsResponse);
+  const searchTool = toolsResult.tools?.find((t) => t.name === "search");
+  assertExists(searchTool, "search tool must exist in tools/list");
+  const desc = searchTool?.description ?? "";
+
+  assert(!/\b(empty matches|no-match|no matches)\b.*\b(return|yield|produce)\b.*\bempty\b/i.test(desc), "search description must not claim that no-match queries return empty results — the runtime has lexical and nearest-neighbor fallbacks");
+  assert(/\b(nearest-neighbor|fallback|recall)\b/i.test(desc), "search description must mention fallback or nearest-neighbor behavior");
+});
+
+Deno.test("search_thoughts metadata describes project scoping accurately", async () => {
+  const toolsResponse = await mcpRequest("tools/list");
+  const toolsResult = resultOf<{ tools?: ToolListItem[] }>(toolsResponse);
+  const searchThoughts = toolsResult.tools?.find((t) => t.name === "search_thoughts");
+  assertExists(searchThoughts, "search_thoughts tool must exist in tools/list");
+  const desc = searchThoughts?.description ?? "";
+
+  assert(!/\bprofile.*(filter|isolate|restrict|scope)\b/i.test(desc), "search_thoughts description must not claim profile-based filtering or isolation — runtime filters and boosts by project only");
+  assert(/\bproject\b/i.test(desc), "search_thoughts description must mention project scoping");
+  assert(/\bstrict\b/i.test(desc), "search_thoughts description must mention strict mode");
+
+  const contextSchemaDesc = searchThoughts?.inputSchema?.properties?.context?.description ?? "";
+  assert(!/\bprofile:professional\b/i.test(contextSchemaDesc), "search_thoughts context schema description must not use profile:professional as an example — profile is not a search filter");
+});
+
+Deno.test("list_thoughts metadata describes project scoping accurately", async () => {
+  const toolsResponse = await mcpRequest("tools/list");
+  const toolsResult = resultOf<{ tools?: ToolListItem[] }>(toolsResponse);
+  const listThoughts = toolsResult.tools?.find((t) => t.name === "list_thoughts");
+  assertExists(listThoughts, "list_thoughts tool must exist in tools/list");
+  const desc = listThoughts?.description ?? "";
+
+  assert(!/\bprofile.*(filter|isolate|restrict|scope)\b/i.test(desc), "list_thoughts description must not claim profile-based filtering or isolation — runtime filters by project only");
+  assert(/\bprofile\b.*\b(not used|accepted but not|not a filter)\b/i.test(desc) || !/\bprofile\b/i.test(desc), "list_thoughts must either document that profile is accepted but not used for filtering, or omit profile from the description");
+
+  const contextSchemaDesc = listThoughts?.inputSchema?.properties?.context?.description ?? "";
+  assert(!/\bprofile:professional\b/i.test(contextSchemaDesc), "list_thoughts context schema description must not use profile:professional as an example — the SQL WHERE clause filters by project, not profile");
+});
+
+Deno.test("fetch metadata accurately describes UUID lookup and not-found behavior", async () => {
+  const toolsResponse = await mcpRequest("tools/list");
+  const toolsResult = resultOf<{ tools?: ToolListItem[] }>(toolsResponse);
+  const fetchTool = toolsResult.tools?.find((t) => t.name === "fetch");
+  assertExists(fetchTool, "fetch tool must exist in tools/list");
+  const desc = fetchTool?.description ?? "";
+
+  assert(/\bUUID\b/i.test(desc), "fetch description must mention UUID as the identifier type");
+  assert(/\bnot found\b/i.test(desc) || /\bmissing\b/i.test(desc), "fetch description must mention what happens when a thought is not found");
+  assert(!/\bsearch\b/i.test(desc) || /\bsearch returned\b/i.test(desc), "fetch description must not claim it can search — it retrieves by ID only");
+});
+
+Deno.test("capture_thought metadata accurately describes content limits and dedup", async () => {
+  const toolsResponse = await mcpRequest("tools/list");
+  const toolsResult = resultOf<{ tools?: ToolListItem[] }>(toolsResponse);
+  const captureTool = toolsResult.tools?.find((t) => t.name === "capture_thought");
+  assertExists(captureTool, "capture_thought tool must exist in tools/list");
+  const desc = captureTool?.description ?? "";
+
+  assert(/\b32\s*KB\b/i.test(desc) || /\b32\s*kilobyte/i.test(desc), "capture_thought description must mention the 32KB content limit");
+  assert(/\bduplic\w*\b/i.test(desc), "capture_thought description must mention duplicate/upsert behavior");
+  assert(/\bstored?\b/i.test(desc) && /\bprofile\b/i.test(desc), "capture_thought description must clarify that profile is stored with the thought, not used as a search filter");
+
+  const ann = captureTool?.annotations;
+  assertEquals(ann?.readOnlyHint, false, "capture_thought must have readOnlyHint: false");
+});
+
+Deno.test("thought_stats and stats metadata describe no-parameter invocation and scope correctly", async () => {
+  const toolsResponse = await mcpRequest("tools/list");
+  const toolsResult = resultOf<{ tools?: ToolListItem[] }>(toolsResponse);
+
+  const thoughtStats = toolsResult.tools?.find((t) => t.name === "thought_stats");
+  assertExists(thoughtStats, "thought_stats tool must exist in tools/list");
+  const tsDesc = thoughtStats?.description ?? "";
+  assert(/\bno parameters\b/i.test(tsDesc) || /\bcall with \{\}/i.test(tsDesc) || /\bNo parameters/i.test(tsDesc), "thought_stats must document that it has no parameters");
+  assert(/\bactive\b/i.test(tsDesc), "thought_stats description must mention active thoughts (not all thoughts)");
+
+  const stats = toolsResult.tools?.find((t) => t.name === "stats");
+  assertExists(stats, "stats tool must exist in tools/list");
+  const sDesc = stats?.description ?? "";
+  assert(/\bno parameters\b/i.test(sDesc) || /\bcall with \{\}/i.test(sDesc) || /\bNo parameters/i.test(sDesc), "stats must document that it has no parameters");
+  assert(/\bworker/i.test(sDesc), "stats description must mention worker health signals");
+  assert(/\bqueue/i.test(sDesc), "stats description must mention queue depths");
+});
+
+Deno.test("graph tools metadata accurately describe read-only constraints and scope", async () => {
+  const toolsResponse = await mcpRequest("tools/list");
+  const toolsResult = resultOf<{ tools?: ToolListItem[] }>(toolsResponse);
+
+  const traverse = toolsResult.tools?.find((t) => t.name === "graph_traverse");
+  assertExists(traverse, "graph_traverse tool must exist in tools/list");
+  const tDesc = traverse?.description ?? "";
+  assert(/\bMATCH\b/i.test(tDesc), "graph_traverse description must specify MATCH-only queries");
+  assert(/\bmutation\b/i.test(tDesc) || /\bmutation|CREATE|SET|DELETE|MERGE\b/i.test(tDesc), "graph_traverse description must mention that mutation keywords are rejected");
+  assert(/\b4096\b/i.test(tDesc) || /\bmax.*length\b/i.test(tDesc) || /\blength cap\b/i.test(tDesc), "graph_traverse description must mention the query length limit");
+
+  const search = toolsResult.tools?.find((t) => t.name === "graph_search");
+  assertExists(search, "graph_search tool must exist in tools/list");
+  const sDesc = search?.description ?? "";
+  assert(/\bstart_node\b/i.test(sDesc), "graph_search description must mention start_node parameter");
+  assert(/\b(CAUSED_BY|LIKES|WORKS_ON|USES|RELATED_TO)\b/i.test(sDesc) || /\ballow/i.test(sDesc), "graph_search description must document the relationship filter allow-list");
+  assert(/\bread[\s-]?only\b/i.test(tDesc), "graph_traverse must be marked read-only in its description");
+});
+
+Deno.test("consolidate metadata describes dry_run behavior accurately", async () => {
+  const toolsResponse = await mcpRequest("tools/list");
+  const toolsResult = resultOf<{ tools?: ToolListItem[] }>(toolsResponse);
+  const consolidate = toolsResult.tools?.find((t) => t.name === "consolidate");
+  assertExists(consolidate, "consolidate tool must exist in tools/list");
+  const desc = consolidate?.description ?? "";
+
+  assert(/\bdry.?run\b/i.test(desc), "consolidate description must mention dry_run parameter");
+  assert(/\b50\b/.test(desc) && /\b500\b/.test(desc), "consolidate description must mention default and max limit (50/500)");
+  assert(/consolidation_log|log rows/i.test(desc), "consolidate description must mention that dry_run still writes consolidation_log rows");
 });
 
 Deno.test("SDK client can list prompts/resources and ping", async () => {

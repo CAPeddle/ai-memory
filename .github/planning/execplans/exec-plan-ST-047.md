@@ -1,8 +1,9 @@
 # ExecPlan — ST-047: Tool Descriptions
 
-> Status: ⬜ Not Ready
+> Status: ✅ Ready — implementation complete, review findings remediated
 > Story: ST-047
 > Created: 2026-05-31
+> Updated: 2026-06-19
 > Parent: QP-038-Vectorize-MCP-Repo-Review.md
 
 ---
@@ -29,7 +30,16 @@ This story enriches all tool descriptions without changing any logic.
 
 ## §1b. Outcomes & Conclusions
 
-*(populated on completion)*
+- completion status: full
+- key findings/achievements: All 10 MCP tool descriptions enriched with usage guidance, parameter docs, examples, return expectations, and error/edge-case information. Misleading metadata (search fallback claims, search_thoughts/list_thoughts profile filtering claims) corrected to match runtime behavior. Protocol compatibility test expanded with source-of-truth tool name derivation and targeted regression assertions.
+- requirements met vs unmet:
+  - [met] All MCP tool descriptions include usage examples and parameter docs (AC-15)
+  - [met] Descriptions accurately reflect runtime behavior (no profile-isolation claims where runtime only filters by project)
+  - [met] Targeted regression assertions prevent re-introduction of misleading metadata
+  - [deferred] consolidate tool annotations — separate story per scope boundary decision
+- architectural impact: unchanged — metadata-only, no handler or schema changes
+- supporting evidence: 10/10 `mcp-protocol-compat.test.ts` tests pass including 3 targeted regression assertions (search fallback, search_thoughts project scoping, list_thoughts project scoping)
+- downstream changes: Board ST-047 moved to Review; `.gitignore` updated for runtime byproducts
 
 ---
 
@@ -53,7 +63,7 @@ This story enriches all tool descriptions without changing any logic.
 - [x] Verification steps
 - [x] Observable criteria
 
-Status: ⬜ Not ready — requires /plan
+Status: ✅ Ready — implementation and remediation complete
 
 ---
 
@@ -204,7 +214,7 @@ Status: ⬜ Not ready — requires /plan
 
 **Verification:**
 ```powershell
-docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/tool-descriptions.test.ts
+docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/mcp-protocol-compat.test.ts
 ```
 
 ---
@@ -251,7 +261,7 @@ docker compose --profile test exec mcp-test deno test --allow-net --allow-env --
 
 **Verification:**
 ```powershell
-docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/tool-descriptions.test.ts
+docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/mcp-protocol-compat.test.ts
 ```
 
 ---
@@ -259,7 +269,7 @@ docker compose --profile test exec mcp-test deno test --allow-net --allow-env --
 ### Task 4.3: Full test suite
 
 ```powershell
-docker compose --profile test exec mcp-test deno test --allow-net --allow-env --allow-read tests/
+docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/
 ```
 
 ---

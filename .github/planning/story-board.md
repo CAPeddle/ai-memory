@@ -2,7 +2,7 @@
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
 > Next planning target: None (no Ready ExecPlan in In Progress/Refined).
-> Unblocked: ST-023, ST-029, ST-019, ST-045, ST-047, ST-048, ST-049, ST-050, ST-051, ST-053 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared)
+> Unblocked: ST-023, ST-029, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review)
 > Last updated: 2026-06-19
 
 ---
@@ -179,19 +179,6 @@
 - Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
 - Notes: 🟡 Should fix. ST-042 (migration framework) complete — blocker cleared. Prevents duplicate processing after crash.
 
-### ST-047: Tool descriptions
-- Type: dx
-- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
-- phase: 2
-- Value: 3
-- Blocked by: —
-- Touches: `server/index.ts` (tool registration descriptions)
-- Acceptance criteria:
-  - [ ] All MCP tool descriptions include usage examples and parameter docs (AC-15)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-047.md`
-- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
-- Notes: 🟡 Should fix. Current descriptions are minimal. AI agent consumers invoke tools more accurately with example values and error condition docs.
-
 ### ST-048: Queryable metrics table
 - Type: observability
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
@@ -279,6 +266,19 @@
 (Empty)
 
 ## Review
+
+### ST-047: Tool descriptions
+- Type: dx
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 3
+- Blocked by: —
+- Touches: `server/index.ts` (tool registration descriptions)
+- Acceptance criteria:
+  - [x] All MCP tool descriptions include usage examples and parameter docs (AC-15)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-047.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: 🟡 Should fix. All 10 tool descriptions enriched. Misleading metadata (search fallback wording, search_thoughts/list_thoughts profile-isolation claims) corrected to match runtime behavior. Protocol compatibility test expanded with source-of-truth derivation and targeted regression assertions. 10/10 tests pass.
 
 (Empty)
 

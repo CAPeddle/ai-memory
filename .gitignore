@@ -43,3 +43,10 @@ packages/
 .env.*
 !.env.example
 !.env.dev.example
+
+# Local runtime byproducts (dev.sh / start.sh / stop.sh)
+.server.log
+.server.pid
+
+# Disposable review output
+findings.json
