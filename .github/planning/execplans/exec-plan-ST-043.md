@@ -1,6 +1,6 @@
 # ExecPlan — ST-043: Context Validation + Feature Flags
 
-> Status: ⬜ Not Ready
+> Status: ✅ Completed
 > Story: ST-043
 > Created: 2026-05-31
 > Parent: QP-038-Vectorize-MCP-Repo-Review.md
@@ -25,7 +25,11 @@ This story adds:
 
 ## §1b. Outcomes & Conclusions
 
-*(populated on completion)*
+- parseContext now returns `ContextParseResult | null` (union of `ContextScope` or `ContextParseError`). Unknown keys, bare tokens (except "strict"), empty values, and invalid profile/visibility values all produce structured error objects with `message`, `received`, `expected`, and `failedToken` fields.
+- `isContextError()` type guard enables tool handlers to short-circuit with `isError: true`.
+- Three tools (`search_thoughts`, `capture_thought`, `list_thoughts`) surface context validation errors. `search` and `fetch` don't use context — no change needed.
+- `FEATURE_ENTITY_WORKER` and `FEATURE_CONSOLIDATION_WORKER` env vars default to enabled; only `"false"` disables. Node `startEmbeddingBackfill` already respected `EMBEDDING_BACKFILL_DISABLED` (pre-existing pattern).
+- All 21 ST-043 tests pass (17 unit + 4 integration).
 
 ---
 
@@ -51,7 +55,7 @@ This story adds:
 - [x] Verification steps included
 - [x] Observable behaviour criteria
 
-Status: ⬜ Not ready — requires /plan
+Status: ✅ Ready — executed 2026-06-19
 
 ---
 
@@ -369,14 +373,18 @@ docker compose --profile test exec mcp-test deno test --allow-net --allow-env --
 
 | Field | Value |
 |---|---|
-| **Next task** | Task 4.1 |
+| **Next task** | Complete |
 | **Known blockers** | None |
 
 ### Progress History
 
 | Timestamp (ISO) | Task | Status | Evidence / outputs | Next step |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| 2026-06-19 | Task 4.1 | ✅ Done | parseContext.ts updated with ContextParseError, ContextParseResult, isContextError | Task 4.2 |
+| 2026-06-19 | Task 4.2 | ✅ Done | index.ts: 3 tool handlers now check isContextError | Task 4.3 |
+| 2026-06-19 | Task 4.3 | ✅ Done | FEATURE_ENTITY_WORKER / FEATURE_CONSOLIDATION_WORKER env vars added | Task 4.4 |
+| 2026-06-19 | Task 4.4 | ✅ Done | parseContext.test.ts 17 tests pass; context-validation.test.ts 4 integration tests pass | Task 4.5 |
+| 2026-06-19 | Task 4.5 | ✅ Done | Full suite 150 pass, 16 pre-existing failures; all ST-043 tests green | — |
 
 ---
 

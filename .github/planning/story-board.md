@@ -166,20 +166,6 @@
 
 
 
-### ST-043: Context validation + feature flags
-- Type: hardening
-- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
-- phase: 2
-- Value: 3
-- Blocked by: —
-- Touches: `server/src/parseContext.ts`, `server/index.ts`
-- Acceptance criteria:
-  - [ ] Malformed context strings are rejected with a clear error (AC-6)
-  - [ ] Feature flags disable graph/entity features when toggled off (AC-16)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-043.md`
-- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
-- Notes: 🟡 Should fix. Context parser currently silently ignores garbage. Feature flags enable safe progressive rollout.
-
 ### ST-045: Worker idempotency
 - Type: hardening
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
@@ -307,7 +293,21 @@
 
 ## Review
 
-(Empty)
+### ST-043: Context validation + feature flags
+- Type: hardening
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 3
+- Blocked by: —
+- Touches: `server/src/parseContext.ts`, `server/index.ts`
+- Acceptance criteria:
+  - [x] Malformed context strings are rejected with a clear error (AC-6)
+  - [x] Feature flags disable graph/entity features when toggled off (AC-16)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-043.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: Context validation returns structured ContextParseError for unknown keys, bare tokens, empty values, invalid profile/visibility. Feature flags FEATURE_ENTITY_WORKER / FEATURE_CONSOLIDATION_WORKER default enabled; "false" disables. 21/21 tests pass.
+
+### ST-044: Structured logging
 
 ## Done
 
