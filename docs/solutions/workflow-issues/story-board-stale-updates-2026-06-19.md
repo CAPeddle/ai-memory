@@ -91,3 +91,4 @@ ST-039 moved to Done with `[x]` on all ACs, `Completed: 2026-06-14`, and notes r
 - `.github/planning/execplans/_TEMPLATE.md` — the ExecPlan template whose closeout section only covers Review, not Done
 - `.github/planning/story-board.md` — the board itself, which must be updated
 - `docs/solutions/workflow-issues/missing-start-stop-scripts-planning-gap-2026-06-18.md` — same root cause pattern (post-execution bookkeeping as blind spot)
+- `docs/solutions/workflow-issues/branch-from-main-between-stories-2026-06-19.md` — sibling facet of the same closeout gap: branch hygiene (branch fresh from main, not the previous feature branch)

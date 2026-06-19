@@ -120,10 +120,10 @@ server.registerTool(
   "search",
   {
     title: "Search AI Memory",
-    description: "Search memories by meaning (ChatGPT compatibility tool).",
+    description: "Search memories by meaning for ChatGPT-compatible clients. Use when you need a simple read-only recall result list for a natural-language query. Parameters: query is the search text. Example: {\"query\":\"embedding timeout investigation\"}. Returns: JSON with results containing id, title, and url. Errors/edge cases: embedding failures fall back to lexical (BM25) results; when embeddings succeed but no results pass the cosine similarity threshold, nearest-neighbor matches are still returned, so an empty results array is returned only when all recall paths (vector threshold, lexical, nearest-neighbor) yield nothing.",
     annotations: { readOnlyHint: true },
     inputSchema: {
-      query: z.string().describe("Search query"),
+      query: z.string().describe("Natural-language search text to recall matching active memories."),
     },
   },
   withTiming("search", async ({ query }) => {
@@ -199,10 +199,10 @@ server.registerTool(
   "fetch",
   {
     title: "Fetch AI Memory Thought",
-    description: "Fetch an active thought by ID (ChatGPT compatibility tool).",
+    description: "Fetch a single active thought by UUID for ChatGPT-compatible clients. Use when search returned an id and the caller needs the complete memory text and metadata. Parameters: id is the thought UUID to retrieve. Example: {\"id\":\"00000000-0000-4000-8000-000000000000\"}. Returns: JSON with id, title, text, url, and metadata. Errors/edge cases: invalid UUIDs fail schema validation; missing or inactive thoughts return a not-found error.",
     annotations: { readOnlyHint: true },
     inputSchema: {
-      id: z.string().uuid().describe("Thought UUID"),
+      id: z.string().uuid().describe("UUID of the active thought to fetch."),
     },
   },
   withTiming("fetch", async ({ id }) => {
@@ -238,12 +238,12 @@ server.registerTool(
   "search_thoughts",
   {
     title: "Search Thoughts",
-    description: "Search captured thoughts by meaning and keyword. Combines BM25 and vector similarity, fused via Reciprocal Rank Fusion.",
+    description: "Search captured thoughts with hybrid BM25 and vector recall. Use when an agent needs the richest project-aware memory search, including scores and quality bands. Parameters: query is the search text; context scopes results — project scopes to a project and activates a 1.2× boost for in-project results (strict restricts to only that project's results); the profile key is accepted but not used for filtering; limit controls result count. Example: {\"query\":\"MCP protocol compatibility\",\"context\":\"project:ai-memory,strict\",\"limit\":5}. Returns: JSON with query, normalized_query, and ranked results including score and quality_band. Errors/edge cases: malformed context returns a validation error; embedding failures keep BM25 recall available; limit must be 1-100.",
     annotations: { readOnlyHint: true },
     inputSchema: {
-      query: z.string().describe("What to search for"),
-      context: z.string().optional().describe("Scope: e.g. 'project:zoom,profile:professional'"),
-      limit: z.number().int().min(1).max(100).optional().default(10),
+      query: z.string().describe("Natural-language or identifier-heavy search text to match against captured thoughts."),
+      context: z.string().optional().describe("Optional scope string — project scopes to a project with a 1.2× boost; strict restricts to in-project results only. Example: 'project:ai-memory,strict'."),
+      limit: z.number().int().min(1).max(100).optional().default(10).describe("Maximum number of ranked results to return, from 1 to 100; defaults to 10."),
     },
   },
   withTiming("search_thoughts", async ({ query, context, limit }) => {
@@ -420,12 +420,12 @@ server.registerTool(
   "capture_thought",
   {
     title: "Capture Thought",
-    description: "Save a new thought to AI Memory. Generates a 512-dim embedding automatically. Supports memory_type (shard|wiki) and context scoping.",
+    description: "Save a standalone memory thought. Use when an agent or user wants ai-memory to remember a reusable decision, fact, constraint, or project note. Parameters: content is the memory text; memory_type is shard or wiki; context scopes the thought — project and profile are stored with the thought (not used as search filters). Example: {\"content\":\"Use mcp-test for isolated server tests.\",\"memory_type\":\"shard\",\"context\":\"project:ai-memory\"}. Returns: capture confirmation with memory_type, optional project, and id. Errors/edge cases: content over 32KB is rejected; malformed context returns a validation error; duplicate content updates the existing active thought.",
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     inputSchema: {
-      content: z.string().describe("The thought to capture — a clear, standalone statement"),
-      memory_type: z.enum(["shard", "wiki"]).optional().default("shard"),
-      context: z.string().optional().describe("Scope: e.g. 'project:zoom,profile:professional'"),
+      content: z.string().describe("Clear, standalone memory text to capture; maximum encoded size is 32KB."),
+      memory_type: z.enum(["shard", "wiki"]).optional().default("shard").describe("Memory type to store: shard for raw captured notes, wiki for promoted durable facts; defaults to shard."),
+      context: z.string().optional().describe("Optional scope string to tag the thought — project and profile are stored with the thought. Example: 'project:ai-memory,profile:professional'."),
     },
   },
   withTiming("capture_thought", async ({ content, memory_type, context }) => {
@@ -516,12 +516,12 @@ server.registerTool(
   "list_thoughts",
   {
     title: "List Recent Thoughts",
-    description: "List recently captured thoughts with optional filters.",
+    description: "List recently captured active thoughts. Use when an agent needs a quick chronological inventory instead of relevance-ranked search. Parameters: limit controls count; memory_type filters shard or wiki; context filters by project assignment — the profile key is accepted but not used for filtering; days filters by recency. Example: {\"limit\":5,\"memory_type\":\"shard\",\"context\":\"project:ai-memory\",\"days\":7}. Returns: human-readable numbered thought summaries with dates, type, project, and content preview. Errors/edge cases: malformed context returns a validation error; no matches return 'No thoughts found.'; limit must be 1-100 and days must be 1-365.",
     annotations: { readOnlyHint: true },
     inputSchema: {
-      limit: z.number().int().min(1).max(100).optional().default(10),
-      memory_type: z.enum(["shard", "wiki"]).optional(),
-      context: z.string().optional().describe("Scope filter: e.g. 'project:zoom'"),
+      limit: z.number().int().min(1).max(100).optional().default(10).describe("Maximum number of recent thoughts to list, from 1 to 100; defaults to 10."),
+      memory_type: z.enum(["shard", "wiki"]).optional().describe("Optional memory type filter: shard for raw captured notes or wiki for promoted durable facts."),
+      context: z.string().optional().describe("Optional scope filter — project filters by project assignment. Example: 'project:ai-memory'."),
       days: z.number().int().min(1).max(365).optional().describe("Only thoughts from the last N days"),
     },
   },
@@ -564,7 +564,7 @@ server.registerTool(
   "thought_stats",
   {
     title: "Thought Statistics",
-    description: "Get total thought counts broken down by memory_type and project.",
+    description: "Get active thought counts by memory type and project. Use when an agent needs a lightweight content inventory, not worker or recall metrics. Parameters: No parameters; call with {}. Example: {}. Returns: human-readable totals for active thoughts, counts by memory_type, and top projects. Errors/edge cases: database failures are returned as tool errors.",
     annotations: { readOnlyHint: true },
     inputSchema: {},
   },
@@ -596,7 +596,7 @@ server.registerTool(
   "stats",
   {
     title: "Worker and System Statistics",
-    description: "Get queue depths, worker run summaries, recall counts, and content counts.",
+    description: "Get queue, worker, recall, and content statistics. Use when an agent needs operational status for ai-memory background work and recent recall activity. Parameters: No parameters; call with {}. Example: {}. Returns: JSON with queues, workers, recall, and content sections. Errors/edge cases: database failures are returned as tool errors; this is broader than thought_stats and includes worker health signals.",
     annotations: { readOnlyHint: true },
     inputSchema: {},
   },
@@ -834,10 +834,10 @@ server.registerTool(
   "graph_traverse",
   {
     title: "Graph Traverse",
-    description: "Run a read-only openCypher MATCH query against the memory_graph (Apache AGE). Use for multi-hop entity traversal, causation chains, and fact inference. Only MATCH queries are accepted.",
+    description: "Run a read-only openCypher MATCH query against the memory_graph. Use when an advanced caller needs custom multi-hop entity traversal or fact inference beyond graph_search. Parameters: cypher is an openCypher query that must start with MATCH and target memory_graph. Example: {\"cypher\":\"MATCH (n) RETURN n LIMIT 5\"}. Returns: one result per line or 'No results.'. Errors/edge cases: non-MATCH queries, mutation keywords, malformed literals/comments, dollar-quote breakouts, and queries over the length cap are rejected.",
     annotations: { readOnlyHint: true },
     inputSchema: {
-      cypher: z.string().describe("openCypher MATCH query. Must start with MATCH. The graph name is 'memory_graph'."),
+      cypher: z.string().describe("Read-only openCypher query that must start with MATCH and run against the memory_graph graph."),
     },
   },
   withTiming("graph_traverse", async ({ cypher }) => {
@@ -911,11 +911,11 @@ server.registerTool(
   "graph_search",
   {
     title: "Graph Search",
-    description: "Search the knowledge graph by starting from a named entity and traversing relationships up to a specified depth. Safer alternative to graph_traverse — does not require writing openCypher.",
+    description: "Search the knowledge graph from a named entity using bounded traversal. Use when an agent wants connected entities without writing openCypher; prefer graph_traverse only for custom graph queries. Parameters: start_node is the entity name; relationship_filter optionally restricts edge type; max_hops controls traversal depth. Example: {\"start_node\":\"TypeScript\",\"relationship_filter\":\"USES\",\"max_hops\":2}. Returns: connected graph nodes, one per line, or a no-nodes message. Errors/edge cases: relationship_filter must be one of the allowed relationship types; max_hops must be 1-3.",
     annotations: { readOnlyHint: true },
     inputSchema: {
-      start_node: z.string().describe("Name of the entity to start from (e.g. 'Alice', 'TypeScript')"),
-      relationship_filter: z.string().optional().describe("Limit traversal to this relationship type (e.g. 'CAUSED_BY'). If omitted, all relationship types are traversed."),
+      start_node: z.string().describe("Name of the entity node to start traversal from, for example 'Alice' or 'TypeScript'."),
+      relationship_filter: z.string().optional().describe("Optional relationship type allow-list filter such as CAUSED_BY, LIKES, WORKS_ON, USES, or RELATED_TO."),
       max_hops: z.number().int().min(1).max(3).optional().default(2).describe("Maximum traversal depth (1-3, default 2)"),
     },
   },
@@ -969,10 +969,10 @@ server.registerTool(
   "consolidate",
   {
     title: "Run consolidation sweep",
-    description: "Manually drain the consolidation_queue. With dry_run=true, writes only consolidation_log rows marked dry_run=true and performs no thoughts writes.",
+    description: "Manually drain pending consolidation candidates. Use when an operator or agent needs to trigger a consolidation sweep outside the background schedule. Parameters: dry_run previews work without thought mutations; limit caps processed candidates. Example: {\"dry_run\":true,\"limit\":10}. Returns: JSON with processed count and dry_run flag. Errors/edge cases: dry_run=true still writes dry-run consolidation_log rows; limit defaults to 50 and cannot exceed 500.",
     inputSchema: {
-      dry_run: z.boolean().optional().describe("If true, no thoughts mutations; consolidation_log rows are tagged dry_run=true"),
-      limit: z.number().int().positive().max(500).optional().describe("Maximum candidates to process this sweep (default 50)"),
+      dry_run: z.boolean().optional().describe("If true, skip thoughts mutations and tag consolidation_log rows as dry_run=true."),
+      limit: z.number().int().positive().max(500).optional().describe("Maximum number of pending candidates to process in this sweep; defaults to 50 and maxes at 500."),
     },
   },
   withTiming("consolidate", async ({ dry_run, limit }) => {
