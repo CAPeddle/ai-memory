@@ -51,7 +51,7 @@ After updating the board, run:
 
 ```bash
 # Confirm the board's Done section reflects merged stories
-grep "### ST-" .github/planning/story-board.md | grep -A1 "Completed"
+grep -B4 "Completed:" .github/planning/story-board.md
 ```
 
 ## Why This Matters
@@ -85,7 +85,9 @@ ST-039 moved to Done with `[x]` on all ACs, `Completed: 2026-06-14`, and notes r
 
 ## Related
 
-- ST-058: Sync alignment wrap-up — the same gap reconciled for ST-041, ST-042, ST-056 (`docs/design/adr/ADR-009-deployment-model.md`)
+- ST-058: Sync alignment wrap-up — the same gap reconciled for ST-041, ST-042, ST-056
 - `.github/prompts/continue.prompt.md` — the executor instructions that need a "move to Done" step
+- `.github/prompts/governance-review.prompt.md` — detection-layer check that catches future recurrence
 - `.github/planning/execplans/_TEMPLATE.md` — the ExecPlan template whose closeout section only covers Review, not Done
 - `.github/planning/story-board.md` — the board itself, which must be updated
+- `docs/solutions/workflow-issues/missing-start-stop-scripts-planning-gap-2026-06-18.md` — same root cause pattern (post-execution bookkeeping as blind spot)

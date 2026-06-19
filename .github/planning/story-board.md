@@ -289,7 +289,7 @@
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
 - phase: 2
 - Value: 2
-- Blocked by: ST-039, ST-040 (needs worker state to report)
+- Blocked by: —
 - Touches: `server/index.ts` (/health endpoint)
 - Acceptance criteria:
   - [ ] Health check reports DB latency, queue depth, and degraded state (operational polish)
