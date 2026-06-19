@@ -43,7 +43,7 @@ For a story with a Ready ExecPlan:
    - The reviewer checks: do the tests actually validate the contract? Are there behavioural paths the tests miss? Does the code match stated semantics (not just "tests pass")?
    - Only after the cross-model review passes (or the PO waives it) should the story move to Review
 6. **After review passes**: move to Review column, present acceptance criteria to PO
-7. **After PO accepts → Done**: scan Backlog for stories listing the completed story in `Blocked by:` and clear resolved references (change to `—`). Commit the board update.
+7. **After PO accepts → Done**: move the completed story to the Done section (add `Completed: YYYY-MM-DD` after the Value line), check all acceptance criteria boxes (`[ ]` → `[x]`), scan Backlog for stories listing the completed story in `Blocked by:` and clear resolved references (change to `—`), and update header metadata (remove completed story from `Unblocked`, bump `Last updated`). Commit the board update.
 
 ## After Each Task — Atomic Commit
 

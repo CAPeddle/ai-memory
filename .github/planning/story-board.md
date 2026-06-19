@@ -2,34 +2,12 @@
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
 > Next planning target: None (no Ready ExecPlan in In Progress/Refined).
-> Unblocked: ST-023, ST-028, ST-029, ST-019 (all ST-005/ST-008/ST-022 blockers cleared)
-> Last updated: 2026-06-17
+> Unblocked: ST-023, ST-029, ST-019 (all ST-005/ST-008/ST-022 blockers cleared)
+> Last updated: 2026-06-19
 
 ---
 
 ## Backlog
-
-### ST-028: Worker observability and `stats` MCP tool
-- Type: feature
-- Source: PO assessment of storyboard sufficiency (2026-05-18)
-- phase: 2
-- Value: 3
-- Blocked by: —
-- Touches: `server/index.ts` (new `stats` tool), `server/src/entityWorker.ts`, `server/src/consolidationWorker.ts`, `server/db/schema.sql` (new `worker_runs` table)
-- Acceptance criteria:
-  - [ ] Both workers emit structured JSON logs to stdout, one line per event: `{ts, level, worker, run_id, event, duration_ms, items_processed, errors}` where `event` is one of `run_started|item_processed|run_completed|run_failed`
-  - [ ] New `worker_runs` table persists per-run state: `(run_id uuid PK, worker text, started_at, ended_at, items_processed int, errors int, error_summary jsonb)`
-  - [ ] 30-day retention on `worker_runs` via `DELETE FROM worker_runs WHERE ended_at < now() - interval '30 days'` at end of each run
-  - [ ] New `stats` MCP tool returns one JSON object with sections: `queues` (entity_extraction_queue depth), `workers` (last-24h run counts + error counts per worker), `recall` (recall events last 24h), `content` (counts from existing `thought_stats`)
-  - [ ] `stats` subject to existing `requireApiKey` middleware (no new auth surface)
-  - [ ] Failure of either worker visible in `stats` output within one poll cycle of the next run
-  - [ ] Integration test: induce worker failure → `stats` reports `errors > 0`; recover → next run reports success
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-028.md` (to be created)
-- Query packet: `.github/planning/query-packets/QP-028-worker-observability.md`
-- Docs: `docs/design/adr/ADR-007-consolidation-pipeline.md`
-- Notes: Operational closure for the cloud MCP. Without this, worker failures are invisible until users notice missing entity extractions or stale wikis. The `stats` tool also gives the local synthesis service (ST-019) and storyboard view (ST-026) a "is the cloud healthy?" check they can run before synthesis.
-
-
 
 ### ST-034: Spike — Graph-expanded "connected" retrieval: cardinality bounding + orchestration design
 - Type: spike
@@ -188,33 +166,6 @@
 
 
 
-### ST-039: Embedding resilience
-- Type: hardening
-- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
-- phase: 2
-- Value: 5
-- Blocked by: —
-- Touches: `server/db/002_needs_embedding.sql` (new), `server/index.ts`, `server/src/entityWorker.ts` or new backfill module
-- Acceptance criteria:
-  - [ ] Thoughts with failed embeddings are recoverable via backfill (AC-2)
-  - [ ] Embedding model version is recorded per thought (AC-17)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-039.md`
-- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
-- Notes: 🔴 Must fix. Fire-and-forget embeddings currently lose data silently on transient failures. Uses standalone idempotent DDL (not migration runner from ST-042).
-
-### ST-040: Worker crash isolation
-- Type: hardening
-- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
-- phase: 2
-- Value: 5
-- Blocked by: —
-- Touches: `server/src/entityWorker.ts`
-- Acceptance criteria:
-  - [ ] Entity worker survives errors without crashing the server (AC-10)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-040.md`
-- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
-- Notes: 🔴 Must fix. No schema change required. Adds try/catch + exponential backoff to the poll loop so unhandled rejections don't propagate to the main process.
-
 ### ST-043: Context validation + feature flags
 - Type: hardening
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
@@ -361,6 +312,56 @@
 (Empty)
 
 ## Done
+
+### ST-028: Worker observability and `stats` MCP tool
+- Type: feature
+- Source: PO assessment of storyboard sufficiency (2026-05-18)
+- phase: 2
+- Value: 3
+- Completed: 2026-06-19
+- Blocked by: —
+- Touches: `server/index.ts` (`stats` tool), `server/src/entityWorker.ts`, `server/src/consolidationWorker.ts`, `server/db/004_worker_runs.sql`
+- Acceptance criteria:
+  - [x] Both workers emit structured JSON logs to stdout, one line per event: `{ts, level, worker, run_id, event, duration_ms, items_processed, errors}` where `event` is one of `run_started|item_processed|run_completed|run_failed`
+  - [x] New `worker_runs` table persists per-run state: `(run_id uuid PK, worker text, started_at, ended_at, items_processed int, errors int, error_summary jsonb)`
+  - [x] 30-day retention on `worker_runs` via `DELETE FROM worker_runs WHERE ended_at < now() - interval '30 days'` at end of each run
+  - [x] New `stats` MCP tool returns one JSON object with sections: `queues` (entity_extraction_queue depth), `workers` (last-24h run counts + error counts per worker), `recall` (recall events last 24h), `content` (counts from existing `thought_stats`)
+  - [x] `stats` subject to existing `requireApiKey` middleware (no new auth surface)
+  - [x] Failure of either worker visible in `stats` output within one poll cycle of the next run
+  - [x] Integration test: induce worker failure → `stats` reports `errors > 0`; recover → next run reports success
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-028.md`
+- Query packet: `.github/planning/query-packets/QP-028-worker-observability.md`
+- Docs: `docs/design/adr/ADR-007-consolidation-pipeline.md`
+- Notes: Merged via PR #9. Worker_runs table as 004_worker_runs.sql. stats tool registered with sections for queues, workers, recall, content. All suite tests pass.
+
+### ST-039: Embedding resilience
+- Type: hardening
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 5
+- Completed: 2026-06-14
+- Blocked by: —
+- Touches: `server/db/002_needs_embedding.sql`, `server/src/embeddingBackfill.ts` (new), `server/src/embeddings.ts` (extracted), `server/index.ts` (capture_thought fire-and-forget wiring), `server/tests/embedding-backfill.test.ts`, `server/tests/embedding-timeout.test.ts`
+- Acceptance criteria:
+  - [x] Thoughts with failed embeddings are recoverable via backfill (AC-2)
+  - [x] Embedding model version is recorded per thought (AC-17)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-039.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: 🔴 Must fix resolved. Backfill worker polls every 60s (configurable), batch size 50, max 5 attempts per thought via `embedding_attempts` counter. Capture_thought fire-and-forget sets `needs_embedding=false` + `embedding_model` on success; leaves `needs_embedding=true` on failure for backfill retry. Concurrent-writer-safe UPDATE guards prevent races. 9 focused tests pass.
+
+### ST-040: Worker crash isolation
+- Type: hardening
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 5
+- Completed: 2026-06-04
+- Blocked by: —
+- Touches: `server/src/entityWorker.ts`
+- Acceptance criteria:
+  - [x] Entity worker survives errors without crashing the server (AC-10)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-040.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: 🔴 Must fix resolved. Poll loop wrapped in try/catch with exponential backoff (1s→60s max). `safePoll` tracks consecutive failures; after 5 logs ALERT-level message. No schema changes required. 3 crash-isolation tests pass.
 
 ### ST-054: Retrieval robustness (false-empty, identifier dilution, zero-result observability)
 - Type: hardening
