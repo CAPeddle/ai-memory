@@ -180,19 +180,6 @@
 - Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
 - Notes: 🟡 Should fix. Context parser currently silently ignores garbage. Feature flags enable safe progressive rollout.
 
-### ST-044: Structured logging
-- Type: observability
-- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
-- phase: 2
-- Value: 3
-- Blocked by: —
-- Touches: `server/src/logging.ts` (new), `server/index.ts` (middleware)
-- Acceptance criteria:
-  - [ ] Every MCP tool invocation emits structured JSON log with timing (AC-3)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-044.md`
-- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
-- Notes: 🟡 Should fix. Additive to ST-028 (worker observability). ST-028 covers worker-specific logs; this covers tool invocation timing.
-
 ### ST-045: Worker idempotency
 - Type: hardening
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
@@ -303,7 +290,18 @@
 
 ## In Progress
 
-(Empty)
+### ST-044: Structured logging
+- Type: observability
+- Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
+- phase: 2
+- Value: 3
+- Blocked by: —
+- Touches: `server/src/logging.ts` (new), `server/index.ts` (middleware)
+- Acceptance criteria:
+  - [x] Every MCP tool invocation emits structured JSON log with timing (AC-3)
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-044.md`
+- Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
+- Notes: Additive to ST-028 (worker observability). ST-028 covers worker-specific logs; this covers tool invocation timing.
 
 ---
 

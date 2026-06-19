@@ -26,6 +26,7 @@ import {
   IDENTIFIER_NORMALIZER_VERSION,
   normalizeIdentifiers,
 } from "./src/identifierNormalization.ts";
+import { withTiming } from "./src/logging.ts";
 import {
   type EmbeddingLane,
   emitRequestLog,
@@ -125,7 +126,7 @@ server.registerTool(
       query: z.string().describe("Search query"),
     },
   },
-  async ({ query }) => {
+  withTiming("search", async ({ query }) => {
     try {
       const normalizedQuery = normalizeIdentifiers(query).retrievalText;
       const qEmb = normalizedQuery
@@ -191,7 +192,7 @@ server.registerTool(
       setActiveEmbeddingLane("n/a");
       return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }], isError: true };
     }
-  }
+  })
 );
 
 server.registerTool(
@@ -204,7 +205,7 @@ server.registerTool(
       id: z.string().uuid().describe("Thought UUID"),
     },
   },
-  async ({ id }) => {
+  withTiming("fetch", async ({ id }) => {
     try {
       const rows = await sql`
         SELECT id, content, metadata, memory_type, project, created_at, updated_at
@@ -228,7 +229,7 @@ server.registerTool(
     } catch (err) {
       return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }], isError: true };
     }
-  }
+  })
 );
 
 // --- Tool 1: search_thoughts (BM25 + vector hybrid) -------------------------
@@ -245,7 +246,7 @@ server.registerTool(
       limit: z.number().int().min(1).max(100).optional().default(10),
     },
   },
-  async ({ query, context, limit }) => {
+  withTiming("search_thoughts", async ({ query, context, limit }) => {
     try {
       const scope = parseContext(context);
       const project = scope?.projects?.[0] ?? null;
@@ -408,7 +409,7 @@ server.registerTool(
       setActiveEmbeddingLane("n/a");
       return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }], isError: true };
     }
-  }
+  })
 );
 
 // --- Tool 2: capture_thought ------------------------------------------------
@@ -425,7 +426,7 @@ server.registerTool(
       context: z.string().optional().describe("Scope: e.g. 'project:zoom,profile:professional'"),
     },
   },
-  async ({ content, memory_type, context }) => {
+  withTiming("capture_thought", async ({ content, memory_type, context }) => {
     try {
       const contentBytes = new TextEncoder().encode(content).length;
       if (contentBytes > MAX_CONTENT_BYTES) {
@@ -502,7 +503,7 @@ server.registerTool(
     } catch (err) {
       return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }], isError: true };
     }
-  }
+  })
 );
 
 // --- Tool 3: list_thoughts --------------------------------------------------
@@ -520,7 +521,7 @@ server.registerTool(
       days: z.number().int().min(1).max(365).optional().describe("Only thoughts from the last N days"),
     },
   },
-  async ({ limit, memory_type, context, days }) => {
+  withTiming("list_thoughts", async ({ limit, memory_type, context, days }) => {
     try {
       const scope = parseContext(context);
       const project = scope?.projects?.[0] ?? null;
@@ -548,7 +549,7 @@ server.registerTool(
     } catch (err) {
       return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }], isError: true };
     }
-  }
+  })
 );
 
 // --- Tool 4: thought_stats --------------------------------------------------
@@ -561,7 +562,7 @@ server.registerTool(
     annotations: { readOnlyHint: true },
     inputSchema: {},
   },
-  async () => {
+  withTiming("thought_stats", async () => {
     try {
       const [total] = await sql`SELECT count(*) AS cnt FROM thoughts WHERE active = true`;
       const byType = await sql`SELECT memory_type, count(*) AS cnt FROM thoughts WHERE active = true GROUP BY memory_type ORDER BY cnt DESC`;
@@ -580,7 +581,7 @@ server.registerTool(
     } catch (err) {
       return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }], isError: true };
     }
-  }
+  })
 );
 
 // --- Tool: stats (worker and system statistics) -------------------------------
@@ -593,7 +594,7 @@ server.registerTool(
     annotations: { readOnlyHint: true },
     inputSchema: {},
   },
-  async () => {
+  withTiming("stats", async () => {
     try {
       const [queueEntity] = await sql`
         SELECT COUNT(*) FILTER (WHERE status = 'pending')::int AS pending FROM entity_extraction_queue
@@ -662,7 +663,7 @@ server.registerTool(
     } catch (err) {
       return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }], isError: true };
     }
-  }
+  })
 );
 
 // sql.unsafe() with multi-statement SQL (LOAD + SET + SELECT) returns a nested
@@ -833,7 +834,7 @@ server.registerTool(
       cypher: z.string().describe("openCypher MATCH query. Must start with MATCH. The graph name is 'memory_graph'."),
     },
   },
-  async ({ cypher }) => {
+  withTiming("graph_traverse", async ({ cypher }) => {
     try {
       const trimmed = cypher.trim();
       if (trimmed.length > CYPHER_MAX_LENGTH) {
@@ -893,7 +894,7 @@ server.registerTool(
     } catch (err) {
       return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }], isError: true };
     }
-  }
+  })
 );
 
 // --- Tool 6: graph_search (parameterized graph traversal) -------------------
@@ -912,7 +913,7 @@ server.registerTool(
       max_hops: z.number().int().min(1).max(3).optional().default(2).describe("Maximum traversal depth (1-3, default 2)"),
     },
   },
-  async ({ start_node, relationship_filter, max_hops }) => {
+  withTiming("graph_search", async ({ start_node, relationship_filter, max_hops }) => {
     try {
       // Validate relationship filter against allow-list
       if (relationship_filter && !GRAPH_SEARCH_ALLOWED_RELS.has(relationship_filter)) {
@@ -953,7 +954,7 @@ server.registerTool(
     } catch (err) {
       return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }], isError: true };
     }
-  }
+  })
 );
 
 // --- Tool 8: consolidate ------------------------------------------------
@@ -968,12 +969,12 @@ server.registerTool(
       limit: z.number().int().positive().max(500).optional().describe("Maximum candidates to process this sweep (default 50)"),
     },
   },
-  async ({ dry_run, limit }) => {
+  withTiming("consolidate", async ({ dry_run, limit }) => {
     const processed = await drainPendingOnce(dry_run ?? false, limit ?? 50);
     return {
       content: [{ type: "text" as const, text: JSON.stringify({ processed, dry_run: dry_run ?? false }) }],
     };
-  }
+  })
 );
 
 // ---------------------------------------------------------------------------
