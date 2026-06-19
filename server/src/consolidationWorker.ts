@@ -25,6 +25,7 @@ import {
   type CandidateMetrics,
 } from "./consolidationScoring.ts";
 import { normaliseContent } from "./consolidationLLM.ts";
+import { logWorkerEvent } from "./workerLogger.ts";
 
 const BATCH_SIZE = 10;
 const LLM_RETRY_INTERVAL = "1 hour";
@@ -183,6 +184,7 @@ async function processCandidate(
   batchMaxima: BatchMaxima,
   workerRunId: string,
   dryRun: boolean,
+  runErrors: { count: number; summary: unknown },
 ): Promise<void> {
   // 1. Eligibility: active shard with ≥2 recalls
   const metrics = await fetchMetrics(thoughtId);
@@ -264,7 +266,17 @@ async function processCandidate(
           retry_after = now() + ${LLM_RETRY_INTERVAL}::interval
       WHERE thought_id = ${thoughtId}
     `;
-    console.warn(`[consolidationWorker] LLM failed for ${thoughtId}: ${errorMsg}`);
+    runErrors.count++;
+    if (!runErrors.summary) runErrors.summary = { error: errorMsg };
+    logWorkerEvent({
+      level: "warn",
+      worker: "consolidation",
+      run_id: workerRunId,
+      event: "item_processed",
+      items_processed: 0,
+      errors: 1,
+      error_summary: errorMsg,
+    });
     return;
   }
 
@@ -304,23 +316,87 @@ async function processCandidate(
  */
 export async function drainPendingOnce(dryRun = false, limit = BATCH_SIZE): Promise<number> {
   const workerRunId = crypto.randomUUID();
+  const runStartTime = Date.now();
+  const runErrors = { count: 0, summary: null as unknown };
+
+  await sql`
+    INSERT INTO worker_runs (run_id, worker, started_at)
+    VALUES (${workerRunId}, 'consolidation', now())
+  `;
+  logWorkerEvent({
+    level: "info",
+    worker: "consolidation",
+    run_id: workerRunId,
+    event: "run_started",
+  });
+
   let processed = 0;
-  while (processed < limit) {
-    const remaining = limit - processed;
-    const rows = await claimBatch(remaining);
-    if (!rows.length) break;
-    // Fetch metrics for the whole batch to compute shared normalisation maxima
-    const metricsForBatch: CandidateMetrics[] = [];
-    for (const r of rows) {
-      const m = await fetchMetrics(r.thought_id);
-      if (m) metricsForBatch.push(m);
+  try {
+    while (processed < limit) {
+      const remaining = limit - processed;
+      const rows = await claimBatch(remaining);
+      if (!rows.length) break;
+      // Fetch metrics for the whole batch to compute shared normalisation maxima
+      const metricsForBatch: CandidateMetrics[] = [];
+      for (const r of rows) {
+        const m = await fetchMetrics(r.thought_id);
+        if (m) metricsForBatch.push(m);
+      }
+      const batchMaxima = computeBatchMaxima(metricsForBatch);
+      for (const r of rows) {
+        await processCandidate(r.thought_id, batchMaxima, workerRunId, dryRun, runErrors);
+        processed += 1;
+      }
     }
-    const batchMaxima = computeBatchMaxima(metricsForBatch);
-    for (const r of rows) {
-      await processCandidate(r.thought_id, batchMaxima, workerRunId, dryRun);
-      processed += 1;
-    }
+  } catch (err) {
+    const errorMsg = (err instanceof Error ? err.message : String(err)).slice(0, 500);
+    await sql`
+      UPDATE worker_runs
+      SET ended_at = now(), items_processed = ${processed}, errors = ${runErrors.count + 1},
+          error_summary = ${sql.json({ error: errorMsg } as unknown as Record<string, unknown>)}
+      WHERE run_id = ${workerRunId}
+    `;
+    await sql`
+      DELETE FROM worker_runs
+      WHERE ended_at < now() - interval '30 days'
+         OR (ended_at IS NULL AND started_at < now() - interval '30 days')
+    `;
+    logWorkerEvent({
+      level: "error",
+      worker: "consolidation",
+      run_id: workerRunId,
+      event: "run_failed",
+      duration_ms: Date.now() - runStartTime,
+      items_processed: processed,
+      errors: runErrors.count + 1,
+      error_summary: errorMsg,
+    });
+    throw err;
   }
+
+  const errorSummaryValue = dryRun ? { dry_run: true } : (runErrors.summary || null);
+  await sql`
+    UPDATE worker_runs
+    SET ended_at = now(), items_processed = ${processed}, errors = ${runErrors.count},
+        error_summary = ${errorSummaryValue !== null ? sql.json(errorSummaryValue as unknown as Record<string, unknown>) : null}
+    WHERE run_id = ${workerRunId}
+  `;
+  await sql`
+    DELETE FROM worker_runs
+    WHERE ended_at < now() - interval '30 days'
+       OR (ended_at IS NULL AND started_at < now() - interval '30 days')
+  `;
+  logWorkerEvent({
+    level: runErrors.count > 0 ? "error" : "info",
+    worker: "consolidation",
+    run_id: workerRunId,
+    event: "run_completed",
+    duration_ms: Date.now() - runStartTime,
+    items_processed: processed,
+    errors: runErrors.count,
+    error_summary: errorSummaryValue,
+  });
+
   return processed;
 }
 
