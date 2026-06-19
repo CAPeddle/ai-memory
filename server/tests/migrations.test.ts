@@ -14,18 +14,19 @@ Deno.test({
     const afterBootstrap = await sql<{ version: number; filename: string }[]>`
       SELECT version, filename FROM schema_migrations ORDER BY version
     `;
-    assertEquals(afterBootstrap.map((row) => row.version), [1, 2, 3]);
+    assertEquals(afterBootstrap.map((row) => row.version), [1, 2, 3, 4]);
     assertEquals(afterBootstrap.map((row) => row.filename), [
       "001_initial.sql",
       "002_needs_embedding.sql",
       "003_search_text_and_recall_queries.sql",
+      "004_worker_runs.sql",
     ]);
 
     await runMigrations();
     const afterRerun = await sql<{ version: number }[]>`
       SELECT version FROM schema_migrations ORDER BY version
     `;
-    assertEquals(afterRerun.map((row) => row.version), [1, 2, 3]);
+    assertEquals(afterRerun.map((row) => row.version), [1, 2, 3, 4]);
 
     const tempVersion = 999;
     const tempFilename = `${tempVersion}_test_marker.sql`;

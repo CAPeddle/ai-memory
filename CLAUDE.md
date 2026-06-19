@@ -21,7 +21,7 @@ ai-memory is a persistent memory service for AI coding agents. It currently ship
 Higher tier wins on conflict unless the PO explicitly overrides:
 
 1. **Tier 1 (binding):** [docs/requirements/SRS.md](docs/requirements/SRS.md), [docs/design/adr/](docs/design/adr/) (ADR-001..ADR-011 — note ADR-011 supersedes ADR-002), [docs/design/SystemDesign.md](docs/design/SystemDesign.md), [docs/planning/delivery-plan.md](docs/planning/delivery-plan.md)
-2. **Tier 2 (reference):** `docs/investigations/*` — each is a compact landing page with detailed fragments in a same-name folder. Link to the landing page by default; link to a fragment only when citing a precise section.
+2. **Tier 2 (reference):** `docs/investigations/*`, `docs/solutions/` — documented solutions to past problems (bugs, best practices, workflow patterns), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in documented areas.
 
 ## Workflow gate — DO NOT skip
 

@@ -100,6 +100,7 @@ server.registerResource(
           "search",
           "fetch",
           "search_thoughts",
+          "stats",
           "capture_thought",
           "list_thoughts",
           "thought_stats",
@@ -576,6 +577,88 @@ server.registerTool(
         ...byProject.map((r) => `  ${r.project}: ${r.cnt}`),
       ];
       return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+    } catch (err) {
+      return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }], isError: true };
+    }
+  }
+);
+
+// --- Tool: stats (worker and system statistics) -------------------------------
+
+server.registerTool(
+  "stats",
+  {
+    title: "Worker and System Statistics",
+    description: "Get queue depths, worker run summaries, recall counts, and content counts.",
+    annotations: { readOnlyHint: true },
+    inputSchema: {},
+  },
+  async () => {
+    try {
+      const [queueEntity] = await sql`
+        SELECT COUNT(*) FILTER (WHERE status = 'pending')::int AS pending FROM entity_extraction_queue
+      `;
+      const [queueConsolidation] = await sql`
+        SELECT COUNT(*) FILTER (WHERE status = 'pending')::int AS pending FROM consolidation_queue
+      `;
+
+      const workerAggs = await sql`
+        SELECT worker, COUNT(*)::int AS runs, COALESCE(SUM(errors), 0)::int AS total_errors
+        FROM worker_runs
+        WHERE started_at > now() - interval '24 hours'
+        GROUP BY worker
+      `;
+
+      const workerLastRun = await sql`
+        SELECT DISTINCT ON (worker) worker, ended_at AS last_run_at,
+          CASE WHEN errors > 0 THEN 'error' ELSE 'ok' END AS last_status
+        FROM worker_runs
+        WHERE ended_at IS NOT NULL
+        ORDER BY worker, ended_at DESC
+      `;
+
+      const [recallCount] = await sql`
+        SELECT COUNT(*)::int AS events_24h FROM recall_events WHERE created_at > now() - interval '24 hours'
+      `;
+
+      const [total] = await sql`SELECT count(*) AS cnt FROM thoughts WHERE active = true`;
+      const byType = await sql`SELECT memory_type, count(*) AS cnt FROM thoughts WHERE active = true GROUP BY memory_type ORDER BY cnt DESC`;
+
+      const workerNames = ["entity", "consolidation"];
+      const workerMap: Record<string, { runs_24h: number; errors_24h: number; last_run_at: string | null; last_status?: string }> = Object.fromEntries(
+        workerNames.map((n) => [n, { runs_24h: 0, errors_24h: 0, last_run_at: null }]),
+      );
+      for (const row of workerAggs) {
+        const w = row.worker as string;
+        if (workerMap[w]) {
+          workerMap[w].runs_24h = Number(row.runs);
+          workerMap[w].errors_24h = Number(row.total_errors);
+        }
+      }
+      for (const row of workerLastRun) {
+        const w = row.worker as string;
+        if (workerMap[w]) {
+          workerMap[w].last_run_at = row.last_run_at ? new Date(row.last_run_at as string).toISOString() : null;
+          workerMap[w].last_status = row.last_status as string;
+        }
+      }
+
+      const typeMap: Record<string, number> = {};
+      for (const row of byType) {
+        typeMap[row.memory_type as string] = Number(row.cnt);
+      }
+
+      const result = {
+        queues: {
+          entity_extraction_pending: Number(queueEntity.pending),
+          consolidation_pending: Number(queueConsolidation.pending),
+        },
+        workers: workerMap,
+        recall: { events_24h: Number(recallCount.events_24h) },
+        content: { total: Number(total.cnt), by_type: typeMap },
+      };
+
+      return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
     } catch (err) {
       return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }], isError: true };
     }

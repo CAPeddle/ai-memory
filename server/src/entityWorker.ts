@@ -1,4 +1,5 @@
 import { sql } from "./db.ts";
+import { logWorkerEvent } from "./workerLogger.ts";
 
 // --- Configuration ---
 const POLL_INTERVAL_MS = 10_000; // 10 seconds
@@ -56,6 +57,11 @@ Rules:
 - If no entities or relationships are found, return {"nodes": [], "edges": []}`;
 
 async function callLLM(content: string): Promise<ExtractionResult> {
+  // Test stub: caller inserts content with this prefix to exercise the fail-hard path.
+  if (content.startsWith("__TEST_LLM_FAIL__")) {
+    throw new Error("LLM failure simulated by __TEST_LLM_FAIL__ content prefix");
+  }
+
   const truncated = content.slice(0, MAX_INPUT_CHARS);
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
@@ -157,6 +163,22 @@ async function processQueue(): Promise<void> {
 
   if (!rows.length) return;
 
+  const runId = crypto.randomUUID();
+  await sql`
+    INSERT INTO worker_runs (run_id, worker, started_at)
+    VALUES (${runId}, 'entity', now())
+  `;
+  logWorkerEvent({
+    ts: new Date().toISOString(),
+    level: "info",
+    worker: "entity",
+    run_id: runId,
+    event: "run_started",
+  });
+  const runStartTime = Date.now();
+  let errorCount = 0;
+  let errorSummary: unknown = null;
+
   for (const { thought_id } of rows) {
     try {
       // Fetch thought content
@@ -186,9 +208,18 @@ async function processQueue(): Promise<void> {
         WHERE thought_id = ${thought_id}
       `;
 
-      console.log(`[entityWorker] processed ${thought_id}: ${extraction.nodes.length} nodes, ${extraction.edges.length} edges`);
+      logWorkerEvent({
+        ts: new Date().toISOString(),
+        level: "info",
+        worker: "entity",
+        run_id: runId,
+        event: "item_processed",
+        items_processed: 1,
+      });
     } catch (err) {
       const errorMsg = (err as Error).message?.slice(0, 500) ?? "Unknown error";
+      errorCount++;
+      if (!errorSummary) errorSummary = { error: errorMsg };
       // Check attempt count
       const [row] = await sql`
         SELECT attempt_count FROM entity_extraction_queue WHERE thought_id = ${thought_id}
@@ -215,6 +246,33 @@ async function processQueue(): Promise<void> {
       }
     }
   }
+
+  const itemsAttempted = rows.length;
+  const itemsSucceeded = itemsAttempted - errorCount;
+
+  await sql`
+    UPDATE worker_runs
+    SET ended_at = now(), items_processed = ${itemsSucceeded}, errors = ${errorCount}, error_summary = ${errorSummary ? sql.json(errorSummary as Record<string, unknown>) : null}
+    WHERE run_id = ${runId}
+  `;
+
+  logWorkerEvent({
+    ts: new Date().toISOString(),
+    level: errorCount > 0 ? "error" : "info",
+    worker: "entity",
+    run_id: runId,
+    event: "run_completed",
+    duration_ms: Date.now() - runStartTime,
+    items_processed: itemsSucceeded,
+    errors: errorCount,
+    error_summary: errorSummary,
+  });
+
+  await sql`
+    DELETE FROM worker_runs
+    WHERE ended_at < now() - interval '30 days'
+       OR (ended_at IS NULL AND started_at < now() - interval '30 days')
+  `;
 }
 
 interface SafePollDeps {
@@ -252,6 +310,7 @@ async function safePoll(deps: SafePollDeps = {}): Promise<void> {
 }
 
 export const __entityWorkerTestHooks = {
+  processQueue,
   safePoll,
   resetWorkerState(): void {
     consecutivePollFailures = 0;
@@ -263,6 +322,10 @@ export const __entityWorkerTestHooks = {
 
 // --- Public entry point ---
 export function startEntityWorker(): void {
+  if (Deno.env.get("ENTITY_WORKER_DISABLED") === "true") {
+    console.log("[entityWorker] auto-start disabled (ENTITY_WORKER_DISABLED=true)");
+    return;
+  }
   if (!OPENROUTER_API_KEY) {
     console.warn("[entityWorker] OPENROUTER_API_KEY not set — entity extraction disabled");
     return;
