@@ -114,3 +114,37 @@ Deno.test("parseContext: rejects non-canonical strict values (strict:yes, strict
     if (!result.message.includes("Invalid strict value")) throw new Error(`Expected 'Invalid strict value' for "${val}", got: ${result.message}`);
   }
 });
+
+Deno.test("parseContext: story key sets sourceStoryId", () => {
+  const s = asScope(parseContext("story:ST-043"));
+  if (s?.sourceStoryId !== "ST-043") throw new Error(`Expected sourceStoryId="ST-043", got ${JSON.stringify(s)}`);
+});
+
+Deno.test("parseContext: entity key with semicolons sets entities array", () => {
+  const s = asScope(parseContext("entity:Alice;Bob"));
+  if (s?.entities?.length !== 2) throw new Error(`Expected 2 entities, got ${JSON.stringify(s?.entities)}`);
+  if (s?.entities?.[0] !== "Alice") throw new Error(`Expected entities[0]="Alice"`);
+  if (s?.entities?.[1] !== "Bob") throw new Error(`Expected entities[1]="Bob"`);
+});
+
+Deno.test("parseContext: project key with semicolons sets projects array", () => {
+  const s = asScope(parseContext("project:zoom;bcf-managers"));
+  if (s?.projects?.length !== 2) throw new Error(`Expected 2 projects, got ${JSON.stringify(s?.projects)}`);
+  if (s?.projects?.[0] !== "zoom") throw new Error(`Expected projects[0]="zoom"`);
+  if (s?.projects?.[1] !== "bcf-managers") throw new Error(`Expected projects[1]="bcf-managers"`);
+});
+
+Deno.test("parseContext: whitespace around tokens is trimmed", () => {
+  const s = asScope(parseContext(" project : zoom "));
+  if (s?.projects?.[0] !== "zoom") throw new Error(`Expected projects=["zoom"], got ${JSON.stringify(s?.projects)}`);
+});
+
+Deno.test("parseContext: empty segments between commas are skipped", () => {
+  const s = asScope(parseContext(",,project:zoom,,"));
+  if (s?.projects?.[0] !== "zoom") throw new Error(`Expected projects=["zoom"], got ${JSON.stringify(s?.projects)}`);
+});
+
+Deno.test("parseContext: duplicate keys use last-write-wins", () => {
+  const s = asScope(parseContext("project:a,project:b"));
+  if (s?.projects?.[0] !== "b") throw new Error(`Expected last-write-wins projects=["b"], got ${JSON.stringify(s?.projects)}`);
+});

@@ -1,8 +1,10 @@
 export interface ContextScope {
   projects?: string[];
   profile?: "professional" | "personal";
+  /** Parsed but not yet consumed by any tool handler. Reserved for future graph-expanded search. */
   entities?: string[];
   visibility?: "prefer" | "exclusive" | "cross-only";
+  /** Parsed but not yet consumed by any tool handler. Reserved for future story-scoped recall. */
   sourceStoryId?: string;
   strict?: boolean;
 }

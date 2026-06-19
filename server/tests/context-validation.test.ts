@@ -19,9 +19,12 @@ Deno.test("search_thoughts accepts valid context", async () => {
     context: "project:zoom,profile:professional",
   });
   const r = result as { result?: { content?: Array<{ type?: string; text?: string; isError?: boolean }> } };
-  const isError = r.result?.content?.[0]?.text?.startsWith("Error:") ?? false;
-  if (isError) {
-    throw new Error(`Expected no error for valid context, got: ${r.result?.content?.[0]?.text?.slice(0, 200)}`);
+  const text = r.result?.content?.[0]?.text ?? "";
+  if (text.includes("Context validation error")) {
+    throw new Error(`Valid context should not produce validation error, got: ${text.slice(0, 200)}`);
+  }
+  if (text.startsWith("Error:")) {
+    throw new Error(`Expected successful response for valid context, got: ${text.slice(0, 200)}`);
   }
 });
 
