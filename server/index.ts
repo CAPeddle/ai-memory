@@ -4,7 +4,7 @@ import { Hono } from "npm:hono@4.9.2";
 import { z } from "npm:zod@4.1.13";
 
 import { requireApiKey } from "./src/auth.ts";
-import { parseContext, isContextError } from "./src/parseContext.ts";
+import { parseContextOrError } from "./src/parseContext.ts";
 import { sql } from "./src/db.ts";
 import { startEntityWorker } from "./src/entityWorker.ts";
 import { startConsolidationWorker, drainPendingOnce } from "./src/consolidationWorker.ts";
@@ -248,13 +248,8 @@ server.registerTool(
   },
   withTiming("search_thoughts", async ({ query, context, limit }) => {
     try {
-      const scopeResult = parseContext(context);
-      if (isContextError(scopeResult)) {
-        return {
-          content: [{ type: "text" as const, text: `Context validation error: ${scopeResult.message}\nExpected: ${scopeResult.expected}\nReceived: "${scopeResult.received}"` }],
-          isError: true,
-        };
-      }
+      const scopeResult = parseContextOrError(context);
+      if ("isError" in scopeResult) return scopeResult;
       const scope = scopeResult;
       const project = scope?.projects?.[0] ?? null;
       const profile = scope?.profile ?? null;
@@ -443,13 +438,8 @@ server.registerTool(
         };
       }
 
-      const scopeResult = parseContext(context);
-      if (isContextError(scopeResult)) {
-        return {
-          content: [{ type: "text" as const, text: `Context validation error: ${scopeResult.message}\nExpected: ${scopeResult.expected}\nReceived: "${scopeResult.received}"` }],
-          isError: true,
-        };
-      }
+      const scopeResult = parseContextOrError(context);
+      if ("isError" in scopeResult) return scopeResult;
       const scope = scopeResult;
       const project = scope?.projects?.[0] ?? null;
       const profile = scope?.profile ?? null;
@@ -537,13 +527,8 @@ server.registerTool(
   },
   withTiming("list_thoughts", async ({ limit, memory_type, context, days }) => {
     try {
-      const scopeResult = parseContext(context);
-      if (isContextError(scopeResult)) {
-        return {
-          content: [{ type: "text" as const, text: `Context validation error: ${scopeResult.message}\nExpected: ${scopeResult.expected}\nReceived: "${scopeResult.received}"` }],
-          isError: true,
-        };
-      }
+      const scopeResult = parseContextOrError(context);
+      if ("isError" in scopeResult) return scopeResult;
       const scope = scopeResult;
       const project = scope?.projects?.[0] ?? null;
       const since = days ? new Date(Date.now() - days * 86_400_000).toISOString() : null;

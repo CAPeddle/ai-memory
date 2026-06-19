@@ -106,3 +106,11 @@ Deno.test("parseContext: error result includes received and expected fields", ()
   if (result.received !== "garbage!!!") throw new Error(`Expected received='garbage!!!', got: ${result.received}`);
   if (!result.expected) throw new Error("Expected 'expected' field to be populated");
 });
+
+Deno.test("parseContext: rejects non-canonical strict values (strict:yes, strict:1, strict:TRUE)", () => {
+  for (const val of ["strict:yes", "strict:1", "strict:TRUE", "strict:True"]) {
+    const result = parseContext(val);
+    if (!isContextError(result)) throw new Error(`Expected error for "${val}", got ${JSON.stringify(result)}`);
+    if (!result.message.includes("Invalid strict value")) throw new Error(`Expected 'Invalid strict value' for "${val}", got: ${result.message}`);
+  }
+});

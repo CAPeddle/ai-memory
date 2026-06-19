@@ -100,8 +100,30 @@ export function parseContext(raw: string | undefined): ContextParseResult | null
       scope.visibility = v as ContextScope["visibility"];
     }
     else if (k === "story")      scope.sourceStoryId = v;
-    else if (k === "strict")     scope.strict = v === "true";
+    else if (k === "strict") {
+      if (v !== "true" && v !== "false") {
+        return {
+          error: true,
+          message: `Invalid strict value "${v}" — must be "true" or "false"`,
+          received: raw,
+          expected: '"strict:true", "strict:false", or bare "strict"',
+          failedToken: trimmed,
+        };
+      }
+      scope.strict = v === "true";
+    }
   }
 
   return scope as ContextScope;
+}
+
+export function parseContextOrError(raw: string | undefined): ContextScope | null | { content: Array<{ type: "text"; text: string }>; isError: true } {
+  const result = parseContext(raw);
+  if (isContextError(result)) {
+    return {
+      content: [{ type: "text" as const, text: `Context validation error: ${result.message}\nExpected: ${result.expected}\nReceived: "${result.received}"` }],
+      isError: true,
+    };
+  }
+  return result;
 }
