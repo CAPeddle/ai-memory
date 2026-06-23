@@ -61,6 +61,22 @@ Maximum 40 lines. Must be parseable by a fresh agent with no prior context.
 - After a pivot, log the reason and command path in the active ExecPlan (§6c) or `FollowUpSessionLog.txt` so later sessions can replay the same recovery pattern.
 - Do not stage unrelated files while applying fallback commits.
 
+## Board Sync for Non-/continue Executions
+
+The repo's `/continue` prompt owns the canonical story-board closeout step. When work is planned or executed via the global `ce-*` skills (`ce-plan`, `ce-work`, `ce-compound`, etc.) or via direct PR review/merge, `/continue` is not invoked and the board will drift.
+
+Before ending any session that merges or completes a story outside `/continue`:
+
+1. Verify the story's actual state with `git log origin/main --oneline | grep <STORY_ID>`
+2. Move completed stories to the **Done** section
+3. Check all acceptance criteria boxes (`[ ]` → `[x]`)
+4. Add `Completed: YYYY-MM-DD` after the `Value:` line
+5. Remove completed stories from the `Unblocked:` header line
+6. Bump `Last updated:` in the board header
+7. Commit the board update as a separate governance commit
+
+If the session also creates follow-up stories (e.g., code-review findings), close the parent story first, then append the follow-ups.
+
 ## Lock Protocol
 
 Only one story may hold a module lock at a time. Locks are declared in the story's ExecPlan §3 Preconditions and released on story completion.
