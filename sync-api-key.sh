@@ -61,6 +61,13 @@ extract_env_key() {
 TARGET_KEY="$(extract_env_key "$ENV_FILE")"
 DEV_KEY="$(extract_env_key "$ENV_DEV_FILE")"
 
+# Keys are hex (openssl rand -hex 32). Enforce it before any sed/grep use so a
+# key containing sed delimiters (`/`, `&`) or regex metacharacters cannot
+# corrupt the inject rewrite or the grep integrity gates.
+case "$TARGET_KEY" in
+  *[!0-9a-fA-F]*) phase0_fail "MEMORY_API_KEY must be hex (openssl rand -hex 32); .env contains non-hex characters. sed/grep safety not guaranteed." ;;
+esac
+
 if [ "$(sha "$TARGET_KEY")" != "$(sha "$DEV_KEY")" ]; then
   phase0_fail ".env and .env.dev MEMORY_API_KEY differ. Canonical source is .env
   .env     sha256: $(sha "$TARGET_KEY")
@@ -75,7 +82,7 @@ fi
 # Require .example templates.
 for t in "${OPENCODE_TEMPLATES[@]}"; do
   [ -f "$t" ] || phase0_fail "Template $t not found (expected alongside the real config)."
-  if grep -q "$TARGET_KEY" "$t" 2>/dev/null; then
+  if grep -Fq "$TARGET_KEY" "$t" 2>/dev/null; then
     phase0_fail "Template $t appears to contain a real key, not the $PLACEHOLDER placeholder."
   fi
 done
@@ -140,8 +147,10 @@ else
   err "warn: $VSCODE_MCP not found — Windows env will still be synced; create the file from the committed example to use VS Code MCP."
 fi
 
-# Compute Windows env drift.
-win_current_hash=$(powershell.exe -NoProfile -Command \
+# Compute Windows env drift. (timeout guards against WSL interop stalls —
+# AV scan, exec-policy prompt, deadlock — so a hung powershell cannot block
+# preflight indefinitely.)
+win_current_hash=$(timeout 30 powershell.exe -NoProfile -Command \
   '$v=[Environment]::GetEnvironmentVariable("MEMORY_API_KEY","User"); if (-not $v) { "" } else { $sha=[System.Security.Cryptography.SHA256]::Create(); [System.BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($v))).Replace("-","").ToLower() }' \
   | tr -d '\r')
 target_hash=$(sha "$TARGET_KEY")
@@ -174,14 +183,12 @@ fi
 
 # --- Phase 1: repo-local OpenCode files (narrow blast radius) ----------------
 # Materialize real files from .example templates; already-target => skip.
-# Templates hold a known ${env:MEMORY_API_KEY}-style placeholder too, OR the
-# literal "Bearer YOUR_MEMORY_API_KEY" placeholder. Either way, sbut we inject
-# the target key into the real file by replacing the placeholder token.
+# Templates hold the literal "Bearer YOUR_MEMORY_API_KEY" placeholder; we
+# inject the target key by substituting the placeholder token.
 inject_key_into_template() {
   # Reads template from stdin, writes real file to stdout with the Bearer
-  # placeholder replaced by the target key. No secret to stdout aside from
-  # the file content itself (intended).
-  local placeholder_token="$1"
+  # placeholder replaced by the target key. (Hex key guaranteed by Phase 0
+  # guard, so sed delimiters/regex chars are safe.)
   sed "s/Bearer YOUR_MEMORY_API_KEY/Bearer ${TARGET_KEY}/g"
 }
 
@@ -195,10 +202,13 @@ for i in "${!OPENCODE_FILES[@]}"; do
       continue
       ;;
     placeholder|missing)
-      tmp=$(mktemp)
-      inject_key_into_template "$PLACEHOLDER" < "$t" > "$tmp"
+      # Co-locate the temp file with the target so `mv -f` is an atomic rename
+      # (same filesystem) rather than a copy+unlink that a SIGKILL can leave
+      # truncated and un-healable on re-run.
+      tmp=$(mktemp -p "$(dirname "$f")")
+      inject_key_into_template < "$t" > "$tmp"
       # Verify the temp file actually contains the target key and not the placeholder.
-      if ! grep -q "Bearer ${TARGET_KEY}" "$tmp"; then
+      if ! grep -Fq "Bearer ${TARGET_KEY}" "$tmp"; then
         rm -f "$tmp"
         fail "Failed to inject target key into $t (template missing the Bearer YOUR_MEMORY_API_KEY placeholder?)."
       fi
@@ -217,11 +227,11 @@ windows_changed=0
 if [ "$WINDOWS_STATE" = "in-sync" ]; then
   echo "  windows MEMORY_API_KEY: in-sync — no write"
 else
-  MEMORY_API_KEY_SYNC="$TARGET_KEY" powershell.exe -NoProfile -Command \
+  MEMORY_API_KEY_SYNC="$TARGET_KEY" timeout 30 powershell.exe -NoProfile -Command \
     '[Environment]::SetEnvironmentVariable("MEMORY_API_KEY", $env:MEMORY_API_KEY_SYNC, "User")' \
-    || fail "powershell.exe SetEnvironmentVariable failed."
+    || fail "powershell.exe SetEnvironmentVariable failed (or timed out after 30s)."
   # Read-back verify via a second powershell call.
-  win_after_hash=$(powershell.exe -NoProfile -Command \
+  win_after_hash=$(timeout 30 powershell.exe -NoProfile -Command \
     '$v=[Environment]::GetEnvironmentVariable("MEMORY_API_KEY","User"); $sha=[System.Security.Cryptography.SHA256]::Create(); [System.BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($v))).Replace("-","").ToLower()' \
     | tr -d '\r')
   if [ "$win_after_hash" != "$target_hash" ]; then
