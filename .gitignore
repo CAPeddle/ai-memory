@@ -44,6 +44,10 @@ packages/
 !.env.example
 !.env.dev.example
 
+# OpenCode MCP configs — generated from *.example templates by sync-api-key.sh
+opencode-mcp.json
+.opencode/config.json
+
 # Local runtime byproducts (dev.sh / start.sh / stop.sh)
 .server.log
 .server.pid
