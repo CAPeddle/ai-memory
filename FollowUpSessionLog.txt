@@ -1,37 +1,22 @@
-Session: 2026-06-17 ST-058 sync-alignment wrap-up
-Branch: feat/ST-058-sync-alignment (7 commits ahead, 56a492c cherry-picked onto origin/main)
-Completed: Tasks 4.1–4.11 (pending: cross-model review, PR)
+Session: 2026-06-23 ST-029 board closeout + ce-* workflow guard
+Branch: main
 
 ACCOMPLISHED THIS SESSION
-- Branch created off origin/main, cherry-picked 56a492c for cypher baseline consistency
-- ST-056 diagnostics committed: AsyncLocalStorage refactor of mcpDiagnostics.ts
-- ST-042 migration framework committed: migrate.ts, 001_initial.sql, 002_needs_embedding.sql, 003_recall_queries.sql
-- Governance artifacts committed: STRATEGY.md, .opencode/, opencode-mcp.json
-- .worktrees/ added to .gitignore and committed
-- Full suite 131/131 tests pass, lint clean
-- ExecPlans: ST-056 created, ST-042 promoted to Ready, ST-041 populated with completion notes
-- story-board.md: ST-041/ST-042/ST-056 moved to Done, ST-058 added
-- cypher-injection.test.ts still untracked — needs manual stage (ST-041 evidence)
-- FollowUpSessionLog.txt replaced with this handoff
+- Investigated why ST-029 remained on story-board after PR #14 merge
+- Confirmed merge commit 952b233 updated board only with follow-ups (ST-059/060/061), not parent story
+- Moved ST-029 to Done, checked acceptance criteria, removed from Unblocked, bumped Last updated
+- Refreshed docs/solutions/workflow-issues/story-board-stale-updates-2026-06-19.md with ST-029 recurrence
+- Added Board Sync for Non-/continue Executions guard to session-resilience.instructions.md
+- Validated refreshed learning frontmatter
 
-COMMITS MADE (chronological)
-  4ccd0ad refactor(diagnostics): AsyncLocalStorage for embedding lane isolation
-  8a7a608 feat(migrations): add migration framework (migrate.ts + 3 SQL files)
-  8027f5e docs(governance): add STRATEGY.md, .opencode config, opencode-mcp.json
-  8269d0e chore(gitignore): add .worktrees/ entry
-  cefb7ad docs(plans): create exec-plan-ST-056.md, promote ST-042 to Ready
-  0490253 docs(plans): update ST-041 ExecPlan with completion notes
-  06afda8 docs(board): mark ST-041/ST-042/ST-056 Done, add ST-058
+COMMITS MADE
+  e4b7c9f docs(governance): close ST-029 on story board and refresh stale-update learning
+  a238f9c docs(instructions): add board-sync guard for ce-* workflow executions
 
 KEY DISCOVERIES
-- 56a492c NOT on origin/main (plan claimed it was); cherry-picked locally
-- Cypher hardening function: maskCypherLiteralsAndComments (not stripCypherComments per plan)
-- Schema path: server/db/ (not server/db/migrations/), direct-path loader — accepted as-is
-- gh CLI token mismatch: cpeddle ≠ CAPeddle owner — cannot create PR via CLI (open manually)
+- /continue prompt owns canonical board closeout; ce-* skills and direct PR merges bypass it
+- Board drift pattern recurred: ST-029 merge added follow-up stories but left parent open
 
 NEXT SESSION START
-1. Stage server/tests/cypher-injection.test.ts and commit
-2. Run final test + lint re-verification (Task 4.12)
-3. Execute cross-model review (Task 4.13)
-4. Open PR manually at https://github.com/CAPeddle/ai-memory/pull/new/feat/ST-058-sync-alignment
-5. Wait for CI, merge
+- No blocked work from this session
+- Recommend running /governance-review or ce-compound-refresh if more stale stories suspected
