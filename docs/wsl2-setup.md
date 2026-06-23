@@ -132,13 +132,29 @@ If Windows VS Code will connect to the MCP server, the Windows user
 `${env:MEMORY_API_KEY}` from the Windows process environment, not from WSL
 `.env`.
 
-From Windows PowerShell:
+**Recommended — run the sync script from WSL**, which reads `.env`, sets the
+Windows user `MEMORY_API_KEY`, and materializes the gitignored OpenCode configs
+from their `.example` templates:
+
+```bash
+./sync-api-key.sh            # sync; re-run after rotating the key
+./sync-api-key.sh --check    # read-only drift report
+```
+
+`opencode-mcp.json` and `.opencode/config.json` are gitignored and generated
+from the committed `opencode-mcp.json.example` / `.opencode/config.example.json`
+templates — only the templates hold the `Bearer YOUR_MEMORY_API_KEY` placeholder,
+so no secret is ever tracked.
+
+**Manual fallback (non-WSL setups)** — from Windows PowerShell:
 
 ```powershell
 [Environment]::SetEnvironmentVariable("MEMORY_API_KEY", "<same-as-.env>", "User")
 ```
 
-Fully restart VS Code after changing this value.
+Fully restart VS Code after changing this value (VS Code captures environment
+variables at launch; a running instance keeps using the old key until it is
+fully restarted, not reloaded).
 
 ---
 
