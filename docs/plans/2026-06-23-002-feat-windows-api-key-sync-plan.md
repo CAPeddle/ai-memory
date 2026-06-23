@@ -1,7 +1,7 @@
 ---
 title: "feat: WSL→Windows MEMORY_API_KEY sync script"
 type: feat
-status: active
+status: completed
 date: 2026-06-23
 deepened: 2026-06-23
 origin: docs/brainstorms/wsl2-native-dev-workflow-requirements.md
