@@ -218,3 +218,20 @@ CREATE TABLE IF NOT EXISTS public.worker_runs (
 
 CREATE INDEX IF NOT EXISTS idx_worker_runs_worker_ended_at
   ON public.worker_runs (worker, ended_at DESC);
+
+-- ============================================================
+-- 10. FEEDBACK EVENTS (added by ST-029 / migration 005)
+--     Active feedback on recalled thoughts. Joinable to
+--     recall_events via the (thought_id, query) natural key.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.feedback_events (
+  id          bigserial     PRIMARY KEY,
+  thought_id  uuid          NOT NULL REFERENCES public.thoughts(id) ON DELETE CASCADE,
+  query       text          NOT NULL CHECK (octet_length(query) <= 4096),
+  verdict     text          NOT NULL CHECK (verdict IN ('helpful', 'irrelevant')),
+  created_at  timestamptz   NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_feedback_events_thought_id
+  ON public.feedback_events(thought_id);

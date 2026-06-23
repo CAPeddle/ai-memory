@@ -129,3 +129,9 @@ export function parseContextOrError(raw: string | undefined): ContextScope | nul
   }
   return result;
 }
+
+export function isMcpContextError(
+  result: ContextScope | null | { content: Array<{ type: "text"; text: string }>; isError: true },
+): result is { content: Array<{ type: "text"; text: string }>; isError: true } {
+  return result !== null && "isError" in result && result.isError === true;
+}

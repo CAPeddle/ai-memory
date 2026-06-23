@@ -2,6 +2,7 @@ import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 
 import { sql } from "../src/db.ts";
 import { mcpCall } from "./_helpers/mcpClient.ts";
+import { extractThoughtId } from "./_helpers/thoughts.ts";
 
 interface ToolCallResult {
   content?: Array<{ text?: string }>;
@@ -18,11 +19,6 @@ function responseText(response: ToolCallResponse): string {
 
 function responseIsError(response: ToolCallResponse): boolean | undefined {
   return response.result?.isError;
-}
-
-function extractThoughtId(text: string): string | null {
-  const match = text.match(/id:\s*([0-9a-f-]{36})/i);
-  return match?.[1] ?? null;
 }
 
 async function cleanupCapturedThought(response: ToolCallResponse): Promise<void> {

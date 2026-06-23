@@ -162,6 +162,18 @@ export async function detectBootstrapVersions(tx: SqlExecutor): Promise<void> {
       ON CONFLICT (version) DO NOTHING
     `;
   }
+
+  const [feedbackEventsTable] = await tx`
+    SELECT 1 AS found FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'feedback_events'
+  `;
+  if (feedbackEventsTable) {
+    await tx`
+      INSERT INTO schema_migrations (version, filename)
+      VALUES (5, '005_feedback_events.sql')
+      ON CONFLICT (version) DO NOTHING
+    `;
+  }
 }
 
 async function repairMissingMigration003Artifacts(tx: SqlExecutor, migration003: MigrationFile): Promise<void> {

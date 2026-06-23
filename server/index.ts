@@ -4,7 +4,7 @@ import { Hono } from "npm:hono@4.9.2";
 import { z } from "npm:zod@4.1.13";
 
 import { requireApiKey } from "./src/auth.ts";
-import { parseContextOrError } from "./src/parseContext.ts";
+import { parseContextOrError, isMcpContextError } from "./src/parseContext.ts";
 import { sql } from "./src/db.ts";
 import { startEntityWorker } from "./src/entityWorker.ts";
 import { startConsolidationWorker, drainPendingOnce } from "./src/consolidationWorker.ts";
@@ -71,7 +71,7 @@ server.registerPrompt(
       content: {
         type: "text" as const,
         text:
-          "Before answering from memory, call ai-memory search_thoughts for project-scoped recall. Use search for ChatGPT-compatible semantic lookup, list_thoughts for recent entries, and fetch when you already have a thought id.",
+          "Before answering from memory, call ai-memory search_thoughts for project-scoped recall. Use search for ChatGPT-compatible semantic lookup, list_thoughts for recent entries, and fetch when you already have a thought id. After using a recalled memory, call report_feedback with the thought id, the original query, and a verdict of 'helpful' or 'irrelevant' so the system can learn which memories are useful.",
       },
     }],
   }),
@@ -105,6 +105,7 @@ server.registerResource(
           "capture_thought",
           "list_thoughts",
           "thought_stats",
+          "report_feedback",
           "graph_traverse",
           "graph_search",
           "consolidate",
@@ -249,7 +250,7 @@ server.registerTool(
   withTiming("search_thoughts", async ({ query, context, limit }) => {
     try {
       const scopeResult = parseContextOrError(context);
-      if ("isError" in scopeResult) return scopeResult;
+      if (isMcpContextError(scopeResult)) return scopeResult;
       const scope = scopeResult;
       const project = scope?.projects?.[0] ?? null;
       const profile = scope?.profile ?? null;
@@ -439,7 +440,7 @@ server.registerTool(
       }
 
       const scopeResult = parseContextOrError(context);
-      if ("isError" in scopeResult) return scopeResult;
+      if (isMcpContextError(scopeResult)) return scopeResult;
       const scope = scopeResult;
       const project = scope?.projects?.[0] ?? null;
       const profile = scope?.profile ?? null;
@@ -528,7 +529,7 @@ server.registerTool(
   withTiming("list_thoughts", async ({ limit, memory_type, context, days }) => {
     try {
       const scopeResult = parseContextOrError(context);
-      if ("isError" in scopeResult) return scopeResult;
+      if (isMcpContextError(scopeResult)) return scopeResult;
       const scope = scopeResult;
       const project = scope?.projects?.[0] ?? null;
       const since = days ? new Date(Date.now() - days * 86_400_000).toISOString() : null;
@@ -681,6 +682,45 @@ function extractAgeRows(result: Record<string, unknown>[]): Record<string, unkno
   }
   return result;
 }
+
+// --- Tool: report_feedback ---------------------------------------------------
+
+server.registerTool(
+  "report_feedback",
+  {
+    title: "Report Feedback on a Thought",
+    description: "Report whether a recalled thought was helpful or irrelevant for a given query. Use when an agent evaluates the quality of a search result after using it — for example, after a code edit attributable to a recalled memory. Parameters: thought_id is the UUID of the thought receiving feedback; query is the original search query text that produced the result; verdict is either 'helpful' or 'irrelevant'. Example: {\"thought_id\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"query\":\"embedding timeout investigation\",\"verdict\":\"helpful\"}. Returns: confirmation message. Errors/edge cases: invalid UUIDs fail schema validation; non-existent thought_id fails with a foreign key violation error (the row is not inserted).",
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    inputSchema: {
+      thought_id: z.string().uuid().describe("UUID of the thought receiving feedback."),
+      query: z.string().describe("Original search query that produced the thought. Maximum 4096 bytes."),
+      verdict: z.enum(["helpful", "irrelevant"]).describe("Feedback verdict: 'helpful' if the memory was used, 'irrelevant' if it was not."),
+    },
+  },
+  withTiming("report_feedback", async ({ thought_id, query, verdict }) => {
+    try {
+      const queryBytes = new TextEncoder().encode(query).length;
+      if (queryBytes > 4096) {
+        return {
+          content: [{ type: "text" as const, text: `Error: Query exceeds maximum size of 4096 bytes (received ${queryBytes} bytes)` }],
+          isError: true,
+        };
+      }
+      await sql`
+        INSERT INTO feedback_events (thought_id, query, verdict)
+        VALUES (${thought_id}, ${query}, ${verdict})
+      `;
+      return {
+        content: [{
+          type: "text" as const,
+          text: `Feedback recorded: ${verdict} for thought ${thought_id} on query "${query}"`,
+        }],
+      };
+    } catch (err) {
+      return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }], isError: true };
+    }
+  })
+);
 
 // --- Tool 5: graph_traverse (AGE / openCypher) ------------------------------
 
