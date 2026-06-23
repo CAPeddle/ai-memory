@@ -22,6 +22,7 @@ import { ensureRequiredEnv } from "./src/startupValidation.ts";
 import { getEmbedding, EMBEDDING_MODEL } from "./src/embeddings.ts";
 import { startEmbeddingBackfill } from "./src/embeddingBackfill.ts";
 import { runMigrations } from "./src/migrate.ts";
+import { deepHealthCheck } from "./src/healthCheck.ts";
 import {
   IDENTIFIER_NORMALIZER_VERSION,
   normalizeIdentifiers,
@@ -1044,7 +1045,14 @@ app.use("*", async (c, next) => {
 app.options("*", (c) => c.text("ok", 200));
 
 // Health endpoint for Docker Compose healthcheck
-app.get("/health", (c) => c.text("ok"));
+app.get("/health", (c) => c.json({ status: "healthy" }));
+
+// Readiness endpoint for deep health check (used by orchestrators / Kuma / K8s)
+app.get("/ready", async (c) => {
+  const result = await deepHealthCheck();
+  const statusCode = result.status === "unhealthy" ? 503 : 200;
+  return c.json(result, statusCode);
+});
 
 app.all("/mcp", async (c) => {
   const startMs = Date.now();

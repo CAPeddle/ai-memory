@@ -24,7 +24,7 @@ Deno.test("server health endpoint responds during worker activity", async () => 
 
   const response = await fetch(healthUrl);
   assertEquals(response.status, 200);
-  assertEquals(await response.text(), "ok");
+  assertEquals((await response.json()).status, "healthy");
 });
 
 Deno.test("safePoll contains thrown poll cycle and recovers on next cycle", async () => {
