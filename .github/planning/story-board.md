@@ -2,8 +2,8 @@
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
 > Next planning target: None (no Ready ExecPlan in In Progress/Refined).
-> Unblocked: ST-023, ST-029, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review)
-> Last updated: 2026-06-19
+> Unblocked: ST-023, ST-029, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review)
+> Last updated: 2026-06-22
 
 ---
 
@@ -256,6 +256,50 @@
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-053.md`
 - Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
 - Notes: 🟢 Nice to have. Industry standard for container orchestration. Reports degraded state (e.g. embedding failures, worker backlog) in health response for monitoring.
+
+### ST-059: Sanitize raw Postgres error messages in tool error responses
+- Type: hardening
+- Source: ST-029 code review (round 2, 2026-06-22) — adversarial + api-contract reviewers
+- phase: 2
+- Value: 2
+- Blocked by: —
+- Touches: `server/index.ts` (all tool catch blocks), possibly `server/src/errorSanitizer.ts` (new)
+- Acceptance criteria:
+  - [ ] Tool error responses no longer expose internal Postgres constraint names (e.g. `feedback_events_thought_id_fkey`, `feedback_events_query_check`) in the `text` field
+  - [ ] A shared error-sanitization helper maps common Postgres error codes (23503 FK violation, 23514 CHECK violation, 23505 unique violation) to user-friendly messages
+  - [ ] Existing tests updated to assert on sanitized messages rather than raw constraint names
+  - [ ] Consistent application across all 11 tool handlers
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-059.md` (to be created)
+- Notes: 🟢 Nice to have. Pre-existing codebase-wide pattern — all tool catch blocks return `(err as Error).message` verbatim. Not a regression from ST-029 but surfaced by its review. Low security risk since schema is public in the repo, but leaks internal naming to clients without source access.
+
+### ST-060: Add direct unit tests for isMcpContextError type guard
+- Type: quality
+- Source: ST-029 code review (round 2, 2026-06-22) — maintainability + kieran-typescript reviewers
+- phase: 2
+- Value: 2
+- Blocked by: —
+- Touches: `server/tests/parseContext.test.ts`
+- Acceptance criteria:
+  - [ ] Direct unit tests for `isMcpContextError` covering: null → false, valid ContextScope → false, MCP error object → true
+  - [ ] Edge case: ContextScope with unexpected properties → still returns false (not an error)
+  - [ ] Tests pin the type-narrowing contract to protect against future `ContextScope` gaining an optional `isError` property
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-060.md` (to be created)
+- Notes: 🟢 Nice to have. The sibling `isContextError` has direct tests in `parseContext.test.ts:94-101`. `isMcpContextError` is currently exercised only indirectly through 3 tool integration tests. Small testing debt from ST-029.
+
+### ST-061: Consolidate duplicated test helper functions
+- Type: debt
+- Source: ST-029 code review (round 2, 2026-06-22) — maintainability reviewer
+- phase: 2
+- Value: 2
+- Blocked by: —
+- Touches: `server/tests/capture-size-limit.test.ts`, `server/tests/_helpers/mcpClient.ts` (or new shared module)
+- Acceptance criteria:
+  - [ ] `responseText()` in `capture-size-limit.test.ts` replaced with `extractText()` from `_helpers/mcpClient.ts` (functionally identical)
+  - [ ] `responseIsError()` and `ToolCallResult`/`ToolCallResponse` interfaces extracted to shared helper or `_helpers/types.ts`
+  - [ ] All test files using these patterns updated to import from the shared location
+  - [ ] No duplicated response-parsing helpers remain across test files
+- ExecPlan: `.github/planning/execplans/exec-plan-ST-061.md` (to be created)
+- Notes: 🟢 Nice to have. Pre-existing duplication — `responseText()` in `capture-size-limit.test.ts:16` is identical to `extractText()` in `_helpers/mcpClient.ts:62`. ST-029 consolidated `extractThoughtId` but left this parallel duplication. Future test authors won't know which to use.
 
 ---
 
