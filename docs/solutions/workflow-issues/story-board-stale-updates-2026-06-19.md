@@ -1,6 +1,7 @@
 ---
 title: Keep story board updated as stories progress through development
 date: 2026-06-19
+last_updated: 2026-06-23
 category: workflow-issues
 module: project_management
 problem_type: workflow_issue
@@ -31,6 +32,8 @@ The ai-memory story board (`.github/planning/story-board.md`) is the team's sour
 The gap was a missing post-merge workflow step: nothing tied the merge event to a board update. The `continue.prompt.md` closeout instructions (`continue.prompt.md:46`) direct the executor to "scan Backlog for stories listing completed story in Blocked by and clear resolved references" but never say "move the completed story to the Done column". The ExecPlan template's closeout section (`_TEMPLATE.md:214-218`) only covers the Review transition, not the final Done transition after PO acceptance.
 
 This is a recurring pattern — ST-058 was a dedicated sync-alignment governance story that reconciled ST-041, ST-042, and ST-056 after they were completed but not reflected on the board. The same root cause (board update missing from closeout workflow) produced the same outcome twice.
+
+The pattern recurred with **ST-029** on 2026-06-23. ST-029 was implemented, reviewed, and merged to `main` via PR #14 (merge commit `952b233`). The merge commit even updated the board — but only to add the three code-review follow-up stories (ST-059, ST-060, ST-061) to Backlog and refresh the `Unblocked` line. ST-029 itself was left in Backlog with unchecked acceptance criteria and no `Completed:` date. The closeout step partially ran (new stories were recorded) while the parent-story Done transition was skipped.
 
 ## Guidance
 
@@ -77,18 +80,32 @@ The board showed ST-039 in Backlog with unchecked ACs and `Last updated: 2026-06
 
 ST-039 moved to Done with `[x]` on all ACs, `Completed: 2026-06-14`, and notes referencing the merge commits. Header updated: `Unblocked` line removed ST-028/ST-039/ST-040, `Last updated: 2026-06-19`.
 
+### ST-029 recurrence (2026-06-23)
+
+**Before (stale after merge):**
+
+ST-029 was merged to `main` via PR #14 (`952b233`), but the board still listed it in Backlog with all acceptance criteria unchecked. The merge commit's board diff added ST-059/ST-060/ST-061 follow-ups and bumped `Last updated: 2026-06-22`, yet ST-029 itself was not moved to Done.
+
+**Why it happened:** The closeout edit focused on recording follow-up work rather than closing the parent story. The merge happened through a PR rather than inside the `/continue` execution loop, so the mechanical "move to Done" checklist item had no executor enforcing it.
+
+**After (correct):**
+
+ST-029 moved to Done with `[x]` on all ACs, `Completed: 2026-06-23`, and notes referencing PR #14 / merge commit `952b233`. Header updated: `Unblocked` line removed ST-029, `Last updated: 2026-06-23`.
+
 ## Prevention
 
 - **Add "Sync story board" to the ExecPlan template closeout checklist.** After the final commit and before writing `FollowUpSessionLog.txt`, verify `git log origin/main --oneline | grep <STORY_ID>` confirms expected commits, then open and update the board. This makes board sync a mechanical checklist item rather than a discretionary afterthought.
+- **Close the parent story before adding follow-ups.** When a merge produces new backlog items (e.g., code-review follow-ups), update the parent story's status and acceptance criteria first, then append the new stories. A board edit that only adds new items is a red flag that the original story may still be open.
 - When selecting a story from the board, first verify its actual state with `git log --all --oneline | grep <STORY_ID>` to avoid picking up silently completed work.
 - Treat the story board's `Last updated` date as a freshness signal: if it is more than a few days old, audit the board against git history before using it for planning.
 
 ## Related
 
+- ST-029: Feedback API — merged via PR #14 but left open on the board until this refresh
 - ST-058: Sync alignment wrap-up — the same gap reconciled for ST-041, ST-042, ST-056
 - `.github/prompts/continue.prompt.md` — the executor instructions that need a "move to Done" step
 - `.github/prompts/governance-review.prompt.md` — detection-layer check that catches future recurrence
-- `.github/planning/execplans/_TEMPLATE.md` — the ExecPlan template whose closeout section only covers Review, not Done
+- `.github/planning/execplans/_TEMPLATE.md` — the ExecPlan template whose closeout section covers Done but was not enforced for PR-merge paths
 - `.github/planning/story-board.md` — the board itself, which must be updated
 - `docs/solutions/workflow-issues/missing-start-stop-scripts-planning-gap-2026-06-18.md` — same root cause pattern (post-execution bookkeeping as blind spot)
 - `docs/solutions/workflow-issues/branch-from-main-between-stories-2026-06-19.md` — sibling facet of the same closeout gap: branch hygiene (branch fresh from main, not the previous feature branch)

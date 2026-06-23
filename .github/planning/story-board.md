@@ -2,8 +2,8 @@
 > Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
 > Next planning target: None (no Ready ExecPlan in In Progress/Refined).
-> Unblocked: ST-023, ST-029, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review)
-> Last updated: 2026-06-22
+> Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review)
+> Last updated: 2026-06-23
 
 ---
 
@@ -107,24 +107,6 @@
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-031.md` (to be created)
 - Notes: Deferred from ST-008 (2026-05-20). v1 is 1:1 only. N:1 requires maturity data from v1 — do we actually see clusters worth merging? — before investing in the more complex logic.
 
-
-### ST-029: Feedback API (`report_feedback` tool + `feedback_events`)
-- Type: feature
-- Source: PO scope-lock during QP-005 planning (2026-05-18)
-- phase: 1
-- Value: 3
-- Blocked by: —
-- Touches: `server/index.ts` (new MCP tool), `server/db/schema.sql` (new table)
-- Acceptance criteria:
-  - [ ] New MCP tool `report_feedback({ thought_id, query, verdict: 'helpful' | 'irrelevant' })`
-  - [ ] New `feedback_events` table with `(id, thought_id, query, verdict, created_at)`; FK to `thoughts`
-  - [ ] Feedback rows joinable to the originating `recall_events` row (shared `(thought_id, query)` natural key, or an explicit `recall_event_id` FK — decide during planning)
-  - [ ] `requireApiKey` middleware applies; no new auth surface
-  - [ ] Integration test: capture → search → report_feedback → row visible in `feedback_events`
-  - [ ] Out of scope for this story: surfacing feedback in `stats` (owned by ST-028) and rate-limiting (defer to a later story if abuse emerges)
-- ExecPlan: `.github/planning/execplans/exec-plan-ST-029.md` (to be created)
-- Docs: `docs/investigations/memory-architecture-design/05-recall-tracking-and-promotion-scoring.md` §5.2
-- Notes: Deferred from ST-005 to keep that story focused on the passive recall feedback loop. ST-029 wires up the active feedback channel. Useful when an agent harness is positioned to call this (e.g., after a code edit attributable to a recalled memory). ST-008's consolidation scoring can read `feedback_events` once available, but doesn't depend on it.
 
 <!-- Deferred — not blocking the production path -->
 
@@ -327,6 +309,24 @@
 (Empty)
 
 ## Done
+
+### ST-029: Feedback API (`report_feedback` tool + `feedback_events`)
+- Type: feature
+- Source: PO scope-lock during QP-005 planning (2026-05-18)
+- phase: 1
+- Value: 3
+- Completed: 2026-06-23
+- Blocked by: —
+- Touches: `server/index.ts` (new MCP tool), `server/db/schema.sql` (new table), `server/db/005_feedback_events.sql`, `server/tests/feedback.test.ts`
+- Acceptance criteria:
+  - [x] New MCP tool `report_feedback({ thought_id, query, verdict: 'helpful' | 'irrelevant' })`
+  - [x] New `feedback_events` table with `(id, thought_id, query, verdict, created_at)`; FK to `thoughts`
+  - [x] Feedback rows joinable to the originating `recall_events` row (shared `(thought_id, query)` natural key)
+  - [x] `requireApiKey` middleware applies; no new auth surface
+  - [x] Integration test: capture → search → report_feedback → row visible in `feedback_events`
+  - [x] Out of scope for this story: surfacing feedback in `stats` (owned by ST-028) and rate-limiting (defer to a later story if abuse emerges)
+- Docs: `docs/investigations/memory-architecture-design/05-recall-tracking-and-promotion-scoring.md` §5.2
+- Notes: Implemented and merged via PR #14 (merge commit `952b233`). Includes parseContext null-safety fix and code-review follow-ups ST-059, ST-060, ST-061 added to Backlog.
 
 ### ST-044: Structured logging
 - Type: observability
