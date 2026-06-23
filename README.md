@@ -98,13 +98,17 @@ The MCP server uses **Streamable HTTP transport** at `http://localhost:3000/mcp`
 
 #### VS Code Copilot
 
-The workspace already includes `.vscode/mcp.json` which auto-configures the connection. Ensure `MEMORY_API_KEY` is set in your shell environment before launching VS Code:
+The workspace already includes `.vscode/mcp.json` which auto-configures the connection. It sends `Authorization: Bearer ${env:MEMORY_API_KEY}`, so Windows VS Code reads `MEMORY_API_KEY` from the Windows process environment, not from WSL `.env`.
+
+Ensure the Windows value matches the repo `.env` value used by the running MCP server before launching VS Code:
 
 ```powershell
-# Windows (PowerShell) — add to your $PROFILE or set as a system env var
-$env:MEMORY_API_KEY = "your-key-here"
+# Windows (PowerShell) — use the same value as /home/<user>/projects/ai-memory/.env
+[Environment]::SetEnvironmentVariable("MEMORY_API_KEY", "your-key-here", "User")
 code .
 ```
+
+If you update the user environment variable, fully restart VS Code before reconnecting the MCP server.
 
 The committed workspace config currently uses `http://127.0.0.1:3000/mcp` for the VS Code MCP client path. On some Windows hosts, VS Code fetch can fail against `localhost` when it resolves to IPv6 loopback (`::1`) while the IPv4 loopback path succeeds.
 

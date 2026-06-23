@@ -127,6 +127,19 @@ OPENROUTER_API_KEY=<your-openrouter-key>
 The `.env` file is used by Docker Compose to configure the Postgres and MCP
 containers. It is gitignored via `.gitignore`.
 
+If Windows VS Code will connect to the MCP server, the Windows user
+`MEMORY_API_KEY` must use this same value. VS Code expands
+`${env:MEMORY_API_KEY}` from the Windows process environment, not from WSL
+`.env`.
+
+From Windows PowerShell:
+
+```powershell
+[Environment]::SetEnvironmentVariable("MEMORY_API_KEY", "<same-as-.env>", "User")
+```
+
+Fully restart VS Code after changing this value.
+
 ---
 
 ## 6. Create the `.env.dev` file (for native Deno)
@@ -304,6 +317,10 @@ or settings.json), ensure the server URL uses `127.0.0.1` instead of `localhost`
 > Using `127.0.0.1` avoids the IPv6 resolution issue where VS Code resolves
 > `localhost` to `::1` while the server only binds to IPv4.
 
+Also ensure the Windows user `MEMORY_API_KEY` matches the repo `.env` value.
+If the server is healthy but MCP requests return `401`, the Windows value is
+missing or different from the server-side value.
+
 ---
 
 ## 12. If Docker Desktop is still installed
@@ -332,3 +349,4 @@ WSL2 and conflicting with the native Docker Engine daemon.
 | `Connection refused` on `127.0.0.1:5432` | Postgres container not running | Run `docker compose up -d db` |
 | `Lockfile is not up to date` in native Deno | Lockfile has drifted | Run `docker compose --profile test exec mcp-test deno cache --lock=deno.lock --lock-write tests/**/*.ts src/**/*.ts index.ts` |
 | VS Code cannot reach MCP server from Windows | Port forwarding not configured | Follow section 9 to set up mirrored networking or verify NAT forwarding |
+| VS Code MCP returns `401` | Windows `MEMORY_API_KEY` is missing or does not match repo `.env` | Set the Windows user `MEMORY_API_KEY` to the same value as `.env`, then fully restart VS Code |
