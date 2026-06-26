@@ -3,7 +3,7 @@
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
 > Next planning target: None (no Ready ExecPlan in In Progress/Refined).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review)
-> Last updated: 2026-06-23
+> Last updated: 2026-06-26
 
 ---
 
@@ -309,6 +309,25 @@
 (Empty)
 
 ## Done
+
+### ST-062: WSL→Windows MEMORY_API_KEY sync script
+- Type: feature
+- Source: dev-ex gap during WSL2 native setup (2026-06-23)
+- phase: 0
+- Value: 3
+- Completed: 2026-06-26
+- Blocked by: —
+- Touches: `sync-api-key.sh` (new), `tests/sync-api-key.test.sh` (new), `.gitignore`, `opencode-mcp.json.example`, `.opencode/config.example.json`, `README.md`, `docs/wsl2-setup.md`, `docs/solutions/developer-experience/windows-vscode-mcp-memory-api-key-mismatch-2026-06-23.md`
+- Acceptance criteria:
+  - [x] `sync-api-key.sh` reads `MEMORY_API_KEY` from `.env` and sets Windows user env var via `powershell.exe`
+  - [x] Real `opencode-mcp.json` / `.opencode/config.json` are gitignored and materialized from `.example` templates
+  - [x] Script is idempotent and verifies writes via SHA-256 read-back
+  - [x] Script never prints raw key; uses env var transport to PowerShell
+  - [x] `--check` dry-run mode reports drift with zero writes
+  - [x] `README.md` and `docs/wsl2-setup.md` document the automated path
+  - [x] `tests/sync-api-key.test.sh` exercises deterministic paths with stubbed powershell
+- ExecPlan: `docs/plans/2026-06-23-002-feat-windows-api-key-sync-plan.md`
+- Notes: Merged via PR #16 (merge commit `fd76676`). Closes the Windows VS Code MCP auth gap where `${env:MEMORY_API_KEY}` drifts from repo `.env`.
 
 ### ST-029: Feedback API (`report_feedback` tool + `feedback_events`)
 - Type: feature
