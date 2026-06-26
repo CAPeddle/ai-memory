@@ -22,7 +22,7 @@ import { ensureRequiredEnv } from "./src/startupValidation.ts";
 import { getEmbedding, EMBEDDING_MODEL } from "./src/embeddings.ts";
 import { startEmbeddingBackfill } from "./src/embeddingBackfill.ts";
 import { runMigrations } from "./src/migrate.ts";
-import { deepHealthCheck } from "./src/healthCheck.ts";
+import { deepHealthCheckWithTimeout } from "./src/healthCheck.ts";
 import {
   IDENTIFIER_NORMALIZER_VERSION,
   normalizeIdentifiers,
@@ -1049,7 +1049,7 @@ app.get("/health", (c) => c.json({ status: "healthy" }));
 
 // Readiness endpoint for deep health check (used by orchestrators / Kuma / K8s)
 app.get("/ready", async (c) => {
-  const result = await deepHealthCheck();
+  const result = await deepHealthCheckWithTimeout();
   const statusCode = result.status === "unhealthy" ? 503 : 200;
   return c.json(result, statusCode);
 });
