@@ -98,13 +98,26 @@ The MCP server uses **Streamable HTTP transport** at `http://localhost:3000/mcp`
 
 #### VS Code Copilot
 
-The workspace already includes `.vscode/mcp.json` which auto-configures the connection. Ensure `MEMORY_API_KEY` is set in your shell environment before launching VS Code:
+The workspace already includes `.vscode/mcp.json` which auto-configures the connection. It sends `Authorization: Bearer ${env:MEMORY_API_KEY}`, so Windows VS Code reads `MEMORY_API_KEY` from the Windows process environment, not from WSL `.env`.
+
+**Recommended — run the sync script from WSL** (reads `.env`, materializes the gitignored OpenCode configs from their `.example` templates, and sets the Windows user `MEMORY_API_KEY` for you):
+
+```bash
+./sync-api-key.sh            # sync; re-run after rotating the key
+./sync-api-key.sh --check    # read-only: report drift, perform zero writes
+```
+
+`opencode-mcp.json` and `.opencode/config.json` are gitignored and generated from the committed `opencode-mcp.json.example` / `.opencode/config.example.json` templates; only the templates hold the `Bearer YOUR_MEMORY_API_KEY` placeholder.
+
+**Manual fallback (non-WSL setups)** — ensure the Windows value matches the repo `.env` value used by the running MCP server:
 
 ```powershell
-# Windows (PowerShell) — add to your $PROFILE or set as a system env var
-$env:MEMORY_API_KEY = "your-key-here"
+# Windows (PowerShell) — use the same value as /home/<user>/projects/ai-memory/.env
+[Environment]::SetEnvironmentVariable("MEMORY_API_KEY", "your-key-here", "User")
 code .
 ```
+
+If the Windows value changed, fully restart VS Code (not reload) before reconnecting the MCP server — `${env:MEMORY_API_KEY}` is captured at launch.
 
 The committed workspace config currently uses `http://127.0.0.1:3000/mcp` for the VS Code MCP client path. On some Windows hosts, VS Code fetch can fail against `localhost` when it resolves to IPv6 loopback (`::1`) while the IPv4 loopback path succeeds.
 
