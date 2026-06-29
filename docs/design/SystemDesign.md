@@ -349,6 +349,11 @@ CREATE TABLE consolidation_log (
 | [ADR-005](adr/ADR-005-memory-model.md) | Three-tier model (Shards + Wiki + Views); no-decay; soft-delete; ULID | Memory Model |
 | [ADR-006](adr/ADR-006-views-architecture.md) | Views as projections over The Brain; REST/MCP canonical; Obsidian optional | Views Architecture |
 | [ADR-007](adr/ADR-007-consolidation-pipeline.md) | 3-factor scoring (0.40 freq + 0.35 div + 0.25 rel); threshold ≥ 0.7 | Consolidation Pipeline |
+| [ADR-008](adr/ADR-008-context-scoping.md) | Request-scoped context via `AsyncLocal`; `project:zoom,profile:professional,strict` | Context Scoping |
+| [ADR-009](adr/ADR-009-deployment-model.md) | Docker Compose deployment; Postgres 15 + pgvector + AGE; health check endpoint | Deployment Model |
+| [ADR-010](adr/ADR-010-authentication.md) | Bearer token API key auth on `/mcp`; `/health` unauthenticated | Authentication |
+| [ADR-011](adr/ADR-011-storage-strategy.md) | PostgreSQL 15 + pgvector + Apache AGE; supersedes ADR-002 | Storage Strategy |
+| [ADR-012](adr/ADR-012-tags-replace-binary-profile.md) | Replace binary `profile` with `tags: string[]`; GIN index for array queries | Tag Scoping |
 
 ---
 

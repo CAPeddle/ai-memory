@@ -75,7 +75,6 @@ export interface RecallQueryLogInput {
   query: string;
   normalizedQuery: string;
   project: string | null;
-  profile: string | null;
   resultIds: string[];
 }
 
@@ -128,13 +127,12 @@ export function logRecallQuery(input: RecallQueryLogInput): void {
 
   (async () => {
     await sql`
-      INSERT INTO recall_queries (tool, query, normalized_query, project, profile, result_count, top_result_ids)
+      INSERT INTO recall_queries (tool, query, normalized_query, project, result_count, top_result_ids)
       VALUES (
         ${input.tool},
         ${query},
         ${normalizedQuery},
         ${input.project},
-        ${input.profile},
         ${input.resultIds.length},
         ${topResultIds}::uuid[]
       )

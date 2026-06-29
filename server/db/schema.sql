@@ -6,7 +6,7 @@
 -- ============================================================
 -- 1. BASE THOUGHTS TABLE
 --    OB1's flat thoughts table plus ai-memory extensions:
---    memory_type discriminator, project/profile context,
+--    memory_type discriminator, project/tags context,
 --    tier lifecycle columns, and generated tsvector for BM25.
 -- ============================================================
 
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS public.thoughts (
 
   -- Context scoping
   project             text,
-  profile             text        CHECK (profile IN ('professional', 'personal')),
+  tags                text[]      NOT NULL DEFAULT '{}'::text[],
 
   -- Tier lifecycle
   active              boolean     NOT NULL DEFAULT true,
@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS public.thoughts (
   -- Generated tsvector for BM25 full-text search (PG15+, requires STORED)
   search_vector       tsvector    GENERATED ALWAYS AS (to_tsvector('english', coalesce(search_text, content))) STORED,
 
-  -- Global deduplication: same normalised content = same memory, regardless of project/profile.
+  -- Global deduplication: same normalised content = same memory, regardless of project/tags.
   -- Capturing the same text in two projects returns the original row (not a second copy).
   -- This is intentional for a single-user personal store; multi-tenant use would scope this key.
   UNIQUE (content_fingerprint)
@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS public.thoughts (
 
 CREATE INDEX IF NOT EXISTS idx_thoughts_memory_type ON public.thoughts(memory_type);
 CREATE INDEX IF NOT EXISTS idx_thoughts_project     ON public.thoughts(project);
+CREATE INDEX IF NOT EXISTS idx_thoughts_tags        ON public.thoughts USING GIN(tags);
 CREATE INDEX IF NOT EXISTS idx_thoughts_active      ON public.thoughts(active);
 CREATE INDEX IF NOT EXISTS idx_thoughts_search_vec  ON public.thoughts USING GIN(search_vector);
 
@@ -150,7 +151,6 @@ CREATE TABLE IF NOT EXISTS public.recall_queries (
   query            text        NOT NULL,
   normalized_query text        NOT NULL,
   project          text,
-  profile          text,
   result_count     int         NOT NULL CHECK (result_count >= 0),
   top_result_ids   uuid[]      NOT NULL DEFAULT '{}'::uuid[],
   created_at       timestamptz NOT NULL DEFAULT now()

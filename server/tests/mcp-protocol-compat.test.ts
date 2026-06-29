@@ -220,7 +220,7 @@ Deno.test("list_thoughts metadata describes project scoping accurately", async (
   const desc = listThoughts?.description ?? "";
 
   assert(!/\bprofile.*(filter|isolate|restrict|scope)\b/i.test(desc), "list_thoughts description must not claim profile-based filtering or isolation — runtime filters by project only");
-  assert(/\bprofile\b.*\b(not used|accepted but not|not a filter)\b/i.test(desc) || !/\bprofile\b/i.test(desc), "list_thoughts must either document that profile is accepted but not used for filtering, or omit profile from the description");
+  assert(!/\bprofile\b/i.test(desc), "list_thoughts must omit removed profile vocabulary");
 
   const contextSchemaDesc = listThoughts?.inputSchema?.properties?.context?.description ?? "";
   assert(!/\bprofile:professional\b/i.test(contextSchemaDesc), "list_thoughts context schema description must not use profile:professional as an example — the SQL WHERE clause filters by project, not profile");
@@ -244,10 +244,13 @@ Deno.test("capture_thought metadata accurately describes content limits and dedu
   const captureTool = toolsResult.tools?.find((t) => t.name === "capture_thought");
   assertExists(captureTool, "capture_thought tool must exist in tools/list");
   const desc = captureTool?.description ?? "";
+  const properties = captureTool?.inputSchema?.properties ?? {};
 
   assert(/\b32\s*KB\b/i.test(desc) || /\b32\s*kilobyte/i.test(desc), "capture_thought description must mention the 32KB content limit");
   assert(/\bduplic\w*\b/i.test(desc), "capture_thought description must mention duplicate/upsert behavior");
-  assert(/\bstored?\b/i.test(desc) && /\bprofile\b/i.test(desc), "capture_thought description must clarify that profile is stored with the thought, not used as a search filter");
+  assert(/\bstored?\b/i.test(desc) && /\btags\b/i.test(desc), "capture_thought description must clarify that tags are stored with the thought");
+  assert(!/\bprofile\b/i.test(desc), "capture_thought description must omit removed profile vocabulary");
+  assert(!("tags" in properties), "capture_thought must not expose a raw tags parameter; tags enter through context only");
 
   const ann = captureTool?.annotations;
   assertEquals(ann?.readOnlyHint, false, "capture_thought must have readOnlyHint: false");

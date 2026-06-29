@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ai-memory is a persistent memory service for AI coding agents. It currently ships as a **cloud-hosted MCP server** (Deno/TypeScript) backed by **PostgreSQL 15 + pgvector + Apache AGE**. A future **local synthesis companion** (C#/.NET 8) is scaffolded but not yet implemented.
 
+The **Contact Memory product track** (Android app, WhatsApp parser, human review gate, Contact MCP) is defined in [docs/architecture/ai_memory_architecture_decisions.md](docs/architecture/ai_memory_architecture_decisions.md) — this document supersedes the platform architecture assumptions in `SRS.md` and `SystemDesign.md` for Contact Memory-specific work.
+
 ## Two stacks coexist — don't confuse them
 
 | Path | Stack | Status | Purpose |
@@ -16,11 +18,25 @@ ai-memory is a persistent memory service for AI coding agents. It currently ship
 
 **Architectural divergence to be aware of:** [.github/copilot-instructions.md](.github/copilot-instructions.md) and [.github/prompts/*.prompt.md](.github/prompts/) still describe "C# / SQLite / FTS5" as the architectural default. That was the v1 vision. [ADR-009](docs/design/adr/ADR-009-deployment-model.md) and [ADR-011](docs/design/adr/ADR-011-storage-strategy.md) superseded it: the cloud MCP is now Deno + Postgres. When the prompt files and the ADRs disagree, **the ADRs win**.
 
+**Contact Memory track supersedes platform docs:** [docs/architecture/ai_memory_architecture_decisions.md](docs/architecture/ai_memory_architecture_decisions.md) contains the authoritative architecture for the Contact Memory product (Android app, WhatsApp parser, human review gate, Contact MCP). Its decisions supersede the platform-level assumptions in `docs/requirements/SRS.md` and `docs/design/SystemDesign.md` wherever they conflict.
+
+### Contact Memory Supersession Map
+
+For Contact Memory work, apply [docs/architecture/ai_memory_architecture_decisions.md](docs/architecture/ai_memory_architecture_decisions.md) and [ADR-012](docs/design/adr/ADR-012-tags-replace-binary-profile.md) over these older assumptions:
+
+- **SRS §2, §4.3, §5.4, §5.5, §5.6:** The platform is no longer a three-tier Shards/Wiki/Views brain for Contact Memory. The platform stores append-only versioned shards only; wiki/consolidation/view promotion is product-layer. Contact Memory uses a human review gate and parser curation instead of the generic consolidation pipeline.
+- **SRS §5.7, §5.8 and SystemDesign §1-§3:** Do not model Contact Memory as one shared REST+MCP service layer. Use per-product MCP/API boundaries: Platform MCP exposes shard primitives; Contact MCP exposes domain tools such as contact profiles, commitments, manual facts, and upcoming dates.
+- **SRS §5.6, §5.8, §7 and ADR-008:** `profile: professional | personal` is superseded as a platform scoping primitive. Use `tags: string[]` with reserved tags such as `contact`, `developer`, `colleague`, `personal`, `professional`, plus namespaced tags like `project:*` and `contact:*`.
+- **SystemDesign §4 and ADR-005:** Separate `semantic_memories` / `episodic_memories`, `memory_type = shard|wiki`, and platform-level Wiki tier assumptions are superseded for Contact Memory. Contact facts are curated shards with domain tags and provenance, not platform-promoted wiki rows.
+- **ADR-006 and ADR-007:** Local Obsidian synthesis and generic Developer Memory consolidation are not blocking Contact Memory. Contact Memory's parser output commits curated knowledge directly after review; Developer Memory consolidation remains deferred/product-specific.
+- **ADR-009 and ADR-011, for Contact Memory deployment only:** The Contact Memory target is Supabase local dev (`supabase start` + `deno serve`) and Supabase cloud + Edge Functions, with Postgres + pgvector + tsvector and Supabase Storage for WhatsApp exports. Do not assume the Contact product must use the existing Docker Compose MCP server or Apache AGE graph path unless a later Contact-specific decision reintroduces it.
+- **ADR-010, for Android/API auth only:** Existing Bearer auth on `/mcp` remains valid for the current platform MCP. Android-to-Contact API authentication is still a Contact Memory design item and should not be copied blindly from the platform MCP auth model.
+
 ## Source-of-truth precedence
 
 Higher tier wins on conflict unless the PO explicitly overrides:
 
-1. **Tier 1 (binding):** [docs/requirements/SRS.md](docs/requirements/SRS.md), [docs/design/adr/](docs/design/adr/) (ADR-001..ADR-011 — note ADR-011 supersedes ADR-002), [docs/design/SystemDesign.md](docs/design/SystemDesign.md), [docs/planning/delivery-plan.md](docs/planning/delivery-plan.md)
+1. **Tier 1 (binding):** [docs/requirements/SRS.md](docs/requirements/SRS.md), [docs/design/adr/](docs/design/adr/) (ADR-001..ADR-011 — note ADR-011 supersedes ADR-002), [docs/design/SystemDesign.md](docs/design/SystemDesign.md), [docs/architecture/ai_memory_architecture_decisions.md](docs/architecture/ai_memory_architecture_decisions.md) (Contact Memory track — supersedes SRS/SystemDesign on conflict), [docs/planning/delivery-plan.md](docs/planning/delivery-plan.md)
 2. **Tier 2 (reference):** `docs/investigations/*`, `docs/solutions/` — documented solutions to past problems (bugs, best practices, workflow patterns), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in documented areas.
 
 ## Workflow gate — DO NOT skip

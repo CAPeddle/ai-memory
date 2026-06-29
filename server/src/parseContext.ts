@@ -1,6 +1,6 @@
 export interface ContextScope {
   projects?: string[];
-  profile?: "professional" | "personal";
+  tags?: string[];
   /** Parsed but not yet consumed by any tool handler. Reserved for future graph-expanded search. */
   entities?: string[];
   visibility?: "prefer" | "exclusive" | "cross-only";
@@ -19,9 +19,11 @@ export interface ContextParseError {
 
 export type ContextParseResult = ContextScope | ContextParseError;
 
-const VALID_KEYS = new Set(["project", "entity", "profile", "visibility", "story", "strict"]);
-const VALID_PROFILES = new Set(["professional", "personal"]);
+const VALID_KEYS = new Set(["project", "entity", "tags", "visibility", "story", "strict"]);
 const VALID_VISIBILITIES = new Set(["prefer", "exclusive", "cross-only"]);
+const TAG_PATTERN = /^[a-z][a-z0-9-]*(?::[a-z0-9][a-z0-9-]*)?$/;
+const MAX_TAGS = 16;
+const MAX_TAG_LENGTH = 64;
 
 export function isContextError(result: ContextParseResult | null): result is ContextParseError {
   return result !== null && "error" in result && result.error === true;
@@ -47,7 +49,7 @@ export function parseContext(raw: string | undefined): ContextParseResult | null
         error: true,
         message: `Invalid token "${trimmed}" — expected key:value format`,
         received: raw,
-        expected: 'Comma-separated key:value pairs. Example: "project:myapp,profile:professional,strict"',
+        expected: 'Comma-separated key:value pairs. Example: "project:myapp,tags:developer;contact,strict"',
         failedToken: trimmed,
       };
     }
@@ -60,7 +62,7 @@ export function parseContext(raw: string | undefined): ContextParseResult | null
         error: true,
         message: `Unknown key "${k}" — valid keys: ${[...VALID_KEYS].join(", ")}`,
         received: raw,
-        expected: 'Comma-separated key:value pairs. Example: "project:myapp,profile:professional"',
+        expected: 'Comma-separated key:value pairs. Example: "project:myapp,tags:developer;contact"',
         failedToken: trimmed,
       };
     }
@@ -77,17 +79,16 @@ export function parseContext(raw: string | undefined): ContextParseResult | null
 
     if (k === "project")         scope.projects   = v.split(";");
     else if (k === "entity")    scope.entities   = v.split(";");
-    else if (k === "profile") {
-      if (!VALID_PROFILES.has(v)) {
+    else if (k === "tags") {
+      const parsedTags = parseTags(v);
+      if ("error" in parsedTags) {
         return {
-          error: true,
-          message: `Invalid profile "${v}" — must be "professional" or "personal"`,
+          ...parsedTags,
           received: raw,
-          expected: '"profile:professional" or "profile:personal"',
           failedToken: trimmed,
         };
       }
-      scope.profile = v as ContextScope["profile"];
+      scope.tags = parsedTags;
     }
     else if (k === "visibility") {
       if (!VALID_VISIBILITIES.has(v)) {
@@ -117,6 +118,53 @@ export function parseContext(raw: string | undefined): ContextParseResult | null
   }
 
   return scope as ContextScope;
+}
+
+function parseTags(rawTags: string): string[] | ContextParseError {
+  const tags: string[] = [];
+  const seen = new Set<string>();
+
+  for (const tag of rawTags.split(";")) {
+    if (!tag) {
+      return {
+        error: true,
+        message: "Invalid tags value — empty tag segments are not allowed",
+        received: rawTags,
+        expected: 'Tags separated by semicolons. Example: "tags:developer;contact"',
+      };
+    }
+    if (tag !== tag.trim()) {
+      return {
+        error: true,
+        message: `Invalid tag "${tag}" — tags must not include surrounding whitespace`,
+        received: rawTags,
+        expected: 'Lowercase tags matching /^[a-z][a-z0-9-]*(?::[a-z0-9][a-z0-9-]*)?$/',
+      };
+    }
+    if (tag.length > MAX_TAG_LENGTH || !TAG_PATTERN.test(tag)) {
+      return {
+        error: true,
+        message: `Invalid tag "${tag}" — tags must be lowercase and may include one namespace separator`,
+        received: rawTags,
+        expected: 'Lowercase tags matching /^[a-z][a-z0-9-]*(?::[a-z0-9][a-z0-9-]*)?$/',
+      };
+    }
+    if (!seen.has(tag)) {
+      seen.add(tag);
+      tags.push(tag);
+    }
+  }
+
+  if (tags.length > MAX_TAGS) {
+    return {
+      error: true,
+      message: `Too many tags — maximum is ${MAX_TAGS}`,
+      received: rawTags,
+      expected: `At most ${MAX_TAGS} semicolon-separated tags`,
+    };
+  }
+
+  return tags;
 }
 
 export function parseContextOrError(raw: string | undefined): ContextScope | null | { content: Array<{ type: "text"; text: string }>; isError: true } {

@@ -184,7 +184,6 @@ server.registerTool(
         query,
         normalizedQuery,
         project: null,
-        profile: null,
         resultIds: results.map((result) => result.id as string),
       });
 
@@ -240,7 +239,7 @@ server.registerTool(
   "search_thoughts",
   {
     title: "Search Thoughts",
-    description: "Search captured thoughts with hybrid BM25 and vector recall. Use when an agent needs the richest project-aware memory search, including scores and quality bands. Parameters: query is the search text; context scopes results — project scopes to a project and activates a 1.2× boost for in-project results (strict restricts to only that project's results); the profile key is accepted but not used for filtering; limit controls result count. Example: {\"query\":\"MCP protocol compatibility\",\"context\":\"project:ai-memory,strict\",\"limit\":5}. Returns: JSON with query, normalized_query, and ranked results including score and quality_band. Errors/edge cases: malformed context returns a validation error; embedding failures keep BM25 recall available; limit must be 1-100.",
+    description: "Search captured thoughts with hybrid BM25 and vector recall. Use when an agent needs the richest project-aware memory search, including scores and quality bands. Parameters: query is the search text; context scopes results — project scopes to a project and activates a 1.2× boost for in-project results (strict restricts to only that project's results); tags are not search filters in this tool; limit controls result count. Example: {\"query\":\"MCP protocol compatibility\",\"context\":\"project:ai-memory,strict\",\"limit\":5}. Returns: JSON with query, normalized_query, and ranked results including score and quality_band. Errors/edge cases: malformed context returns a validation error; embedding failures keep BM25 recall available; limit must be 1-100.",
     annotations: { readOnlyHint: true },
     inputSchema: {
       query: z.string().describe("Natural-language or identifier-heavy search text to match against captured thoughts."),
@@ -254,7 +253,6 @@ server.registerTool(
       if (isMcpContextError(scopeResult)) return scopeResult;
       const scope = scopeResult;
       const project = scope?.projects?.[0] ?? null;
-      const profile = scope?.profile ?? null;
       const strict = scope?.strict === true;
       const n = limit ?? 10;
       const normalizedQuery = normalizeIdentifiers(query).retrievalText;
@@ -312,7 +310,6 @@ server.registerTool(
           query,
           normalizedQuery,
           project,
-          profile,
           resultIds: [],
         });
         setActiveEmbeddingLane(resolveSearchEmbeddingLane(normalizedQuery, qEmb));
@@ -394,7 +391,6 @@ server.registerTool(
         query,
         normalizedQuery,
         project,
-        profile,
         resultIds: responseResults.map((result) => result.id),
       });
 
@@ -422,12 +418,12 @@ server.registerTool(
   "capture_thought",
   {
     title: "Capture Thought",
-    description: "Save a standalone memory thought. Use when an agent or user wants ai-memory to remember a reusable decision, fact, constraint, or project note. Parameters: content is the memory text; memory_type is shard or wiki; context scopes the thought — project and profile are stored with the thought (not used as search filters). Example: {\"content\":\"Use mcp-test for isolated server tests.\",\"memory_type\":\"shard\",\"context\":\"project:ai-memory\"}. Returns: capture confirmation with memory_type, optional project, and id. Errors/edge cases: content over 32KB is rejected; malformed context returns a validation error; duplicate content updates the existing active thought.",
+    description: "Save a standalone memory thought. Use when an agent or user wants ai-memory to remember a reusable decision, fact, constraint, or project note. Parameters: content is the memory text; memory_type is shard or wiki; context stores project and tags; tags are stored with the thought. Example: {\"content\":\"Use mcp-test for isolated server tests.\",\"memory_type\":\"shard\",\"context\":\"project:ai-memory,tags:developer\"}. Returns: capture confirmation with memory_type, optional project, and id. Errors/edge cases: content over 32KB is rejected; malformed context returns a validation error; duplicate content updates the existing active thought and merges tags.",
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     inputSchema: {
       content: z.string().describe("Clear, standalone memory text to capture; maximum encoded size is 32KB."),
       memory_type: z.enum(["shard", "wiki"]).optional().default("shard").describe("Memory type to store: shard for raw captured notes, wiki for promoted durable facts; defaults to shard."),
-      context: z.string().optional().describe("Optional scope string to tag the thought — project and profile are stored with the thought. Example: 'project:ai-memory,profile:professional'."),
+      context: z.string().optional().describe("Optional scope string to tag the thought — project and tags are stored with the thought. Example: 'project:ai-memory,tags:developer;contact'."),
     },
   },
   withTiming("capture_thought", async ({ content, memory_type, context }) => {
@@ -444,7 +440,7 @@ server.registerTool(
       if (isMcpContextError(scopeResult)) return scopeResult;
       const scope = scopeResult;
       const project = scope?.projects?.[0] ?? null;
-      const profile = scope?.profile ?? null;
+      const tags = scope?.tags ?? [];
       const normalized = normalizeIdentifiers(content);
       const searchText = normalized.retrievalText;
       const metadata = {
@@ -462,7 +458,7 @@ server.registerTool(
           metadata,
           memory_type,
           project,
-          profile,
+          tags,
           content_fingerprint,
           source
         )
@@ -473,7 +469,7 @@ server.registerTool(
           ${metadata},
           ${memory_type ?? "shard"},
           ${project},
-          ${profile},
+          ${tags},
           ${fingerprint},
           'user-taught'
         )
@@ -482,8 +478,14 @@ server.registerTool(
               active     = true,
               search_text = EXCLUDED.search_text,
               normalizer_version = EXCLUDED.normalizer_version,
-              metadata = thoughts.metadata || EXCLUDED.metadata
-        RETURNING id, memory_type, project
+              metadata = thoughts.metadata || EXCLUDED.metadata,
+              tags = ARRAY(
+                SELECT DISTINCT tag
+                FROM unnest(thoughts.tags || EXCLUDED.tags) AS tag
+                WHERE tag <> ''
+                ORDER BY tag
+              )
+        RETURNING id, memory_type, project, tags
       `;
 
       // Fire-and-forget embedding update. On success, record the model and clear the
@@ -518,7 +520,7 @@ server.registerTool(
   "list_thoughts",
   {
     title: "List Recent Thoughts",
-    description: "List recently captured active thoughts. Use when an agent needs a quick chronological inventory instead of relevance-ranked search. Parameters: limit controls count; memory_type filters shard or wiki; context filters by project assignment — the profile key is accepted but not used for filtering; days filters by recency. Example: {\"limit\":5,\"memory_type\":\"shard\",\"context\":\"project:ai-memory\",\"days\":7}. Returns: human-readable numbered thought summaries with dates, type, project, and content preview. Errors/edge cases: malformed context returns a validation error; no matches return 'No thoughts found.'; limit must be 1-100 and days must be 1-365.",
+    description: "List recently captured active thoughts. Use when an agent needs a quick chronological inventory instead of relevance-ranked search. Parameters: limit controls count; memory_type filters shard or wiki; context filters by project assignment; tags are not list filters in this tool; days filters by recency. Example: {\"limit\":5,\"memory_type\":\"shard\",\"context\":\"project:ai-memory\",\"days\":7}. Returns: human-readable numbered thought summaries with dates, type, project, and content preview. Errors/edge cases: malformed context returns a validation error; no matches return 'No thoughts found.'; limit must be 1-100 and days must be 1-365.",
     annotations: { readOnlyHint: true },
     inputSchema: {
       limit: z.number().int().min(1).max(100).optional().default(10).describe("Maximum number of recent thoughts to list, from 1 to 100; defaults to 10."),

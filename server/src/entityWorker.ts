@@ -177,7 +177,7 @@ async function processQueue(): Promise<void> {
   });
   const runStartTime = Date.now();
   let errorCount = 0;
-  let errorSummary: unknown = null;
+  let errorSummary: { error: string } | null = null;
 
   for (const { thought_id } of rows) {
     try {
@@ -252,7 +252,7 @@ async function processQueue(): Promise<void> {
 
   await sql`
     UPDATE worker_runs
-    SET ended_at = now(), items_processed = ${itemsSucceeded}, errors = ${errorCount}, error_summary = ${errorSummary ? sql.json(errorSummary as Record<string, unknown>) : null}
+    SET ended_at = now(), items_processed = ${itemsSucceeded}, errors = ${errorCount}, error_summary = ${errorSummary ? sql.json(errorSummary) : null}
     WHERE run_id = ${runId}
   `;
 

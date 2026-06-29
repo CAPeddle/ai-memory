@@ -53,13 +53,10 @@ Deno.test("parseContext: rejects empty values", () => {
   if (!result.message.includes("empty value")) throw new Error(`Expected 'empty value' in message, got: ${result.message}`);
 });
 
-Deno.test("parseContext: rejects invalid profile values", () => {
-  const result = parseContext("profile:invalid");
+Deno.test("parseContext: rejects profile key", () => {
+  const result = parseContext("profile:professional");
   if (!isContextError(result)) throw new Error(`Expected error, got ${JSON.stringify(result)}`);
-  if (!result.message.includes("Invalid profile")) throw new Error(`Expected 'Invalid profile' in message, got: ${result.message}`);
-  if (!result.message.includes("professional") || !result.message.includes("personal")) {
-    throw new Error(`Expected valid options mentioned, got: ${result.message}`);
-  }
+  if (!result.message.includes("Unknown key")) throw new Error(`Expected 'Unknown key' in message, got: ${result.message}`);
 });
 
 Deno.test("parseContext: rejects invalid visibility values", () => {
@@ -68,14 +65,9 @@ Deno.test("parseContext: rejects invalid visibility values", () => {
   if (!result.message.includes("Invalid visibility")) throw new Error(`Expected 'Invalid visibility' in message, got: ${result.message}`);
 });
 
-Deno.test("parseContext: accepts valid profile professional", () => {
-  const s = asScope(parseContext("profile:professional"));
-  if (s?.profile !== "professional") throw new Error(`Expected profile=professional, got ${JSON.stringify(s)}`);
-});
-
-Deno.test("parseContext: accepts valid profile personal", () => {
-  const s = asScope(parseContext("profile:personal"));
-  if (s?.profile !== "personal") throw new Error(`Expected profile=personal, got ${JSON.stringify(s)}`);
+Deno.test("parseContext: accepts valid tags and de-duplicates repeated tags", () => {
+  const s = asScope(parseContext("tags:developer;contact;developer"));
+  if (JSON.stringify(s?.tags) !== JSON.stringify(["developer", "contact"])) throw new Error(`Expected de-duplicated tags, got ${JSON.stringify(s)}`);
 });
 
 Deno.test("parseContext: accepts valid visibility values", () => {
@@ -86,9 +78,23 @@ Deno.test("parseContext: accepts valid visibility values", () => {
 });
 
 Deno.test("parseContext: valid context passes without error", () => {
-  const s = asScope(parseContext("project:zoom,profile:professional"));
+  const s = asScope(parseContext("project:zoom,tags:developer;contact"));
   if (s?.projects?.[0] !== "zoom") throw new Error(`Expected projects=[zoom]`);
-  if (s?.profile !== "professional") throw new Error(`Expected profile=professional`);
+  if (JSON.stringify(s?.tags) !== JSON.stringify(["developer", "contact"])) throw new Error(`Expected tags=[developer,contact]`);
+});
+
+Deno.test("parseContext: rejects empty tag segments", () => {
+  const result = parseContext("tags:developer;;contact");
+  if (!isContextError(result)) throw new Error(`Expected error, got ${JSON.stringify(result)}`);
+  if (!result.message.includes("empty tag segments")) throw new Error(`Expected empty segment error, got: ${result.message}`);
+});
+
+Deno.test("parseContext: rejects tags outside bounded grammar", () => {
+  for (const value of ["tags:Developer", "tags:contact name", "tags::contact", "tags:project:", "tags:project:zoom:extra"]) {
+    const result = parseContext(value);
+    if (!isContextError(result)) throw new Error(`Expected error for ${value}, got ${JSON.stringify(result)}`);
+    if (!result.message.includes("Invalid tag")) throw new Error(`Expected invalid tag error for ${value}, got: ${result.message}`);
+  }
 });
 
 Deno.test("parseContext: isContextError returns false for null", () => {
