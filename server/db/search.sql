@@ -49,7 +49,7 @@ SELECT
   t.id,
   t.memory_type,
   t.project,
-  t.profile,
+  t.tags,
   t.content,
   t.confidence,
   t.created_at

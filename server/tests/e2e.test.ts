@@ -198,9 +198,10 @@ Deno.test({
       content: string;
       search_text: string | null;
       normalizer_version: number | null;
+      tags: string[];
       metadata: { identifiers?: { tickets?: string[]; builds?: string[] } };
     }[]>`
-      SELECT content, search_text, normalizer_version, metadata
+      SELECT content, search_text, normalizer_version, tags, metadata
       FROM thoughts
       WHERE id = ${thoughtId}::uuid
     `;
@@ -211,6 +212,7 @@ Deno.test({
       `Unique BM25 marker phrase ${keyword} build for integration test`,
     );
     assertEquals(capturedRow.normalizer_version, 1);
+    assertEquals(capturedRow.tags, []);
     assertEquals(capturedRow.metadata.identifiers?.tickets ?? [], ["PRI-5751"]);
     assertEquals(capturedRow.metadata.identifiers?.builds ?? [], ["65008"]);
 
@@ -248,6 +250,51 @@ Deno.test({
 
     // Cleanup — cascades queue rows, entity_mentions, and recall_events
     await sql`DELETE FROM thoughts WHERE id = ${thoughtId}::uuid`;
+  },
+});
+
+Deno.test({
+  name: "e2e: capture_thought stores context tags and merges duplicate captures by union",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    const marker = crypto.randomUUID();
+    const content = `Duplicate tag merge marker ${marker}`;
+    let thoughtId: string | null = null;
+
+    try {
+      const first = await mcpCall("capture_thought", {
+        content,
+        context: "project:e2e-test,tags:developer",
+      });
+      const firstText = extractText(first);
+      const idMatch = firstText.match(/id:\s*([0-9a-f-]{36})/i);
+      if (!idMatch) throw new Error(`Could not extract thought id from: ${firstText.slice(0, 300)}`);
+      thoughtId = idMatch[1];
+
+      await mcpCall("capture_thought", {
+        content,
+        context: "project:e2e-test,tags:contact;developer",
+      });
+
+      const [row] = await sql<{ tags: string[] }[]>`
+        SELECT tags FROM thoughts WHERE id = ${thoughtId}::uuid
+      `;
+      assertEquals(row.tags, ["contact", "developer"]);
+
+      const containmentRows = await sql<{ id: string }[]>`
+        SELECT id FROM thoughts
+        WHERE tags @> ARRAY['contact', 'developer']::text[]
+          AND id = ${thoughtId}::uuid
+      `;
+      assertEquals(containmentRows.length, 1);
+    } finally {
+      if (thoughtId) {
+        await sql`DELETE FROM consolidation_log WHERE thought_id = ${thoughtId}::uuid OR wiki_id = ${thoughtId}::uuid`;
+        await sql`DELETE FROM consolidation_queue WHERE thought_id = ${thoughtId}::uuid`;
+        await sql`DELETE FROM thoughts WHERE id = ${thoughtId}::uuid`;
+      }
+    }
   },
 });
 
@@ -313,11 +360,11 @@ Deno.test({
     // Insert the shard
     await sql`
       INSERT INTO thoughts
-        (id, content, memory_type, source, project, confidence, content_fingerprint, active)
+        (id, content, memory_type, source, project, tags, confidence, content_fingerprint, active)
       VALUES
         (${S_E2E_PROMOTE}::uuid,
          'Postgres autovacuum billing guidance for enterprise deployments',
-         'shard', 'user-taught', 'e2e-consolidation', 0.8,
+         'shard', 'user-taught', 'e2e-consolidation', ARRAY['developer', 'contact']::text[], 0.8,
          ${'fp-e2e-promote-' + crypto.randomUUID().slice(0, 8)}, true)
     `;
 
@@ -371,6 +418,12 @@ Deno.test({
     if (shard.active !== false) {
       throw new Error(`Expected source shard active=false after promotion, got active=${shard.active}`);
     }
+
+    const [promotedWiki] = await sql<{ active: boolean; tags: string[] }[]>`
+      SELECT active, tags FROM thoughts WHERE id = ${wikiId}::uuid
+    `;
+    assertEquals(promotedWiki.active, true);
+    assertEquals(promotedWiki.tags, ["developer", "contact"]);
 
     // Wait for the wiki's embedding to populate (fire-and-forget, eventually consistent)
     await sleep(5_000);

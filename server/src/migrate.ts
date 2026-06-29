@@ -174,6 +174,26 @@ export async function detectBootstrapVersions(tx: SqlExecutor): Promise<void> {
       ON CONFLICT (version) DO NOTHING
     `;
   }
+
+  const [tagsColumn] = await tx`
+    SELECT 1 AS found FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'thoughts' AND column_name = ${"tags"}
+  `;
+  const [profileColumn] = await tx`
+    SELECT 1 AS found FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'thoughts' AND column_name = ${"profile"}
+  `;
+  const [recallQueriesProfileColumn] = await tx`
+    SELECT 1 AS found FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'recall_queries' AND column_name = ${"profile"}
+  `;
+  if (tagsColumn && !profileColumn && recallQueriesTable && !recallQueriesProfileColumn) {
+    await tx`
+      INSERT INTO schema_migrations (version, filename)
+      VALUES (6, '006_tags_replace_profile.sql')
+      ON CONFLICT (version) DO NOTHING
+    `;
+  }
 }
 
 async function repairMissingMigration003Artifacts(tx: SqlExecutor, migration003: MigrationFile): Promise<void> {

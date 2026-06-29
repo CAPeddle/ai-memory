@@ -120,10 +120,10 @@ async function promote(
   await sql.begin(async (txSql) => {
     const [wiki] = await txSql<{ id: string }[]>`
       INSERT INTO thoughts
-        (content, memory_type, source, confidence, supersedes, project, profile, metadata)
+        (content, memory_type, source, confidence, supersedes, project, tags, metadata)
       SELECT
         ${normalised}, 'wiki', 'auto-promoted', ${score}, NULL,
-        project, profile,
+        project, tags,
         jsonb_build_object(
           'generated_by', 'consolidation_worker',
           'source_shard_id', id::text
@@ -317,7 +317,7 @@ async function processCandidate(
 export async function drainPendingOnce(dryRun = false, limit = BATCH_SIZE): Promise<number> {
   const workerRunId = crypto.randomUUID();
   const runStartTime = Date.now();
-  const runErrors = { count: 0, summary: null as unknown };
+  const runErrors: { count: number; summary: { error: string } | null } = { count: 0, summary: null };
 
   await sql`
     INSERT INTO worker_runs (run_id, worker, started_at)
@@ -353,7 +353,7 @@ export async function drainPendingOnce(dryRun = false, limit = BATCH_SIZE): Prom
     await sql`
       UPDATE worker_runs
       SET ended_at = now(), items_processed = ${processed}, errors = ${runErrors.count + 1},
-          error_summary = ${sql.json({ error: errorMsg } as unknown as Record<string, unknown>)}
+          error_summary = ${sql.json({ error: errorMsg })}
       WHERE run_id = ${workerRunId}
     `;
     await sql`
@@ -375,11 +375,11 @@ export async function drainPendingOnce(dryRun = false, limit = BATCH_SIZE): Prom
   }
 
   const itemsSucceeded = processed - runErrors.count;
-  const errorSummaryValue = dryRun ? { dry_run: true } : (runErrors.summary || null);
+  const errorSummaryValue: { dry_run: boolean } | { error: string } | null = dryRun ? { dry_run: true } : runErrors.summary;
   await sql`
     UPDATE worker_runs
     SET ended_at = now(), items_processed = ${itemsSucceeded}, errors = ${runErrors.count},
-        error_summary = ${errorSummaryValue !== null ? sql.json(errorSummaryValue as unknown as Record<string, unknown>) : null}
+        error_summary = ${errorSummaryValue !== null ? sql.json(errorSummaryValue) : null}
     WHERE run_id = ${workerRunId}
   `;
   await sql`

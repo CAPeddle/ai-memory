@@ -1,5 +1,5 @@
 export interface WorkerLogEvent {
-  ts: string;
+  ts?: string;
   level: "info" | "warn" | "error";
   worker: "entity" | "consolidation";
   run_id: string;
@@ -11,5 +11,6 @@ export interface WorkerLogEvent {
 }
 
 export function logWorkerEvent(event: WorkerLogEvent): void {
-  console.log("[worker]", JSON.stringify({ ts: new Date().toISOString(), ...event }));
+  const { ts, ...fields } = event;
+  console.log("[worker]", JSON.stringify({ ts: ts ?? new Date().toISOString(), ...fields }));
 }

@@ -1,5 +1,4 @@
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { mcpCall } from "./_helpers/mcpClient.ts";
+import { extractText, mcpCall } from "./_helpers/mcpClient.ts";
 
 Deno.test("search_thoughts rejects malformed context", async () => {
   const result = await mcpCall("search_thoughts", {
@@ -16,7 +15,7 @@ Deno.test("search_thoughts rejects malformed context", async () => {
 Deno.test("search_thoughts accepts valid context", async () => {
   const result = await mcpCall("search_thoughts", {
     query: "test",
-    context: "project:zoom,profile:professional",
+    context: "project:zoom,tags:developer;contact",
   });
   const r = result as { result?: { content?: Array<{ type?: string; text?: string; isError?: boolean }> } };
   const text = r.result?.content?.[0]?.text ?? "";
@@ -25,6 +24,17 @@ Deno.test("search_thoughts accepts valid context", async () => {
   }
   if (text.startsWith("Error:")) {
     throw new Error(`Expected successful response for valid context, got: ${text.slice(0, 200)}`);
+  }
+});
+
+Deno.test("capture_thought rejects profile context", async () => {
+  const result = await mcpCall("capture_thought", {
+    content: "test content for rejected profile context",
+    context: "profile:professional",
+  });
+  const text = extractText(result);
+  if (!text.includes("Context validation error")) {
+    throw new Error(`Expected context validation error, got: ${text.slice(0, 200)}`);
   }
 });
 
