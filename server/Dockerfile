@@ -1,6 +1,7 @@
 FROM denoland/deno:2.0.0
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY . .
+COPY server/. .
+COPY shared/. /shared/.
 EXPOSE 3000
 CMD ["run", "--allow-net", "--allow-env", "--allow-read", "index.ts"]
