@@ -18,7 +18,9 @@ services:
       retries: 10
 
   mcp:
-    build: ./server
+    build:
+      context: .
+      dockerfile: server/Dockerfile
     depends_on:
       db:
         condition: service_healthy
@@ -32,6 +34,7 @@ services:
     # (ST-023) will use a no-mount variant.
     volumes:
       - ./server:/app
+      - ./shared:/shared:ro
     ports:
       - "3000:3000"
     healthcheck:
@@ -76,7 +79,9 @@ services:
     restart: "no"
 
   mcp-test:
-    build: ./server
+    build:
+      context: .
+      dockerfile: server/Dockerfile
     profiles: [test]
     depends_on:
       db-test:
@@ -95,6 +100,7 @@ services:
       EMBEDDING_BACKFILL_DISABLED: "true"
     volumes:
       - ./server:/app
+      - ./shared:/shared:ro
     ports:
       - "127.0.0.1:3001:3000"
     healthcheck:
