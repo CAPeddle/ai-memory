@@ -1,0 +1,15 @@
+29/07/2015, 23:37 - Person_1: First sanitized message
+29/07/2015, 23:38 - Person_2: Reply with time 14:00 and a sanitized link: https://example.invalid/map?q=0,0
+11/08/2015, 13:48 - Person_1: Multi-line start
+Continuation with a colon: value
+Continuation with a dash - value
+
+Final continuation line
+06/04/2016, 04:31 - Messages and calls are end-to-end encrypted. Only people in this chat can read, listen to, or share them. *Learn more*
+06/04/2016, 04:32 - Person_2: <Media omitted>
+06/04/2016, 04:32 - Person_2: <Media omitted>
+01/04/2020, 21:08 - Your security code with Person_2 changed. Tap to learn more.
+30/11/2022, 15:09 - Person_1: This message was deleted
+19/08/2024, 16:36 - Person_2: Updated body <This message was edited>
+29/01/2026, 11:46 - Person_2:
+22/06/2026, 09:00 - Person_1: Final sanitized message 👑
