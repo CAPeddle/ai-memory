@@ -40,11 +40,21 @@ function expectError(
   if (expectedPath !== undefined && result.path !== expectedPath) {
     throw new Error("Expected parser error path");
   }
+  const resultStrings = collectStrings(result);
   for (const forbidden of forbiddenParts) {
-    if (result.message.includes(forbidden)) {
+    if (resultStrings.some((value) => value.includes(forbidden))) {
       throw new Error("Expected privacy-safe parser error");
     }
   }
+}
+
+function collectStrings(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(collectStrings);
+  if (value && typeof value === "object") {
+    return Object.values(value).flatMap(collectStrings);
+  }
+  return [];
 }
 
 function parse(rawText: string) {
