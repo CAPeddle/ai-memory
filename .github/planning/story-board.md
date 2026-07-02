@@ -1,9 +1,10 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
-> Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
+> Cadence: No sprint boundaries. Plans are authored as `docs/plans/*.md` (unified format, mandatory `story: ST-NNN` frontmatter) via `ce-brainstorm`/`ce-plan` or by hand; `ce-work` (or equivalent) executes them. Legacy `/plan` (Opus) + `/continue` (Sonnet) ExecPlan workflow retired for new work — see CLAUDE.md's Workflow gate section.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
 > Next planning target: None (no Ready ExecPlan in In Progress/Refined).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review)
-> Last updated: 2026-06-26
+> Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
+> Last updated: 2026-07-02
 
 ---
 
@@ -89,6 +90,23 @@
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-032.md`
 - Docs: `docs/governance/asset-metadata-contract.md`, `docs/governance/asset-contribution-policy.md`, `tools/GovernanceAssetValidator/Program.cs`, `.github/planning/assets/asset-catalog.md`
 - Notes: PO observed 2026-05-22 that the validator's manual `dotnet run -- build .` step does not happen, so the catalog is silently drifting AND the mechanism is paying its dev-experience cost (VS Code warnings on every governance file) without delivering its value. Spike must produce a real cost/benefit evaluation, not a rubber-stamp of the existing design. Disposition space bounded to "keep, in some form" per PO direction.
+
+### ST-066: Migrate VS Code planning prompts to the unified docs/plans/ format
+- Type: chore
+- Source: PO (Contact Memory MVP code review, workflow-gate finding, 2026-07-02)
+- phase: 0
+- Value: 2
+- Blocked by: none
+- Touches: `.github/prompts/plan-new.prompt.md`, `.github/prompts/plan.prompt.md`, `.github/prompts/continue.prompt.md`, `.github/prompts/recover.prompt.md`, `.github/copilot-instructions.md`, `.github/planning/execplans/_TEMPLATE.md` (retired, not deleted)
+- Acceptance criteria:
+  - [ ] `/plan-new` and `/plan` Phase 2 write `docs/plans/*.md` (unified format, `story: ST-NNN` frontmatter) instead of `.github/planning/execplans/exec-plan-ST-NNN.md`
+  - [ ] `/continue` reads Implementation Units from `docs/plans/*.md` instead of ExecPlan §4 Task Definitions, and derives resume state from git history (commits, board status) instead of an in-plan §5b Recovery Ledger — since the unified format stores no execution-progress fields in the plan body
+  - [ ] `/recover`'s forensic annotation targets are redesigned for the git-history-as-source-of-truth model (no §5b/§6b/§6c sections to annotate in `docs/plans/*.md`); decide and document the replacement mechanism (e.g. a session log entry, a `docs/residual-review-findings/*.md`-style doc, or a dedicated recovery-notes file) as part of this story, not assumed
+  - [ ] Cross-model review gate (currently described in `/plan` Phase 2 and `/continue` step 5) is preserved in the new flow, not silently dropped
+  - [ ] `.github/copilot-instructions.md` and the four prompt files' deprecation banners (added 2026-07-02) are removed once the migration lands
+  - [ ] At least one real story is planned and executed end-to-end through the migrated prompts as a validation pass before calling this Done
+- Plan: (to be created — `docs/plans/`)
+- Notes: Surfaced by the Contact Memory MVP code review (P1 finding: three consecutive Contact Memory sessions shipped through `docs/plans/*.md` with no board entry, because no VS Code-compatible path existed to produce that format with board linkage). CLAUDE.md's Workflow gate section and this board's header were updated 2026-07-02 to make `docs/plans/*.md` canonical for Claude Code/OpenCode work immediately; this story closes the remaining gap for VS Code Copilot sessions. The `/continue` and `/recover` redesign is the substantive part — the ExecPlan format's Recovery Ledger has no direct equivalent in the unified format's git-history-as-source-of-truth philosophy, so this is real design work, not a mechanical find-and-replace.
 
 <!-- Phase 1 follow-ups deferred from earlier scoping -->
 
@@ -309,6 +327,58 @@
 (Empty)
 
 ## Done
+
+### ST-065: Contact Memory local MVP (WhatsApp export → reviewed shards via platform MCP)
+- Type: feature
+- Source: PO (Contact Memory local MVP kickoff, 2026-07-01)
+- phase: contact-memory
+- Value: 4
+- Completed: 2026-07-02
+- Blocked by: — (ST-063, ST-064 complete)
+- Touches: `contact-memory/runtime/agent.ts` (new), `contact-memory/runtime/providers/anthropic.ts` (new), `contact-memory/parser/extractor.ts` (new), `contact-memory/commit/captureThoughtAdapter.ts` (new), `contact-memory/cli/index.ts` (new), `contact-memory/README.md` (new), `contact-memory/tests/**` (new), `docs/residual-review-findings/feat-whatsapp-parser.md` (new)
+- Acceptance criteria:
+  - [x] CLI parses a real WhatsApp export, extracts structured facts via a swappable `AgentRuntime` seam (Anthropic adapter), and enforces platform-decoupling (no `capture_thought`/platform fields in `ContactExtraction`)
+  - [x] Terminal review loop (approve/edit/reject) shows cited sender/body evidence and requires explicit confirmation before any write
+  - [x] Approved/edited items commit through the existing platform MCP's `capture_thought`, with provenance embedded via the `---cmv1---` content grammar
+  - [x] Manual verification against the real export and live platform MCP: both a contact-name query and a fact-specific query retrieve the committed shard
+  - [x] 9-persona code review completed post-ship; 7 findings applied and tested (terminal-injection sanitization, pre-commit summary accuracy, `--from`/`--to` validation, MCP commit fail-closed behavior, early config validation, order-insensitive evidence comparison, review-loop de-duplication); 3 findings left as tracked follow-ups (workflow-gate backfill — this story; MCP transport duplication; repair-pass privacy/repairability tradeoff)
+- Plan: `docs/plans/2026-07-01-001-feat-contact-memory-local-mvp-plan.md`
+- Notes: Retroactively logged — this story, ST-063, and ST-064 shipped through `docs/plans/*.md` without board entries, which the code review flagged as a workflow-gate violation. Backfilled together as part of formalizing `docs/plans/*.md` as the canonical plan format (see CLAUDE.md's Workflow gate section). Fixes committed on `feat/whatsapp-parser`, not yet merged.
+
+### ST-064: WhatsApp export parser (pure parser module)
+- Type: feature
+- Source: PO (Contact Memory product track, real-export-grounded parser)
+- phase: contact-memory
+- Value: 4
+- Completed: 2026-06-30
+- Blocked by: — (ST-063 complete)
+- Touches: `contact-memory/parser/whatsapp.ts` (new), `contact-memory/tests/parser/whatsapp.test.ts` (new), `contact-memory/tests/fixtures/whatsapp/sanitized-chat.txt` (new)
+- Acceptance criteria:
+  - [x] Pure parser (no AI/provider/runtime/MCP/database dependencies) converts a WhatsApp `.txt` export into `WhatsAppChat`/`WhatsAppMessage` validating through `contact-memory/parser/types.ts`
+  - [x] Handles the observed day-first export format, multiline continuations, empty bodies, system notices, media/deleted/edited markers, Unicode, and out-of-order timestamps
+  - [x] Deterministic, unique `message_id` generation stable across insertions/removals of unrelated earlier messages
+  - [x] Fails closed (structured parser error) on unsupported timestamp formats and malformed input, without leaking raw transcript content in errors
+  - [x] Regression coverage uses a sanitized committed fixture, not the real investigation export
+- Plan: `docs/plans/2026-06-30-001-feat-whatsapp-parser-plan.md`
+- Notes: Retroactively logged alongside ST-063 and ST-065 — see ST-065's Notes for why. Merged via PR #20.
+
+### ST-063: Contact Memory parser types (domain contract)
+- Type: feature
+- Source: PO (Contact Memory product track kickoff)
+- phase: contact-memory
+- Value: 4
+- Completed: 2026-06-29
+- Blocked by: —
+- Touches: `contact-memory/parser/types.ts` (new), `contact-memory/tests/parser/types.test.ts` (new), `shared/tagGrammar.ts` (tag grammar extracted for reuse)
+- Acceptance criteria:
+  - [x] Parser-output types (`WhatsAppChat`, `WhatsAppMessage`) with no AI/runtime dependencies
+  - [x] `ContactExtraction`/`ExtractionItem` defined as a review-only, platform-decoupled discriminated union (commitment/event/preference/sentiment/important_date/shared_link/conversation_theme)
+  - [x] `ReviewDecision` modeled per-item (approve/edit/reject), not per-batch
+  - [x] `ContactShard`/`ContactShardCandidate` kept independent of commit mechanisms (`capture_thought`, future `memory_teach`) — translation deferred to a separate adapter
+  - [x] Tag grammar shared between `server/src/parseContext.ts` and Contact code via `shared/tagGrammar.ts`, not mirrored
+  - [x] Contract tests cover type/schema validation, review-decision mapping, tag validation, and shard-boundary invariants
+- Plan: `docs/plans/2026-06-29-001-feat-contact-parser-types-plan.md`
+- Notes: Retroactively logged alongside ST-064 and ST-065 — see ST-065's Notes for why. Merged via PR #19.
 
 ### ST-062: WSL→Windows MEMORY_API_KEY sync script
 - Type: feature

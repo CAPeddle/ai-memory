@@ -5,6 +5,7 @@ status: completed
 date: 2026-06-30
 origin: docs/investigations/BOOTSTRAP_contact_memory_parser_session.md
 sample: docs/investigations/whatsapp/chat.txt
+story: ST-064
 ---
 
 # feat: Implement Contact Memory WhatsApp Parser

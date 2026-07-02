@@ -4,6 +4,7 @@ type: feat
 status: completed
 date: 2026-06-29
 origin: docs/investigations/BOOTSTRAP_contact_memory_parser_session.md
+story: ST-063
 ---
 
 # feat: Spec Contact Memory Parser Types

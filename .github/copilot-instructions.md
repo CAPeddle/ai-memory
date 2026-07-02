@@ -2,6 +2,8 @@
 
 > ⚠ **Architecture has evolved.** Several documents in `.github/` (including this file and the `/plan*`, `/continue`, `/recover`, `/governance-review` prompts) were authored when the v1 design targeted a single C# / SQLite / FTS5 stack. The cloud MCP server is now **Deno 2.0 + TypeScript** on **PostgreSQL 15 + pgvector + Apache AGE**, hosted in Docker. See [ADR-009](../docs/design/adr/ADR-009-deployment-model.md) (deployment) and [ADR-011](../docs/design/adr/ADR-011-storage-strategy.md) (storage) for the binding decisions. The C# / .NET 8 solution under `src/` is now scoped to the **local synthesis companion** (ST-019), not the cloud MCP. When stack details in this folder disagree with the ADRs, the ADRs win.
 
+> ⚠ **Plan format has also evolved.** The `Workflow Gate` section below and the `/plan-new`, `/plan`, `/continue`, `/recover` prompts describe the ExecPlan format under `.github/planning/execplans/`, which is **retired for new work**. New plans use `docs/plans/*.md` (the compound-engineering unified plan format) with a `story: ST-NNN` frontmatter field linking back to the board. See [CLAUDE.md's Workflow gate section](../CLAUDE.md#workflow-gate--do-not-skip) for the current process. Migrating these prompts to the unified format is tracked as **ST-066** on the board — until then they remain usable for existing In Progress ExecPlan-driven stories only.
+
 ## Mission
 
 Build ai-memory as a persistent memory service for AI coding agents. Preserve the repository intent established in the investigation documents and governance files unless the PO explicitly approves a change.

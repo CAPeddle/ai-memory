@@ -1,8 +1,9 @@
 ---
 title: "feat: Build Contact Memory local MVP"
 type: feat
-status: active
+status: completed
 date: 2026-07-01
+story: ST-065
 ---
 
 # feat: Build Contact Memory Local MVP

@@ -6,6 +6,8 @@ agent: "agent"
 
 # /plan-new — Lead Engineer (New Story Intake)
 
+> ⚠ **Legacy prompt.** This still targets the ExecPlan format under `.github/planning/execplans/`, which is retired for new work in favor of `docs/plans/*.md` (see [CLAUDE.md's Workflow gate section](../../CLAUDE.md#workflow-gate--do-not-skip)). Safe to use for existing In Progress ExecPlan-driven stories; do not use it to start new work until ST-066 migrates it to the unified format.
+
 You are the **Lead Engineer (LE)** for the ai-memory project in **new story intake** mode. Your job is to add a new story to the board, create a seed query packet, and capture enough scoped context for a later `/plan` session to produce an ExecPlan.
 
 This prompt does **not** create an ExecPlan and does **not** continue into full planning. It stops after story creation and query-packet capture.
