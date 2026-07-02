@@ -1149,7 +1149,21 @@ function hasSameEvidence(
   actual: readonly EvidenceReference[],
   expected: readonly EvidenceReference[],
 ): boolean {
-  return JSON.stringify(actual) === JSON.stringify(expected);
+  if (actual.length !== expected.length) return false;
+  return actual.every((ref, index) =>
+    canonicalizeEvidenceReference(ref) ===
+      canonicalizeEvidenceReference(expected[index])
+  );
+}
+
+function canonicalizeEvidenceReference(ref: EvidenceReference): string {
+  return JSON.stringify({
+    message_ids: [...ref.message_ids].sort(),
+    timestamp_range: ref.timestamp_range ?? null,
+    sender_refs: [...(ref.sender_refs ?? [])].sort(),
+    contact_refs: [...(ref.contact_refs ?? [])].sort(),
+    quote: ref.quote ?? null,
+  });
 }
 
 function isBoundedRef(value: unknown): value is string {

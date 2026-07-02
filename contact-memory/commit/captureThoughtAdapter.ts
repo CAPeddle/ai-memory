@@ -80,9 +80,9 @@ export function createMcpCaptureThoughtCommitter(options: {
     Deno.env.get("MCP_BASE_URL") ?? DEFAULT_MCP_BASE_URL;
   const apiKey = options.apiKey ?? Deno.env.get("MEMORY_API_KEY") ?? "";
   const fetchImpl = options.fetchImpl ?? fetch;
+  if (!apiKey) throw new Error("mcp_config_missing");
 
   return async (args: CaptureThoughtArguments): Promise<unknown> => {
-    if (!apiKey) throw new Error("mcp_config_missing");
     const id = crypto.randomUUID();
     const response = await fetchImpl(`${baseUrl}/mcp`, {
       method: "POST",
@@ -109,8 +109,9 @@ export function createMcpCaptureThoughtCommitter(options: {
         .split("\n")
         .filter((line) => line.startsWith("data:"))
         .map((line) => JSON.parse(line.slice(5).trim()));
-      if (!messages.length) throw new Error("mcp_commit_failed");
-      message = messages.find((entry) => entry.id === id) ?? messages[0];
+      const matched = messages.find((entry) => entry.id === id);
+      if (!matched) throw new Error("mcp_commit_failed");
+      message = matched;
     } else {
       message = await response.json();
     }

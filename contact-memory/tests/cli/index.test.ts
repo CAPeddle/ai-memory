@@ -101,6 +101,143 @@ Deno.test("CLI cancel before confirmation performs zero commits", async () => {
   if (calls.length !== 0) throw new Error("Expected zero commits");
 });
 
+Deno.test("CLI sanitizes control characters in the full item JSON dump", async () => {
+  class FakeRuntimeWithControlChar implements AgentRuntime {
+    generateStructured(request: GenerateStructuredRequest): Promise<unknown> {
+      const input = JSON.parse(request.userPrompt) as {
+        session_id: string;
+        chat_kind: "one_to_one" | "group" | "unknown";
+        messages: Array<{ message_id: string }>;
+      };
+      return Promise.resolve({
+        extraction_id: "extraction-1",
+        session_id: input.session_id,
+        source_chat: { session_id: input.session_id, kind: input.chat_kind },
+        items: [
+          {
+            kind: "commitment",
+            item_id: "item-1",
+            extraction_id: "extraction-1",
+            confidence: 0.91,
+            target: { kind: "person", display_name: "Person 2" },
+            evidence: [{
+              message_ids: [input.messages[0].message_id],
+              quote: "hello\x1b[31mdanger\x1b[0m",
+            }],
+            summary: "Person 2 said hello.",
+          },
+        ],
+      });
+    }
+  }
+
+  const io = scriptedIo(["a", "yes"]);
+  await runContactMemoryCli({
+    args: [fixturePath(), "Person_1", "--session-id", "session-1"],
+    runtime: new FakeRuntimeWithControlChar(),
+    commit: async () => ({ ok: true }),
+    io,
+    now: fixedNow,
+  });
+
+  if (io.output.includes("\x1b")) {
+    throw new Error(
+      `Expected control characters stripped from item JSON dump, got ${io.output}`,
+    );
+  }
+});
+
+Deno.test("CLI rejects an unparseable --from date before extraction", async () => {
+  let called = false;
+  class SpyRuntime implements AgentRuntime {
+    generateStructured(): Promise<unknown> {
+      called = true;
+      return Promise.resolve({});
+    }
+  }
+
+  const io = scriptedIo([]);
+  const code = await runContactMemoryCli({
+    args: [fixturePath(), "Person_1", "--from", "not-a-date"],
+    runtime: new SpyRuntime(),
+    commit: async () => ({ ok: true }),
+    io,
+    now: fixedNow,
+  });
+
+  if (code !== 1) throw new Error(`Expected failure code, got ${code}`);
+  if (called) {
+    throw new Error("Expected extraction not to run for an invalid --from");
+  }
+  if (!io.output.includes("--from must be a parseable date")) {
+    throw new Error(`Expected date validation message, got ${io.output}`);
+  }
+});
+
+Deno.test("CLI pre-commit summary excludes rejected items", async () => {
+  class FakeRuntimeTwoItems implements AgentRuntime {
+    generateStructured(request: GenerateStructuredRequest): Promise<unknown> {
+      const input = JSON.parse(request.userPrompt) as {
+        session_id: string;
+        chat_kind: "one_to_one" | "group" | "unknown";
+        messages: Array<{ message_id: string }>;
+      };
+      const messageId = input.messages[0].message_id;
+      return Promise.resolve({
+        extraction_id: "extraction-1",
+        session_id: input.session_id,
+        source_chat: { session_id: input.session_id, kind: input.chat_kind },
+        items: [
+          {
+            kind: "commitment",
+            item_id: "item-1",
+            extraction_id: "extraction-1",
+            confidence: 0.9,
+            target: { kind: "person", display_name: "Person 2" },
+            evidence: [{ message_ids: [messageId] }],
+            summary: "Approved fact.",
+          },
+          {
+            kind: "commitment",
+            item_id: "item-2",
+            extraction_id: "extraction-1",
+            confidence: 0.9,
+            target: { kind: "person", display_name: "Person 2" },
+            evidence: [{ message_ids: [messageId] }],
+            summary: "Rejected fact.",
+          },
+        ],
+      });
+    }
+  }
+
+  const calls: unknown[] = [];
+  const io = scriptedIo(["a", "r", "", "yes"]);
+  const code = await runContactMemoryCli({
+    args: [fixturePath(), "Person_1", "--session-id", "session-1"],
+    runtime: new FakeRuntimeTwoItems(),
+    commit: async (args) => {
+      calls.push(args);
+      return { ok: true };
+    },
+    io,
+    now: fixedNow,
+  });
+
+  if (code !== 0) throw new Error(`Expected success, got ${code}`);
+  if (calls.length !== 1) {
+    throw new Error(`Expected exactly one commit, got ${calls.length}`);
+  }
+  if (!io.output.includes("Candidate item_id=item-1")) {
+    throw new Error("Expected approved item in pre-commit summary");
+  }
+  if (io.output.includes("Candidate item_id=item-2")) {
+    throw new Error(
+      "Expected rejected item to be excluded from pre-commit summary",
+    );
+  }
+});
+
 Deno.test("CLI reports fake MCP failure by category and item id", async () => {
   const io = scriptedIo(["a", "yes"]);
   const code = await runContactMemoryCli({

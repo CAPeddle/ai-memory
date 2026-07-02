@@ -71,6 +71,19 @@ Deno.test("toCaptureThoughtArguments embeds only first evidence reference", () =
   }
 });
 
+Deno.test("toCaptureThoughtArguments omits evidence_quote when no quote is present", () => {
+  const candidate = candidateFixture({
+    evidence: [{ message_ids: ["m1"] }],
+  });
+  const args = toCaptureThoughtArguments(candidate, "contact-memory");
+
+  if (args.content.includes("evidence_quote:")) {
+    throw new Error(
+      "Expected evidence_quote to be omitted when no quote is present",
+    );
+  }
+});
+
 Deno.test("commitContactShardCandidates reports oversized content per item", async () => {
   const candidate = candidateFixture({ content: "x".repeat(32_100) });
   const results = await commitContactShardCandidates([candidate], {
@@ -210,6 +223,40 @@ Deno.test("MCP committer treats a JSON-RPC error on 200 OK as a failure", async 
   if (!threw) {
     throw new Error(
       "Expected JSON-RPC error on 200 OK to be reported as a failure",
+    );
+  }
+});
+
+Deno.test("MCP committer fails closed when no SSE frame matches the request id", async () => {
+  const commit = createMcpCaptureThoughtCommitter({
+    apiKey: "test-key",
+    baseUrl: "http://mcp.test",
+    fetchImpl: async () => {
+      return new Response(
+        `event: message\ndata: ${
+          JSON.stringify({ id: "some-other-request-id", result: { ok: true } })
+        }\n\n`,
+        {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        },
+      );
+    },
+  });
+
+  let threw = false;
+  try {
+    await commit({
+      content: "fact",
+      memory_type: "shard",
+      context: "project:test",
+    });
+  } catch {
+    threw = true;
+  }
+  if (!threw) {
+    throw new Error(
+      "Expected a non-matching SSE frame to be reported as a failure, not a false-positive success",
     );
   }
 });

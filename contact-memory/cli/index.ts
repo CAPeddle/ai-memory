@@ -158,13 +158,8 @@ async function reviewItems(
 
       if (answer.toLowerCase() === "a") {
         const decision = makeDecision(item, "approve", options.now);
-        const valid = validateReviewDecision(decision);
-        if (!valid.ok) {
-          options.io.write(`Review decision invalid: ${valid.message}\n`);
-          continue;
-        }
-        decisions.push(valid.value);
-        break;
+        if (tryRecordDecision(options.io, decisions, decision)) break;
+        continue;
       }
 
       if (answer.toLowerCase() === "r") {
@@ -172,13 +167,8 @@ async function reviewItems(
         const decision = makeDecision(item, "reject", options.now, {
           rejection_reason: reason?.trim() || undefined,
         });
-        const valid = validateReviewDecision(decision);
-        if (!valid.ok) {
-          options.io.write(`Review decision invalid: ${valid.message}\n`);
-          continue;
-        }
-        decisions.push(valid.value);
-        break;
+        if (tryRecordDecision(options.io, decisions, decision)) break;
+        continue;
       }
 
       if (answer.toLowerCase() === "e") {
@@ -193,18 +183,30 @@ async function reviewItems(
           replacement_item: replacement.value,
           edit_rationale: "local terminal edit",
         });
-        const valid = validateReviewDecision(decision);
-        if (!valid.ok) {
-          options.io.write(`Invalid edit: ${valid.message}\n`);
-          continue;
+        if (tryRecordDecision(options.io, decisions, decision, "Invalid edit")) {
+          break;
         }
-        decisions.push(valid.value);
-        break;
+        continue;
       }
     }
   }
 
   return { ok: true, value: decisions };
+}
+
+function tryRecordDecision(
+  io: TerminalIO,
+  decisions: ReviewDecision[],
+  decision: ReviewDecision,
+  invalidLabel = "Review decision invalid",
+): boolean {
+  const valid = validateReviewDecision(decision);
+  if (!valid.ok) {
+    io.write(`${invalidLabel}: ${valid.message}\n`);
+    return false;
+  }
+  decisions.push(valid.value);
+  return true;
 }
 
 function writeReviewItem(
@@ -215,7 +217,7 @@ function writeReviewItem(
   io.write(
     `\nItem ${item.item_id} (${item.kind}) confidence=${item.confidence}\n`,
   );
-  io.write(`${JSON.stringify(item, null, 2)}\n`);
+  io.write(`${sanitizeForTerminal(JSON.stringify(item, null, 2))}\n`);
   for (const evidence of item.evidence) {
     for (const messageId of evidence.message_ids) {
       const message = messageById.get(messageId);
@@ -292,7 +294,13 @@ function writePreCommitSummary(
   io.write(
     `approve=${counts.approve} edit=${counts.edit} reject=${counts.reject} candidates=${candidateCount}\n`,
   );
+  const committedItemIds = new Set(
+    decisions
+      .filter((decision) => decision.outcome !== "reject")
+      .map((decision) => decision.item_id),
+  );
   for (const item of extraction.items) {
+    if (!committedItemIds.has(item.item_id)) continue;
     io.write(`Candidate item_id=${item.item_id} kind=${item.kind}\n`);
   }
 }
@@ -322,14 +330,22 @@ function parseArgs(
   if (!Number.isInteger(messageCap) || messageCap < 1) {
     return { ok: false, message: "--message-cap must be a positive integer" };
   }
+  const from = flags.get("--from");
+  if (from !== undefined && Number.isNaN(Date.parse(from))) {
+    return { ok: false, message: "--from must be a parseable date" };
+  }
+  const to = flags.get("--to");
+  if (to !== undefined && Number.isNaN(Date.parse(to))) {
+    return { ok: false, message: "--to must be a parseable date" };
+  }
   return {
     ok: true,
     value: {
       filePath,
       contactName,
       project: flags.get("--project") ?? DEFAULT_PROJECT,
-      from: flags.get("--from"),
-      to: flags.get("--to"),
+      from,
+      to,
       messageCap,
       sessionId: flags.get("--session-id"),
     },
@@ -386,10 +402,17 @@ if (import.meta.main) {
       Deno.stdout.writeSync(new TextEncoder().encode(message)),
     prompt: (message) => Promise.resolve(prompt(message)),
   };
+  let commit: CaptureThoughtCommitter;
+  try {
+    commit = commitModule.createMcpCaptureThoughtCommitter();
+  } catch {
+    io.write("MCP commit is not configured (missing MEMORY_API_KEY).\n");
+    Deno.exit(1);
+  }
   const code = await runContactMemoryCli({
     args: Deno.args,
     runtime,
-    commit: commitModule.createMcpCaptureThoughtCommitter(),
+    commit,
     io,
   });
   Deno.exit(code);
