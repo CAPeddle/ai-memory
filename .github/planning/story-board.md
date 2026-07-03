@@ -140,6 +140,21 @@
 - Docs: `docs/investigations/contact-memory-mvp-review-and-governance-handoff.md` §7, `docs/investigations/compass_artifact_wf.md`
 - Notes: Grounded against real code 2026-07-03 — confirmed the silent-drop path: repair model drops an item to satisfy validation, whole extraction then succeeds with fewer items and zero reviewer signal (repeated failure instead throws and aborts the batch). Source-grounding research (`compass_artifact_wf.md`) favours re-grounding over dropping and treats the human gate as non-optional. Visibility is the non-negotiable half; re-grounding is the secondary improvement. PO decision 2026-07-03: board-track, do not implement now; when greenlit, prioritise visibility over re-grounding.
 
+### ST-069: CI coverage for contact-memory + secret-gate resilience
+- Type: debt / infra
+- Source: Contact Memory MVP review, PR #21 CI finding (2026-07-03)
+- phase: contact-memory
+- Value: 3
+- Blocked by: none
+- Touches: `.github/workflows/ci.yml`
+- Acceptance criteria:
+  - [ ] CI runs the `contact-memory/` Deno test suite (`deno test --allow-read --allow-env tests/`) as its own job — the current pipeline only runs `server/tests/` in the `mcp-test` container and never exercises `contact-memory/`, so the MVP's 77 tests have zero CI signal
+  - [ ] The contact-memory job does **not** require `OPENROUTER_API_KEY` (its tests stub the `AgentRuntime`/provider seam), so it stays green independent of the server integration job's secret gate
+  - [ ] The `OPENROUTER_API_KEY` secret-gate failure mode is documented (or made non-fatal for jobs that don't need it) so a missing secret can't silently red-X every run, including on `main`
+  - [ ] A run on `main` and on a contact-memory PR both go green
+- Plan: (to be created — `docs/plans/`)
+- Notes: Surfaced 2026-07-03 during PR #21 review. Root cause of the branch's red CI was an unset repo secret `OPENROUTER_API_KEY` — the first workflow step (`Require OPENROUTER_API_KEY secret`) exits 1 in ~6s, and this failed identically on `main` too (pre-existing infra breakage, not introduced by #21). Secret has since been set by the PO. Two distinct gaps: (1) zero CI coverage for the contact-memory MVP, (2) a single missing secret hard-fails the whole pipeline for jobs that don't need it.
+
 <!-- Phase 1 follow-ups deferred from earlier scoping -->
 
 ### ST-031: N:1 cluster-based consolidation (multi-shard → one wiki)
@@ -378,7 +393,7 @@
 - Notes: Retroactively logged — this story, ST-063, and ST-064 shipped through `docs/plans/*.md` without board entries, which the code review flagged as a workflow-gate violation. Backfilled together as part of formalizing `docs/plans/*.md` as the canonical plan format (see CLAUDE.md's Workflow gate section). Fixes committed on `feat/whatsapp-parser`, not yet merged.
 - Residuals (accepted, from 2026-07-03 handoff review §4 — not MVP-blocking per the plan's deferred scope):
   - **A1 (P1) — re-run can duplicate facts:** `extraction_id`/`item_id` are LLM-regenerated each run with no session persistence, so re-running after a partial commit failure can re-commit already-committed facts. Real fix = deterministic idempotency keys derived from content + provenance (not LLM-regenerated) via session/resume state. May warrant its own story when Contact Memory resume UX is scoped.
-  - **A2 (P2) — provenance block spoofable:** a contrived WhatsApp message could spoof the pipe-delimited provenance metadata block. No live exploit today (nothing parses it back). Revisit with structured/escaped encoding if any consumer parses the provenance block.
+  - **A2 (P2) — provenance block spoofable:** a contrived WhatsApp message could spoof the pipe-delimited provenance metadata block. No live exploit today (nothing parses it back). **Partially mitigated (2026-07-03 PR #21 review):** `renderCaptureContent` now `encodeURIComponent`-encodes each provenance value, so delimiter (`|`/`:`) injection *via values* is blocked. Residual risk is the unencoded fact `content` that precedes the `---cmv1---` marker — a body containing that literal marker line could still inject a spoofed block. Revisit with structured/escaped encoding (or content-side escaping of the marker) if any consumer parses the provenance block.
   - **A3 (P2/P3) — no retry + collapsed error categories:** no retry on transient network failures; error messages collapse distinct categories (an expired API key looks like a network outage). Cheap future win: bounded retry with backoff + distinct auth/network/server error classification.
 
 ### ST-064: WhatsApp export parser (pure parser module)
