@@ -4,7 +4,7 @@
 > Next planning target: (TBD after ST-072 completes).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review). ST-070 + ST-071 done 2026-07-03 (integration suite green in CI, PR #21 merged).
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
-> Last updated: 2026-07-03 (ST-069 → Done)
+> Last updated: 2026-07-03 (ST-073 → Done; ST-074 → Backlog)
 
 ---
 
@@ -27,6 +27,21 @@
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-034.md` (to be created)
 - Relates to: ST-054 (retrieval robustness) — ST-054's thin-corpus / low-confidence result signal is the trigger condition this spike designs the graph expansion against; ST-034 owns the "connected memories" answer ST-054 explicitly defers
 - Notes: Surfaced 2026-05-22 during entity↔thought provenance brainstorming. Without a bounding strategy, 1-hop expansion over popular entities returns hairballs and drowns out the high-signal hits that motivate the graph lane. Foundational design — settle before any graph-expanded search tool ships, not retrofitted after users hit noise. **Why widened 2026-06-04:** the build-failure false-empty incident (ST-054) showed the conceptually-correct mechanism for "surface *connected* memories" is the AGE graph, but it is built and orphaned from the default search path. Rather than spawn a duplicate "Story B", this spike now also designs the orchestration (conditional trigger + bounded-boost fusion) so the connected-retrieval feature story that follows has a settled design, not just cardinality numbers.
+
+### ST-074: Reconcile `ExtractionItem` shape — doc `{kind,payload}` vs code flattened-union + `EvidenceReference[]`
+- Type: bug / design
+- Source: PO (compass_artifact_wf.md residual concern #3, 2026-07-03)
+- phase: contact-memory
+- Value: 3
+- Blocked by: ST-073 (Agent D reconciliation proposal + PO direction decision)
+- Touches: `contact-memory/parser/types.ts`, `contact-memory/commit/captureThoughtAdapter.ts`, `docs/investigations/compass_artifact_wf.md` (align illustrative shape)
+- Acceptance criteria:
+  - [ ] Direction chosen by PO after reviewing Agent D's proposal (doc defers to code shape, or code evolves toward doc shape, or a third reconciliation)
+  - [ ] `ExtractionItem` shape is consistent between the doc's illustrative extraction contract and `contact-memory/parser/types.ts` (no `payload`/`char_span`/top-level `source_ids` drift left unaddressed)
+  - [ ] All existing contact-memory tests pass
+- Plan: (to be created — `docs/plans/`)
+- Docs: `docs/investigations/compass_artifact_wf.md`
+- Notes: Confirmed mismatch 2026-07-03 — doc [L154](../../docs/investigations/compass_artifact_wf.md#L154)/[L159](../../docs/investigations/compass_artifact_wf.md#L159) proposes `{kind, payload, quote, source_ids, char_span}` + `payload jsonb`; actual [`ExtractionItem`](../../contact-memory/parser/types.ts#L152) is a discriminated union of interfaces extending `ExtractionItemBase` with flattened per-kind fields + `evidence: EvidenceReference[]`. Neither `payload` nor `char_span` nor top-level `source_ids` exists in code. PO decision 2026-07-03: create now, do not implement until Agent D's proposal is reviewed and direction chosen.
 
 <!-- Phase 3 — Local Companion Services -->
 
@@ -391,7 +406,23 @@
 
 ## Done
 
-### ST-069: CI coverage for contact-memory + secret-gate resilience
+### ST-073: Verify residual claims in compass_artifact_wf.md (Deno libs, arXiv IDs, Zoom captions, k-run matching)
+- Type: spike
+- Source: PO (post-ce-doc-review residual concerns, 2026-07-03)
+- phase: contact-memory
+- Value: 3
+- Completed: 2026-07-03
+- Touches: `docs/investigations/compass_artifact_wf.md` (annotations only); no code changes
+- Acceptance criteria:
+  - [x] Each parsing lib verdict applied — mailparser/mbox-reader ✓ `npm:` (Deno 2 node-compat); planer ✓ but use `linkedom`/`deno-dom` not jsdom; Talon Python-only (not viable) — all sources reachable, verified 2026-07-03 ([L84](../../docs/investigations/compass_artifact_wf.md#L84)/[L89](../../docs/investigations/compass_artifact_wf.md#L89)/[L134](../../docs/investigations/compass_artifact_wf.md#L134))
+  - [x] All 5 arXiv IDs resolved on arxiv.org — two citation errors corrected in-doc: 2501.11840 author Konet→**Schroeder et al.** (figures matched); 2512.12818 system TEMPR→**Hindsight**
+  - [x] Zoom claim corrected — date May 18 2026 ✓ + captions-no-longer-downloadable ✓, but "paid cloud-recording plan" → **host-enabled Meeting Transcript setting** (Zoom KB0063899) ([L105](../../docs/investigations/compass_artifact_wf.md#L105))
+  - [x] Concern #5 resolved — PO chose **structured-key blocking → embedding-cosine** hybrid; recommendation written into §2 ([L54](../../docs/investigations/compass_artifact_wf.md#L54))
+  - [x] Verdicts applied as annotations; no claim silently deleted
+  - [x] Concern #3 Agent D proposal produced → PO chose **Opt 3 (accessor fns + evidence[0] doc note)**; split to ST-074; no code changed here
+- Plan: `docs/plans/2026-07-03-004-spike-verify-compass-residual-claims-plan.md`
+- Docs: `docs/investigations/compass_artifact_wf.md`
+- Notes: Residual concerns from the `ce-doc-review` of compass_artifact_wf.md. Verification fanned out to 4 parallel read-only sub-agents (3× ce-web-researcher + 1× Explore); web fully reachable this session. All findings PO-reviewed before doc edits. Concern #3 (ExtractionItem shape) split to ST-074 (code, blocked on this).
 - Type: debt / infra
 - Source: Contact Memory MVP review, PR #21 CI finding (2026-07-03)
 - phase: contact-memory
