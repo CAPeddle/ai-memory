@@ -758,16 +758,20 @@ function* walkCypherTokens(cypher: string): Generator<{ char: string; state: Cyp
         continue;
       }
       if (ch === "-" && next === "-") {
+        // Enter the comment state before emitting the opening delimiter so the
+        // "--" is tagged as comment (masked/stripped), not leaked as normal.
+        state = "lineComment";
         yield { char: ch, state };
         yield { char: next, state };
-        state = "lineComment";
         i += 2;
         continue;
       }
       if (ch === "/" && next === "*") {
+        // Enter the comment state before emitting the opening delimiter so the
+        // "/*" is tagged as comment (masked/stripped), not leaked as normal.
+        state = "blockComment";
         yield { char: ch, state };
         yield { char: next, state };
-        state = "blockComment";
         i += 2;
         continue;
       }

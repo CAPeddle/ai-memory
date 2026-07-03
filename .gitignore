@@ -21,6 +21,9 @@ obj/
 .DS_Store
 Thumbs.db
 
+# Windows NTFS alternate-data-stream download markers (surface as literal files under WSL)
+*:Zone.Identifier
+
 # Node modules
 node_modules/
 package-lock.json
@@ -54,3 +57,6 @@ opencode-mcp.json
 
 # Disposable review output
 findings.json
+
+# Real WhatsApp exports used for local Contact Memory manual verification (PII — never commit)
+docs/investigations/whatsapp/*.txt

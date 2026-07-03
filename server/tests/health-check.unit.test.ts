@@ -13,15 +13,8 @@ function recentRun(now: number, secondsAgo: number): string {
   return new Date(now - secondsAgo * 1000).toISOString();
 }
 
-function queryResult<T>(result: T[]): T[] & { timeout: (ms: number) => T[] & { catch: (fn: (e: unknown) => void) => void } } {
-  Object.assign(result, {
-    timeout: (_ms: number) => {
-      const wrapped = result as T[] & { timeout: (ms: number) => typeof wrapped; catch: (fn: (e: unknown) => void) => void };
-      wrapped.catch = (_fn: (e: unknown) => void) => {};
-      return wrapped;
-    },
-  });
-  return result as typeof result & { timeout: (ms: number) => typeof result };
+function queryResult<T>(result: T[]): T[] & { cancel: () => void } {
+  return Object.assign(result, { cancel: () => {} });
 }
 
 function baseSql(now: number, recent: string) {
@@ -38,6 +31,29 @@ function baseSql(now: number, recent: string) {
     return queryResult([]);
   }) as unknown as NonNullable<HealthDeps["sql"]>;
 }
+
+// Postgres `SELECT 1` probe resolves after a real delay so probePostgres measures
+// a deterministic, above-threshold latency via performance.now().
+function slowQueryResult<T>(result: T[], delayMs: number): Promise<T[]> & { cancel: () => void } {
+  const p = new Promise<T[]>((resolve) => {
+    setTimeout(() => resolve(Object.assign(result, { cancel: () => {} })), delayMs);
+  }) as Promise<T[]> & { cancel: () => void };
+  p.cancel = () => {};
+  return p;
+}
+
+function slowPostgresSql(recent: string, pgDelayMs: number) {
+  return ((strings: TemplateStringsArray, ..._values: unknown[]) => {
+    const q = strings.join("#");
+    if (q.includes("SELECT 1") || q.includes("SELECT 2")) return slowQueryResult([], pgDelayMs);
+    if (q.includes("extname = #")) return queryResult([{ extversion: "0.7.0" }, { extversion: "1.6.0" }]);
+    if (q.includes("needs_embedding")) return queryResult([{ pending: 0 }]);
+    if (q.includes("worker_runs")) return queryResult([{ ended_at: recent, errors: 0 }]);
+    return queryResult([]);
+  }) as unknown as NonNullable<HealthDeps["sql"]>;
+}
+
+const SLOW_PG_DELAY_MS = 120;
 
 Deno.test("deepHealthCheck: all probes pass → healthy", async () => {
   __resetHealthCheckCache();
@@ -349,7 +365,7 @@ Deno.test("deepHealthCheck: low Postgres latency threshold triggers degraded via
   __resetHealthCheckCache();
   const now = 1_000_000_000_000;
   const deps: HealthDeps = {
-    sql: baseSql(now, recentRun(now, 10)),
+    sql: slowPostgresSql(recentRun(now, 10), SLOW_PG_DELAY_MS),
     fetch: mockFetchReturn(200),
     now: () => now,
     env: (name: string) => {
@@ -369,7 +385,7 @@ Deno.test("deepHealthCheck: env override for HEALTH_POSTGRES_LATENCY_MS is respe
   const recent = recentRun(now, 10);
 
   const deps: HealthDeps = {
-    sql: baseSql(now, recent),
+    sql: slowPostgresSql(recent, SLOW_PG_DELAY_MS),
     fetch: mockFetchReturn(200),
     now: () => now,
     env: (name: string) => {
@@ -386,7 +402,7 @@ Deno.test("deepHealthCheck: env set to 0 for thresholds is accepted (zero-tolera
   const now = 1_000_000_000_000;
   const recent = recentRun(now, 10);
   const deps: HealthDeps = {
-    sql: baseSql(now, recent),
+    sql: slowPostgresSql(recent, SLOW_PG_DELAY_MS),
     fetch: mockFetchReturn(200),
     now: () => now,
     env: (name: string) => {

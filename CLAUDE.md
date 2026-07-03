@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository. It is also the canonical governance source for OpenCode sessions — see [AGENTS.md](AGENTS.md), which points back here rather than duplicating this content.
 
 ## What this repo is
 
@@ -41,13 +41,18 @@ Higher tier wins on conflict unless the PO explicitly overrides:
 
 ## Workflow gate — DO NOT skip
 
-Implementation work is gated by a written ExecPlan. Workflow is enforced via prompts in [.github/prompts/](.github/prompts/):
+Implementation work is gated by a written plan and tracked on the board — regardless of which tool is doing the work (Claude Code, OpenCode, or VS Code Copilot).
 
-- `/plan-new` and `/plan` — collaborative scoping with the PO (Phase 1 query packet → Phase 2 ExecPlan). Planning must be back-and-forth with the PO via `vscode_askQuestions`; never unilateral.
-- `/continue` — mechanically executes Ready ExecPlans.
-- `/recover` — forensic analysis of failed sessions; annotates the ExecPlan so the next `/continue` succeeds. Never re-executes failed work directly.
+**Canonical plan format:** [docs/plans/*.md](docs/plans/) — the compound-engineering unified plan artifact (Product Contract / Requirements / Implementation Units, produced by `ce-brainstorm`/`ce-plan` or authored by hand in the same shape). Every plan's YAML frontmatter must include `story: ST-NNN` linking it to its board entry. This is now the canonical format for **new** plans, superseding `.github/planning/execplans/exec-plan-ST-NNN.md` — existing ExecPlans stay in place as historical record and are not retroactively converted.
 
-**Board:** [.github/planning/story-board.md](.github/planning/story-board.md). **WIP limits: 1 In Progress, 1 in Review.** Trivial docs/housekeeping edits are fine without an ExecPlan as long as they don't conflict with an active story or change governance.
+**Before starting implementation** (via `ce-brainstorm`/`ce-plan`/`ce-work`, ad hoc, or any other path):
+1. Confirm a story-board entry exists for the work; create one if it doesn't (next available `ST-NNN`).
+2. Move it Backlog → In Progress, respecting **WIP limits: 1 In Progress, 1 in Review** on [.github/planning/story-board.md](.github/planning/story-board.md).
+3. Once the plan file exists, cross-link it: the plan's `story:` frontmatter and the board entry's `Plan:` field must point at each other.
+
+This is a **soft gate** — session discipline, not mechanical enforcement. Trivial docs/housekeeping edits are fine without a plan or board entry as long as they don't conflict with an active story or change governance.
+
+**VS Code Copilot workflow (legacy, pending migration — ST-066):** `/plan-new`, `/plan`, `/continue`, and `/recover` in [.github/prompts/](.github/prompts/) still target the retired ExecPlan format and its §-numbered sections (Recovery Ledger, Execution Log), which have no equivalent in the unified `docs/plans/` format — execution progress there is derived from git history, not stored in the plan body. These prompts remain usable for existing In Progress ExecPlan-driven stories but should not be used to start new work until ST-066 migrates them.
 
 Session handoff lives in [FollowUpSessionLog.txt](FollowUpSessionLog.txt) — replace (not append), max 40 lines, parseable by a fresh agent.
 
@@ -147,16 +152,17 @@ Existing precedent: [docker/postgres-age/age-v1.6.0-rc0.tar.gz](docker/postgres-
 
 ### Conventional commits with story trailers
 
-Every commit during ExecPlan execution uses Conventional Commits with a story+task footer ([.github/instructions/session-resilience.instructions.md](.github/instructions/session-resilience.instructions.md)):
+Every commit for board-tracked work uses Conventional Commits with a `Story: ST-NNN` trailer:
 
 ```
 feat(search): add MMR re-ranking pass
 
 Story: ST-005
-Task: §4.4
 ```
 
-Update the active ExecPlan's §5b Recovery Ledger immediately after each commit.
+**Legacy ExecPlan-driven work** additionally uses a `Task: §4.4`-style trailer and updates the ExecPlan's §5b Recovery Ledger immediately after each commit ([.github/instructions/session-resilience.instructions.md](.github/instructions/session-resilience.instructions.md)) — this applies only to the retired `.github/planning/execplans/` format.
+
+**`docs/plans/*.md`-driven work** (compound-engineering `ce-work` or equivalent) uses `Story: ST-NNN` alone; execution progress is derived from git history, not stored in the plan body.
 
 ## High-level architecture (cloud MCP)
 

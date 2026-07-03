@@ -1,26 +1,40 @@
-Session: 2026-06-26 PR #16 merge + post-merge board sync
-Branch: main
+Session: 2026-07-03 Contact Memory MVP review + governance handoff close-out (WSL2)
+Branch: feat/whatsapp-parser
 
 ACCOMPLISHED THIS SESSION
-- Pushed feat/windows-api-key-sync with ce-commit-push-pr and opened PR #16
-- PR merged to main (merge commit fd76676); branch deleted
-- Added ST-062 (WSL→Windows MEMORY_API_KEY sync script) to Done on story-board.md
-- Updated story-board.md Last updated to 2026-06-26
-- Refreshed FollowUpSessionLog.txt
+- Resolved the cross-clone handoff (docs/investigations/contact-memory-mvp-review-and-governance-handoff.md)
+- Verified handoff's "missing work" premise was STALE: commit 6623c65, AGENTS.md,
+  captureThoughtAdapter.ts, buildRepairPrompt, and ST-063/064/065/066 all exist,
+  committed, and pushed. Working tree clean; nothing at risk.
+- Governance refit (Finding B) already landed in 6623c65 — no rebuild needed.
+- Grounded Findings C & D against real code before board-tracking them.
+- Created ST-067 (extract shared/mcpTransport.ts) and ST-068 (repair-pass never
+  lose a fact silently) in Backlog, per PO decision (board-track, do NOT implement now).
+- Recorded residuals A1/A2/A3 (idempotency, provenance spoof, retry) in ST-065 notes.
+- Bumped board Last updated to 2026-07-03.
 
 BOARD STATE
 - In Progress: (empty)
 - Review: ST-047 (vectorize MCP repo review)
+- Backlog (new): ST-067 (Value 2), ST-068 (Value 4), plus ST-066 prompt migration
 - Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061
 
 COMMITS MADE
-  docs(governance): post-PR #16 board sync and session log refresh
+- (none yet — board edits staged in working tree, awaiting PO commit approval)
 
 KEY DISCOVERIES
-- None (routine bookkeeping session; no new process issues surfaced)
+- Web Claude "claimed vs actual" mismatch was a VISIBILITY artifact, not fabrication:
+  a Windows clone cannot see unpushed WSL2 commits. ALWAYS git log --all -S <symbol>
+  and git cat-file -t <hash> in the target clone before assuming claimed work is fake.
+- captureThoughtAdapter already fails loudly on missing key (mcp_config_missing) — ST-067
+  extraction must preserve that, NOT copy mcpClient.ts's "test-key"/localhost defaults.
+- Finding D silent-drop path confirmed: repair model drops the unknown_message_id item to
+  pass validation -> extraction succeeds with fewer items, zero reviewer signal.
 
 AVOIDANCE RULES
-- None specific to this session
+- Do not trust a handoff/memory claim about repo state without verifying in THIS clone.
 
 NEXT SESSION START
-- No Ready ExecPlan exists. Next session should run /plan to pick the next story from Unblocked on story-board.md, or resume ST-047 if it exits Review.
+- No Ready plan in In Progress. ST-067/ST-068 are Backlog (do-not-implement-now per PO).
+- If implementing D later: prioritise the "N items dropped during repair" visibility half
+  over message_id re-grounding. Run ce-code-review + ce-commit-push-pr with Story:/Plan: linkage.

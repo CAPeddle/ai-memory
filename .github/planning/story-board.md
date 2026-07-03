@@ -1,9 +1,10 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
-> Cadence: No sprint boundaries. /plan (Opus) creates plans; /continue (Sonnet) executes them.
+> Cadence: No sprint boundaries. Plans are authored as `docs/plans/*.md` (unified format, mandatory `story: ST-NNN` frontmatter) via `ce-brainstorm`/`ce-plan` or by hand; `ce-work` (or equivalent) executes them. Legacy `/plan` (Opus) + `/continue` (Sonnet) ExecPlan workflow retired for new work — see CLAUDE.md's Workflow gate section.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
 > Next planning target: None (no Ready ExecPlan in In Progress/Refined).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review)
-> Last updated: 2026-06-26
+> Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
+> Last updated: 2026-07-03
 
 ---
 
@@ -89,6 +90,101 @@
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-032.md`
 - Docs: `docs/governance/asset-metadata-contract.md`, `docs/governance/asset-contribution-policy.md`, `tools/GovernanceAssetValidator/Program.cs`, `.github/planning/assets/asset-catalog.md`
 - Notes: PO observed 2026-05-22 that the validator's manual `dotnet run -- build .` step does not happen, so the catalog is silently drifting AND the mechanism is paying its dev-experience cost (VS Code warnings on every governance file) without delivering its value. Spike must produce a real cost/benefit evaluation, not a rubber-stamp of the existing design. Disposition space bounded to "keep, in some form" per PO direction.
+
+### ST-066: Migrate VS Code planning prompts to the unified docs/plans/ format
+- Type: chore
+- Source: PO (Contact Memory MVP code review, workflow-gate finding, 2026-07-02)
+- phase: 0
+- Value: 2
+- Blocked by: none
+- Touches: `.github/prompts/plan-new.prompt.md`, `.github/prompts/plan.prompt.md`, `.github/prompts/continue.prompt.md`, `.github/prompts/recover.prompt.md`, `.github/copilot-instructions.md`, `.github/planning/execplans/_TEMPLATE.md` (retired, not deleted)
+- Acceptance criteria:
+  - [ ] `/plan-new` and `/plan` Phase 2 write `docs/plans/*.md` (unified format, `story: ST-NNN` frontmatter) instead of `.github/planning/execplans/exec-plan-ST-NNN.md`
+  - [ ] `/continue` reads Implementation Units from `docs/plans/*.md` instead of ExecPlan §4 Task Definitions, and derives resume state from git history (commits, board status) instead of an in-plan §5b Recovery Ledger — since the unified format stores no execution-progress fields in the plan body
+  - [ ] `/recover`'s forensic annotation targets are redesigned for the git-history-as-source-of-truth model (no §5b/§6b/§6c sections to annotate in `docs/plans/*.md`); decide and document the replacement mechanism (e.g. a session log entry, a `docs/residual-review-findings/*.md`-style doc, or a dedicated recovery-notes file) as part of this story, not assumed
+  - [ ] Cross-model review gate (currently described in `/plan` Phase 2 and `/continue` step 5) is preserved in the new flow, not silently dropped
+  - [ ] `.github/copilot-instructions.md` and the four prompt files' deprecation banners (added 2026-07-02) are removed once the migration lands
+  - [ ] At least one real story is planned and executed end-to-end through the migrated prompts as a validation pass before calling this Done
+- Plan: (to be created — `docs/plans/`)
+- Notes: Surfaced by the Contact Memory MVP code review (P1 finding: three consecutive Contact Memory sessions shipped through `docs/plans/*.md` with no board entry, because no VS Code-compatible path existed to produce that format with board linkage). CLAUDE.md's Workflow gate section and this board's header were updated 2026-07-02 to make `docs/plans/*.md` canonical for Claude Code/OpenCode work immediately; this story closes the remaining gap for VS Code Copilot sessions. The `/continue` and `/recover` redesign is the substantive part — the ExecPlan format's Recovery Ledger has no direct equivalent in the unified format's git-history-as-source-of-truth philosophy, so this is real design work, not a mechanical find-and-replace.
+
+### ST-067: Extract shared MCP transport module
+- Type: debt / maintainability
+- Source: Contact Memory MVP review, Finding C (2026-07-03)
+- phase: contact-memory
+- Value: 2
+- Blocked by: none
+- Touches: `shared/mcpTransport.ts` (new), `contact-memory/commit/captureThoughtAdapter.ts`, `server/tests/_helpers/mcpClient.ts` (optionally re-point to shared module)
+- Acceptance criteria:
+  - [ ] `shared/mcpTransport.ts` exports pure transport (`POST /mcp`, Bearer auth, `Accept: application/json, text/event-stream`, JSON-RPC envelope, SSE `data:` parsing with per-request `id` matching) with **no** env-var default fallbacks — fail loudly on missing config (mirror `captureThoughtAdapter`'s existing `mcp_config_missing` throw, not `mcpClient.ts`'s `?? "test-key"` / localhost defaults)
+  - [ ] `captureThoughtAdapter` consumes the shared module; its bespoke transport code (currently `captureThoughtAdapter.ts` L87–L118) is removed while preserving its `REQUEST_TIMEOUT_MS` AbortSignal and fail-closed `assertMcpToolSucceeded` behavior
+  - [ ] `mcpClient.ts` either re-uses the shared transport or is documented as a test-only wrapper that adds `extractText`/`sleep` and the env-var fallbacks
+  - [ ] All existing server + contact-memory tests pass
+- Plan: (to be created — `docs/plans/`)
+- Docs: `docs/investigations/contact-memory-mvp-review-and-governance-handoff.md` §6
+- Notes: Grounded against real code 2026-07-03 — the duplication is confirmed and the shared core is pure `fetch` transport with no mocking hooks. Low urgency; both implementations are small and stable. Do once, don't rush. PO decision 2026-07-03: board-track, do not implement now.
+
+### ST-068: Repair-pass — never lose a fact silently
+- Type: bug / design
+- Source: Contact Memory MVP review, Finding D (2026-07-03)
+- phase: contact-memory
+- Value: 4
+- Blocked by: none
+- Touches: `contact-memory/parser/extractor.ts` (`buildRepairPrompt`, `extractContactMemory` repair loop), `contact-memory/cli/index.ts` (CLI output), `contact-memory/tests/parser/extractor.test.ts`
+- Acceptance criteria:
+  - [ ] CLI/extractor output reports a **"N items dropped during repair"** count, including each dropped item's extracted text, whenever the repair pass returns fewer/changed items than the first extraction (the model's only current pass-validation path for an `unknown_message_id` is to drop the offending item — see `validateAndCrossCheck` in `extractor.ts` L145–L153)
+  - [ ] `buildRepairPrompt` includes the **valid `message_id` list** (IDs only — no transcript bodies) so the model can re-ground a bad citation instead of being forced to drop it
+  - [ ] A test proves: given a hallucinated `message_id`, the item is either re-grounded to a valid ID **or** surfaced in the dropped-count — never silently lost
+  - [ ] Privacy assertion: the repair prompt never contains transcript message **bodies** (current `buildRepairPrompt` L186 already omits the transcript via `privacy_note`; adding the ID list must preserve that)
+- Plan: (to be created — `docs/plans/`)
+- Docs: `docs/investigations/contact-memory-mvp-review-and-governance-handoff.md` §7, `docs/investigations/compass_artifact_wf.md`
+- Notes: Grounded against real code 2026-07-03 — confirmed the silent-drop path: repair model drops an item to satisfy validation, whole extraction then succeeds with fewer items and zero reviewer signal (repeated failure instead throws and aborts the batch). Source-grounding research (`compass_artifact_wf.md`) favours re-grounding over dropping and treats the human gate as non-optional. Visibility is the non-negotiable half; re-grounding is the secondary improvement. PO decision 2026-07-03: board-track, do not implement now; when greenlit, prioritise visibility over re-grounding.
+
+### ST-069: CI coverage for contact-memory + secret-gate resilience
+- Type: debt / infra
+- Source: Contact Memory MVP review, PR #21 CI finding (2026-07-03)
+- phase: contact-memory
+- Value: 3
+- Blocked by: none
+- Touches: `.github/workflows/ci.yml`
+- Acceptance criteria:
+  - [ ] CI runs the `contact-memory/` Deno test suite (`deno test --allow-read --allow-env tests/`) as its own job — the current pipeline only runs `server/tests/` in the `mcp-test` container and never exercises `contact-memory/`, so the MVP's 77 tests have zero CI signal
+  - [ ] The contact-memory job does **not** require `OPENROUTER_API_KEY` (its tests stub the `AgentRuntime`/provider seam), so it stays green independent of the server integration job's secret gate
+  - [ ] The `OPENROUTER_API_KEY` secret-gate failure mode is documented (or made non-fatal for jobs that don't need it) so a missing secret can't silently red-X every run, including on `main`
+  - [ ] A run on `main` and on a contact-memory PR both go green
+- Plan: (to be created — `docs/plans/`)
+- Notes: Surfaced 2026-07-03 during PR #21 review. Root cause of the branch's red CI was an unset repo secret `OPENROUTER_API_KEY` — the first workflow step (`Require OPENROUTER_API_KEY secret`) exits 1 in ~6s, and this failed identically on `main` too (pre-existing infra breakage, not introduced by #21). Secret has since been set by the PO. Two distinct gaps: (1) zero CI coverage for the contact-memory MVP, (2) a single missing secret hard-fails the whole pipeline for jobs that don't need it.
+
+### ST-070: Fix broken `.timeout()` calls in health-check probes
+- Type: bug
+- Source: PR #21 CI review, uncovered once the secret gate was cleared (2026-07-03)
+- phase: server
+- Value: 4
+- Blocked by: none
+- Touches: `server/src/healthCheck.ts`, `server/tests/healthCheck.test.ts` (or equivalent)
+- Acceptance criteria:
+  - [ ] Replace the four `sql\`...\`.timeout(PROBE_TIMEOUT_MS)` calls with a real per-query timeout — postgres.js `PendingQuery` has **no** `.timeout()` method (`PendingQueryModifiers` exposes only `execute()`/`cancel()`), so the current code fails `deno check` (TS2339 ×4) and throws `TypeError` at runtime, which the probe try/catch swallows into a `status: "error"` — i.e. the pg / extension / embedding-backlog / worker-staleness probes have been silently non-functional since ST-053
+  - [ ] Suggested fix: a `withQueryTimeout(pending, ms)` helper that `setTimeout(() => pending.cancel(), ms)` and clears the timer in `.finally()` — cancels the real query on timeout instead of leaking it (preferred over `Promise.race`)
+  - [ ] `deno check` passes clean across `server/`
+  - [ ] A test proves a slow probe times out and reports `status: "error"` (not a hang), and a fast probe reports `status: "ok"`
+  - [ ] CI `integration-tests` job goes green
+- Plan: (to be created — `docs/plans/`)
+- Notes: Pre-existing on `main` (introduced by commit `06f53b8`, health check for ST-053; `1074cba` didn't catch it). NOT introduced by PR #21 — confirmed `git show main:server/src/healthCheck.ts` has the identical calls. This is the second stacked CI blocker: the secret gate hid it because `deno test` never ran. Fixed on `feat/whatsapp-parser` per PO decision 2026-07-03. **Fixing the type error unmasked that `health-check.unit.test.ts` had never executed** (the type error blocked `deno test` from ever running it) — revealing two further pre-existing defects, both fixed in the same change: (1) the 3 latency-threshold tests asserted "degraded" from an instant mock that produced ~0ms latency (fixed with a delay-injecting postgres mock so `performance.now()` measures a deterministic above-threshold latency); (2) a real concurrency bug in `probeEmbeddingApi` where the single module-level `inflightPromise` ignored `cacheKey`, so concurrent probes with different configs wrongly shared one fetch (benign in prod where config is stable; fixed by keying the inflight map on `cacheKey`). Separately noted (NOT fixed — out of scope, and outside CI's test type-check graph): a latent `TS2769` in `server/index.ts:453` (`sql` template parameter typing) — `index.ts` is not imported by any test, so it doesn't block `deno test tests/`; worth its own cleanup. **Health-check portion verified green** (20/20 unit tests pass, `deno check` clean); the CI `integration-tests` job is now blocked by ST-071 (6 unrelated pre-existing failures), not by this fix.
+
+### ST-071: Green the server integration test suite (6 pre-existing failures)
+- Type: bug / infra
+- Source: PR #21 CI — first-ever run of the integration suite after ST-070 cleared the type error that blocked it (2026-07-03)
+- phase: server
+- Value: 4
+- Blocked by: ST-070 (type error had to be fixed before the suite could run at all)
+- Touches: `server/tests/cypher-injection.test.ts`, `server/tests/consolidation-worker-observability.test.ts`, `server/tests/worker-observability-e2e.test.ts` (and possibly the code under test)
+- Acceptance criteria:
+  - [x] `graph_traverse` comment-handling: 3 `assertEquals` failures at `cypher-injection.test.ts` L114/127/140 (keyword inside line comment, inside block comment, leading comment before `MATCH`) — fixed 2026-07-03 (commit `780f3a2`). Root cause was a real product bug in `walkCypherTokens` (server/index.ts): the opening `--`/`/*` delimiters were yielded with `state` still `normal` (reassigned only after the yields), leaking them into masked/stripped output → leading comment failed the `^\s*match` start check, block/line comments left an unterminated/invalid marker in the executable query. Fixed by entering the comment state before emitting the delimiter. All 20 `cypher-injection` tests pass, security guards intact.
+  - [x] `consolidation-worker-observability.test.ts:68` — `PostgresError: null value in column "query" of relation "recall_events" violates not-null constraint`: fixed 2026-07-03 (added the NOT NULL `query`/`rrf_score`/`rank` columns to the `recall_events` insert; also backdated the test's `consolidation_queue.queued_at` so `drainPendingOnce(limit=1)`, which claims `ORDER BY queued_at ASC`, reaches the test's `__TEST_LLM_FAIL__` item instead of one of the 33 seed-corpus pending rows) — commit `3c0dd1a`
+  - [x] worker-observability (2 failures) — `PostgresError: duplicate key value violates unique constraint "entity_extraction_queue_pkey"`: fixed 2026-07-03 (the `trg_queue_entity_extraction` AFTER INSERT trigger already enqueues the row, so the test's plain INSERT collided; made both inserts idempotent `ON CONFLICT (thought_id) DO UPDATE`) — commit `3c0dd1a`
+  - [x] Full `deno test tests/` goes green — **225 passed / 0 failed** in CI run 28656810023 (conclusion: success). First-ever green run of the integration suite.
+- Plan: (to be created — `docs/plans/`)
+- Notes: Surfaced 2026-07-03 the first time the integration suite ever ran in CI. All 6 failures are in files **unchanged from `main`** (`git diff --name-only origin/main...HEAD -- server/` shows only the two ST-070 health files) — so they are pre-existing on `main`, not introduced by PR #21 or ST-070. Root story: the CI `integration-tests` job has been red since inception (secret gate → type error → these), so the suite's green state was never established. **Progress 2026-07-03 (commit `3c0dd1a`, PO scope "fix only the trivial ones now"):** the 3 test-isolation/fixture failures (2× duplicate-key, 1× null-`query`) are fixed and confirmed green in CI (222 passed / 3 failed, run 28654276687). The 3 `graph_traverse` comment-handling failures turned out to be a genuine product bug (not assertion drift) and were fixed in commit `780f3a2`. **DONE 2026-07-03:** CI run 28656810023 is fully green (225 passed / 0 failed) — PR #21's `integration-tests` check passes for the first time. Commits: `3c0dd1a` (fixture isolation), `780f3a2` (graph_traverse comment tokenizer).
 
 <!-- Phase 1 follow-ups deferred from earlier scoping -->
 
@@ -309,6 +405,62 @@
 (Empty)
 
 ## Done
+
+### ST-065: Contact Memory local MVP (WhatsApp export → reviewed shards via platform MCP)
+- Type: feature
+- Source: PO (Contact Memory local MVP kickoff, 2026-07-01)
+- phase: contact-memory
+- Value: 4
+- Completed: 2026-07-02
+- Blocked by: — (ST-063, ST-064 complete)
+- Touches: `contact-memory/runtime/agent.ts` (new), `contact-memory/runtime/providers/anthropic.ts` (new), `contact-memory/parser/extractor.ts` (new), `contact-memory/commit/captureThoughtAdapter.ts` (new), `contact-memory/cli/index.ts` (new), `contact-memory/README.md` (new), `contact-memory/tests/**` (new), `docs/residual-review-findings/feat-whatsapp-parser.md` (new)
+- Acceptance criteria:
+  - [x] CLI parses a real WhatsApp export, extracts structured facts via a swappable `AgentRuntime` seam (Anthropic adapter), and enforces platform-decoupling (no `capture_thought`/platform fields in `ContactExtraction`)
+  - [x] Terminal review loop (approve/edit/reject) shows cited sender/body evidence and requires explicit confirmation before any write
+  - [x] Approved/edited items commit through the existing platform MCP's `capture_thought`, with provenance embedded via the `---cmv1---` content grammar
+  - [x] Manual verification against the real export and live platform MCP: both a contact-name query and a fact-specific query retrieve the committed shard
+  - [x] 9-persona code review completed post-ship; 7 findings applied and tested (terminal-injection sanitization, pre-commit summary accuracy, `--from`/`--to` validation, MCP commit fail-closed behavior, early config validation, order-insensitive evidence comparison, review-loop de-duplication); 3 findings left as tracked follow-ups (workflow-gate backfill — this story; MCP transport duplication; repair-pass privacy/repairability tradeoff)
+- Plan: `docs/plans/2026-07-01-001-feat-contact-memory-local-mvp-plan.md`
+- Notes: Retroactively logged — this story, ST-063, and ST-064 shipped through `docs/plans/*.md` without board entries, which the code review flagged as a workflow-gate violation. Backfilled together as part of formalizing `docs/plans/*.md` as the canonical plan format (see CLAUDE.md's Workflow gate section). Fixes committed on `feat/whatsapp-parser`, not yet merged.
+- Residuals (accepted, from 2026-07-03 handoff review §4 — not MVP-blocking per the plan's deferred scope):
+  - **A1 (P1) — re-run can duplicate facts:** `extraction_id`/`item_id` are LLM-regenerated each run with no session persistence, so re-running after a partial commit failure can re-commit already-committed facts. Real fix = deterministic idempotency keys derived from content + provenance (not LLM-regenerated) via session/resume state. May warrant its own story when Contact Memory resume UX is scoped.
+  - **A2 (P2) — provenance block spoofable:** a contrived WhatsApp message could spoof the pipe-delimited provenance metadata block. No live exploit today (nothing parses it back). **Partially mitigated (2026-07-03 PR #21 review):** `renderCaptureContent` now `encodeURIComponent`-encodes each provenance value, so delimiter (`|`/`:`) injection *via values* is blocked. Residual risk is the unencoded fact `content` that precedes the `---cmv1---` marker — a body containing that literal marker line could still inject a spoofed block. Revisit with structured/escaped encoding (or content-side escaping of the marker) if any consumer parses the provenance block.
+  - **A3 (P2/P3) — no retry + collapsed error categories:** no retry on transient network failures; error messages collapse distinct categories (an expired API key looks like a network outage). Cheap future win: bounded retry with backoff + distinct auth/network/server error classification.
+
+### ST-064: WhatsApp export parser (pure parser module)
+- Type: feature
+- Source: PO (Contact Memory product track, real-export-grounded parser)
+- phase: contact-memory
+- Value: 4
+- Completed: 2026-06-30
+- Blocked by: — (ST-063 complete)
+- Touches: `contact-memory/parser/whatsapp.ts` (new), `contact-memory/tests/parser/whatsapp.test.ts` (new), `contact-memory/tests/fixtures/whatsapp/sanitized-chat.txt` (new)
+- Acceptance criteria:
+  - [x] Pure parser (no AI/provider/runtime/MCP/database dependencies) converts a WhatsApp `.txt` export into `WhatsAppChat`/`WhatsAppMessage` validating through `contact-memory/parser/types.ts`
+  - [x] Handles the observed day-first export format, multiline continuations, empty bodies, system notices, media/deleted/edited markers, Unicode, and out-of-order timestamps
+  - [x] Deterministic, unique `message_id` generation stable across insertions/removals of unrelated earlier messages
+  - [x] Fails closed (structured parser error) on unsupported timestamp formats and malformed input, without leaking raw transcript content in errors
+  - [x] Regression coverage uses a sanitized committed fixture, not the real investigation export
+- Plan: `docs/plans/2026-06-30-001-feat-whatsapp-parser-plan.md`
+- Notes: Retroactively logged alongside ST-063 and ST-065 — see ST-065's Notes for why. Merged via PR #20.
+
+### ST-063: Contact Memory parser types (domain contract)
+- Type: feature
+- Source: PO (Contact Memory product track kickoff)
+- phase: contact-memory
+- Value: 4
+- Completed: 2026-06-29
+- Blocked by: —
+- Touches: `contact-memory/parser/types.ts` (new), `contact-memory/tests/parser/types.test.ts` (new), `shared/tagGrammar.ts` (tag grammar extracted for reuse)
+- Acceptance criteria:
+  - [x] Parser-output types (`WhatsAppChat`, `WhatsAppMessage`) with no AI/runtime dependencies
+  - [x] `ContactExtraction`/`ExtractionItem` defined as a review-only, platform-decoupled discriminated union (commitment/event/preference/sentiment/important_date/shared_link/conversation_theme)
+  - [x] `ReviewDecision` modeled per-item (approve/edit/reject), not per-batch
+  - [x] `ContactShard`/`ContactShardCandidate` kept independent of commit mechanisms (`capture_thought`, future `memory_teach`) — translation deferred to a separate adapter
+  - [x] Tag grammar shared between `server/src/parseContext.ts` and Contact code via `shared/tagGrammar.ts`, not mirrored
+  - [x] Contract tests cover type/schema validation, review-decision mapping, tag validation, and shard-boundary invariants
+- Plan: `docs/plans/2026-06-29-001-feat-contact-parser-types-plan.md`
+- Notes: Retroactively logged alongside ST-064 and ST-065 — see ST-065's Notes for why. Merged via PR #19.
 
 ### ST-062: WSL→Windows MEMORY_API_KEY sync script
 - Type: feature

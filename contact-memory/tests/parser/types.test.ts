@@ -364,6 +364,35 @@ Deno.test("edited item must preserve item identity, kind, and evidence", () => {
   if (swappedEvidence.ok) throw new Error("Expected swapped evidence to fail");
 });
 
+Deno.test("edited item may reorder evidence message_ids and object keys without failing preservation check", () => {
+  const multiIdEvidence = [
+    { message_ids: ["m1", "m2"], quote: "Dinner on Friday" },
+  ];
+  const reorderedEvidence = [
+    { quote: "Dinner on Friday", message_ids: ["m2", "m1"] },
+  ];
+  const result = createContactShardCandidates({
+    extraction: extraction([commitment({ evidence: multiIdEvidence })]),
+    decisions: [
+      decision({
+        outcome: "edit",
+        edit_rationale: "Fix typo only",
+        replacement_item: commitment({
+          evidence: reorderedEvidence,
+          summary: "Sarah committed to bring dessert (typo fixed).",
+        }),
+      } as Partial<ReviewDecision>),
+    ],
+    source: "whatsapp_export",
+    agent_context: "contact-parser",
+  });
+  if (!result.ok) {
+    throw new Error(
+      `Expected reordered-but-equivalent evidence to pass, got: ${result.message}`,
+    );
+  }
+});
+
 Deno.test("direct raw-object construction cannot satisfy ContactShard candidate validation", () => {
   if (
     isContactShardCandidate({

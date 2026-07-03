@@ -1,6 +1,6 @@
 {
   "tasks": {
-    "test": "deno test --allow-read tests/"
+    "test": "deno test --allow-read --allow-env tests/"
   },
   "compilerOptions": {
     "strict": true

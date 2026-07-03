@@ -81,14 +81,21 @@ Deno.test({
       `;
 
       await sql`
-        INSERT INTO recall_events (thought_id, project)
-        VALUES (${thoughtId}::uuid, 'test'), (${thoughtId}::uuid, 'test')
+        INSERT INTO recall_events (thought_id, query, rrf_score, rank, project)
+        VALUES
+          (${thoughtId}::uuid, 'consolidation error test', 0.5, 1, 'test'),
+          (${thoughtId}::uuid, 'consolidation error test', 0.4, 2, 'test')
       `;
 
+      // The shared db-test queue accumulates pending rows from other tests, and
+      // drainPendingOnce(limit=1) claims the oldest (ORDER BY queued_at ASC). The
+      // recall_events insert above also auto-enqueues this thought via trigger, so
+      // upsert and backdate queued_at to guarantee THIS item is claimed first.
       await sql`
-        INSERT INTO consolidation_queue (thought_id, status)
-        VALUES (${thoughtId}::uuid, 'pending')
-        ON CONFLICT (thought_id) DO NOTHING
+        INSERT INTO consolidation_queue (thought_id, status, queued_at)
+        VALUES (${thoughtId}::uuid, 'pending', now() - interval '10 years')
+        ON CONFLICT (thought_id) DO UPDATE
+          SET status = 'pending', queued_at = now() - interval '10 years'
       `;
 
       const processed = await drainPendingOnce(false, 1);

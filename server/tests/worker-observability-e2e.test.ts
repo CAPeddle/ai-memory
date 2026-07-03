@@ -41,9 +41,14 @@ Deno.test({
         )
       `;
 
+      // The AFTER INSERT trigger on thoughts (trg_queue_entity_extraction)
+      // already enqueues this thought, so upsert instead of a plain INSERT
+      // to avoid colliding on the entity_extraction_queue primary key.
       await sql`
         INSERT INTO entity_extraction_queue (thought_id, status, source_fingerprint)
         VALUES (${thoughtId}::uuid, 'pending', ${`fp-obs-e2e-${suffix}`})
+        ON CONFLICT (thought_id) DO UPDATE
+          SET status = 'pending', source_fingerprint = EXCLUDED.source_fingerprint
       `;
 
       const { __entityWorkerTestHooks } = await import("../src/entityWorker.ts");
@@ -90,9 +95,14 @@ Deno.test({
         )
       `;
 
+      // The AFTER INSERT trigger on thoughts (trg_queue_entity_extraction)
+      // already enqueues this thought, so upsert instead of a plain INSERT
+      // to avoid colliding on the entity_extraction_queue primary key.
       await sql`
         INSERT INTO entity_extraction_queue (thought_id, status, source_fingerprint)
         VALUES (${thoughtId}::uuid, 'pending', ${`fp-queue-depth-${suffix}`})
+        ON CONFLICT (thought_id) DO UPDATE
+          SET status = 'pending', source_fingerprint = EXCLUDED.source_fingerprint
       `;
 
       const afterText = extractText(await mcpCall("stats", {}));
