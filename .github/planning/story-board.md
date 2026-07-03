@@ -4,7 +4,7 @@
 > Next planning target: None (no Ready ExecPlan in In Progress/Refined).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review)
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
-> Last updated: 2026-07-02
+> Last updated: 2026-07-03
 
 ---
 
@@ -107,6 +107,38 @@
   - [ ] At least one real story is planned and executed end-to-end through the migrated prompts as a validation pass before calling this Done
 - Plan: (to be created — `docs/plans/`)
 - Notes: Surfaced by the Contact Memory MVP code review (P1 finding: three consecutive Contact Memory sessions shipped through `docs/plans/*.md` with no board entry, because no VS Code-compatible path existed to produce that format with board linkage). CLAUDE.md's Workflow gate section and this board's header were updated 2026-07-02 to make `docs/plans/*.md` canonical for Claude Code/OpenCode work immediately; this story closes the remaining gap for VS Code Copilot sessions. The `/continue` and `/recover` redesign is the substantive part — the ExecPlan format's Recovery Ledger has no direct equivalent in the unified format's git-history-as-source-of-truth philosophy, so this is real design work, not a mechanical find-and-replace.
+
+### ST-067: Extract shared MCP transport module
+- Type: debt / maintainability
+- Source: Contact Memory MVP review, Finding C (2026-07-03)
+- phase: contact-memory
+- Value: 2
+- Blocked by: none
+- Touches: `shared/mcpTransport.ts` (new), `contact-memory/commit/captureThoughtAdapter.ts`, `server/tests/_helpers/mcpClient.ts` (optionally re-point to shared module)
+- Acceptance criteria:
+  - [ ] `shared/mcpTransport.ts` exports pure transport (`POST /mcp`, Bearer auth, `Accept: application/json, text/event-stream`, JSON-RPC envelope, SSE `data:` parsing with per-request `id` matching) with **no** env-var default fallbacks — fail loudly on missing config (mirror `captureThoughtAdapter`'s existing `mcp_config_missing` throw, not `mcpClient.ts`'s `?? "test-key"` / localhost defaults)
+  - [ ] `captureThoughtAdapter` consumes the shared module; its bespoke transport code (currently `captureThoughtAdapter.ts` L87–L118) is removed while preserving its `REQUEST_TIMEOUT_MS` AbortSignal and fail-closed `assertMcpToolSucceeded` behavior
+  - [ ] `mcpClient.ts` either re-uses the shared transport or is documented as a test-only wrapper that adds `extractText`/`sleep` and the env-var fallbacks
+  - [ ] All existing server + contact-memory tests pass
+- Plan: (to be created — `docs/plans/`)
+- Docs: `docs/investigations/contact-memory-mvp-review-and-governance-handoff.md` §6
+- Notes: Grounded against real code 2026-07-03 — the duplication is confirmed and the shared core is pure `fetch` transport with no mocking hooks. Low urgency; both implementations are small and stable. Do once, don't rush. PO decision 2026-07-03: board-track, do not implement now.
+
+### ST-068: Repair-pass — never lose a fact silently
+- Type: bug / design
+- Source: Contact Memory MVP review, Finding D (2026-07-03)
+- phase: contact-memory
+- Value: 4
+- Blocked by: none
+- Touches: `contact-memory/parser/extractor.ts` (`buildRepairPrompt`, `extractContactMemory` repair loop), `contact-memory/cli/index.ts` (CLI output), `contact-memory/tests/parser/extractor.test.ts`
+- Acceptance criteria:
+  - [ ] CLI/extractor output reports a **"N items dropped during repair"** count, including each dropped item's extracted text, whenever the repair pass returns fewer/changed items than the first extraction (the model's only current pass-validation path for an `unknown_message_id` is to drop the offending item — see `validateAndCrossCheck` in `extractor.ts` L145–L153)
+  - [ ] `buildRepairPrompt` includes the **valid `message_id` list** (IDs only — no transcript bodies) so the model can re-ground a bad citation instead of being forced to drop it
+  - [ ] A test proves: given a hallucinated `message_id`, the item is either re-grounded to a valid ID **or** surfaced in the dropped-count — never silently lost
+  - [ ] Privacy assertion: the repair prompt never contains transcript message **bodies** (current `buildRepairPrompt` L186 already omits the transcript via `privacy_note`; adding the ID list must preserve that)
+- Plan: (to be created — `docs/plans/`)
+- Docs: `docs/investigations/contact-memory-mvp-review-and-governance-handoff.md` §7, `docs/investigations/compass_artifact_wf.md`
+- Notes: Grounded against real code 2026-07-03 — confirmed the silent-drop path: repair model drops an item to satisfy validation, whole extraction then succeeds with fewer items and zero reviewer signal (repeated failure instead throws and aborts the batch). Source-grounding research (`compass_artifact_wf.md`) favours re-grounding over dropping and treats the human gate as non-optional. Visibility is the non-negotiable half; re-grounding is the secondary improvement. PO decision 2026-07-03: board-track, do not implement now; when greenlit, prioritise visibility over re-grounding.
 
 <!-- Phase 1 follow-ups deferred from earlier scoping -->
 
@@ -344,6 +376,10 @@
   - [x] 9-persona code review completed post-ship; 7 findings applied and tested (terminal-injection sanitization, pre-commit summary accuracy, `--from`/`--to` validation, MCP commit fail-closed behavior, early config validation, order-insensitive evidence comparison, review-loop de-duplication); 3 findings left as tracked follow-ups (workflow-gate backfill — this story; MCP transport duplication; repair-pass privacy/repairability tradeoff)
 - Plan: `docs/plans/2026-07-01-001-feat-contact-memory-local-mvp-plan.md`
 - Notes: Retroactively logged — this story, ST-063, and ST-064 shipped through `docs/plans/*.md` without board entries, which the code review flagged as a workflow-gate violation. Backfilled together as part of formalizing `docs/plans/*.md` as the canonical plan format (see CLAUDE.md's Workflow gate section). Fixes committed on `feat/whatsapp-parser`, not yet merged.
+- Residuals (accepted, from 2026-07-03 handoff review §4 — not MVP-blocking per the plan's deferred scope):
+  - **A1 (P1) — re-run can duplicate facts:** `extraction_id`/`item_id` are LLM-regenerated each run with no session persistence, so re-running after a partial commit failure can re-commit already-committed facts. Real fix = deterministic idempotency keys derived from content + provenance (not LLM-regenerated) via session/resume state. May warrant its own story when Contact Memory resume UX is scoped.
+  - **A2 (P2) — provenance block spoofable:** a contrived WhatsApp message could spoof the pipe-delimited provenance metadata block. No live exploit today (nothing parses it back). Revisit with structured/escaped encoding if any consumer parses the provenance block.
+  - **A3 (P2/P3) — no retry + collapsed error categories:** no retry on transient network failures; error messages collapse distinct categories (an expired API key looks like a network outage). Cheap future win: bounded retry with backoff + distinct auth/network/server error classification.
 
 ### ST-064: WhatsApp export parser (pure parser module)
 - Type: feature
