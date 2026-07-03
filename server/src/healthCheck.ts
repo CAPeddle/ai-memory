@@ -24,11 +24,11 @@ export interface HealthDeps {
 }
 
 const embeddingCache = new Map<string, { status: "ok" | "error"; ts: number }>();
-let inflightPromise: Promise<CheckResult> | null = null;
+const inflightProbes = new Map<string, Promise<CheckResult>>();
 
 export function __resetHealthCheckCache(): void {
   embeddingCache.clear();
-  inflightPromise = null;
+  inflightProbes.clear();
 }
 
 function sanitizeError(err: unknown, context: string): string {
@@ -36,6 +36,22 @@ function sanitizeError(err: unknown, context: string): string {
     return `${context}: ${err.name}`;
   }
   return context;
+}
+
+/**
+ * Bound a postgres.js query with a real timeout. `PendingQuery` has no `.timeout()`
+ * method (it exposes only `execute()`/`cancel()`), so we race the query against a
+ * timer that cancels the in-flight query and rejects if it overruns.
+ */
+function withQueryTimeout<T>(pending: Promise<T> & { cancel: () => void }, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      pending.cancel();
+      reject(new Error("query timed out"));
+    }, ms);
+  });
+  return Promise.race([pending, timeout]).finally(() => clearTimeout(timer));
 }
 
 function resolveEnv(name: string, env?: (name: string) => string | undefined): string | undefined {
@@ -54,7 +70,7 @@ function resolveThreshold(name: string, defaultVal: number, env?: (name: string)
 async function probePostgres(sql: typeof defaultSql): Promise<CheckResult> {
   const start = performance.now();
   try {
-    await sql`SELECT 1`.timeout(PROBE_TIMEOUT_MS);
+    await withQueryTimeout(sql`SELECT 1`, PROBE_TIMEOUT_MS);
     return { status: "ok", latency_ms: Math.round(performance.now() - start) };
   } catch (err) {
     return { status: "error", error: sanitizeError(err, "postgres probe failed") };
@@ -63,7 +79,7 @@ async function probePostgres(sql: typeof defaultSql): Promise<CheckResult> {
 
 async function probeExtension(sql: typeof defaultSql, extname: string): Promise<CheckResult> {
   try {
-    const rows = await sql`SELECT extversion FROM pg_extension WHERE extname = ${extname}`.timeout(PROBE_TIMEOUT_MS);
+    const rows = await withQueryTimeout(sql`SELECT extversion FROM pg_extension WHERE extname = ${extname}`, PROBE_TIMEOUT_MS);
     if (rows.length === 0) return { status: "error", error: `extension ${extname} not found` };
     return { status: "ok", version: rows[0].extversion };
   } catch (err) {
@@ -87,9 +103,9 @@ async function probeEmbeddingApi(fetch: typeof globalThis.fetch, now: () => numb
     return { status: cached.status, cached: true };
   }
 
-  if (inflightPromise) return inflightPromise;
+  if (inflightProbes.has(cacheKey)) return inflightProbes.get(cacheKey)!;
 
-  inflightPromise = (async () => {
+  const probe: Promise<CheckResult> = (async () => {
     try {
       const apiKey = resolveEnv("OPENROUTER_API_KEY", env) ?? "";
       const r = await fetch(`${baseUrl}/models`, {
@@ -105,11 +121,12 @@ async function probeEmbeddingApi(fetch: typeof globalThis.fetch, now: () => numb
       embeddingCache.set(cacheKey, { status: "error", ts: now() });
       return { status: "error", error: sanitizeError(err, "embedding API probe failed"), cached: false };
     } finally {
-      inflightPromise = null;
+      inflightProbes.delete(cacheKey);
     }
   })();
 
-  return inflightPromise;
+  inflightProbes.set(cacheKey, probe);
+  return probe;
 }
 
 async function probeEmbeddingBacklog(sql: typeof defaultSql, env?: (name: string) => string | undefined): Promise<CheckResult> {
@@ -117,7 +134,7 @@ async function probeEmbeddingBacklog(sql: typeof defaultSql, env?: (name: string
     return { status: "n/a", reason: "embedding backfill disabled" };
   }
   try {
-    const rows = await sql`SELECT COUNT(*)::int AS pending FROM thoughts WHERE needs_embedding = true`.timeout(PROBE_TIMEOUT_MS);
+    const rows = await withQueryTimeout(sql`SELECT COUNT(*)::int AS pending FROM thoughts WHERE needs_embedding = true`, PROBE_TIMEOUT_MS);
     const pending = rows[0].pending;
     const threshold = resolveThreshold("HEALTH_EMBEDDING_BACKLOG", DEFAULT_EMBEDDING_BACKLOG, env);
     return { status: pending > threshold ? "error" : "ok", pending, threshold };
@@ -131,7 +148,7 @@ async function probeWorker(sql: typeof defaultSql, workerName: string, featureFl
     return { status: "n/a", reason: `${workerName} worker disabled` };
   }
   try {
-    const rows = await sql`SELECT ended_at, errors FROM worker_runs WHERE worker = ${workerName} AND ended_at IS NOT NULL ORDER BY ended_at DESC LIMIT 1`.timeout(PROBE_TIMEOUT_MS);
+    const rows = await withQueryTimeout(sql`SELECT ended_at, errors FROM worker_runs WHERE worker = ${workerName} AND ended_at IS NOT NULL ORDER BY ended_at DESC LIMIT 1`, PROBE_TIMEOUT_MS);
     if (rows.length === 0) return { status: "ok", reason: "no completed runs yet (fresh boot)" };
     const endedAt = new Date(rows[0].ended_at).getTime();
     const ageSec = Math.round((now() - endedAt) / 1000);

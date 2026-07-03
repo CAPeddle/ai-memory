@@ -155,6 +155,22 @@
 - Plan: (to be created — `docs/plans/`)
 - Notes: Surfaced 2026-07-03 during PR #21 review. Root cause of the branch's red CI was an unset repo secret `OPENROUTER_API_KEY` — the first workflow step (`Require OPENROUTER_API_KEY secret`) exits 1 in ~6s, and this failed identically on `main` too (pre-existing infra breakage, not introduced by #21). Secret has since been set by the PO. Two distinct gaps: (1) zero CI coverage for the contact-memory MVP, (2) a single missing secret hard-fails the whole pipeline for jobs that don't need it.
 
+### ST-070: Fix broken `.timeout()` calls in health-check probes
+- Type: bug
+- Source: PR #21 CI review, uncovered once the secret gate was cleared (2026-07-03)
+- phase: server
+- Value: 4
+- Blocked by: none
+- Touches: `server/src/healthCheck.ts`, `server/tests/healthCheck.test.ts` (or equivalent)
+- Acceptance criteria:
+  - [ ] Replace the four `sql\`...\`.timeout(PROBE_TIMEOUT_MS)` calls with a real per-query timeout — postgres.js `PendingQuery` has **no** `.timeout()` method (`PendingQueryModifiers` exposes only `execute()`/`cancel()`), so the current code fails `deno check` (TS2339 ×4) and throws `TypeError` at runtime, which the probe try/catch swallows into a `status: "error"` — i.e. the pg / extension / embedding-backlog / worker-staleness probes have been silently non-functional since ST-053
+  - [ ] Suggested fix: a `withQueryTimeout(pending, ms)` helper that `setTimeout(() => pending.cancel(), ms)` and clears the timer in `.finally()` — cancels the real query on timeout instead of leaking it (preferred over `Promise.race`)
+  - [ ] `deno check` passes clean across `server/`
+  - [ ] A test proves a slow probe times out and reports `status: "error"` (not a hang), and a fast probe reports `status: "ok"`
+  - [ ] CI `integration-tests` job goes green
+- Plan: (to be created — `docs/plans/`)
+- Notes: Pre-existing on `main` (introduced by commit `06f53b8`, health check for ST-053; `1074cba` didn't catch it). NOT introduced by PR #21 — confirmed `git show main:server/src/healthCheck.ts` has the identical calls. This is the second stacked CI blocker: the secret gate hid it because `deno test` never ran. Fixed on `feat/whatsapp-parser` per PO decision 2026-07-03. **Fixing the type error unmasked that `health-check.unit.test.ts` had never executed** (the type error blocked `deno test` from ever running it) — revealing two further pre-existing defects, both fixed in the same change: (1) the 3 latency-threshold tests asserted "degraded" from an instant mock that produced ~0ms latency (fixed with a delay-injecting postgres mock so `performance.now()` measures a deterministic above-threshold latency); (2) a real concurrency bug in `probeEmbeddingApi` where the single module-level `inflightPromise` ignored `cacheKey`, so concurrent probes with different configs wrongly shared one fetch (benign in prod where config is stable; fixed by keying the inflight map on `cacheKey`). Separately noted (NOT fixed — out of scope, and outside CI's test type-check graph): a latent `TS2769` in `server/index.ts:453` (`sql` template parameter typing) — `index.ts` is not imported by any test, so it doesn't block `deno test tests/`; worth its own cleanup.
+
 <!-- Phase 1 follow-ups deferred from earlier scoping -->
 
 ### ST-031: N:1 cluster-based consolidation (multi-shard → one wiki)
