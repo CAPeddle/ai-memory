@@ -1017,6 +1017,7 @@ server.registerTool(
   {
     title: "Run consolidation sweep",
     description: "Manually drain pending consolidation candidates. Use when an operator or agent needs to trigger a consolidation sweep outside the background schedule. Parameters: dry_run previews work without thought mutations; limit caps processed candidates. Example: {\"dry_run\":true,\"limit\":10}. Returns: JSON with processed count and dry_run flag. Errors/edge cases: dry_run=true still writes dry-run consolidation_log rows; limit defaults to 50 and cannot exceed 500.",
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
     inputSchema: {
       dry_run: z.boolean().optional().describe("If true, skip thoughts mutations and tag consolidation_log rows as dry_run=true."),
       limit: z.number().int().positive().max(500).optional().describe("Maximum number of pending candidates to process in this sweep; defaults to 50 and maxes at 500."),

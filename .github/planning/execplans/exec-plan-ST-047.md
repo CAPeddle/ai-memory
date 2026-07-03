@@ -31,12 +31,12 @@ This story enriches all tool descriptions without changing any logic.
 ## §1b. Outcomes & Conclusions
 
 - completion status: full
-- key findings/achievements: All 10 MCP tool descriptions enriched with usage guidance, parameter docs, examples, return expectations, and error/edge-case information. Misleading metadata (search fallback claims, search_thoughts/list_thoughts profile filtering claims) corrected to match runtime behavior. Protocol compatibility test expanded with source-of-truth tool name derivation and targeted regression assertions.
+- key findings/achievements: All 10 MCP tool descriptions enriched with usage guidance, parameter docs, examples, return expectations, and error/edge-case information. Misleading metadata (search fallback claims, search_thoughts/list_thoughts profile filtering claims) corrected to match runtime behavior. Protocol compatibility test expanded with source-of-truth tool name derivation and targeted regression assertions. *(Note 2026-07-03: server/index.ts registers 11 tools — search, fetch, search_thoughts, capture_thought, list_thoughts, thought_stats, graph_traverse, graph_search, consolidate, stats, report_feedback. Task 4.1 originally listed 9; stats and report_feedback were omitted and have been added to the task definition. Whether both received enrichment under the original execution is unverified.)*
 - requirements met vs unmet:
   - [met] All MCP tool descriptions include usage examples and parameter docs (AC-15)
   - [met] Descriptions accurately reflect runtime behavior (no profile-isolation claims where runtime only filters by project)
   - [met] Targeted regression assertions prevent re-introduction of misleading metadata
-  - [deferred] consolidate tool annotations — separate story per scope boundary decision
+  - [done 2026-07-03] Update the `consolidate` tool's annotation/description further — added `annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false }` (deferred scope delivered in same session as doc review)
 - architectural impact: unchanged — metadata-only, no handler or schema changes
 - supporting evidence: 10/10 `mcp-protocol-compat.test.ts` tests pass including 3 targeted regression assertions (search fallback, search_thoughts project scoping, list_thoughts project scoping)
 - downstream changes: Board ST-047 moved to Review; `.gitignore` updated for runtime byproducts
@@ -96,7 +96,7 @@ Status: ✅ Ready — implementation and remediation complete
 
 **Input:** `server/index.ts` — each `registerTool` call's description field.
 
-**Working directory:** `c:\projects\ai-memory\`
+**Working directory:** `/home/cpeddle/projects/ai-memory`
 
 **Steps:**
 
@@ -206,6 +206,16 @@ Status: ✅ Ready — implementation and remediation complete
    Errors: Returns "Not found" if ID doesn't exist or thought is inactive.
    ```
 
+   **stats (worker & system statistics):**
+   ```
+   Get queue, worker, recall, and content statistics. Use when an agent needs operational status for ai-memory background work and recent recall activity. No parameters; call with {}. Example: {}. Returns: JSON with queues, workers, recall, and content sections. Errors/edge cases: database failures are returned as tool errors; broader than thought_stats — includes worker health signals.
+   ```
+
+   **report_feedback:**
+   ```
+   Report whether a recalled thought was helpful or irrelevant for a given query. Use after evaluating a search result — for example, after a code edit attributable to a recalled memory. Parameters: thought_id (UUID of the thought), query (original search query text), verdict ('helpful' or 'irrelevant'). Example: {"thought_id":"a1b2c3d4-e5f6-7890-abcd-ef1234567890","query":"embedding timeout investigation","verdict":"helpful"}. Returns: confirmation message. Errors/edge cases: invalid UUIDs fail schema validation; non-existent thought_id returns a foreign key violation.
+   ```
+
 2. Keep descriptions concise but complete. The above are templates — adapt to fit within reasonable length.
 
 **Expected output:** All tools have enriched descriptions visible via MCP tools/list.
@@ -219,45 +229,21 @@ docker compose --profile test exec mcp-test deno test --frozen --allow-net --all
 
 ---
 
-### Task 4.2: Write description validation test
+### Task 4.2: Expand `mcp-protocol-compat.test.ts` with description regression assertions
 
-**Working directory:** `c:\projects\ai-memory\`
+**Working directory:** `/home/cpeddle/projects/ai-memory`
+
+**Note (post-implementation update 2026-07-03):** The original plan called for creating `server/tests/tool-descriptions.test.ts`. During execution the approach changed to expanding the existing `mcp-protocol-compat.test.ts` instead. The file `server/tests/tool-descriptions.test.ts` was never created.
 
 **Steps:**
 
-1. Create `server/tests/tool-descriptions.test.ts`:
-   ```typescript
-   import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-   import { listTools } from "./_helpers/mcpClient.ts";
+1. In `server/tests/mcp-protocol-compat.test.ts`, add targeted regression assertions:
+   - Derive expected tool names from the MCP `tools/list` response as the source of truth (avoids hard-coding a separate list)
+   - Assert that `search_thoughts` description does not claim profile-based isolation (runtime only filters by project)
+   - Assert that `list_thoughts` description does not claim profile-based isolation
+   - Assert that the `search` fallback behavior description accurately reflects the actual fallback path
 
-   Deno.test("all tools have descriptions with examples", async () => {
-     const tools = await listTools();
-
-     for (const tool of tools) {
-       const desc = tool.description ?? "";
-       assertEquals(
-         desc.toLowerCase().includes("example") || desc.toLowerCase().includes("e.g."),
-         true,
-         `Tool "${tool.name}" description should include an example`,
-       );
-     }
-   });
-
-   Deno.test("all tools have descriptions mentioning errors or returns", async () => {
-     const tools = await listTools();
-
-     for (const tool of tools) {
-       const desc = tool.description ?? "";
-       assertEquals(
-         desc.toLowerCase().includes("return") || desc.toLowerCase().includes("error"),
-         true,
-         `Tool "${tool.name}" description should mention returns or errors`,
-       );
-     }
-   });
-   ```
-
-2. If `listTools` doesn't exist in the helper, add it — it calls MCP's `tools/list` method.
+2. All tool descriptions must contain at least one example value and mention expected returns or errors.
 
 **Verification:**
 ```powershell
@@ -280,7 +266,7 @@ docker compose --profile test exec mcp-test deno test --frozen --allow-net --all
 
 | Field | Value |
 |---|---|
-| **Next task** | Task 4.1 |
+| **Next task** | N/A — complete (2026-06-19) |
 | **Known blockers** | None |
 
 ---
@@ -295,9 +281,17 @@ docker compose --profile test exec mcp-test deno test --frozen --allow-net --all
 
 ## §6. Execution Log
 
+- Task 4.1 complete: All tool descriptions enriched in `server/index.ts`. During review, two misleading descriptions were discovered and corrected: `search_thoughts` and `list_thoughts` incorrectly claimed profile-based isolation — runtime only filters by project. `search` fallback description was also corrected.
+- Task 4.2 complete: Targeted regression assertions added to `mcp-protocol-compat.test.ts` (approach changed from creating a new file — see §6b). Source-of-truth tool name derivation added.
+- Task 4.3 complete: 10/10 `mcp-protocol-compat.test.ts` tests pass including 3 targeted regression assertions.
+
 ---
 
 ## §6b. Surprises & Discoveries
+
+- **Test strategy changed:** Original plan created `server/tests/tool-descriptions.test.ts`. During execution the decision was made to expand `mcp-protocol-compat.test.ts` instead — keeping description validation co-located with protocol compatibility tests and avoiding a redundant test file. The new file was never created.
+- **Misleading metadata found:** `search_thoughts` and `list_thoughts` incorrectly claimed to filter by `profile` in addition to `project`. The runtime only filters by project — profile is parsed from context but not enforced as a DB predicate. Descriptions corrected.
+- **Search fallback description corrected:** The original `search` (ChatGPT compat) description implied fallback behavior that did not match the actual implementation. Corrected to accurately reflect the vector-only search path.
 
 ---
 
@@ -311,10 +305,28 @@ docker compose --profile test exec mcp-test deno test --frozen --allow-net --all
 
 ## §7b. Outcomes & Retrospective
 
-*(populated on completion)*
+- **Completion status:** Full.
+- **Key findings/achievements:** All 10 MCP tool descriptions enriched with usage guidance, parameter docs, examples, return expectations, and error/edge-case information. Two misleading descriptions corrected to match runtime behavior. Protocol compatibility test expanded with source-of-truth tool name derivation and 3 targeted regression assertions.
+- **Requirements met vs unmet:**
+  - [met] All MCP tool descriptions include usage examples and parameter docs (AC-15)
+  - [met] Descriptions accurately reflect runtime behavior (no profile-isolation claims where runtime only filters by project)
+  - [met] Targeted regression assertions prevent re-introduction of misleading metadata
+  - [deferred] See Open Questions below: "consolidate tool annotations" deferral needs disambiguation.
+- **Architectural impact:** Unchanged — metadata-only, no handler or schema changes.
+- **Supporting evidence:** 10/10 `mcp-protocol-compat.test.ts` tests pass including 3 targeted regression assertions.
+- **Downstream changes:** Board ST-047 moved to Review; `.gitignore` updated for runtime byproducts.
 
 ---
 
 ## Revision Notes
 
 - 2026-05-31: Initial ExecPlan from QP-038 §4.18.
+- 2026-07-03: Post-implementation doc review (ce-doc-review). Applied: duplicate §2b checklist entry removed; Windows working-directory paths corrected to Linux; Task 4.2 rewritten to document actual approach (expanded mcp-protocol-compat.test.ts, not a new file); stats and report_feedback added to Task 4.1 tool enumeration; §5b/§6/§6b/§7b populated.
+
+---
+
+## Open Questions
+
+### From 2026-07-03 review
+
+- **[F-03] RESOLVED:** `[deferred] consolidate tool annotations` means: update the `consolidate` MCP tool's own annotation/description further. Added `annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false }` to the `consolidate` tool registration in `server/index.ts` (2026-07-03). Delivered in the same session as the doc review; no separate story needed.
