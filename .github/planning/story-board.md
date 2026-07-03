@@ -1,7 +1,7 @@
 > System: Continuous-flow kanban · WIP limit: 1 In Progress · 1 in Review
 > Cadence: No sprint boundaries. Plans are authored as `docs/plans/*.md` (unified format, mandatory `story: ST-NNN` frontmatter) via `ce-brainstorm`/`ce-plan` or by hand; `ce-work` (or equivalent) executes them. Legacy `/plan` (Opus) + `/continue` (Sonnet) ExecPlan workflow retired for new work — see CLAUDE.md's Workflow gate section.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
-> Next planning target: None (no Ready ExecPlan in In Progress/Refined).
+> Next planning target: ST-072 (Ready plan `docs/plans/2026-07-03-001-fix-capture-thought-metadata-jsonb-typing-plan.md`; move Backlog→In Progress to execute).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061, ST-072 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review). ST-070 + ST-071 done 2026-07-03 (integration suite green in CI, PR #21 merged).
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
 > Last updated: 2026-07-03
@@ -209,7 +209,7 @@
   - [ ] `deno check` passes clean across all of `server/` (no new errors introduced)
   - [ ] `capture_thought` still round-trips `metadata.identifiers` correctly: the full integration suite stays green (`docker compose --profile test exec -T mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/` → 225 passed / 0 failed), specifically the `e2e` identifier-normalization assertions in `server/tests/e2e.test.ts` (they read `metadata.identifiers.tickets/builds`). NB: this suite needs a real `OPENROUTER_API_KEY` in the container — locally the placeholder key yields ~9 false `401` failures that pass in CI (see `.github/instructions/dev-environment.instructions.md` §Gotchas); rely on CI as the arbiter for the LLM-dependent tests
   - [ ] After editing server code, `docker compose --profile test restart mcp-test` before re-running integration tests (the running server loads `index.ts` at boot; Deno does not hot-reload it)
-- Plan: (to be created — `docs/plans/`)
+- Plan: `docs/plans/2026-07-03-001-fix-capture-thought-metadata-jsonb-typing-plan.md` (Ready)
 - Notes: Latent because `server/index.ts` is **not imported by any test** — it is only referenced as a file *path* by `server/tests/mcp-protocol-compat.test.ts` — so it is outside CI's `deno test tests/` type-check graph and never blocked the suite. This means CI will **not** catch a regression here; the `deno check server/index.ts` step in the acceptance criteria is the real gate. Small, isolated, one-line-ish change; good first-task for a fresh session. Explicitly deferred from ST-070 (see ST-070 Notes, "Separately noted (NOT fixed …)").
 
 <!-- Phase 1 follow-ups deferred from earlier scoping -->
