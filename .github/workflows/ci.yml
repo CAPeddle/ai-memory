@@ -1,4 +1,4 @@
-name: CI — Integration Tests
+name: CI
 
 on:
   push:
@@ -7,17 +7,23 @@ on:
     branches: [main]
 
 jobs:
-  integration-tests:
+  server-integration-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
 
+      # The server integration suite exercises LLM/embedding-dependent tests and
+      # therefore genuinely requires OPENROUTER_API_KEY. This gate is an
+      # intentional hard failure, but it is scoped to THIS job only. The sibling
+      # contact-memory-tests job runs independently and needs no secret, so a
+      # missing OPENROUTER_API_KEY reds only this job — it can no longer silently
+      # red-X the whole pipeline for suites that don't need it (ST-069).
       - name: Require OPENROUTER_API_KEY secret
         run: |
           if [ -z "${{ secrets.OPENROUTER_API_KEY }}" ]; then
-            echo "Missing repository secret OPENROUTER_API_KEY"
+            echo "Missing repository secret OPENROUTER_API_KEY — set it in repo Settings → Secrets and variables → Actions."
             exit 1
           fi
 
@@ -56,3 +62,23 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose --profile test down -v
+
+  contact-memory-tests:
+    # Independent of the server integration job and its OPENROUTER_API_KEY gate.
+    # The contact-memory suite stubs the AgentRuntime/provider seam, so it needs
+    # no secret and stays green even when the server-side secret is absent
+    # (ST-069). Runs natively on Deno — no Docker test stack required.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: "2.0.0"
+
+      - name: Run contact-memory tests
+        working-directory: contact-memory
+        run: deno task test
