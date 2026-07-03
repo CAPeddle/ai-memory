@@ -1,39 +1,31 @@
-Session: 2026-07-03 Green server integration suite (ST-070/071) + merge PR #21 (WSL2)
-Branch: main (feat/whatsapp-parser merged and deleted)
+Session: 2026-07-03 ST-072 — fix latent TS2769 in capture_thought INSERT
+Branch: main (direct commit e172d70)
 
 ACCOMPLISHED THIS SESSION
-- ST-070 DONE: health-check .timeout() fix (withQueryTimeout + per-cacheKey inflight probes).
-- ST-071 DONE: greened the server integration suite. 5 fixes:
-  - 2x entity_extraction_queue duplicate-key (trigger auto-enqueues) -> ON CONFLICT upsert
-  - 1x recall_events missing NOT NULL cols (query/rrf_score/rank)
-  - 1x consolidation claim-order isolation -> backdated queued_at so drainPendingOnce(1) claims it
-  - 1x REAL product bug in graph_traverse walkCypherTokens: comment opening delimiters
-    (-- and /*) were yielded as state=normal (reassigned after yields), leaking into the
-    executable query -> fixed by setting comment state BEFORE emitting the delimiter.
-- CI run 28656810023 fully green: 225 passed / 0 failed (first-ever green integration run).
-- PR #21 code-reviewed (no blockers), merged to main (merge commit 06c28d8), branch deleted.
-- Captured local-vs-CI testing gotchas into .github/instructions/dev-environment.instructions.md.
-- Created ST-072 (fix latent TS2769 in capture_thought INSERT) - self-contained, ready for a fresh session.
+- ST-072 DONE: fixed latent TS2769 in `capture_thought` INSERT in server/index.ts.
+  Root cause: bare `${metadata}` object bind rejected by postgres.js typed template.
+  Fix: `${metadata}` → `${sql.json(metadata)}` (matches entityWorker.ts + consolidationWorker.ts pattern).
+  Verification: `deno check server/index.ts` → 0 errors; all of server/ clean.
+  Local integration: 216 passed / 9 expected-local-401 (same baseline; CI is arbiter for LLM tests).
+  Commit e172d70 pushed to main.
 
 BOARD STATE
-- In Progress: (empty)   Review: ST-047 (vectorize MCP repo review)
-- Backlog (new this session): ST-072 (Value 3, unblocked, server phase)
-- Prior backlog still open: ST-066, ST-067, ST-068, ST-069
-- Unblocked: ST-023, ST-019, ST-045, ST-048..ST-051, ST-053, ST-059..ST-061, ST-072
+- In Progress: (empty)   Review: ST-047 (tool descriptions)
+- Done (just completed): ST-072
+- Backlog (open): ST-066, ST-067, ST-068, ST-069, ST-023, ST-019, ST-045, ST-048..ST-051,
+  ST-053, ST-059..ST-061
 
 COMMITS (on main)
-- b42412b health fix (ST-070) | 3c0dd1a fixture isolation (ST-071) | 780f3a2 graph_traverse (ST-071)
-- board updates + ba0de90 dev-env gotchas | 06c28d8 merge PR #21 | + ST-072/handoff (this wrap-up)
+- e172d70 fix(capture_thought): wrap metadata bind in sql.json() to resolve TS2769 (ST-072)
 
-KEY DISCOVERIES
-- Local integration failures are NOT a faithful CI mirror: placeholder OPENROUTER_API_KEY -> ~9
-  false 401 e2e failures that pass in CI; db-test accumulates queue state across exec runs
-  (reset via down/up); seed corpus yields ~33 pending consolidation_queue rows.
-- Edited server code needs `docker compose --profile test restart mcp-test` (no Deno hot-reload).
-- server/index.ts is outside CI's test type-check graph (not imported) -> deno check is the only gate.
+KEY REMINDERS
+- server/index.ts is outside CI's test type-check graph (not imported) -> `deno check` is the only gate.
+- Local integration failures not a faithful CI mirror: 9 false e2e 401s (placeholder OPENROUTER key).
+- Editing server code requires `docker compose --profile test restart mcp-test` before re-running tests.
+- deno binary at /home/cpeddle/.deno/bin/deno (not on PATH in some terminal sessions).
 
-NEXT SESSION START
-- ST-072 is the cleanest next task: fix ${metadata} -> sql.json(metadata) in capture_thought INSERT.
-  Full self-contained context (exact error, fix pattern, verification cmds) in board ST-072.
-- Gate: DATABASE_URL="postgres://x:x@127.0.0.1:5432/x" deno check server/index.ts must pass clean.
-- Larger open work: ST-069 (contact-memory CI coverage), ST-066 (prompt migration), ST-068 (repair visibility).
+NEXT SESSION OPTIONS
+- ST-069: contact-memory CI coverage (next Value-3 unblocked task)
+- ST-066: prompt migration to unified plan format (pending)
+- ST-068: repair-pass visibility (never lose a fact silently — visibility half first)
+- ST-047 in Review — check if it needs merge or follow-up

@@ -4,7 +4,7 @@
 > Next planning target: (TBD after ST-072 completes).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review). ST-070 + ST-071 done 2026-07-03 (integration suite green in CI, PR #21 merged).
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
-> Last updated: 2026-07-03 (ST-072 → In Progress)
+> Last updated: 2026-07-03 (ST-072 → Done)
 
 ---
 
@@ -385,10 +385,7 @@
 
 ## In Progress
 
-### ST-072: Fix latent `TS2769` in `capture_thought` INSERT (`server/index.ts`)
-- Type: bug / debt
-- Plan: `docs/plans/2026-07-03-001-fix-capture-thought-metadata-jsonb-typing-plan.md`
-- Status: In Progress 2026-07-03
+(Empty)
 
 ## Review
 
@@ -408,6 +405,20 @@
 (Empty)
 
 ## Done
+
+### ST-072: Fix latent `TS2769` in `capture_thought` INSERT (`server/index.ts`)
+- Type: bug / debt
+- Source: Uncovered during ST-070/ST-071 (PR #21 CI review, 2026-07-03)
+- phase: server
+- Value: 3
+- Completed: 2026-07-03
+- Commit: `e172d70`
+- Acceptance criteria:
+  - [x] `deno check server/index.ts` passes clean (0 errors)
+  - [x] `deno check` passes clean across all of `server/`
+  - [x] Integration suite baseline maintained: 216 passed / 9 expected-local-401 (CI is arbiter for LLM tests)
+- Plan: `docs/plans/2026-07-03-001-fix-capture-thought-metadata-jsonb-typing-plan.md`
+- Notes: One-line fix: `${metadata}` → `${sql.json(metadata)}` in the `capture_thought` INSERT. Pattern matches existing jsonb binds in `entityWorker.ts` and `consolidationWorker.ts`. Pushed to main (direct commit, no PR — trivial type-only fix, no behavioral change).
 
 ### ST-065: Contact Memory local MVP (WhatsApp export → reviewed shards via platform MCP)
 - Type: feature
