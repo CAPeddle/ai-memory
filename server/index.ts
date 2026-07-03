@@ -466,7 +466,7 @@ server.registerTool(
           ${content},
           ${searchText},
           ${IDENTIFIER_NORMALIZER_VERSION},
-          ${metadata},
+          ${sql.json(metadata)},
           ${memory_type ?? "shard"},
           ${project},
           ${tags},
