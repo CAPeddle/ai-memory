@@ -158,6 +158,39 @@ export type ExtractionItem =
   | SharedLinkItem
   | ConversationThemeItem;
 
+/**
+ * Provenance access convention (ST-074).
+ *
+ * The parser emits provenance as an ordered `evidence: EvidenceReference[]`
+ * array, highest-confidence extraction first. The commit path canonically
+ * treats `evidence[0]` as the primary reference. These pure helpers centralize
+ * that convention so consumers do not hardcode `evidence[0]` or hand-roll the
+ * cross-evidence source-id union. They accept any evidence-bearing value
+ * (`ExtractionItem`, `ContactShardCandidate`, …) since the evidence shapes are
+ * structurally identical.
+ */
+export function getPrimaryQuote(
+  item: { evidence: readonly EvidenceReference[] },
+): string | undefined {
+  return item.evidence[0]?.quote;
+}
+
+export function getAllSourceIds(
+  item: { evidence: readonly EvidenceReference[] },
+): string[] {
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const ref of item.evidence) {
+    for (const messageId of ref.message_ids) {
+      if (!seen.has(messageId)) {
+        seen.add(messageId);
+        ids.push(messageId);
+      }
+    }
+  }
+  return ids;
+}
+
 export interface ContactDate {
   value: string;
   precision: DatePrecision;

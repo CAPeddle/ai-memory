@@ -1,3 +1,4 @@
+import { getPrimaryQuote } from "../parser/types.ts";
 import type { ContactShardCandidate } from "../parser/types.ts";
 
 export interface CaptureThoughtArguments {
@@ -131,7 +132,12 @@ function assertMcpToolSucceeded(message: unknown): void {
 }
 
 function renderCaptureContent(candidate: ContactShardCandidate): string {
+  // Provenance convention (ST-074): `evidence[0]` is the primary,
+  // highest-confidence reference. Message-ids come from that first entry; the
+  // quote is read via `getPrimaryQuote` so the convention has one home. Use
+  // `getAllSourceIds` if a future consumer needs the full cross-evidence union.
   const firstEvidence = candidate.evidence[0];
+  const primaryQuote = getPrimaryQuote(candidate);
   const metadata: Record<string, string> = {
     source: candidate.source,
     session_id: candidate.session_id,
@@ -142,8 +148,8 @@ function renderCaptureContent(candidate: ContactShardCandidate): string {
     review_outcome: candidate.review.outcome,
     evidence_message_ids: firstEvidence?.message_ids.join(",") ?? "",
   };
-  if (firstEvidence?.quote) {
-    metadata.evidence_quote = firstEvidence.quote.slice(0, 500);
+  if (primaryQuote) {
+    metadata.evidence_quote = primaryQuote.slice(0, 500);
   }
 
   const provenance = Object.entries(metadata)

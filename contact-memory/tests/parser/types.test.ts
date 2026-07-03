@@ -2,6 +2,8 @@ import {
   type ContactExtraction,
   createContactShardCandidates,
   type ExtractionItem,
+  getAllSourceIds,
+  getPrimaryQuote,
   isContactShardCandidate,
   isExtractionItem,
   isReviewDecision,
@@ -1073,4 +1075,49 @@ Deno.test("platform-coupled fields are not required or accepted as shard identit
   if (
     validateReviewDecision({ ...decision(), outcome: "capture_thought" }).ok
   ) throw new Error("Expected platform action outcome to fail");
+});
+
+Deno.test("getPrimaryQuote returns the primary (evidence[0]) reference quote", () => {
+  const item = commitment({
+    evidence: [
+      { message_ids: ["m1"], quote: "Primary quote" },
+      { message_ids: ["m2"], quote: "Secondary quote" },
+    ],
+  });
+  if (getPrimaryQuote(item) !== "Primary quote") {
+    throw new Error("Expected the first evidence quote");
+  }
+
+  const noQuote = commitment({ evidence: [{ message_ids: ["m1"] }] });
+  if (getPrimaryQuote(noQuote) !== undefined) {
+    throw new Error("Expected undefined when the primary reference has no quote");
+  }
+
+  const noEvidence = commitment({ evidence: [] });
+  if (getPrimaryQuote(noEvidence) !== undefined) {
+    throw new Error("Expected undefined when there is no evidence");
+  }
+});
+
+Deno.test("getAllSourceIds unions message_ids across evidence, de-duplicated and ordered", () => {
+  const item = commitment({
+    evidence: [
+      { message_ids: ["m1", "m2"], quote: "a" },
+      { message_ids: ["m2", "m3"], quote: "b" },
+    ],
+  });
+  const ids = getAllSourceIds(item);
+  if (JSON.stringify(ids) !== JSON.stringify(["m1", "m2", "m3"])) {
+    throw new Error(`Unexpected source ids ${JSON.stringify(ids)}`);
+  }
+
+  const single = commitment({ evidence: [{ message_ids: ["m1"] }] });
+  if (JSON.stringify(getAllSourceIds(single)) !== JSON.stringify(["m1"])) {
+    throw new Error("Expected single-evidence source ids");
+  }
+
+  const empty = commitment({ evidence: [] });
+  if (getAllSourceIds(empty).length !== 0) {
+    throw new Error("Expected empty source ids for empty evidence");
+  }
 });

@@ -4,7 +4,7 @@
 > Next planning target: (TBD after ST-072 completes).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review). ST-070 + ST-071 done 2026-07-03 (integration suite green in CI, PR #21 merged).
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
-> Last updated: 2026-07-03 (ST-075, ST-076 → Backlog from compass_artifact_wf.md FYI observations; process questions closed)
+> Last updated: 2026-07-03 (ST-074 → In Progress; Opt 3 accessors reconciliation)
 
 ---
 
@@ -27,21 +27,6 @@
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-034.md` (to be created)
 - Relates to: ST-054 (retrieval robustness) — ST-054's thin-corpus / low-confidence result signal is the trigger condition this spike designs the graph expansion against; ST-034 owns the "connected memories" answer ST-054 explicitly defers
 - Notes: Surfaced 2026-05-22 during entity↔thought provenance brainstorming. Without a bounding strategy, 1-hop expansion over popular entities returns hairballs and drowns out the high-signal hits that motivate the graph lane. Foundational design — settle before any graph-expanded search tool ships, not retrofitted after users hit noise. **Why widened 2026-06-04:** the build-failure false-empty incident (ST-054) showed the conceptually-correct mechanism for "surface *connected* memories" is the AGE graph, but it is built and orphaned from the default search path. Rather than spawn a duplicate "Story B", this spike now also designs the orchestration (conditional trigger + bounded-boost fusion) so the connected-retrieval feature story that follows has a settled design, not just cardinality numbers.
-
-### ST-074: Reconcile `ExtractionItem` shape — doc `{kind,payload}` vs code flattened-union + `EvidenceReference[]`
-- Type: bug / design
-- Source: PO (compass_artifact_wf.md residual concern #3, 2026-07-03)
-- phase: contact-memory
-- Value: 3
-- Blocked by: ST-073 (Agent D reconciliation proposal + PO direction decision)
-- Touches: `contact-memory/parser/types.ts`, `contact-memory/commit/captureThoughtAdapter.ts`, `docs/investigations/compass_artifact_wf.md` (align illustrative shape)
-- Acceptance criteria:
-  - [ ] Direction chosen by PO after reviewing Agent D's proposal (doc defers to code shape, or code evolves toward doc shape, or a third reconciliation)
-  - [ ] `ExtractionItem` shape is consistent between the doc's illustrative extraction contract and `contact-memory/parser/types.ts` (no `payload`/`char_span`/top-level `source_ids` drift left unaddressed)
-  - [ ] All existing contact-memory tests pass
-- Plan: (to be created — `docs/plans/`)
-- Docs: `docs/investigations/compass_artifact_wf.md`
-- Notes: Confirmed mismatch 2026-07-03 — doc [L154](../../docs/investigations/compass_artifact_wf.md#L154)/[L159](../../docs/investigations/compass_artifact_wf.md#L159) proposes `{kind, payload, quote, source_ids, char_span}` + `payload jsonb`; actual [`ExtractionItem`](../../contact-memory/parser/types.ts#L152) is a discriminated union of interfaces extending `ExtractionItemBase` with flattened per-kind fields + `evidence: EvidenceReference[]`. Neither `payload` nor `char_span` nor top-level `source_ids` exists in code. PO decision 2026-07-03: create now, do not implement until Agent D's proposal is reviewed and direction chosen.
 
 ### ST-075: Validate or defer premature medium-generalization abstractions (shared IR + MediumProfile registry)
 - Type: spike / design
@@ -415,7 +400,20 @@
 
 ## In Progress
 
-(Empty)
+### ST-074: Reconcile `ExtractionItem` shape — Opt 3 provenance accessors
+- Type: bug / design
+- Source: PO (compass_artifact_wf.md residual concern #3, 2026-07-03)
+- phase: contact-memory
+- Value: 3
+- Blocked by: — (ST-073 done; PO chose Opt 3 2026-07-03)
+- Touches: `contact-memory/parser/types.ts`, `contact-memory/commit/captureThoughtAdapter.ts`, `contact-memory/tests/parser/types.test.ts`, `docs/investigations/compass_artifact_wf.md`
+- Acceptance criteria:
+  - [x] Direction chosen by PO — **Option 3**: keep the union shape, add pure accessors + document the `evidence[0]` convention (2026-07-03)
+  - [x] `getPrimaryQuote` / `getAllSourceIds` accessors added to `parser/types.ts`; adapter routes its provenance quote through `getPrimaryQuote` and documents the `evidence[0]` convention; doc shape note updated to "done"
+  - [x] All existing contact-memory tests pass (plus new accessor unit tests) — 79 passed / 0 failed
+- Plan: [docs/plans/2026-07-03-005-fix-reconcile-extractionitem-shape-plan.md](../../docs/plans/2026-07-03-005-fix-reconcile-extractionitem-shape-plan.md)
+- Docs: `docs/investigations/compass_artifact_wf.md`
+- Notes: Confirmed mismatch 2026-07-03 — doc proposes `{kind, payload, quote, source_ids, char_span}`; actual [`ExtractionItem`](../../contact-memory/parser/types.ts#L152) is a flattened discriminated union with provenance in `evidence: EvidenceReference[]`. Opt 3 closes the drift without restructuring the union: accessors centralize the primary-quote + full-source-id patterns the doc's flat shape implied.
 
 ## Review
 
