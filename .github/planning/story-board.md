@@ -4,7 +4,7 @@
 > Next planning target: (TBD after ST-072 completes).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review). ST-070 + ST-071 done 2026-07-03 (integration suite green in CI, PR #21 merged).
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
-> Last updated: 2026-07-03 (ST-072 → Done)
+> Last updated: 2026-07-03 (ST-069 → In Progress)
 
 ---
 
@@ -139,21 +139,6 @@
 - Plan: (to be created — `docs/plans/`)
 - Docs: `docs/investigations/contact-memory-mvp-review-and-governance-handoff.md` §7, `docs/investigations/compass_artifact_wf.md`
 - Notes: Grounded against real code 2026-07-03 — confirmed the silent-drop path: repair model drops an item to satisfy validation, whole extraction then succeeds with fewer items and zero reviewer signal (repeated failure instead throws and aborts the batch). Source-grounding research (`compass_artifact_wf.md`) favours re-grounding over dropping and treats the human gate as non-optional. Visibility is the non-negotiable half; re-grounding is the secondary improvement. PO decision 2026-07-03: board-track, do not implement now; when greenlit, prioritise visibility over re-grounding.
-
-### ST-069: CI coverage for contact-memory + secret-gate resilience
-- Type: debt / infra
-- Source: Contact Memory MVP review, PR #21 CI finding (2026-07-03)
-- phase: contact-memory
-- Value: 3
-- Blocked by: none
-- Touches: `.github/workflows/ci.yml`
-- Acceptance criteria:
-  - [ ] CI runs the `contact-memory/` Deno test suite (`deno test --allow-read --allow-env tests/`) as its own job — the current pipeline only runs `server/tests/` in the `mcp-test` container and never exercises `contact-memory/`, so the MVP's 77 tests have zero CI signal
-  - [ ] The contact-memory job does **not** require `OPENROUTER_API_KEY` (its tests stub the `AgentRuntime`/provider seam), so it stays green independent of the server integration job's secret gate
-  - [ ] The `OPENROUTER_API_KEY` secret-gate failure mode is documented (or made non-fatal for jobs that don't need it) so a missing secret can't silently red-X every run, including on `main`
-  - [ ] A run on `main` and on a contact-memory PR both go green
-- Plan: (to be created — `docs/plans/`)
-- Notes: Surfaced 2026-07-03 during PR #21 review. Root cause of the branch's red CI was an unset repo secret `OPENROUTER_API_KEY` — the first workflow step (`Require OPENROUTER_API_KEY secret`) exits 1 in ~6s, and this failed identically on `main` too (pre-existing infra breakage, not introduced by #21). Secret has since been set by the PO. Two distinct gaps: (1) zero CI coverage for the contact-memory MVP, (2) a single missing secret hard-fails the whole pipeline for jobs that don't need it.
 
 ### ST-070: Fix broken `.timeout()` calls in health-check probes
 - Type: bug
@@ -385,7 +370,21 @@
 
 ## In Progress
 
-(Empty)
+### ST-069: CI coverage for contact-memory + secret-gate resilience
+- Type: debt / infra
+- Source: Contact Memory MVP review, PR #21 CI finding (2026-07-03)
+- phase: contact-memory
+- Value: 3
+- Started: 2026-07-03 (branch `feat/contact-memory-ci-coverage`)
+- Blocked by: none
+- Touches: `.github/workflows/ci.yml`
+- Acceptance criteria:
+  - [ ] CI runs the `contact-memory/` Deno test suite (`deno test --allow-read --allow-env tests/`) as its own job — the current pipeline only runs `server/tests/` in the `mcp-test` container and never exercises `contact-memory/`, so the MVP's 77 tests have zero CI signal
+  - [ ] The contact-memory job does **not** require `OPENROUTER_API_KEY` (its tests stub the `AgentRuntime`/provider seam), so it stays green independent of the server integration job's secret gate
+  - [ ] The `OPENROUTER_API_KEY` secret-gate failure mode is documented (or made non-fatal for jobs that don't need it) so a missing secret can't silently red-X every run, including on `main`
+  - [ ] A run on `main` and on a contact-memory PR both go green
+- Plan: `docs/plans/2026-07-03-002-feat-contact-memory-ci-coverage-plan.md` (Ready)
+- Notes: Surfaced 2026-07-03 during PR #21 review. Root cause of the branch's red CI was an unset repo secret `OPENROUTER_API_KEY` — the first workflow step (`Require OPENROUTER_API_KEY secret`) exits 1 in ~6s, and this failed identically on `main` too (pre-existing infra breakage, not introduced by #21). Secret has since been set by the PO. Two distinct gaps: (1) zero CI coverage for the contact-memory MVP, (2) a single missing secret hard-fails the whole pipeline for jobs that don't need it.
 
 ## Review
 
