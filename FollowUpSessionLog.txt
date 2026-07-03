@@ -1,40 +1,39 @@
-Session: 2026-07-03 Contact Memory MVP review + governance handoff close-out (WSL2)
-Branch: feat/whatsapp-parser
+Session: 2026-07-03 Green server integration suite (ST-070/071) + merge PR #21 (WSL2)
+Branch: main (feat/whatsapp-parser merged and deleted)
 
 ACCOMPLISHED THIS SESSION
-- Resolved the cross-clone handoff (docs/investigations/contact-memory-mvp-review-and-governance-handoff.md)
-- Verified handoff's "missing work" premise was STALE: commit 6623c65, AGENTS.md,
-  captureThoughtAdapter.ts, buildRepairPrompt, and ST-063/064/065/066 all exist,
-  committed, and pushed. Working tree clean; nothing at risk.
-- Governance refit (Finding B) already landed in 6623c65 — no rebuild needed.
-- Grounded Findings C & D against real code before board-tracking them.
-- Created ST-067 (extract shared/mcpTransport.ts) and ST-068 (repair-pass never
-  lose a fact silently) in Backlog, per PO decision (board-track, do NOT implement now).
-- Recorded residuals A1/A2/A3 (idempotency, provenance spoof, retry) in ST-065 notes.
-- Bumped board Last updated to 2026-07-03.
+- ST-070 DONE: health-check .timeout() fix (withQueryTimeout + per-cacheKey inflight probes).
+- ST-071 DONE: greened the server integration suite. 5 fixes:
+  - 2x entity_extraction_queue duplicate-key (trigger auto-enqueues) -> ON CONFLICT upsert
+  - 1x recall_events missing NOT NULL cols (query/rrf_score/rank)
+  - 1x consolidation claim-order isolation -> backdated queued_at so drainPendingOnce(1) claims it
+  - 1x REAL product bug in graph_traverse walkCypherTokens: comment opening delimiters
+    (-- and /*) were yielded as state=normal (reassigned after yields), leaking into the
+    executable query -> fixed by setting comment state BEFORE emitting the delimiter.
+- CI run 28656810023 fully green: 225 passed / 0 failed (first-ever green integration run).
+- PR #21 code-reviewed (no blockers), merged to main (merge commit 06c28d8), branch deleted.
+- Captured local-vs-CI testing gotchas into .github/instructions/dev-environment.instructions.md.
+- Created ST-072 (fix latent TS2769 in capture_thought INSERT) - self-contained, ready for a fresh session.
 
 BOARD STATE
-- In Progress: (empty)
-- Review: ST-047 (vectorize MCP repo review)
-- Backlog (new): ST-067 (Value 2), ST-068 (Value 4), plus ST-066 prompt migration
-- Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061
+- In Progress: (empty)   Review: ST-047 (vectorize MCP repo review)
+- Backlog (new this session): ST-072 (Value 3, unblocked, server phase)
+- Prior backlog still open: ST-066, ST-067, ST-068, ST-069
+- Unblocked: ST-023, ST-019, ST-045, ST-048..ST-051, ST-053, ST-059..ST-061, ST-072
 
-COMMITS MADE
-- (none yet — board edits staged in working tree, awaiting PO commit approval)
+COMMITS (on main)
+- b42412b health fix (ST-070) | 3c0dd1a fixture isolation (ST-071) | 780f3a2 graph_traverse (ST-071)
+- board updates + ba0de90 dev-env gotchas | 06c28d8 merge PR #21 | + ST-072/handoff (this wrap-up)
 
 KEY DISCOVERIES
-- Web Claude "claimed vs actual" mismatch was a VISIBILITY artifact, not fabrication:
-  a Windows clone cannot see unpushed WSL2 commits. ALWAYS git log --all -S <symbol>
-  and git cat-file -t <hash> in the target clone before assuming claimed work is fake.
-- captureThoughtAdapter already fails loudly on missing key (mcp_config_missing) — ST-067
-  extraction must preserve that, NOT copy mcpClient.ts's "test-key"/localhost defaults.
-- Finding D silent-drop path confirmed: repair model drops the unknown_message_id item to
-  pass validation -> extraction succeeds with fewer items, zero reviewer signal.
-
-AVOIDANCE RULES
-- Do not trust a handoff/memory claim about repo state without verifying in THIS clone.
+- Local integration failures are NOT a faithful CI mirror: placeholder OPENROUTER_API_KEY -> ~9
+  false 401 e2e failures that pass in CI; db-test accumulates queue state across exec runs
+  (reset via down/up); seed corpus yields ~33 pending consolidation_queue rows.
+- Edited server code needs `docker compose --profile test restart mcp-test` (no Deno hot-reload).
+- server/index.ts is outside CI's test type-check graph (not imported) -> deno check is the only gate.
 
 NEXT SESSION START
-- No Ready plan in In Progress. ST-067/ST-068 are Backlog (do-not-implement-now per PO).
-- If implementing D later: prioritise the "N items dropped during repair" visibility half
-  over message_id re-grounding. Run ce-code-review + ce-commit-push-pr with Story:/Plan: linkage.
+- ST-072 is the cleanest next task: fix ${metadata} -> sql.json(metadata) in capture_thought INSERT.
+  Full self-contained context (exact error, fix pattern, verification cmds) in board ST-072.
+- Gate: DATABASE_URL="postgres://x:x@127.0.0.1:5432/x" deno check server/index.ts must pass clean.
+- Larger open work: ST-069 (contact-memory CI coverage), ST-066 (prompt migration), ST-068 (repair visibility).

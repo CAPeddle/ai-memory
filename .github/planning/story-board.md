@@ -2,7 +2,7 @@
 > Cadence: No sprint boundaries. Plans are authored as `docs/plans/*.md` (unified format, mandatory `story: ST-NNN` frontmatter) via `ce-brainstorm`/`ce-plan` or by hand; `ce-work` (or equivalent) executes them. Legacy `/plan` (Opus) + `/continue` (Sonnet) ExecPlan workflow retired for new work — see CLAUDE.md's Workflow gate section.
 > Prioritisation: Value-first with dependency-aware sequencing. Value: 1-5.
 > Next planning target: None (no Ready ExecPlan in In Progress/Refined).
-> Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review)
+> Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061, ST-072 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review). ST-070 + ST-071 done 2026-07-03 (integration suite green in CI, PR #21 merged).
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
 > Last updated: 2026-07-03
 
@@ -185,6 +185,32 @@
   - [x] Full `deno test tests/` goes green — **225 passed / 0 failed** in CI run 28656810023 (conclusion: success). First-ever green run of the integration suite.
 - Plan: (to be created — `docs/plans/`)
 - Notes: Surfaced 2026-07-03 the first time the integration suite ever ran in CI. All 6 failures are in files **unchanged from `main`** (`git diff --name-only origin/main...HEAD -- server/` shows only the two ST-070 health files) — so they are pre-existing on `main`, not introduced by PR #21 or ST-070. Root story: the CI `integration-tests` job has been red since inception (secret gate → type error → these), so the suite's green state was never established. **Progress 2026-07-03 (commit `3c0dd1a`, PO scope "fix only the trivial ones now"):** the 3 test-isolation/fixture failures (2× duplicate-key, 1× null-`query`) are fixed and confirmed green in CI (222 passed / 3 failed, run 28654276687). The 3 `graph_traverse` comment-handling failures turned out to be a genuine product bug (not assertion drift) and were fixed in commit `780f3a2`. **DONE 2026-07-03:** CI run 28656810023 is fully green (225 passed / 0 failed) — PR #21's `integration-tests` check passes for the first time. Commits: `3c0dd1a` (fixture isolation), `780f3a2` (graph_traverse comment tokenizer).
+
+### ST-072: Fix latent `TS2769` in `capture_thought` INSERT (`server/index.ts`)
+- Type: bug / debt
+- Source: Uncovered during ST-070/ST-071 (PR #21 CI review, 2026-07-03); explicitly deferred by PO to its own story
+- phase: server
+- Value: 3
+- Blocked by: none
+- Touches: `server/index.ts` (the `capture_thought` tool's `INSERT INTO thoughts` — the `${metadata}` bind, currently ~L469 inside the `sql\`\`` starting ~L453)
+- Self-contained context (verified 2026-07-03, do not assume line numbers are still exact — re-locate by content):
+  - **Exact error** (`deno check server/index.ts`):
+    ```
+    TS2769 [ERROR]: No overload matches this call.
+      Argument of type '[string, string, number, { identifiers: IdentifierFacets; }, "wiki" | "shard", string | null, ValidatedTag[], string]'
+      is not assignable to parameter of type 'never'.
+      Overload 2 of 2 … Argument of type '{ identifiers: IdentifierFacets; }' is not assignable to parameter of type 'ParameterOrFragment<never>'.
+        at server/index.ts:453:36
+    ```
+  - **Root cause:** the `capture_thought` handler builds `const metadata = { identifiers: normalized.facets }` and binds it into the `INSERT INTO thoughts (…) VALUES (…, ${metadata}, …)` template. postgres.js's typed template rejects a bare object as a bind parameter (it is not a scalar / `Fragment`), collapsing the overload to `never`.
+  - **Proven fix pattern (already used elsewhere in this codebase):** wrap the object in `sql.json(...)` for `jsonb` columns — see `server/src/entityWorker.ts:255` (`error_summary = ${… sql.json(errorSummary) …}`) and `server/src/consolidationWorker.ts:116/142/161/177` (`${sql.json(breakdownObj as unknown as Record<string, string | number | boolean | null>)}`). Apply the same shape to `${metadata}` (cast as those call sites do if the compiler needs it).
+- Acceptance criteria:
+  - [ ] `deno check server/index.ts` passes clean (0 errors) — run it as `DATABASE_URL="postgres://x:x@127.0.0.1:5432/x" deno check server/index.ts` (a dummy `DATABASE_URL` is required because `server/src/db.ts` throws at import if it is unset)
+  - [ ] `deno check` passes clean across all of `server/` (no new errors introduced)
+  - [ ] `capture_thought` still round-trips `metadata.identifiers` correctly: the full integration suite stays green (`docker compose --profile test exec -T mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/` → 225 passed / 0 failed), specifically the `e2e` identifier-normalization assertions in `server/tests/e2e.test.ts` (they read `metadata.identifiers.tickets/builds`). NB: this suite needs a real `OPENROUTER_API_KEY` in the container — locally the placeholder key yields ~9 false `401` failures that pass in CI (see `.github/instructions/dev-environment.instructions.md` §Gotchas); rely on CI as the arbiter for the LLM-dependent tests
+  - [ ] After editing server code, `docker compose --profile test restart mcp-test` before re-running integration tests (the running server loads `index.ts` at boot; Deno does not hot-reload it)
+- Plan: (to be created — `docs/plans/`)
+- Notes: Latent because `server/index.ts` is **not imported by any test** — it is only referenced as a file *path* by `server/tests/mcp-protocol-compat.test.ts` — so it is outside CI's `deno test tests/` type-check graph and never blocked the suite. This means CI will **not** catch a regression here; the `deno check server/index.ts` step in the acceptance criteria is the real gate. Small, isolated, one-line-ish change; good first-task for a fresh session. Explicitly deferred from ST-070 (see ST-070 Notes, "Separately noted (NOT fixed …)").
 
 <!-- Phase 1 follow-ups deferred from earlier scoping -->
 
