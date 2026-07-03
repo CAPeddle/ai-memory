@@ -4,7 +4,7 @@
 > Next planning target: (TBD after ST-072 completes).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review). ST-070 + ST-071 done 2026-07-03 (integration suite green in CI, PR #21 merged).
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
-> Last updated: 2026-07-03 (ST-073 → Done; ST-074 → Backlog)
+> Last updated: 2026-07-03 (ST-075, ST-076 → Backlog from compass_artifact_wf.md FYI observations; process questions closed)
 
 ---
 
@@ -42,6 +42,36 @@
 - Plan: (to be created — `docs/plans/`)
 - Docs: `docs/investigations/compass_artifact_wf.md`
 - Notes: Confirmed mismatch 2026-07-03 — doc [L154](../../docs/investigations/compass_artifact_wf.md#L154)/[L159](../../docs/investigations/compass_artifact_wf.md#L159) proposes `{kind, payload, quote, source_ids, char_span}` + `payload jsonb`; actual [`ExtractionItem`](../../contact-memory/parser/types.ts#L152) is a discriminated union of interfaces extending `ExtractionItemBase` with flattened per-kind fields + `evidence: EvidenceReference[]`. Neither `payload` nor `char_span` nor top-level `source_ids` exists in code. PO decision 2026-07-03: create now, do not implement until Agent D's proposal is reviewed and direction chosen.
+
+### ST-075: Validate or defer premature medium-generalization abstractions (shared IR + MediumProfile registry)
+- Type: spike / design
+- Source: PO (compass_artifact_wf.md review FYI observations #1 + #2, 2026-07-03)
+- phase: contact-memory
+- Value: 2
+- Blocked by: — (best evaluated once ≥2 mediums are implemented; WhatsApp is n=1 today)
+- Touches: `docs/investigations/compass_artifact_wf.md` (§7 / Recommendations); no code changes expected
+- Acceptance criteria:
+  - [ ] Decide whether the shared IR (`NormalizedConversation`/`NormalizedTurn`) should be frozen in Stage 1 from WhatsApp-only (n=1), or held provisional until email/transcript validate it — the doc calls this core "never-changes" but it is derived from a single medium
+  - [ ] Decide whether the `MediumProfile` capability-flag registry earns its keep at the 3–4 target-medium scale, or is premature generalization borrowed from Airbyte's 600-connector scale (~2 orders larger) with zero current consumers
+  - [ ] Recommendation recorded in the doc (keep / defer / simplify) with rationale grounded in the actual target-medium count, not the Airbyte analogy
+- Plan: (to be created — `docs/plans/`)
+- Docs: `docs/investigations/compass_artifact_wf.md`
+- Notes: Both FYIs are premature-abstraction / YAGNI risks in the same design area (medium-generalization layer). Bundled because they share the same evidence and decision. Advisory-derived (review anchor confidence 50) — low value, revisit when a second medium exists.
+
+### ST-076: Add a privacy/consent fitness gate to Contact Memory stage gates
+- Type: design
+- Source: PO (compass_artifact_wf.md review FYI observation #5, 2026-07-03)
+- phase: contact-memory
+- Value: 3
+- Blocked by: —
+- Touches: `docs/investigations/compass_artifact_wf.md` (Recommendations / Caveats stage-gate criteria)
+- Acceptance criteria:
+  - [ ] Stage gates currently measure only extraction accuracy; add a privacy/consent *fitness function* the pipeline must pass before advancing a stage (e.g. no verbatim PII egress outside the ZDR contract, third-party-subject deletion path exercised, lawful-basis note present)
+  - [ ] Fitness criteria are observable/testable, not aspirational — each maps to a check that can fail a stage gate
+  - [ ] Reuses the already-resolved S3 (no-train/ZDR egress), S4 (hard-delete/erasure), S5 (lawful-basis) decisions rather than re-litigating them
+- Plan: (to be created — `docs/plans/`)
+- Docs: `docs/investigations/compass_artifact_wf.md`
+- Notes: The consent *basis* was resolved 2026-07-03 (S3/S4/S5), but the stage gates still measure accuracy only — a pipeline can pass every accuracy benchmark and still ship a privacy violation. This story turns those resolved decisions into a gating fitness function. Advisory-derived (review anchor confidence 50).
 
 <!-- Phase 3 — Local Companion Services -->
 
