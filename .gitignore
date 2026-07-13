@@ -60,3 +60,6 @@ findings.json
 
 # Real WhatsApp exports used for local Contact Memory manual verification (PII — never commit)
 docs/investigations/whatsapp/*.txt
+
+# Compound Engineering — machine-local config (keep the committed *.example.yaml tracked)
+.compound-engineering/*.local.yaml
