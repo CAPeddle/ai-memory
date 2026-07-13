@@ -4,7 +4,7 @@
 > Next planning target: (TBD after ST-072 completes).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review). ST-070 + ST-071 done 2026-07-03 (integration suite green in CI, PR #21 merged).
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
-> Last updated: 2026-07-03 (ST-074 → In Progress; Opt 3 accessors reconciliation)
+> Last updated: 2026-07-13 (ST-077 → Backlog; Qwen3-VL embedding+reranker / multimodal retrieval applicability spike)
 
 ---
 
@@ -27,6 +27,24 @@
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-034.md` (to be created)
 - Relates to: ST-054 (retrieval robustness) — ST-054's thin-corpus / low-confidence result signal is the trigger condition this spike designs the graph expansion against; ST-034 owns the "connected memories" answer ST-054 explicitly defers
 - Notes: Surfaced 2026-05-22 during entity↔thought provenance brainstorming. Without a bounding strategy, 1-hop expansion over popular entities returns hairballs and drowns out the high-signal hits that motivate the graph lane. Foundational design — settle before any graph-expanded search tool ships, not retrofitted after users hit noise. **Why widened 2026-06-04:** the build-failure false-empty incident (ST-054) showed the conceptually-correct mechanism for "surface *connected* memories" is the AGE graph, but it is built and orphaned from the default search path. Rather than spawn a duplicate "Story B", this spike now also designs the orchestration (conditional trigger + bounded-boost fusion) so the connected-retrieval feature story that follows has a settled design, not just cardinality numbers.
+
+### ST-077: Spike — Applicability of Qwen3-VL Embedding + Reranker two-stage (and multimodal) retrieval to ai-memory search
+- Type: spike / applicability review
+- Source: PO (learnopencv newsletter — "How to master Qwen3-VL Embedding and Reranker for multimodal search", 2026-07-13)
+- phase: 2 (retrieval quality)
+- Value: 2
+- Blocked by: —
+- Touches: `docs/investigations/qwen3-vl-multimodal-rerank-applicability.md` (new); no code changes expected
+- Acceptance criteria:
+  - [ ] Findings doc created at `docs/investigations/qwen3-vl-multimodal-rerank-applicability.md`, structured like the other applicability reviews (`memsearch-applicability-review.md`, `awesome-copilot-applicability-review.md`) with the Tier 2 Reference header, a "Read This When" section, and a decision line (keep-current / adopt-selectively / adopt)
+  - [ ] **Two-stage retrieval question:** evaluate whether a dedicated cross-encoder **reranker** second stage (retrieve top-50/100 → rerank the shortlist for precision) earns its keep on top of the existing `search_thoughts` pipeline, which already fuses BM25 + vector via **RRF (k=60)** and applies **MMR (λ=0.7)** for diversity ([server/src/searchQuality.ts](../../server/src/searchQuality.ts)). MMR optimizes diversity, not relevance-precision — the doc must state clearly whether a reranker is additive or redundant to what RRF+MMR already do, and at what latency/cost
+  - [ ] **Multimodal question:** assess whether the multimodal angle (text ↔ image / screenshot / short-video retrieval, 2048-dim normalized embeddings, natural-language retrieval instructions) is applicable *today* given ai-memory thoughts are **text-only** — and whether the Contact Memory track (WhatsApp exports can carry media) or a future screenshot-capture path changes that calculus. Do not recommend multimodal work absent a concrete consumer
+  - [ ] **Provider/deployment fit:** note the embedding-provider implications — ai-memory embeds fire-and-forget via **OpenRouter** (`text-embedding-3-small`, 512-dim truncation) in [server/index.ts](../../server/index.ts); a 2048-dim Qwen3-VL embedding and a self-hosted reranker are a different operational shape (GPU/self-host vs API). Record the cost/latency/ops delta rather than assuming a drop-in swap
+  - [ ] Recommendation bounded to {keep current defaults, adopt reranker-only as a follow-on story, adopt multimodal as a follow-on story, defer}; if any follow-on is recommended, add the concrete story to Backlog with `Touches:`/`Acceptance criteria:` derived from the finding
+  - [ ] Out of scope: implementing a reranker stage or any multimodal ingestion — this spike only decides applicability and whether to spawn implementation stories
+- Plan: (to be created — `docs/plans/`)
+- Docs: newsletter tutorial https://learnopencv.com/how-to-master-qwen3-vl-embedding-and-reranker-for-multimodal-search/ ; code/notebook https://github.com/spmallick/learnopencv/tree/master/Qwen3-VL-Embedding-Reranker
+- Notes: Advisory-derived from an external newsletter (no independent grounding yet — low anchor confidence, hence Value 2). The idea worth testing is the **embeddings-for-recall / reranker-for-precision** split: our current second stage (MMR) buys diversity, not the cross-encoder precision the mailer's "judge" stage provides — e.g. its "outdoor scene, no people or animals" example where reranking promotes full-intent matches over surface matches. Whether that precision gap exists in ai-memory's text-only, RRF+MMR pipeline is the core question. The multimodal half is likely premature (text-only corpus, no image/screenshot/video consumer today) but is worth a recorded verdict so a future media-carrying track (Contact Memory) doesn't re-derive it from scratch. When picked up, verify the referenced files/flags (`searchQuality.ts` RRF/MMR constants, OpenRouter embedding call) still exist before grounding recommendations on them — memories freeze in time.
 
 ### ST-075: Validate or defer premature medium-generalization abstractions (shared IR + MediumProfile registry)
 - Type: spike / design
