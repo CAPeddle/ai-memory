@@ -26,7 +26,7 @@ ADR-002 selected SQLite as the v1.0 storage backend for local-first deployment. 
 3. **100K+ vector performance** — pgvector HNSW outperforms sqlite-vec at this scale
 4. **Graph traversal requirement** — Apache AGE requires PostgreSQL; structural search via openCypher is a confirmed requirement (ADR-003)
 
-SQLite is dropped entirely. PostgreSQL 15 with pgvector and Apache AGE v1.7.0 is the starting point, not the migration target.
+SQLite is dropped entirely. PostgreSQL 15 with pgvector and Apache AGE `PG15/v1.6.0-rc0` is the starting point, not the migration target.
 
 The local synthesis service (C#, WSL2) has no persistent storage of its own. It is a stateless pull client that queries the cloud MCP server and writes Markdown files to the local filesystem.
 
@@ -34,7 +34,7 @@ The local synthesis service (C#, WSL2) has no persistent storage of its own. It 
 
 ## Decision
 
-### PostgreSQL 15 + pgvector + Apache AGE v1.7.0
+### PostgreSQL 15 + pgvector + Apache AGE (PG15/v1.6.0-rc0)
 
 All three extensions are co-located in a single PostgreSQL 15 instance running in Docker.
 
@@ -50,7 +50,9 @@ CREATE INDEX ON thoughts USING hnsw (embedding vector_cosine_ops)
   WITH (m = 16, ef_construction = 64);
 ```
 
-**Apache AGE v1.7.0:** Provides openCypher graph query support. AGE v1.7.0 supports PostgreSQL 11–18; PG15 compatibility is confirmed. AGE is installed from source in the custom Docker image.
+**Apache AGE `PG15/v1.6.0-rc0`:** Provides openCypher graph query support, installed from source in the custom Docker image.
+
+> **Version constraint (read before "upgrading" AGE):** Apache AGE cuts releases in **per-PostgreSQL-major tag namespaces** (`PG15/…`, `PG16/…`, `PG18/…`), and a tag is **not** interchangeable across majors. **`PG15/v1.6.0-rc0` is the latest release AGE has published for PostgreSQL 15** — there is no stable (non-rc) PG15 build, and **no `PG15/v1.7.0` exists** (`v1.7.0-rc0` is published only in the PG18 namespace). The Docker image therefore pins `PG15/v1.6.0-rc0` from a vendored tarball; moving to a newer AGE line is not a version bump but a PostgreSQL **major** upgrade (evaluated and rejected — see ST-078 / `docs/investigations/turbopuffer-storage-evaluation.md`).
 
 ```sql
 CREATE EXTENSION age;
@@ -78,10 +80,14 @@ FROM postgres:15
 # pgvector
 RUN apt-get update && apt-get install -y postgresql-15-pgvector
 
-# Apache AGE v1.7.0
-RUN apt-get install -y build-essential git postgresql-server-dev-15 \
-    && git clone --branch v1.7.0 https://github.com/apache/age.git \
-    && cd age && make && make install
+# Apache AGE PG15/v1.6.0-rc0 — built from a vendored release tarball.
+# No `git clone` in Dockerfiles: the corporate SSL proxy breaks HTTPS clone
+# inside containers (see CLAUDE.md §Docker). The tarball is committed under
+# docker/postgres-age/ and COPYed in.
+COPY docker/postgres-age/age-v1.6.0-rc0.tar.gz /tmp/age.tar.gz
+RUN apt-get install -y build-essential flex bison postgresql-server-dev-15 \
+    && tar -xzf /tmp/age.tar.gz -C /tmp \
+    && cd /tmp/age-PG15-v1.6.0-rc0 && make && make install
 ```
 
 ### Embedding dimensions: 512
@@ -110,7 +116,7 @@ The `IMemoryStore` abstraction principle from ADR-002 carries forward as a desig
 - Single PostgreSQL instance provides all storage capabilities: relational, vector (pgvector), lexical (tsvector), and graph (AGE)
 - No external graph database service (Neo4j, FalkorDB) required
 - pgvector HNSW at 512 dimensions provides sub-10ms vector search at 100K+ embeddings
-- AGE v1.7.0 + PG15 is the current supported combination; no version mismatch
+- AGE `PG15/v1.6.0-rc0` is pinned from a vendored tarball that matches the shipped Docker image exactly — no ADR↔image version drift
 - 512-dim embeddings keep the storage budget well within the target for a 3-year usage horizon at moderate activity
 - Docker image is reproducible and version-pinned
 
@@ -121,7 +127,7 @@ The `IMemoryStore` abstraction principle from ADR-002 carries forward as a desig
 
 ### Supabase managed (why not)
 
-Supabase managed PostgreSQL does not include Apache AGE in its extension catalogue. AGE v1.7.0 supports PG15, eliminating the version incompatibility that previously existed — but Supabase policy (not version) remains the barrier. If Supabase adds AGE to their extension list in future, migration from self-hosted to Supabase managed would be a connection string change with no schema changes required.
+Supabase managed PostgreSQL does not include Apache AGE in its extension catalogue. AGE is available for PG15 (the `PG15/v1.6.0-rc0` build the self-hosted image uses), so version is not the obstacle — Supabase **policy** (its managed extension catalogue) remains the barrier. If Supabase adds AGE to their extension list in future, migration from self-hosted to Supabase managed would be a connection string change with no schema changes required.
 
 ---
 
@@ -143,3 +149,4 @@ Supabase managed PostgreSQL does not include Apache AGE in its extension catalog
 | Version | Date | Summary |
 |---------|------|---------|
 | 1.0 | 2026-05-16 | Initial — supersedes ADR-002; PostgreSQL 15 + pgvector + AGE v1.7.0 in Docker; 512-dim embeddings; no SQLite; IMemoryStore principle carried forward as TypeScript repository pattern |
+| 1.1 | 2026-07-21 | Correction (ST-078): AGE version reconciled to `PG15/v1.6.0-rc0` to match the shipped Docker image. The v1.0 "v1.7.0 on PG15" claim was factually impossible — AGE cuts per-Postgres-major tags and PG15's latest release is `v1.6.0-rc0`; `v1.7.0-rc0` exists only for PG18. Added the per-major tag-namespace constraint note; fixed the Dockerfile snippet to the vendored-tarball pattern (no `git clone`) |

@@ -24,7 +24,7 @@ investigation: "docs/investigations/sqlite-vs-postgresql.md"
 This ADR is superseded in full by **ADR-011**. The SQLite-first decision was predicated on local-first deployment, zero external service dependencies, and Windows native hosting — all of which changed when the architecture moved to a cloud-hosted Docker container with a forked OB1 TypeScript/Deno server.
 
 SQLite is no longer part of the storage architecture:
-- The cloud MCP server uses **PostgreSQL 15 + pgvector + Apache AGE v1.7.0**
+- The cloud MCP server uses **PostgreSQL 15 + pgvector + Apache AGE `PG15/v1.6.0-rc0`** (see ADR-011 for the AGE version constraint)
 - The local synthesis service has no persistent storage of its own; it pulls from the cloud MCP endpoint
 
 The `IMemoryStore` abstraction principle (decouple engine from backend) carries forward into ADR-011.

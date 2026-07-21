@@ -23,7 +23,7 @@ investigation: "docs/investigations/memory-architecture-design.md"
 
 The original memory model was defined against a custom SQLite schema. The base is now a fork of OB1, which uses a single flat `thoughts` table in PostgreSQL. The tier model (Shards / Wiki) must be expressed on top of OB1's base schema rather than as a ground-up custom design.
 
-Additionally, PostgreSQL + AGE v1.7.0 is now available, which enables the entity graph layer to use openCypher rather than SQLite recursive CTEs or structural fingerprint workarounds.
+Additionally, PostgreSQL + AGE (`PG15/v1.6.0-rc0`, see ADR-011) is now available, which enables the entity graph layer to use openCypher rather than SQLite recursive CTEs or structural fingerprint workarounds.
 
 The conceptual tier model is unchanged — Shards (episodic, raw) and Wiki (semantic, promoted) remain the two memory types. The mechanism for expressing this distinction on OB1's schema is a spike deliverable (ST-021).
 

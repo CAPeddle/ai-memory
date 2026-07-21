@@ -21,7 +21,7 @@ investigation: "docs/investigations/memory-architecture-design.md"
 
 ## Context
 
-The storage backend moved from SQLite (FTS5 + sqlite-vec) to PostgreSQL 15 with pgvector and Apache AGE v1.7.0 (ADR-011). The search architecture must be re-expressed in PostgreSQL terms.
+The storage backend moved from SQLite (FTS5 + sqlite-vec) to PostgreSQL 15 with pgvector and Apache AGE `PG15/v1.6.0-rc0` (ADR-011). The search architecture must be re-expressed in PostgreSQL terms.
 
 Additionally, the move to PostgreSQL + AGE unlocks a capability that was explicitly deferred in v1.0: **graph traversal as a first-class retrieval mode**. Two confirmed use cases drive this:
 
@@ -126,7 +126,7 @@ MMR = argmax[ λ · sim(d, q) − (1−λ) · max(sim(d, selected)) ]
 ### Positive
 - `tsvector`/`tsquery` is a mature, production-grade BM25 approximation; no extension required
 - pgvector HNSW indexes provide sub-10ms vector search at 100K+ embeddings (superior to sqlite-vec at this scale)
-- AGE v1.7.0 supports PostgreSQL 15; openCypher graph traversal is now first-class, not a deferred capability
+- AGE `PG15/v1.6.0-rc0` runs on PostgreSQL 15; openCypher graph traversal is now first-class, not a deferred capability (see ADR-011 for the AGE version constraint)
 - Two distinct retrieval modes (hybrid BM25+vector vs graph traversal) serve different query intents cleanly; no forced fusion of semantically different result types
 - 512-dim embeddings fit the storage budget while retaining quality
 
