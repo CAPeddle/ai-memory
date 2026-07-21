@@ -4,11 +4,33 @@
 > Next planning target: (TBD after ST-072 completes).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review). ST-070 + ST-071 done 2026-07-03 (integration suite green in CI, PR #21 merged).
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
-> Last updated: 2026-07-13 (ST-077 → Backlog; Qwen3-VL embedding+reranker / multimodal retrieval applicability spike)
+> Last updated: 2026-07-21 (ST-078 → Backlog; reconcile Apache AGE version drift between ADR-011 and the Dockerfile)
 
 ---
 
 ## Backlog
+
+### ST-078: Reconcile Apache AGE version drift (ADR-011 says v1.7.0; Dockerfile ships v1.6.0-rc0)
+- Type: chore / docs correction
+- Source: Surfaced during the TurboPuffer storage build-vs-buy evaluation (`docs/investigations/turbopuffer-storage-evaluation.md`, 2026-07-21)
+- phase: 0 (housekeeping)
+- Value: 2
+- Blocked by: —
+- Touches: `docs/design/adr/ADR-011-storage-strategy.md` (primary); `docker/postgres-age/Dockerfile` + `docker/postgres-age/age-v1.6.0-rc0.tar.gz` only if the PG18 option is chosen
+- Problem:
+  - ADR-011 states "PostgreSQL 15 with pgvector and Apache AGE **v1.7.0**" (`:29`, `:37`, `:53`, `:81`) and lists as an explicit **Positive**: "AGE **v1.7.0** + PG15 is the current supported combination; no version mismatch" (`:113`).
+  - The shipped image (`docker/postgres-age/Dockerfile:11-13`) builds **`age-PG15-v1.6.0-rc0`** from the vendored tarball.
+  - **Root cause:** Apache AGE publishes per-Postgres-major tag namespaces. **PG15's latest release is `v1.6.0-rc0`** — `PG15/v1.7.0` does not exist; `v1.7.0-rc0` lives only in the **PG18** namespace. So the ADR's "v1.7.0 + PG15" claim is factually impossible, and the Dockerfile is already at the PG15 ceiling. This is the exact gotcha CLAUDE.md warns about ("PG15/v1.6.0-rc0 is not interchangeable with PG17/v1.7.0").
+- Decision point (settle first; **recommended default: Option A**):
+  - **Option A — docs fix (recommended):** Correct ADR-011 to state **v1.6.0-rc0** as the actual latest PG15 release; remove the false "v1.7.0 / no version mismatch" claims and note the per-major tag-namespace constraint. Dockerfile stays as-is (already correct). No image rebuild, no test impact.
+  - **Option B — upgrade to PG18 + AGE v1.7.0-rc0:** Bump base image to `postgres:18`, swap to the `PG18/v1.7.0-rc0` tarball, add `postgresql-18-pgvector`, recompile AGE from source, revalidate all DDL init scripts + full test suite. **Rejected as default:** no demonstrated requirement; PG18's marquee features (async I/O, skip scan) don't help a ~350 MB RAM-resident single-user store; v1.7.0-rc0 is *still* a release candidate (no rc escape); and it breaks ADR-011's PG15↔Supabase-managed alignment rationale (`:41`). See `docs/investigations/turbopuffer-storage-evaluation.md` §7 and the session analysis for the full PG18 cost/benefit.
+- Acceptance criteria:
+  - [ ] Confirm (against apache/age releases) the highest PG15 tag is `v1.6.0-rc0` and that no stable PG15 release exists — record the finding in the ADR
+  - [ ] Under Option A: ADR-011 no longer asserts v1.7.0 for PG15; the "no version mismatch" Positive is corrected or removed; a one-line note explains the per-Postgres-major AGE tag-namespace constraint so this drift can't silently reappear
+  - [ ] `git grep -n "v1.7.0"` under `docs/` and `docker/` returns no stale PG15↔v1.7.0 pairing
+  - [ ] If Option B is chosen instead: this story is re-typed as a Postgres major upgrade with its own `docs/plans/` plan, revalidation checklist, and test-suite gate (out of scope for the docs-fix framing)
+- Plan: (to be created — `docs/plans/` if Option B; Option A is a trivial docs edit that may proceed without a full plan per the CLAUDE.md soft gate)
+- Notes: Low severity — nothing is broken; AGE v1.6.0-rc0 works on PG15 and is the correct choice. This is a traceability/governance correction so a future agent doesn't try to "bump to v1.7.0" on PG15 (impossible) or assume the running graph engine matches the ADR. Verify the cited ADR line numbers still hold when picked up — memories freeze in time.
 
 ### ST-034: Spike — Graph-expanded "connected" retrieval: cardinality bounding + orchestration design
 - Type: spike
