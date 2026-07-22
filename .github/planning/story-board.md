@@ -4,11 +4,28 @@
 > Next planning target: (TBD after ST-072 completes).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review). ST-070 + ST-071 done 2026-07-03 (integration suite green in CI, PR #21 merged).
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
-> Last updated: 2026-07-21 (ST-078 → Done; Apache AGE version drift reconciled — ADRs corrected to PG15/v1.6.0-rc0 via Option A docs fix)
+> Last updated: 2026-07-21 (ST-079 → Backlog; governance guardrail — products inherit the platform AGE graph tier by default)
 
 ---
 
 ## Backlog
+
+### ST-079: Governance guardrail — products inherit the platform graph (AGE) tier by default
+- Type: chore / governance
+- Source: Investigation `docs/investigations/age-platform-divergence-product-impact.md` (2026-07-21) — Risk A (unacknowledged Postgres+AGE vs Supabase-no-AGE divergence)
+- phase: 0 (governance)
+- Value: 3
+- Blocked by: —
+- Touches: `docs/design/adr/ADR-013-*.md` (new — the guardrail ADR); `CLAUDE.md` (one-line pointer near the Contact Memory Supersession Map)
+- Problem: The platform mandates Postgres + Apache AGE (ADR-003/009/011), but Contact Memory deploys on Supabase without AGE — a choice explicitly scoped "for Contact Memory deployment only" (`CLAUDE.md:32`). No document analyzes the resulting two-database divergence as a risk. Developer Memory's deployment target is undecided; a future "just use Supabase like Contact did" choice could silently strip the graph tier that ADR-003/011 treat as first-class, without anyone weighing the cost.
+- Acceptance criteria:
+  - [ ] New **ADR-013 "Products inherit the platform graph tier by default"**: products built on the Platform MCP inherit its storage capabilities including the AGE graph; moving a product onto a stack that omits AGE (as Contact→Supabase) is a **per-product decision that must explicitly account for losing graph-based retrieval (ADR-003 Mode 2 / entity traversal)** — it does not become the platform default
+  - [ ] ADR-013 cross-references ADR-003/009/011, the Contact supersession note (`CLAUDE.md:32`), and ST-024 for the version ceiling (Risk B)
+  - [ ] One-line pointer to ADR-013 added in `CLAUDE.md` near the Contact Memory Supersession Map
+  - [ ] Guardrail is framed as "weigh the cost each time", **not** a ban on divergence — Contact's deliberate trade remains valid
+  - [ ] No duplication of ST-024 (the deferred PG17/AGE-v1.7.0 upgrade owns Risk B); this story owns Risk A only
+- Plan: `docs/investigations/age-platform-divergence-product-impact.md` §7 (recommendation); ADR to be authored on pickup
+- Notes: Low severity / governance hygiene. Closes the gap the AGE-divergence investigation surfaced. The ADR wording is drafted in the investigation's §7 recommendation — pickup is mostly formalizing it into ADR-013 and cross-linking. Verify ADR-003/009/011 line refs still hold when picked up — memories freeze in time.
 
 ### ST-034: Spike — Graph-expanded "connected" retrieval: cardinality bounding + orchestration design
 - Type: spike
