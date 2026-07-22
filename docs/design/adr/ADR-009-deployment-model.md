@@ -22,7 +22,7 @@ The original architecture assumed local-first deployment: a Windows service bind
 
 The deployment model must:
 - Make the MCP server accessible via public HTTPS
-- Host PostgreSQL 15 + pgvector + Apache AGE v1.7.0 (ADR-011)
+- Host PostgreSQL 15 + pgvector + Apache AGE `PG15/v1.6.0-rc0` (ADR-011)
 - Support the entity extraction and consolidation workers (ADR-007)
 - Stay within the cost ceiling (soft target: €0 free tier; hard ceiling: €10/month)
 - Be validated locally (Docker Desktop / VM) before committing to a cloud platform
@@ -38,7 +38,7 @@ The server stack is defined as a single `docker-compose.yml` with two containers
 ```yaml
 services:
   db:
-    build: ./docker/postgres-age     # PostgreSQL 15 + pgvector + AGE v1.7.0
+    build: ./docker/postgres-age     # PostgreSQL 15 + pgvector + AGE PG15/v1.6.0-rc0
     environment:
       POSTGRES_DB: ai_memory
       POSTGRES_USER: ai_memory
@@ -61,7 +61,7 @@ services:
       - "3000:3000"
 ```
 
-The PostgreSQL image is a custom Dockerfile that installs pgvector and AGE v1.7.0 on the PostgreSQL 15 base image.
+The PostgreSQL image is a custom Dockerfile that installs pgvector and AGE `PG15/v1.6.0-rc0` on the PostgreSQL 15 base image.
 
 ### Development and validation target: local Docker
 
