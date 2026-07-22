@@ -4,11 +4,30 @@
 > Next planning target: (TBD after ST-072 completes).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review). ST-070 + ST-071 done 2026-07-03 (integration suite green in CI, PR #21 merged).
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
-> Last updated: 2026-07-21 (ST-079 → Backlog; governance guardrail — products inherit the platform AGE graph tier by default)
+> Last updated: 2026-07-22 (ST-080 → Backlog; revisit deployment host — self-hosted homeserver + Tailscale vs Supabase)
 
 ---
 
 ## Backlog
+
+### ST-080: Revisit deployment host — self-hosted homeserver + Tailscale (fills ADR-009's deferred host decision)
+- Type: spike / architecture decision
+- Source: Investigation `docs/investigations/homeserver-tailscale-deployment-evaluation.md` (2026-07-22) — PO proposal to host the platform (and potentially all products) on a personal Z2 homeserver over Tailscale
+- phase: 0 (platform)
+- Value: 4
+- Blocked by: —
+- Unblocks: **ST-024** (PG17/PG18 + AGE v1.7.0 — the homeserver is the demonstrated requirement its deferral waited for); dissolves Risk A + Risk B from `age-platform-divergence-product-impact.md`
+- Touches: `docs/design/adr/ADR-014-*.md` (new — production host decision); `docs/design/adr/ADR-009-deployment-model.md` (fill the deferred host slot / cross-link); `docs/architecture/ai_memory_architecture_decisions.md` Decision 7 (revisit Contact Memory Supabase); `CLAUDE.md` (deployment note)
+- Context: ADR-009 **never selected a production host** (`:74-86`, deferred to post-spike; spike ST-021 is done). The Z2 homeserver fills that open slot and, being an AGE-capable self-hosted Postgres on owned hardware, unifies platform + products (removes the Supabase-no-AGE divergence) and affords the latest Postgres major. Client model confirmed: cloud web assistants (ChatGPT/Claude.ai/Gemini) must connect, so the Bearer-gated `/mcp` edge is exposed via **Tailscale Funnel** (or a tunnel) while DB + workers stay tailnet-private — exposure posture identical to the status-quo public VPS.
+- Acceptance criteria:
+  - [ ] **ADR-014 "Production host: self-hosted homeserver + Tailscale, MCP edge via Funnel/tunnel"** authored, *filling* (not silently superseding) ADR-009's deferred host decision; cross-references ADR-009/010/011, Contact Decision 7, and ST-024
+  - [ ] ADR records the resolved open decisions: Funnel vs Cloudflare Tunnel vs reverse proxy for the `/mcp` edge; availability target for a home box; **off-site encrypted backup destination + cadence + a restore drill** (hard requirement, not optional); Postgres major (PG17 vs PG18) and the AGE tag in that per-major namespace (ST-078 constraint)
+  - [ ] Security posture documented: DB + workers tailnet-only, only `/mcp` public, Tailscale ACLs, home-network segmentation
+  - [ ] Single-user dependency recorded explicitly so a future multi-user pivot re-opens this decision (ADR-011 "must not foreclose multi-user")
+  - [ ] Contact Memory Decision 7 revisited: build on the platform MCP vs stay on Supabase — with a staged-migration recommendation (platform first, Contact after stable)
+  - [ ] On acceptance, **ST-024 moved out of `deferred`** (its trigger — a use case needing latest AGE — is now met)
+- Plan: `docs/investigations/homeserver-tailscale-deployment-evaluation.md` §6-§7 (recommendation + open decisions)
+- Notes: The critical caveat is **availability** — a home box is a SPOF with no SLA; the ADR must own uptime/backups rather than assume managed-service durability. Value 4 because it unblocks the graph roadmap (ST-024/ST-034) and removes the platform's biggest architectural divergence. Verify ADR-009 line refs (`:74-86`, `:88-96`, `:130-133`) still hold when picked up — memories freeze in time.
 
 ### ST-079: Governance guardrail — products inherit the platform graph (AGE) tier by default
 - Type: chore / governance
