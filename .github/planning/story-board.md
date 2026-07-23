@@ -22,7 +22,7 @@
 - Acceptance criteria:
   - [ ] **ADR-014 "Production host: self-hosted homeserver + Tailscale, MCP edge via Funnel/tunnel"** authored, *filling* (not silently superseding) ADR-009's deferred host decision; cross-references ADR-009/010/011, Contact Decision 7, and ST-024
   - [ ] ADR records the resolved open decisions: Funnel vs Cloudflare Tunnel vs reverse proxy for the `/mcp` edge; availability target for a home box; **off-site encrypted backup destination + cadence + a restore drill** (hard requirement, not optional); Postgres major (PG17 vs PG18) and the AGE tag in that per-major namespace (ST-078 constraint)
-  - [ ] Security posture documented: DB + workers tailnet-only, only `/mcp` public, Tailscale ACLs, home-network segmentation
+  - [ ] Security posture documented, scoped to the real threat (Funnel opens no router port and exposes only the one service — see investigation §2a): DB + workers tailnet-only; only Bearer-gated `/mcp` public; **Tailscale ACLs + unprivileged container + app patching** to contain a compromised process. LAN/VLAN segmentation recorded as optional defense-in-depth, **not** a Funnel requirement
   - [ ] Single-user dependency recorded explicitly so a future multi-user pivot re-opens this decision (ADR-011 "must not foreclose multi-user")
   - [ ] Contact Memory Decision 7 revisited: build on the platform MCP vs stay on Supabase — with a staged-migration recommendation (platform first, Contact after stable)
   - [ ] On acceptance, **ST-024 moved out of `deferred`** (its trigger — a use case needing latest AGE — is now met)

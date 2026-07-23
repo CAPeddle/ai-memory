@@ -39,7 +39,26 @@ Tailscale is a private WireGuard mesh: only enrolled devices reach a tailnet ser
 - The **database stays tailnet-only** — never publicly reachable. This is the durable privacy gain.
 - The **public surface is exactly `/mcp`, Bearer-gated** — which is *already* what ADR-009 mandates (`:88-96`, `:104`). So choosing "also cloud assistants" does **not** make the homeserver worse than the status-quo VPS on exposure; it is the same endpoint, relocated.
 - This directly answers the objection that killed the original design: ADR-009 rejected "Local-first deployment" as "Incompatible with online access from Claude.ai, ChatGPT…" (`:133`). Homeserver **+ Funnel is not that** — it is self-hosted-on-owned-hardware **with** public HTTPS access, satisfying the online-access requirement.
-- Caveats to price in: Funnel has fair-use expectations and a fixed port set; a tunnel adds a dependency; and the tunnel/Funnel process is now an ingress path pointed at your home network — segment it (DB tailnet-only, ACLs, only `/mcp` exposed).
+- Caveats to price in: Funnel has fair-use expectations and a fixed port set, and a tunnel adds a dependency. But note what Funnel **does not** do (see §2a): it does not open your router or expose the rest of your network — so classic LAN segmentation is *not* a requirement of using it.
+
+### 2a. What Funnel actually exposes (and why LAN segmentation is not required)
+
+It is worth being precise here, because it changes the security recommendations. **Tailscale Funnel is a scoped reverse tunnel, not a port-forward:**
+
+- **It exposes only the single service you point it at** (`tailscale funnel 3000`) — not the host's other ports, not other devices, not the rest of your tailnet.
+- **It opens nothing on your router.** The node makes an *outbound* connection to Tailscale's ingress relays; there is no inbound firewall hole, no NAT port-forward, no listening port on your home perimeter. This is a materially better posture than exposing a box via port-forwarding.
+- **TLS terminates on your node** (a Let's Encrypt cert for your `*.ts.net` name). Tailscale's relays route by SNI but do not decrypt the payload, so the data path is not readable by Tailscale either.
+
+So the generic "public ingress ⇒ segment the LAN" heuristic does **not** fit Funnel: Funnel by itself does not place the rest of the home network in the blast radius.
+
+**The residual risk that controls actually address is different** — it is the **exposed app process being compromised** (an RCE/SSRF/auth-bypass in the MCP server), because Funnel faithfully delivers attacker traffic to whatever it fronts. If that process is popped, it runs on a host that sits on both the LAN and the tailnet and could attempt lateral movement. The **proportionate** controls for that are tailnet-native and cheap, not VLANs:
+
+1. **Tailscale ACLs** — restrict what the MCP node may reach on the tailnet; this contains a popped node without touching LAN topology, and is the "segmentation" that actually matters here.
+2. **Run the MCP server as an unprivileged container** (it already is, via Compose) — host-level blast-radius limiting.
+3. **DB bound tailnet/loopback-only, never `0.0.0.0`** — the DB is never behind Funnel.
+4. **App-layer hardening is the front line** — the Bearer auth on `/mcp` and the existing Cypher-injection guards face the attacker directly.
+
+Full L2/L3 VLAN segmentation of the home LAN is *good hygiene* — worth it mainly if the box shares a flat network with high-value or other-people's devices — but it is **optional defense-in-depth, not a Funnel requirement.**
 
 ## 3. What it wins (steelman — strong)
 
@@ -66,7 +85,7 @@ The decisive weakness is **availability**. A $6 DigitalOcean droplet wins here; 
 
 - **SPOF / uptime:** if you depend on commitment/upcoming-date reminders, home outages bite. Mitigate with UPS + monitoring, but you own it.
 - **Backups / DR:** no managed backups; consolidating everything onto one box raises the stakes of losing it. **Off-site encrypted backups become mandatory**, not the optional cron ADR-011 currently suggests (`ADR-011` Negative/Trade-offs).
-- **Home-network security:** any public ingress (Funnel/tunnel) points at your home. Keep DB tailnet-only, expose only `/mcp`, use Tailscale ACLs, ideally VLAN-segment the box.
+- **Host-compromise blast radius** (not "home-network exposure" — see §2a): Funnel doesn't open your LAN, so the control is containing a *popped app process*, not firewalling ingress. Proportionate measures: Tailscale ACLs on the MCP node, unprivileged container, DB tailnet/loopback-only, keep the app patched. VLAN segmentation is optional hygiene, not required.
 - **Single-user lock-in (strategic):** this is clean *because* Christopher is sole user. If multi-user/sharing returns — which ADR-011 says "must not foreclose" — enrolling other people's devices into *your* tailnet is a privacy/trust problem, and you'd likely need public managed hosting after all. This choice leans harder into single-user than the platform ADRs formally commit to.
 
 ## 5. Contact Memory specifics — what re-homing off Supabase actually loses
@@ -90,7 +109,7 @@ Concrete recommendations:
 2. **Unblock ST-024** (PG17/PG18 + AGE v1.7.0) — the homeserver is the demonstrated requirement its deferral waited for.
 3. **Revisit Contact Memory Decision 7:** with an AGE-capable platform on owned hardware, Contact Memory should build on the platform MCP (removing the divergence) unless a Contact-specific reason to stay on Supabase survives.
 4. **Make off-site encrypted backups a hard requirement**, not a suggestion — consolidation raises the blast radius of losing the box.
-5. **Keep the public surface minimal:** DB + workers tailnet-only; only Bearer-gated `/mcp` via Funnel/tunnel; Tailscale ACLs; segment the box on the home network.
+5. **Keep the public surface minimal, but scope the controls to the real threat (§2a):** DB + workers tailnet-only; only Bearer-gated `/mcp` via Funnel/tunnel; **Tailscale ACLs + unprivileged container** to contain a compromised app process. LAN/VLAN segmentation is optional defense-in-depth, **not** a Funnel requirement — Funnel opens no router port and exposes only the one service.
 6. **Record the single-user dependency explicitly** so a future multi-user pivot re-opens this decision rather than inheriting it blindly.
 
 ## 7. Open decisions to nail down in the ADR
