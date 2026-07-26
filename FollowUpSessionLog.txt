@@ -1,31 +1,40 @@
-Session: 2026-07-03 ST-072 — fix latent TS2769 in capture_thought INSERT
-Branch: main (direct commit e172d70)
+Session: 2026-07-22/23 — TurboPuffer eval -> AGE reconcile -> homeserver deployment decision
+Branch: claude/turbo-puffer-storage-eval-m2t604 (PRs #24-#29 all MERGED to main)
 
-ACCOMPLISHED THIS SESSION
-- ST-072 DONE: fixed latent TS2769 in `capture_thought` INSERT in server/index.ts.
-  Root cause: bare `${metadata}` object bind rejected by postgres.js typed template.
-  Fix: `${metadata}` → `${sql.json(metadata)}` (matches entityWorker.ts + consolidationWorker.ts pattern).
-  Verification: `deno check server/index.ts` → 0 errors; all of server/ clean.
-  Local integration: 216 passed / 9 expected-local-401 (same baseline; CI is arbiter for LLM tests).
-  Commit e172d70 pushed to main.
+ACCOMPLISHED THIS SESSION (all docs/governance; no code changes)
+- TurboPuffer build-vs-buy eval (PR #24): DO NOT ADOPT. Solves scale/multi-tenancy this
+  single-user service lacks; doesn't replace AGE graph. docs/investigations/turbopuffer-storage-evaluation.md
+- ST-078 DONE (PRs #25/#26): reconciled AGE version doc drift. ADRs claimed v1.7.0 on PG15 but
+  PG15's ceiling is v1.6.0-rc0 (AGE uses per-Postgres-major tag namespaces; PG15/v1.7.0 never
+  existed). Corrected ADR-002/003/005/009/011. Dockerfile was already correct.
+- AGE divergence analysis + ST-079 filed (PR #27): no platform move away from AGE; real risks are
+  Risk A (unanalyzed Postgres+AGE vs Supabase-no-AGE divergence) + Risk B (frozen v1.6.0-rc0 lacks
+  the `|` multi-type selector). docs/investigations/age-platform-divergence-product-impact.md
+- Homeserver+Tailscale eval + ST-080 filed (PR #28): ADOPT for single-user. Fills ADR-009's never-
+  chosen host slot; dissolves Risk A+B. Client model: cloud assistants must connect -> Bearer-gated
+  /mcp via Tailscale Funnel, DB+workers tailnet-only. Funnel correction: LAN segmentation NOT required.
+- Z2 bootstrap doc (PR #29): docs/investigations/BOOTSTRAP_z2_homeserver_deployment_session.md
 
 BOARD STATE
-- In Progress: (empty)   Review: ST-047 (tool descriptions)
-- Done (just completed): ST-072
-- Backlog (open): ST-066, ST-067, ST-068, ST-069, ST-023, ST-019, ST-045, ST-048..ST-051,
-  ST-053, ST-059..ST-061
+- In Progress: ST-074 (ExtractionItem shape)   Review: ST-047 (tool descriptions)
+- Done this session: ST-078
+- Backlog (new this session): ST-080 (homeserver/ADR-014), ST-079 (AGE-inherit guardrail/ADR-013)
+- Deferred: ST-024 (PG17/PG18 + AGE v1.7.0) -> UN-DEFER on ADR-014 acceptance (trigger now met)
 
-COMMITS (on main)
-- e172d70 fix(capture_thought): wrap metadata bind in sql.json() to resolve TS2769 (ST-072)
+OUTSTANDING POINTS (carry forward)
+1. ST-080 = the Z2 work: author ADR-014 (production host), provision latest PG + AGE v1.7.0+ +
+   pgvector + Deno, expose /mcp via Funnel (DB tailnet-only), validate the `|` operator, revisit
+   Contact Memory Decision 7 (platform MCP vs Supabase; staged: platform first), un-defer ST-024.
+2. ST-079: author ADR-013 "products inherit the platform AGE graph by default" + one-line CLAUDE.md
+   pointer (pointer deferred until ADR-013 exists, to avoid a dangling link).
+3. CRITICAL TRAP (ST-078 lesson): verify the exact AGE release tag for the chosen Postgres major at
+   github.com/apache/age/releases BEFORE building. Do not trust ADRs/old notes; tags don't cross majors.
+4. Minor cleanup: ADR-003 (~line 104) still phrases the 512-dim rationale as "Supabase-free / Docker
+   volume budget" — sweep when ADR-014 lands.
+5. Pre-existing open item (not from this session): ADR-010 Android->Contact API auth still unresolved.
+6. Off-site ENCRYPTED backups are a HARD requirement for the home box (SPOF) — own it in ADR-014.
 
-KEY REMINDERS
-- server/index.ts is outside CI's test type-check graph (not imported) -> `deno check` is the only gate.
-- Local integration failures not a faithful CI mirror: 9 false e2e 401s (placeholder OPENROUTER key).
-- Editing server code requires `docker compose --profile test restart mcp-test` before re-running tests.
-- deno binary at /home/cpeddle/.deno/bin/deno (not on PATH in some terminal sessions).
-
-NEXT SESSION OPTIONS
-- ST-069: contact-memory CI coverage (next Value-3 unblocked task)
-- ST-066: prompt migration to unified plan format (pending)
-- ST-068: repair-pass visibility (never lose a fact silently — visibility half first)
-- ST-047 in Review — check if it needs merge or follow-up
+NEXT SESSION (on Z2)
+- Fresh Claude Code session on Z2: paste the opening prompt in the bootstrap doc §9; it points the
+  agent at the bootstrap, which carries all locked decisions + provisioning/validation checklist.
+- Move ST-080 Backlog -> In Progress first (respect WIP: 1 In Progress, 1 in Review).
