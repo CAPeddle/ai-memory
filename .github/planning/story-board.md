@@ -480,7 +480,7 @@
 - Touches: `docs/design/adr/ADR-013-platform-product-definitions.md` (new); `docs/requirements/SRS.md` (v1.2 — header note + supersession banners on §4.3/§5.4/§5.5/§5.6 + revision history); this board (ST-079 ADR renumbered ADR-013 → ADR-015)
 - Acceptance criteria:
   - [x] ADR-013 defines platform and product by **criteria** (litmus test: "decides what knowledge means / when it's trusted" → product; "stores/indexes/retrieves any knowledge identically" → platform), not just examples
-  - [x] Product register recorded: Contact Memory (active), Developer Memory (deferred), Workflow/Operations Memory (proposed — AWCP, host decision pending PR #31 Q1–Q4)
+  - [x] Product register recorded: Contact Memory (active), Developer Memory (deferred), Workflow/Operations Memory (proposed — AWCP; logical consolidation decided, host/topology/storage open per PR #31 §7)
   - [x] Layering-vs-deployment clause: products may be co-deployed in one runtime (AWCP consolidation-first direction) without collapsing logical boundaries; separate infra (Contact→Supabase) stays a per-product decision
   - [x] Known violations dispositioned: consolidation worker grandfathered as Developer Memory logic in the platform runtime (no new wiki-tier dependencies); Storyboard reassigned to the proposed Workflow product pending the AWCP host decision; three-tier Brain/views marked product-layer
   - [x] SRS bumped to v1.2 with banners in place (no section rewrites — supersession-map culture) and a revision-history row

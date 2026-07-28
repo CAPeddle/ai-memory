@@ -265,7 +265,7 @@ where:
 
 ### 5.6 Storyboard
 
-> **Product-layer, reassignment pending ([ADR-013](../design/adr/ADR-013-platform-product-definitions.md) §4b):** the Storyboard is no longer a platform capability. It is the embryonic work-state model of the proposed **Workflow/Operations product** (AWCP — `docs/investigations/awcp-spec-evaluation.md`, PR #31); the AWCP host decision settles whether FR-B-001..009 are absorbed into that product's WorkItem/WorkPacket model or retired. Do not build new platform features against these requirements in the interim.
+> **Product-layer, reassignment pending ([ADR-013](../design/adr/ADR-013-platform-product-definitions.md) §4b):** the Storyboard is no longer a platform capability. It is the embryonic work-state model of the proposed **Workflow/Operations product** (AWCP — `docs/investigations/awcp-spec-evaluation.md`, PR #31); the AWCP consolidation architecture decisions (host/topology) settle whether FR-B-001..009 are absorbed into that product's WorkItem/WorkPacket model or retired. Do not build new platform features against these requirements in the interim.
 
 **FR-B-001** The system shall maintain a storyboard as a stateful projection over The Brain with story records containing: `id`, `title`, `description`, `status` (todo | in-progress | review | done), `priority`, `profile` (professional | personal), `project?`, `tags?[]`, `acceptance_criteria?[]`, `created_at`, `updated_at`.
 

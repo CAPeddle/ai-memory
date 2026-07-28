@@ -99,19 +99,19 @@ The platform **must not** contain: curation or promotion *policy*, persona seman
 |---|---|---|---|
 | **Contact Memory** | Active | Human review gate before commit (Decision 5) | Contact MCP (planned tools per Decision 3) |
 | **Developer Memory** | Deferred | Confidence-scored consolidation (ADR-007) — see disposition (a) | Developer MCP (planned) |
-| **Workflow / Operations Memory** (AWCP) | Proposed | Verification contracts, evidence gates, approval ledger | Per `docs/investigations/awcp-spec-evaluation.md`; host decision pending (PR #31 Q1–Q4) |
+| **Workflow / Operations Memory** (AWCP) | Proposed | Verification contracts, evidence gates, approval ledger | Per `docs/investigations/awcp-spec-evaluation.md`; logical consolidation decided, host/topology/storage open (PR #31 §7) |
 
 The platform itself is not a product and never acquires persona semantics.
 
 ### 3. Layering is not deployment
 
-Logical layering (who owns schemas, curation policy, MCP surfaces) is independent of deployment topology (how many runtimes are operated). Products **may be co-deployed in a single runtime** with the platform engine — this is the expected shape for the AWCP consolidation-first direction (PR #31 review) — without collapsing their logical boundaries. Conversely, operating a product on separate infrastructure (Contact Memory on Supabase, Decision 7) is a per-product decision, not a platform default. A "one deployable product" decision therefore does not violate, and is not violated by, this ADR.
+Logical layering (who owns schemas, curation policy, MCP surfaces) is independent of deployment topology (how many runtimes are operated). Products **may be co-deployed in a single runtime** with the platform engine — a topology *permitted, not mandated*, under the AWCP consolidation direction (PR #31 review), whose process/deployment count remains an open architecture decision — without collapsing their logical boundaries. A single user-facing product may equally be composed of separately deployed components, including split work/personal deployments. Conversely, operating a product on separate infrastructure (Contact Memory on Supabase, Decision 7) is a per-product decision, not a platform default. A "one deployable product" decision therefore does not violate, and is not violated by, this ADR.
 
 ### 4. Disposition of known boundary violations
 
 (a) **Consolidation worker (shard → wiki) in the platform server.** Owned, as *logic*, by the Developer Memory product per Decision 1. It is **grandfathered in place**: it may keep running inside the platform runtime (layering ≠ deployment, §3) until Developer Memory is designed, at which point it becomes that product's module and its promotion policy is re-examined. ADR-007 remains valid as Developer Memory product logic. No platform capability may grow a new dependency on the wiki tier in the interim.
 
-(b) **Storyboard (SRS §5.6, FR-B-001..009, UC-3).** Reassigned to the product layer. It is the embryonic form of the proposed Workflow/Operations product's work-state model; its fate (absorption or retirement) is settled by the AWCP host decision. The platform no longer claims it.
+(b) **Storyboard (SRS §5.6, FR-B-001..009, UC-3).** Reassigned to the product layer. It is the embryonic form of the proposed Workflow/Operations product's work-state model; its fate (absorption or retirement) is settled by the AWCP consolidation architecture decisions (host/topology, PR #31 §7). The platform no longer claims it.
 
 (c) **Three-tier Brain and view synthesis (SRS §4.3, §5.4, §5.5).** Product-layer concerns. The platform is single-tier; wikis and views are product projections over shards.
 
@@ -131,7 +131,7 @@ Each of these carries a supersession banner in the SRS (v1.2) pointing here.
 
 ## Revisit Triggers
 
-- The AWCP host decision (PR #31 Q1–Q4) is made — the product register and disposition (b) must be updated to match.
+- The AWCP host/topology decision (PR #31 §7 open axes) is made — the product register and disposition (b) must be updated to match.
 - Developer Memory design begins — disposition (a) converts from grandfathered to relocated/fenced.
 - A capability request cannot be classified by the criteria above — amend the definitions, don't special-case silently.
 - A second human user or shared deployment appears — persona definitions need revisiting alongside ADR-011's multi-user clause.
