@@ -103,6 +103,8 @@ The platform **must not** contain: curation or promotion *policy*, persona seman
 
 The platform itself is not a product and never acquires persona semantics.
 
+`prism-llm-wiki` is not a fourth register row. Its cross-boundary correlation capability (Confluence/Jira/git drift detection and Jira↔git evidence correlation) is recorded as an early, partial implementation of the **Workflow / Operations Memory** row above, per the `prism-llm-wiki` boundary plan (`2026-07-28-001-docs-developer-memory-prism-boundary-plan.md`, R3/R4) and `docs/investigations/prism-ground-truth-inventory.md` §3. Under the criteria in §1, Prism itself classifies as a product (persona, domain vocabulary, curation/promotion policy, and a domain MCP/UI surface — see the inventory §3) but holds none of the platform capabilities in the list above; it registers as a donor to Workflow/Operations Memory, not as a peer entry.
+
 ### 3. Layering is not deployment
 
 Logical layering (who owns schemas, curation policy, MCP surfaces) is independent of deployment topology (how many runtimes are operated). Products **may be co-deployed in a single runtime** with the platform engine — a topology *permitted, not mandated*, under the AWCP consolidation direction (PR #31 review), whose process/deployment count remains an open architecture decision — without collapsing their logical boundaries. A single user-facing product may equally be composed of separately deployed components, including split work/personal deployments. Conversely, operating a product on separate infrastructure (Contact Memory on Supabase, Decision 7) is a per-product decision, not a platform default. A "one deployable product" decision therefore does not violate, and is not violated by, this ADR.
