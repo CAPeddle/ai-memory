@@ -4,7 +4,7 @@
 > Next planning target: (TBD after ST-072 completes).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review). ST-070 + ST-071 done 2026-07-03 (integration suite green in CI, PR #21 merged).
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
-> Last updated: 2026-07-22 (ST-080 → Backlog; revisit deployment host — self-hosted homeserver + Tailscale vs Supabase)
+> Last updated: 2026-07-28 (ST-081 → Review: ADR-013 platform/product definitions drafted + SRS v1.2 banners, PO-directed same-session; ST-079's planned guardrail ADR renumbered ADR-013 → ADR-015)
 
 ---
 
@@ -35,12 +35,12 @@
 - phase: 0 (governance)
 - Value: 3
 - Blocked by: —
-- Touches: `docs/design/adr/ADR-013-*.md` (new — the guardrail ADR); `CLAUDE.md` (one-line pointer near the Contact Memory Supersession Map)
+- Touches: `docs/design/adr/ADR-015-*.md` (new — the guardrail ADR; renumbered from ADR-013 on 2026-07-28: ADR-013 taken by platform/product definitions per ST-081, ADR-014 reserved by ST-080); `CLAUDE.md` (one-line pointer near the Contact Memory Supersession Map)
 - Problem: The platform mandates Postgres + Apache AGE (ADR-003/009/011), but Contact Memory deploys on Supabase without AGE — a choice explicitly scoped "for Contact Memory deployment only" (`CLAUDE.md:32`). No document analyzes the resulting two-database divergence as a risk. Developer Memory's deployment target is undecided; a future "just use Supabase like Contact did" choice could silently strip the graph tier that ADR-003/011 treat as first-class, without anyone weighing the cost.
 - Acceptance criteria:
-  - [ ] New **ADR-013 "Products inherit the platform graph tier by default"**: products built on the Platform MCP inherit its storage capabilities including the AGE graph; moving a product onto a stack that omits AGE (as Contact→Supabase) is a **per-product decision that must explicitly account for losing graph-based retrieval (ADR-003 Mode 2 / entity traversal)** — it does not become the platform default
-  - [ ] ADR-013 cross-references ADR-003/009/011, the Contact supersession note (`CLAUDE.md:32`), and ST-024 for the version ceiling (Risk B)
-  - [ ] One-line pointer to ADR-013 added in `CLAUDE.md` near the Contact Memory Supersession Map
+  - [ ] New **ADR-015 "Products inherit the platform graph tier by default"** (renumbered from ADR-013, 2026-07-28): products built on the Platform MCP inherit its storage capabilities including the AGE graph; moving a product onto a stack that omits AGE (as Contact→Supabase) is a **per-product decision that must explicitly account for losing graph-based retrieval (ADR-003 Mode 2 / entity traversal)** — it does not become the platform default
+  - [ ] ADR-015 cross-references ADR-003/009/011, ADR-013 (platform/product definitions — the guardrail is a sub-rule of its platform-capability inheritance), the Contact supersession note (`CLAUDE.md:32`), and ST-024 for the version ceiling (Risk B)
+  - [ ] One-line pointer to ADR-015 added in `CLAUDE.md` near the Contact Memory Supersession Map
   - [ ] Guardrail is framed as "weigh the cost each time", **not** a ban on divergence — Contact's deliberate trade remains valid
   - [ ] No duplication of ST-024 (the deferred PG17/AGE-v1.7.0 upgrade owns Risk B); this story owns Risk A only
 - Plan: `docs/investigations/age-platform-divergence-product-impact.md` §7 (recommendation); ADR to be authored on pickup
@@ -470,6 +470,24 @@
 - Notes: Confirmed mismatch 2026-07-03 — doc proposes `{kind, payload, quote, source_ids, char_span}`; actual [`ExtractionItem`](../../contact-memory/parser/types.ts#L152) is a flattened discriminated union with provenance in `evidence: EvidenceReference[]`. Opt 3 closes the drift without restructuring the union: accessors centralize the primary-quote + full-source-id patterns the doc's flat shape implied.
 
 ## Review
+
+### ST-081: Formalise platform/product definitions (ADR-013 + SRS v1.2 supersession banners)
+- Type: chore / governance
+- Source: PO (platform-vs-product formalisation request, 2026-07-28, following the AWCP spec evaluation on PR #31)
+- phase: 0 (governance)
+- Value: 4
+- Blocked by: —
+- Touches: `docs/design/adr/ADR-013-platform-product-definitions.md` (new); `docs/requirements/SRS.md` (v1.2 — header note + supersession banners on §4.3/§5.4/§5.5/§5.6 + revision history); this board (ST-079 ADR renumbered ADR-013 → ADR-015)
+- Acceptance criteria:
+  - [x] ADR-013 defines platform and product by **criteria** (litmus test: "decides what knowledge means / when it's trusted" → product; "stores/indexes/retrieves any knowledge identically" → platform), not just examples
+  - [x] Product register recorded: Contact Memory (active), Developer Memory (deferred), Workflow/Operations Memory (proposed — AWCP, host decision pending PR #31 Q1–Q4)
+  - [x] Layering-vs-deployment clause: products may be co-deployed in one runtime (AWCP consolidation-first direction) without collapsing logical boundaries; separate infra (Contact→Supabase) stays a per-product decision
+  - [x] Known violations dispositioned: consolidation worker grandfathered as Developer Memory logic in the platform runtime (no new wiki-tier dependencies); Storyboard reassigned to the proposed Workflow product pending the AWCP host decision; three-tier Brain/views marked product-layer
+  - [x] SRS bumped to v1.2 with banners in place (no section rewrites — supersession-map culture) and a revision-history row
+  - [ ] PO accepts ADR-013 (status `proposed` → `accepted`) — **pending PO review**
+- Plan: — (PO-directed governance drafting, same session as the request; no `docs/plans/` artifact — direct PO instruction 2026-07-28)
+- Docs: `docs/investigations/awcp-spec-evaluation.md` (PR #31), `docs/architecture/ai_memory_architecture_decisions.md`
+- Notes: **WIP-limit exception:** entered Review directly (drafting completed in the requesting session per explicit PO instruction) while ST-047 also sits in Review — PO to adjudicate both. ST-079's planned guardrail ADR renumbered to ADR-015 (ADR-014 reserved by ST-080); ST-079 becomes a sub-rule of ADR-013's capability-inheritance frame. The grandfathered consolidation-worker relocation deliberately has **no story yet** — it's tied to the Developer Memory design milestone (ADR-013 revisit trigger), and raising it now would duplicate that future design story.
 
 ### ST-047: Tool descriptions
 - Type: dx
