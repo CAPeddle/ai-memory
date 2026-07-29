@@ -4,11 +4,27 @@
 > Next planning target: (TBD after ST-072 completes).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review). ST-070 + ST-071 done 2026-07-03 (integration suite green in CI, PR #21 merged).
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
-> Last updated: 2026-07-29 (ST-081 → Done: ADR-013 accepted; AWCP §8 Q2–Q10 resolved by PO, host/topology/source-lineage decided in new ADR-016; ST-047 now sole Review entry, WIP breach resolved; ST-082 + ST-083 added to Backlog)
+> Last updated: 2026-07-29 (governance round on PR #31: ADR-016 downgraded to Proposed/Conditional — host is a preferred hypothesis gated on new ST-084 spike; ST-082 ACs extended with policy-scope/default-deny/negative-isolation controls; no corporate write is pre-approved — execution-time PO confirmation required)
 
 ---
 
 ## Backlog
+
+### ST-084: Architecture spike — ADR-016 host-acceptance gate (ai-memory as AWCP host)
+- Type: spike / architecture decision
+- Source: PR #31 governance round (2026-07-29) — host acceptance must be proven, not presumed; ADR-016 held at Proposed/Conditional until this spike reports
+- phase: 0 (architecture)
+- Value: 4
+- Blocked by: —
+- Touches: `docs/investigations/` (spike findings doc, new); `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` (status flip or revision on outcome); prototype/branch code as needed (disposable — schemas-survive rule from awcp-spec-evaluation §6.1 applies)
+- Acceptance criteria:
+  - [ ] Bounded spike (time-boxed; disposable code) exercises ai-memory's actual codebase against the seven ADR-016 §1 gate criteria: operational-domain separation (WorkPackets/runs/checkpoints/decisions/approvals as a distinct domain — own types, state machines, API surface — not generic memory records); memory-disabled operation; separate workflow persistence/API boundaries; failure isolation (worker faults cannot corrupt/block operational state); policy-scope enforceability (ST-082's controls implementable at this boundary); remote-client control (hub-and-client event ingestion + spooled replay); reuse-reduces-complexity assessment
+  - [ ] Each criterion gets an explicit pass/fail/pass-with-changes verdict with evidence, not narrative
+  - [ ] Outcome recorded as exactly one of: accept Candidate A / accept A with required changes (enumerated) / recommend clean umbrella (Candidate C) — and ADR-016 updated accordingly (status flip to Accepted, or revision)
+  - [ ] No schema or migration work assumes the host before this spike concludes (guard restated in findings doc)
+- Plan: (to be created — `docs/plans/`)
+- Docs: `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` §1; `docs/investigations/awcp-spec-evaluation.md` §7, §9; `docs/investigations/prism-ground-truth-inventory.md` §4
+- Notes: Filed by the PR #31 governance round that downgraded ADR-016 from Accepted to Proposed/Conditional: ai-memory is the preferred host *hypothesis*, and the burden of proof sits with the spike, not with the preference. Verify ADR-016 section refs still hold on pickup — memories freeze in time.
 
 ### ST-083: Developer Memory design pass (module spec)
 - Type: design
@@ -35,9 +51,11 @@
 - Touches: `server/src/searchQuality.ts` (must consume `scope.tags` as a retrieval filter — currently parsed but not enforced), `server/src/parseContext.ts` (parsing already shipped), `server/tests/`
 - Acceptance criteria:
   - [ ] `scope.tags`, already parsed by `parseContext.ts`, is enforced as a retrieval filter in `searchQuality.ts` across both `search_thoughts` and `list_thoughts` lanes — not merely available on the context object
-  - [ ] Test proves cross-tag isolation: a corporate-tagged thought is not returned for a personal-scoped query, and vice versa
-  - [ ] ADR-012's tag vocabulary is unchanged — this is enforcement only, not a new classification scheme
-  - [ ] Documented as the load-bearing control for corporate/personal isolation per `docs/investigations/prism-ground-truth-inventory.md` §6 item 1
+  - [ ] **Controlled policy-scope field** (extended per PR #31 governance round, AWCP §8 Q9): observations/sources carry a closed-vocabulary policy scope distinct from free-form descriptive tags — ordinary tags are not the sole policy boundary
+  - [ ] **Default-deny** semantics for retrieval *and* model-provider routing: content is never returned to, or sent through a provider for, a scope it wasn't granted; absence of scope means deny, not allow
+  - [ ] **Negative isolation tests across every egress path** — lexical search, vector search, graph traversal, context assembly, and exports — each proving corporate-scoped content is not reachable from a personal scope and vice versa (not just the search lanes)
+  - [ ] ADR-012's descriptive tag vocabulary is unchanged — the policy-scope field is additive, not a tag-vocabulary rewrite
+  - [ ] Documented as the load-bearing control set for corporate/personal isolation per `docs/investigations/prism-ground-truth-inventory.md` §6 item 1 and AWCP §8 Q9 (rev 1.5)
 - Plan: (to be created — `docs/plans/`)
 - Docs: `docs/investigations/awcp-spec-evaluation.md` §8 Q9; `docs/investigations/prism-ground-truth-inventory.md` §6 item 1; `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` §4
 - Notes: Promoted from a known, previously-deferred gap (`docs/investigations/awcp-spec-evaluation.md` §4) to a **Must** now that AWCP's local source-lineage tracker (ADR-016 §4) will co-locate corporate Confluence/Jira/ADO-derived content with personal memory in the same store. Should land before or alongside that tracker's implementation, not after — verify `parseContext.ts`/`searchQuality.ts` still match this description when picked up.

@@ -99,7 +99,7 @@ The platform **must not** contain: curation or promotion *policy*, persona seman
 |---|---|---|---|
 | **Contact Memory** | Active | Human review gate before commit (Decision 5) | Contact MCP (planned tools per Decision 3) |
 | **Developer Memory** | Deferred | Confidence-scored consolidation (ADR-007) — see disposition (a) | Developer MCP (planned) |
-| **Workflow / Operations Memory** (AWCP) | Proposed | Verification contracts, evidence gates, approval ledger | Per `docs/investigations/awcp-spec-evaluation.md` and [ADR-016](ADR-016-awcp-consolidation-host-topology.md): host = ai-memory (Candidate A), single-deployment topology, local Confluence/Jira/ADO source-lineage tracking. Storage layout (schema boundary) remains open pending module design |
+| **Workflow / Operations Memory** (AWCP) | Proposed | Verification contracts, evidence gates, approval ledger | Per `docs/investigations/awcp-spec-evaluation.md` and [ADR-016](ADR-016-awcp-consolidation-host-topology.md) (Proposed/**Conditional**): ai-memory is the **preferred host hypothesis**, acceptance gated on the ST-084 architecture spike; hub-and-client topology (central hub + lightweight remote collector); source lineage via extracted/wrapped Prism mechanisms. Storage layout (schema boundary) remains open pending module design |
 
 The platform itself is not a product and never acquires persona semantics.
 
