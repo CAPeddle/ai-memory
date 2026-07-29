@@ -1,7 +1,7 @@
 ---
 name: "ADR-013: Platform and Product Definitions"
 asset_type: "adr"
-status: "proposed"
+status: "accepted"
 owners:
   - "ai-memory-maintainers"
 source_path: "docs/design/adr/ADR-013-platform-product-definitions.md"
@@ -15,8 +15,8 @@ relates_to:
 
 # ADR-013: Platform and Product Definitions
 
-**Status:** Proposed
-**Date:** 2026-07-28
+**Status:** Accepted
+**Date:** 2026-07-28 (accepted 2026-07-29)
 **Deciders:** Christopher
 **Relates to:** Architecture Decisions Record (2026-06-26), ADR-007 (Consolidation Pipeline), ADR-012 (Tags), SRS §4.3/§5.4–§5.6
 
@@ -99,7 +99,7 @@ The platform **must not** contain: curation or promotion *policy*, persona seman
 |---|---|---|---|
 | **Contact Memory** | Active | Human review gate before commit (Decision 5) | Contact MCP (planned tools per Decision 3) |
 | **Developer Memory** | Deferred | Confidence-scored consolidation (ADR-007) — see disposition (a) | Developer MCP (planned) |
-| **Workflow / Operations Memory** (AWCP) | Proposed | Verification contracts, evidence gates, approval ledger | Per `docs/investigations/awcp-spec-evaluation.md`; logical consolidation decided, host/topology/storage open (PR #31 §7) |
+| **Workflow / Operations Memory** (AWCP) | Proposed | Verification contracts, evidence gates, approval ledger | Per `docs/investigations/awcp-spec-evaluation.md` and [ADR-016](ADR-016-awcp-consolidation-host-topology.md): host = ai-memory (Candidate A), single-deployment topology, local Confluence/Jira/ADO source-lineage tracking. Storage layout (schema boundary) remains open pending module design |
 
 The platform itself is not a product and never acquires persona semantics.
 
@@ -113,7 +113,7 @@ Logical layering (who owns schemas, curation policy, MCP surfaces) is independen
 
 (a) **Consolidation worker (shard → wiki) in the platform server.** Owned, as *logic*, by the Developer Memory product per Decision 1. It is **grandfathered in place**: it may keep running inside the platform runtime (layering ≠ deployment, §3) until Developer Memory is designed, at which point it becomes that product's module and its promotion policy is re-examined. ADR-007 remains valid as Developer Memory product logic. No platform capability may grow a new dependency on the wiki tier in the interim.
 
-(b) **Storyboard (SRS §5.6, FR-B-001..009, UC-3).** Reassigned to the product layer. It is the embryonic form of the proposed Workflow/Operations product's work-state model; its fate (absorption or retirement) is settled by the AWCP consolidation architecture decisions (host/topology, PR #31 §7). The platform no longer claims it.
+(b) **Storyboard (SRS §5.6, FR-B-001..009, UC-3).** Reassigned to the product layer, and **confirmed absorbed/superseded** by the WorkPacket model (PO decision, AWCP §8 Q4, 2026-07-29) now that the host decision places AWCP in the same codebase as the Storyboard it replaces ([ADR-016](ADR-016-awcp-consolidation-host-topology.md)). The platform no longer claims it; retirement is sequenced with the WorkPacket model's arrival, not before.
 
 (c) **Three-tier Brain and view synthesis (SRS §4.3, §5.4, §5.5).** Product-layer concerns. The platform is single-tier; wikis and views are product projections over shards.
 
@@ -133,7 +133,17 @@ Each of these carries a supersession banner in the SRS (v1.2) pointing here.
 
 ## Revisit Triggers
 
-- The AWCP host/topology decision (PR #31 §7 open axes) is made — the product register and disposition (b) must be updated to match.
-- Developer Memory design begins — disposition (a) converts from grandfathered to relocated/fenced.
+- ~~The AWCP host/topology decision (PR #31 §7 open axes) is made — the product register and disposition (b) must be updated to match.~~ **Fired and closed 2026-07-29** — see [ADR-016](ADR-016-awcp-consolidation-host-topology.md); register and disposition (b) updated above. Storage layout (schema boundary within the host) remains open — a future module-design pass, not a further revisit of this trigger.
+- Developer Memory design begins — disposition (a) converts from grandfathered to relocated/fenced. **Now scheduled**, not hypothetical: AWCP §8 Q10 (2026-07-29) commits Developer Memory's design as a follow-on story rather than deferring indefinitely — see the story board.
 - A capability request cannot be classified by the criteria above — amend the definitions, don't special-case silently.
 - A second human user or shared deployment appears — persona definitions need revisiting alongside ADR-011's multi-user clause.
+
+---
+
+## Revision History
+
+| Version | Date | Summary |
+|---------|------|---------|
+| 1.0 | 2026-07-28 | Initial — Option 2 adopted: platform/product criteria, litmus test, product register (Contact Memory, Developer Memory, proposed Workflow/Operations Memory), layering-vs-deployment clause, disposition of three known boundary violations |
+| 1.1 | 2026-07-28 | Added `prism-llm-wiki` attribution to the product register: correlation capability recorded as an early partial implementation of Workflow/Operations Memory, not a fourth register row, per the `prism-llm-wiki` boundary plan (R3/R4) and `docs/investigations/prism-ground-truth-inventory.md` §3 |
+| 1.2 | 2026-07-29 | **Accepted** (status: proposed → accepted). AWCP host/topology revisit trigger fired and closed: product register and Storyboard disposition (b) updated to reflect [ADR-016](ADR-016-awcp-consolidation-host-topology.md)'s host/topology/source-lineage decision; Storyboard confirmed superseded (AWCP §8 Q4); Developer Memory design committed as a scheduled follow-on story (AWCP §8 Q10), converting the "Developer Memory design begins" trigger from hypothetical to scheduled |
