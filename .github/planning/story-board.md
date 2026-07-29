@@ -4,11 +4,43 @@
 > Next planning target: (TBD after ST-072 completes).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review). ST-070 + ST-071 done 2026-07-03 (integration suite green in CI, PR #21 merged).
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
-> Last updated: 2026-07-28 (ST-081 → Review: ADR-013 platform/product definitions drafted + SRS v1.2 banners, PO-directed same-session; ST-079's planned guardrail ADR renumbered ADR-013 → ADR-015)
+> Last updated: 2026-07-29 (ST-081 → Done: ADR-013 accepted; AWCP §8 Q2–Q10 resolved by PO, host/topology/source-lineage decided in new ADR-016; ST-047 now sole Review entry, WIP breach resolved; ST-082 + ST-083 added to Backlog)
 
 ---
 
 ## Backlog
+
+### ST-083: Developer Memory design pass (module spec)
+- Type: design
+- Source: AWCP §8 Q10 (PO decision 2026-07-29, PR #31); fires ADR-013's "Developer Memory design begins" revisit trigger
+- phase: 2
+- Value: 4
+- Blocked by: —
+- Touches: `docs/design/adr/ADR-007-consolidation-pipeline.md` (existing, may need revision); new Developer Memory module spec doc(s); `docs/design/adr/ADR-013-platform-product-definitions.md` §4(a) (disposition revisit)
+- Acceptance criteria:
+  - [ ] Developer Memory's module spec authored, covering at minimum `record_decision` / `search_decisions` / `get_project_context` — the shape AWCP's own knowledge needs already implied (`docs/investigations/awcp-spec-evaluation.md` §4, §8 Q10)
+  - [ ] Relationship to AWCP's operational module clarified: Developer Memory owns promoted/recalled knowledge (ADR-007 consolidation scoring — frequency, diversity, helpfulness), AWCP's operational model owns transactional execution state — per the truth-conditions distinction the `prism-llm-wiki` boundary plan drew (recall-promoted vs. correlation-expires)
+  - [ ] ADR-013 disposition (a) (consolidation worker, currently grandfathered) revisited: converts to relocated/fenced, or is explicitly re-grandfathered with rationale
+  - [ ] Storage/schema implications assessed against [ADR-016](../../docs/design/adr/ADR-016-awcp-consolidation-host-topology.md) §3's still-open storage-layout axis (informs, does not have to resolve, that decision)
+- Plan: (to be created — `docs/plans/`)
+- Docs: `docs/investigations/awcp-spec-evaluation.md` §4, §8 Q10; `docs/design/adr/ADR-007-consolidation-pipeline.md`; `docs/design/adr/ADR-013-platform-product-definitions.md` §4(a); `prism-llm-wiki` boundary plan (`docs/plans/2026-07-28-001-docs-developer-memory-prism-boundary-plan.md`) for the truth-conditions distinction
+- Notes: Committed as a real follow-on story rather than "raw platform primitives forever" (PO decision, AWCP §8 Q10, 2026-07-29) — AWCP's own knowledge requirements are effectively Developer Memory's spec already. Verify referenced file paths/sections still hold when picked up — memories freeze in time.
+
+### ST-082: Enforce `scope.tags` as a retrieval filter (corporate/personal isolation)
+- Type: hardening / security
+- Source: AWCP §8 Q9 (PO decision 2026-07-29, promoted to Must, PR #31)
+- phase: 2
+- Value: 4
+- Blocked by: —
+- Touches: `server/src/searchQuality.ts` (must consume `scope.tags` as a retrieval filter — currently parsed but not enforced), `server/src/parseContext.ts` (parsing already shipped), `server/tests/`
+- Acceptance criteria:
+  - [ ] `scope.tags`, already parsed by `parseContext.ts`, is enforced as a retrieval filter in `searchQuality.ts` across both `search_thoughts` and `list_thoughts` lanes — not merely available on the context object
+  - [ ] Test proves cross-tag isolation: a corporate-tagged thought is not returned for a personal-scoped query, and vice versa
+  - [ ] ADR-012's tag vocabulary is unchanged — this is enforcement only, not a new classification scheme
+  - [ ] Documented as the load-bearing control for corporate/personal isolation per `docs/investigations/prism-ground-truth-inventory.md` §6 item 1
+- Plan: (to be created — `docs/plans/`)
+- Docs: `docs/investigations/awcp-spec-evaluation.md` §8 Q9; `docs/investigations/prism-ground-truth-inventory.md` §6 item 1; `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` §4
+- Notes: Promoted from a known, previously-deferred gap (`docs/investigations/awcp-spec-evaluation.md` §4) to a **Must** now that AWCP's local source-lineage tracker (ADR-016 §4) will co-locate corporate Confluence/Jira/ADO-derived content with personal memory in the same store. Should land before or alongside that tracker's implementation, not after — verify `parseContext.ts`/`searchQuality.ts` still match this description when picked up.
 
 ### ST-080: Revisit deployment host — self-hosted homeserver + Tailscale (fills ADR-009's deferred host decision)
 - Type: spike / architecture decision
@@ -471,24 +503,6 @@
 
 ## Review
 
-### ST-081: Formalise platform/product definitions (ADR-013 + SRS v1.2 supersession banners)
-- Type: chore / governance
-- Source: PO (platform-vs-product formalisation request, 2026-07-28, following the AWCP spec evaluation on PR #31)
-- phase: 0 (governance)
-- Value: 4
-- Blocked by: —
-- Touches: `docs/design/adr/ADR-013-platform-product-definitions.md` (new); `docs/requirements/SRS.md` (v1.2 — header note + supersession banners on §4.3/§5.4/§5.5/§5.6 + revision history); this board (ST-079 ADR renumbered ADR-013 → ADR-015)
-- Acceptance criteria:
-  - [x] ADR-013 defines platform and product by **criteria** (litmus test: "decides what knowledge means / when it's trusted" → product; "stores/indexes/retrieves any knowledge identically" → platform), not just examples
-  - [x] Product register recorded: Contact Memory (active), Developer Memory (deferred), Workflow/Operations Memory (proposed — AWCP; logical consolidation decided, host/topology/storage open per PR #31 §7)
-  - [x] Layering-vs-deployment clause: products may be co-deployed in one runtime (AWCP consolidation-first direction) without collapsing logical boundaries; separate infra (Contact→Supabase) stays a per-product decision
-  - [x] Known violations dispositioned: consolidation worker grandfathered as Developer Memory logic in the platform runtime (no new wiki-tier dependencies); Storyboard reassigned to the proposed Workflow product pending the AWCP host decision; three-tier Brain/views marked product-layer
-  - [x] SRS bumped to v1.2 with banners in place (no section rewrites — supersession-map culture) and a revision-history row
-  - [ ] PO accepts ADR-013 (status `proposed` → `accepted`) — **pending PO review**
-- Plan: — (PO-directed governance drafting, same session as the request; no `docs/plans/` artifact — direct PO instruction 2026-07-28)
-- Docs: `docs/investigations/awcp-spec-evaluation.md` (PR #31), `docs/architecture/ai_memory_architecture_decisions.md`
-- Notes: **WIP-limit exception:** entered Review directly (drafting completed in the requesting session per explicit PO instruction) while ST-047 also sits in Review — PO to adjudicate both. ST-079's planned guardrail ADR renumbered to ADR-015 (ADR-014 reserved by ST-080); ST-079 becomes a sub-rule of ADR-013's capability-inheritance frame. The grandfathered consolidation-worker relocation deliberately has **no story yet** — it's tied to the Developer Memory design milestone (ADR-013 revisit trigger), and raising it now would duplicate that future design story.
-
 ### ST-047: Tool descriptions
 - Type: dx
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
@@ -505,6 +519,25 @@
 (Empty)
 
 ## Done
+
+### ST-081: Formalise platform/product definitions (ADR-013 + SRS v1.2 supersession banners)
+- Type: chore / governance
+- Source: PO (platform-vs-product formalisation request, 2026-07-28, following the AWCP spec evaluation on PR #31)
+- phase: 0 (governance)
+- Value: 4
+- Completed: 2026-07-29
+- Blocked by: —
+- Touches: `docs/design/adr/ADR-013-platform-product-definitions.md` (new); `docs/requirements/SRS.md` (v1.2 — header note + supersession banners on §4.3/§5.4/§5.5/§5.6 + revision history); this board (ST-079 ADR renumbered ADR-013 → ADR-015)
+- Acceptance criteria:
+  - [x] ADR-013 defines platform and product by **criteria** (litmus test: "decides what knowledge means / when it's trusted" → product; "stores/indexes/retrieves any knowledge identically" → platform), not just examples
+  - [x] Product register recorded: Contact Memory (active), Developer Memory (deferred), Workflow/Operations Memory (proposed — AWCP; host/topology/lineage decided per ADR-016, storage layout open)
+  - [x] Layering-vs-deployment clause: products may be co-deployed in one runtime (AWCP consolidation-first direction) without collapsing logical boundaries; separate infra (Contact→Supabase) stays a per-product decision
+  - [x] Known violations dispositioned: consolidation worker grandfathered as Developer Memory logic in the platform runtime (no new wiki-tier dependencies); Storyboard confirmed superseded by the WorkPacket model (AWCP §8 Q4); three-tier Brain/views marked product-layer
+  - [x] SRS bumped to v1.2 with banners in place (no section rewrites — supersession-map culture) and a revision-history row
+  - [x] PO accepts ADR-013 (status `proposed` → `accepted`) — accepted 2026-07-29 after AWCP §8 Q2–Q10 resolved
+- Plan: — (PO-directed governance drafting, same session as the request; no `docs/plans/` artifact — direct PO instruction 2026-07-28)
+- Docs: `docs/investigations/awcp-spec-evaluation.md` (PR #31), `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md`, `docs/architecture/ai_memory_architecture_decisions.md`
+- Notes: WIP-limit exception (entered Review directly alongside ST-047, PO-directed 2026-07-28) resolved by completion — ST-047 is now the sole Review entry. ST-079's planned guardrail ADR renumbered to ADR-015 (ADR-014 reserved by ST-080); ST-079 becomes a sub-rule of ADR-013's capability-inheritance frame. AWCP host/topology/source-lineage decided 2026-07-29 in [ADR-016](../../docs/design/adr/ADR-016-awcp-consolidation-host-topology.md); storage layout deferred to module design. Follow-on stories filed: ST-082 (tag-filter enforcement, AWCP §8 Q9) and ST-083 (Developer Memory design pass, AWCP §8 Q10). The grandfathered consolidation-worker relocation still has **no story yet** — tied to ST-083's design pass, not raised separately to avoid duplication.
 
 ### ST-078: Reconcile Apache AGE version drift (docs said v1.7.0; image ships PG15/v1.6.0-rc0)
 - Type: chore / docs correction
