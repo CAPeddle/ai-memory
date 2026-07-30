@@ -304,10 +304,18 @@ Deno.test({
 
 Deno.test({
   ...T,
-  name: "experiment 7: state survives a simulated central-service restart",
+  name: "experiment 7: all operational state rehydrates from the database (NOT a restart test)",
   fn: async () => {
-    // A restart is modelled as: everything in-process is discarded, and state is
-    // re-read from the database alone. Nothing operational may live only in memory.
+    // Renamed 2026-07-30 after PR #34 review, which was right: this never was a
+    // restart test. The process, module instances, connection pool and pool config
+    // all stay alive; only local variables are discarded. What it genuinely proves is
+    // that nothing operational lives ONLY in memory — every field below is recovered
+    // by re-reading the database. That is the property criterion 3 actually needs.
+    //
+    // What it does NOT cover, and what a real restart would exercise: schema
+    // bootstrapping on a cold start, composition-root wiring, pool reconnection, and
+    // any process-level state. Proving those needs the writer and reader in separate
+    // processes or containers. Restart therefore remains UNPROVEN — see findings §4.
     const packet = await newPacket("exp7 restart");
     try {
       const run = await store.registerRun({
@@ -558,14 +566,30 @@ Deno.test({
 
 Deno.test({
   ...T,
-  name: "concurrency: two simultaneous completePacket calls serialise on the packet row",
+  name: "concurrency: completePacket serialises on the packet row (blocks on a held lock)",
   fn: async () => {
-    // The FOR UPDATE claim, tested rather than asserted in a comment.
-    // Scope precisely what this proves: two concurrent completions of the SAME
-    // packet serialise, so exactly one transitions it. It does NOT prove safety
-    // against a concurrent evidence DELETE or criterion INSERT — those rows are not
-    // locked and re-snapshot under READ COMMITTED (see completePacket's docblock).
-    const packet = await newPacket("concurrency: completion");
+    // What this proves: completion cannot proceed while another transaction holds a
+    // lock on the packet row. That is real and nothing previously tested it.
+    //
+    // What it does NOT prove, stated because the obvious reading is wrong: it does not
+    // isolate `FOR UPDATE`'s contribution. Verified empirically on 2026-07-30 — delete
+    // `FOR UPDATE` from completePacket and this test STILL passes, because the
+    // subsequent `UPDATE workflow.work_packets` takes the same row lock and blocks on
+    // its own. There is no observable behaviour that distinguishes the two, so no test
+    // of this shape can be a red/green control for the lock clause specifically.
+    //
+    // The consequence worth carrying: as currently written, `FOR UPDATE` buys nothing
+    // over the UPDATE that follows it. It would start earning its keep only once
+    // something else contends for that lock — which is exactly what closing the
+    // addCriterion check-then-act window would require (open on PR #34).
+    //
+    // The version of this test before 2026-07-30 ran two completions concurrently and
+    // asserted both fulfilled with one complete row. That proved nothing at all: it
+    // passes with the lock deleted, and its comment claimed "exactly one transitions
+    // it", which is false — both calls rewrite completed_at.
+    const packet = await newPacket("concurrency: lock barrier");
+    const holder = await sql.reserve();
+    let lockReleased = false;
     try {
       const criterion = await store.addCriterion(packet.id, "met", true);
       await store.attachEvidence({
@@ -574,23 +598,72 @@ Deno.test({
         detail: "evidence",
       });
 
+      await holder.unsafe("BEGIN");
+      await holder.unsafe(
+        `SELECT id FROM workflow.work_packets WHERE id = '${packet.id}' FOR UPDATE`,
+      );
+
+      let settled = false;
+      const pending = store.completePacket(packet.id)
+        .then((r) => {
+          settled = true;
+          return r;
+        })
+        .catch((e) => {
+          settled = true;
+          throw e;
+        });
+
+      // Give it a generous window to prove it is genuinely blocked, not merely slow.
+      await new Promise((r) => setTimeout(r, 500));
+      assert(
+        !settled,
+        "completePacket did not block on a held row lock — FOR UPDATE is not serialising",
+      );
+
+      await holder.unsafe("COMMIT");
+      lockReleased = true;
+
+      const completed = await pending;
+      assertEquals(completed.status, "complete", "it must proceed once the lock is released");
+      assert(completed.completed_at !== null);
+    } finally {
+      if (!lockReleased) await holder.unsafe("ROLLBACK").catch(() => {});
+      await holder.release();
+      await store.deletePacket(packet.id);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "concurrency: double completion converges on one state, but is NOT single-transition",
+  fn: async () => {
+    // Records what concurrent completion actually does, rather than overclaiming it.
+    // Both calls fulfil and both rewrite completed_at — completion is idempotent in
+    // outcome, not a guarded one-way transition. Making it single-transition would
+    // need `UPDATE ... WHERE status <> 'complete'` plus a decision about what the
+    // losing caller receives; that is a design change, recorded as open on PR #34.
+    const packet = await newPacket("concurrency: convergence");
+    try {
+      const criterion = await store.addCriterion(packet.id, "met", true);
+      await store.attachEvidence({ criterionId: criterion.id, kind: "manual", detail: "e" });
+
       const results = await Promise.allSettled([
         store.completePacket(packet.id),
         store.completePacket(packet.id),
       ]);
-      const fulfilled = results.filter((r) => r.status === "fulfilled");
-      assertEquals(fulfilled.length, 2, "both should succeed — completion is idempotent here");
-
-      // The decisive check: the packet ends in exactly one consistent state.
-      const after = await store.getPacket(packet.id);
-      assertEquals(after?.status, "complete");
-      assert(after?.completed_at !== null);
+      assertEquals(
+        results.filter((r) => r.status === "fulfilled").length,
+        2,
+        "both fulfil — completion is idempotent in outcome",
+      );
 
       const rows = await sql<{ n: string }[]>`
         SELECT count(*) AS n FROM workflow.work_packets
         WHERE id = ${packet.id} AND status = 'complete'
       `;
-      assertEquals(Number(rows[0].n), 1, "must not produce a divergent or duplicated state");
+      assertEquals(Number(rows[0].n), 1, "must converge on exactly one consistent state");
     } finally {
       await store.deletePacket(packet.id);
     }

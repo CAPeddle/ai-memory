@@ -1,44 +1,49 @@
-Session: 2026-07-30 — ST-084 Stage 1 spike BUILT + REVIEWED. Branch: claude/st-084-awcp-host-spike (no PR).
+Session: 2026-07-30 — ST-084 Stage 1 spike BUILT, REVIEWED, SHIPPED to PR #34 (OPEN, base
+claude/ai-memory-spec-evaluation-t6r76j). Branch: claude/st-084-awcp-host-spike.
 Verdict PROMISING WITH CONCERNS. Criteria 1-4 pass; 5 (policy scope), 6 (remote node), 7 UNPROVEN.
 ADR-016 stays Proposed/Conditional — NOT flipped. Detail: docs/investigations/ST-084-awcp-host-spike-findings.md
-BUILT: workflow schema (007, 6 tables not 10), server/src/workflow/ (5 files), 44 tests. Attention is a
-DERIVED pure function, not a table. run_events/execution_nodes deferred to Stage 2.
+BUILT: server/db/workflow/001_workflow_schema.sql (6 tables, OUTSIDE the shared boot-blocking chain),
+server/src/workflow/ (6 files: types, store, attention, ports, service, schema), 58 tests.
+Attention is a DERIVED pure function, not a table. run_events/execution_nodes deferred to Stage 2.
 
-CODE REVIEW FOUND 4 REAL P1s IN MY OWN CODE — all fixed, ALL HAD PASSING TESTS BEFORE REVIEW:
-1. resolveAndPromoteDecision wrapped the port call + 2 operational writes in ONE try, so a lost ref
-   reported promoted:false -> caller retries -> DUPLICATE projection. Split; added refLost flag.
-2. Promotion HARDCODED policyScope "personal" for every packet, silently mislabelling corporate/mixed/
-   public into memory. PromotionInput.policyScope was typed `string`; now the PolicyScope union.
-3. Import-boundary test used a BLOCKLIST omitting index.ts (all MCP tools) + 6 more, so the module could
-   import the composition root and pass green. Inverted to an ALLOWLIST + red/green control tests.
-4. Plan had no YAML frontmatter (CLAUDE.md mandates story: ST-NNN). Added; PO's body untouched.
-Also fixed: schema-qual regex was case-sensitive (lowercase SQL skipped silently); experiment 3 tested the
-ONE branch where search_path pollution CANNOT happen (a failed stmt rolls the SET back — verified against
-PG15+AGE) while claiming the opposite; completePacket's FOR UPDATE comment asserted an invariant the code
-does NOT provide (locks the packet row, not criteria/evidence, which re-snapshot under READ COMMITTED).
+CODE REVIEW FOUND 4 REAL P1s IN MY OWN CODE — all fixed, ALL HAD PASSING TESTS BEFORE REVIEW.
+LESSON (now durable): passing tests certified claims they could not check. On a spike whose OUTPUT IS
+EVIDENCE, review the evidence mechanism as hard as the code. Written up:
+docs/solutions/conventions/verification-mechanisms-need-adversarial-review.md
+Also durable now: docs/solutions/conventions/schema-qualify-sql-age-search-path-pollution.md
+(AGE leaves a sticky search_path on POOLED connections — repo-wide trap, qualify every identifier).
 
-LESSON: every one of those had green tests. Passing tests certified false claims. On a spike whose OUTPUT
-IS EVIDENCE, review the evidence mechanism, not just the code.
-
-CROSS-MODEL ADVERSARIAL LENS DID NOT RUN — degraded, not merely uncorroborated. codex peer started then hit
-repeated 401s (execution-context auth in the detached job, NOT the user's account — do NOT tell the PO to
-re-login on that basis). Peer owned the lens, so the in-process fallback was correctly removed.
+*** 10 OPEN REVIEW THREADS ON PR #34 — from the agent that originated the AWCP concept. READ THEM. ***
+Independently verified as CORRECT before acting; this reviewer is not systematically wrong.
+FIXED this session (see the ce-resolve-pr-feedback commit): this handoff (stale + leaked a private IP);
+findings §6.2 migration-reuse misclassification; findings §9 teardown; the completePacket concurrency test
+(proved nothing — would pass with FOR UPDATE removed); the boundary test's hardcoded file list.
+STILL OPEN — 4 threads left for PO decision, each changes what Stage 1 concludes:
+1. P1 service.ts:90 — a port TIMEOUT is an INDETERMINATE outcome, not a failure. Promise.race does not
+   cancel promoteDecision, so a late commit + promoted:false invites the duplicate projection the code
+   exists to prevent. Options: indeterminate outcome / idempotency key on decisionId / AbortSignal.
+2. P1 store.ts:357 — the completion-gate race is reachable IN-MODULE, not just by external writers:
+   addCriterion() is a bare INSERT with no packet lock. Options: freeze the criteria set on completion /
+   lock in addCriterion / SERIALIZABLE. Until closed, the completion-gate invariant is NOT proven.
+3. P1 store.ts:374 — unresolved `blocking` decisions do NOT block completion; completePacket never reads
+   operational_decisions. Model says one thing, enforces another. Options: gate on it, or redefine
+   `blocking` as attention-only and correct the plan + findings.
+4. P2 001_workflow_schema.sql:105 — packet_id and run_id can point at DIFFERENT packets (both FKs valid
+   independently). Options: composite FK / derive packet_id from run_id / validate in one transaction.
 
 NEXT SESSION — Stage 2 (contracts specified in findings §7; do NOT re-derive)
 1. Policy scope: fix `fetch` FIRST (index.ts:211-215 takes no context param, bypasses every search-lane
    filter in one call — the rest is theatre until closed). scope.tags is enforced in ZERO retrieval paths;
    15 hand-written read paths, no chokepoint; graph tools structurally unfilterable (AGE nodes are
    (label,name), no scope column, no join to thoughts).
-2. Remote node: z2 via `ssh personal-server` (Tailscale 100.65.192.115), Ubuntu 24.04.4 — has node/python3/
-   curl/systemctl, NO deno, so the client must be plain Node with zero npm deps.
+2. Remote node: host alias `personal-server` over Tailscale, Ubuntu 24.04.4 — has node/python3/curl/
+   systemctl, NO deno, so the client must be plain Node with zero npm deps. Do NOT commit its address.
 3. Failure experiments 4-6 (disconnect, duplicate delivery, invalid auth) still to run.
 4. Proposed ADR-016 amendments drafted in findings §13 — PO review, none applied.
 
 CARRIED FORWARD
-- ce-compound candidate: AGE search_path pollution on POOLED connections is a repo-wide trap with NO
-  durable learning in docs/solutions/. Any future table added unqualified hits it.
-- Accepted residuals: no concurrency test for completePacket; no port timeouts; client-vs-DB clock skew in
-  staleness; a bad workflow migration Deno.exit(1)s the WHOLE server at boot.
+- Accepted residuals: client-vs-DB clock skew in staleness; untested not-found branches on
+  attentionForPacket/completePacket; setPacketStatus and POLICY_SCOPES exported without callers.
 - ST-080 Z2/ADR-014 open; ADR-010 Android auth open. CI: flaky e2e tests/e2e.test.ts:469 (rerun fixes).
 WRITE AUTHORITY: corporate Jira/Confluence/ADO write UNVERIFIED, NONE pre-approved. Any write test needs
 explicit PO confirmation AT EXECUTION TIME with exact target + before/after preview. No log, handoff, plan

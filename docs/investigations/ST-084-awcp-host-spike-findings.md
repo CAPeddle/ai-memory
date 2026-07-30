@@ -202,6 +202,15 @@ live sharp edge in the shared runtime that any co-tenant module inherits.
 unavailability and central-service restart cannot corrupt or roll back operational
 state; promotion remains an optional projection.*
 
+**Scope of this PASS, narrowed 2026-07-30.** Three of the requirement's four clauses
+are proven outright: search failure, promotion failure, and graph unavailability. The
+fourth — *central-service restart* — is proven only as far as **database rehydration**
+(no operational state lives solely in memory). True restart behaviour, including cold
+schema bootstrapping, composition-root wiring and pool reconnection, is **UNPROVEN**
+and needs the writer and reader in separate processes. PR #34 review caught this as an
+overclaim; the criterion still passes on the evidence gathered, but not on all four
+clauses equally.
+
 Four of the plan's seven experiments are in Stage 1 scope; experiments 4–6
 (disconnection, duplicate delivery, invalid auth) are remote-node and therefore
 Stage 2.
@@ -213,7 +222,7 @@ Stage 2.
 | 2b | Promotion failure vs. completion | **PASS** — packet still completes |
 | 2c | Projection **deleted** after success | **PASS** — decision survives intact; "deleting an optional promoted memory item cannot damage operational history" holds |
 | 3 | **Graph** unavailable | **PASS** — a deliberately failed AGE query on the pooled connection leaves the full slice working |
-| 7 | Central-service **restart** | **PASS** — all state rehydrates from the database alone; attention recomputes identically; the completion gate still refuses |
+| 7 | Database **rehydration** (not restart) | **PASS, narrowed 2026-07-30** — all state rehydrates from the database alone; attention recomputes identically; the completion gate still refuses. Originally labelled "central-service restart"; PR #34 review correctly identified that as an overclaim. The same process, module instances, pool and pool config stay alive — only local variables are discarded — so schema bootstrapping, composition-root wiring and pool reconnection are untested. **Restart itself is UNPROVEN** and needs the writer and reader in separate processes. |
 | — | Cross-domain transaction | **PASS** — a failing adapter cannot roll back a workflow transaction |
 
 **The structural reason this passes**, rather than passing by luck: promotion runs
@@ -255,7 +264,7 @@ Classification of the ten components the plan names:
 | Component | Classification | Evidence |
 |---|---|---|
 | **Postgres connection** (`src/db.ts`) | **Directly reusable** | 12-line `postgres.js` singleton; workflow uses the same pool and `sql.begin` transactions with no adaptation |
-| **Migration system** (`src/migrate.ts`) | **Directly reusable** | Discovery regex is generic; `007` required **zero** changes to the runner. Caveat below. |
+| **Migration system** (`src/migrate.ts`) | **NOT reused — deliberately bypassed** | *Corrected 2026-07-30 after PR #34 review.* This row previously read "Directly reusable", which described the **superseded** design that put the DDL in the shared chain. The final implementation moved it out: `ensureWorkflowSchema()` applies `db/workflow/001_workflow_schema.sql` itself, never touches `schema_migrations`, and has no version history, checksum, or upgrade path. Moving it out was the right call (§13a fix 7), but it is a **reduction in net reuse**, not an instance of it — the host argument must not count migrations. |
 | **Authentication** (`src/auth.ts`) | **Reusable behind an adapter** | `requireApiKey` is a plain `(req) => Response \| null` invoked manually, not middleware, so a second credential type composes cleanly without touching `/mcp`. Not used in Stage 1. |
 | **MCP transport** | **Reusable only after modification** | Not exercised in Stage 1. Registering tools outside `index.ts` requires two out-of-module edits — see §6.2 |
 | **Worker/event infrastructure** | **Actively harmful coupling if reused** | `WorkerLogEvent.worker` is a closed union `"entity" \| "consolidation"` (`workerLogger.ts:4`) and `index.ts:638` hardcodes the same pair. Reusing it means widening a shared type *and* editing an unrelated tool. Workflow deliberately does not. |
@@ -328,12 +337,17 @@ spike must not quietly alter production read paths.
 
 - **Migration failure is fatal to the whole server.** `migrate.ts:56` calls
   `Deno.exit(1)`, and `runMigrations()` is awaited at `index.ts:46` *before*
-  `Deno.serve`. A malformed workflow migration bricks the memory MCP, not just
-  workflow. Rollback is clean (DDL is transactional) but the process dies.
+  `Deno.serve`. A malformed migration in the shared chain bricks the memory MCP.
+  **This spike no longer pays that risk** — the workflow DDL was moved out of the
+  shared chain (§13a fix 7), so a bad workflow migration cannot kill the server.
+  The hazard remains real for anything that *does* live in the shared chain, which
+  is why it stays recorded here as a property of the shared runtime.
 - **`migrations.test.ts` hardcoded the migration version list in four places**
-  (lines 17, 18-25, 31, 97). Adding *any* migration reds the suite until updated.
-  This spike had to update it — a small tax, but evidence that the shared substrate
-  is not neutral to co-tenants.
+  (lines 17, 18-25, 31, 97), so adding *any* migration to the shared chain reds the
+  suite until updated. The spike initially paid this tax and then stopped paying it:
+  with the DDL relocated, `migrations.test.ts` was reverted to pristine and is now
+  untouched by this spike. The co-tenancy tax is real but avoidable — by not joining
+  the shared chain, which is itself the finding.
 - **Registering MCP tools costs two out-of-module edits**: the hand-maintained
   `toolNames` array at `index.ts:101-113`, and `mcp-protocol-compat.test.ts:172-179`,
   which regex-scans `server/index.ts` *alone* for `server.registerTool(` and asserts a
@@ -420,18 +434,24 @@ The spike is disposable by construction, as the plan requires. Complete teardown
 
 ```sql
 DROP SCHEMA workflow CASCADE;
-DELETE FROM schema_migrations WHERE version = 7;
 ```
 
 ```
-rm -rf server/src/workflow/ server/db/007_workflow_schema.sql server/tests/workflow-*.test.ts
-git checkout -- server/tests/migrations.test.ts     # revert 4 version assertions
+rm -rf server/src/workflow/ server/db/workflow/ server/tests/workflow-*.test.ts
 ```
 
-**No other file was modified.** That one-sentence revert list *is* the separability
-evidence for criterion 4 — a later extraction of Workflow Operations into its own
-application remains possible, because nothing outside the module and one test file
-knows it exists.
+*Corrected 2026-07-30 after PR #34 review.* The previous version of this section was
+written against the superseded design and left the real DDL behind: it deleted
+`server/db/007_workflow_schema.sql` (the file now lives at
+`server/db/workflow/001_workflow_schema.sql`), removed a `schema_migrations` row that
+is never written (the module deliberately does not register a version), and reverted
+`migrations.test.ts`, which this spike no longer touches.
+
+**No other file is modified — the teardown is now strictly `rm` plus one `DROP
+SCHEMA`.** That is *stronger* separability evidence for criterion 4 than the original
+claim, not weaker: there is no shared-chain bookkeeping to unwind, so a later
+extraction of Workflow Operations into its own application remains possible because
+nothing outside the module knows it exists.
 
 ---
 
@@ -469,14 +489,17 @@ Evidence:
                        3 failure isolation          PASS
                        4 reuse and coupling         ASSESSED
 - criteria unproven:   5 policy scope, 6 remote node, 7 final viability
-- reused components:   Postgres connection, migrations, transactions,
-                       logging conventions, container/test topology
+- reused components:   Postgres connection, transactions, logging
+                       conventions, container/test topology
                        (infrastructural reuse is real; memory-engine reuse
                        is unnecessary for AWCP and went unused)
+                       NOT migrations — the module applies its own DDL and
+                       stays out of the shared chain (corrected 2026-07-30)
 - unwanted coupling:   worker logger's closed union; AGE search_path
-                       pollution on pooled connections; migration failure
-                       kills the whole server; migrations.test.ts hardcodes
-                       the version list; MCP tools cost 2 out-of-module edits
+                       pollution on pooled connections; MCP tools cost 2
+                       out-of-module edits. The shared migration chain's
+                       fatal-exit and hardcoded-version-list taxes were
+                       AVOIDED by leaving the chain, not paid.
 - remote-node result:  NOT ATTEMPTED (Stage 2). z2 reachable; protocol defined.
 - policy-scope result: NOT ENFORCED (Stage 2). Model defined and DB-constrained.
                        scope.tags enforced in ZERO retrieval paths today;
@@ -510,12 +533,16 @@ flowchart TB
     A["attention.ts<br/>pure deterministic rules"]
     P["ports.ts<br/>KnowledgeSearchPort<br/>KnowledgePromotionPort"]
     T["types.ts"]
+    SCH["schema.ts<br/>applies the module's OWN DDL<br/>reports a typed error, never exits"]
   end
 
   subgraph SHARED["Shared platform infrastructure — reused"]
     DB["db.ts — postgres pool"]
-    MIG["migrate.ts"]
     LOG["logging conventions"]
+  end
+
+  subgraph NOTREUSED["Shared infrastructure — deliberately NOT reused"]
+    MIG["migrate.ts — shared boot-blocking<br/>chain; workflow stays out"]
   end
 
   subgraph MEM["Memory domain — NOT imported by workflow"]
@@ -537,8 +564,11 @@ flowchart TB
   S --> T
   A --> T
   S --> DB
+  SCH --> DB
   DB --> WSCH
-  MIG -. "007_workflow_schema.sql" .-> WSCH
+  SCH -. "applies db/workflow/<br/>001_workflow_schema.sql" .-> WSCH
+  MIG -. "x  never applies workflow DDL" .-> WSCH
+  MIG --> PSCH
   P -. "optional adapter — outside any<br/>operational transaction" .-> MEM
   MEM --> PSCH
 ```

@@ -30,21 +30,40 @@ Deno.test({
 
 
 const WORKFLOW_DIR = new URL("../src/workflow/", import.meta.url);
-const WORKFLOW_FILES = [
-  "types.ts",
-  "store.ts",
-  "attention.ts",
-  "ports.ts",
-  "service.ts",
-  "schema.ts",
-] as const;
 
+/**
+ * Enumerate the module's `.ts` files from the DIRECTORY, never a literal list.
+ *
+ * An earlier version held a hardcoded six-name array. That left this whole file
+ * failing OPEN one level above the rule it enforces: a new file added to
+ * `server/src/workflow/` was never scanned at all, and nothing noticed. Inverting
+ * the import blocklist to an allowlist did not fix the enumeration underneath it —
+ * a sound predicate over an unsound input set is still unsound.
+ */
 async function readWorkflowSource(): Promise<Map<string, string>> {
   const out = new Map<string, string>();
-  for (const name of WORKFLOW_FILES) {
-    out.set(name, await Deno.readTextFile(new URL(name, WORKFLOW_DIR)));
+  for await (const entry of Deno.readDir(WORKFLOW_DIR)) {
+    if (!entry.isFile || !entry.name.endsWith(".ts")) continue;
+    out.set(entry.name, await Deno.readTextFile(new URL(entry.name, WORKFLOW_DIR)));
   }
+  if (out.size === 0) throw new Error("workflow source enumeration found no .ts files");
   return out;
+}
+
+/**
+ * Every import form that can reach outside the module. The original regex matched
+ * only `from "..."`, so a side-effect import (`import "../entityWorker.ts"`) or a
+ * dynamic one (`await import("../entityWorker.ts")`) crossed the boundary unseen.
+ */
+function extractImportSpecifiers(code: string): string[] {
+  const patterns = [
+    /\bfrom\s+["']([^"']+)["']/g, // static + re-export
+    /\bimport\s+["']([^"']+)["']/g, // side-effect
+    /\bimport\s*\(\s*["']([^"']+)["']/g, // dynamic
+  ];
+  const specs: string[] = [];
+  for (const re of patterns) specs.push(...[...code.matchAll(re)].map((m) => m[1]));
+  return specs;
 }
 
 /** Strip line and block comments so prose about the memory domain isn't a false positive. */
@@ -85,7 +104,7 @@ Deno.test({
     let checked = 0;
     for (const [name, raw] of sources) {
       const code = stripComments(raw);
-      const imports = [...code.matchAll(/from\s+["']([^"']+)["']/g)].map((m) => m[1]);
+      const imports = extractImportSpecifiers(code);
       for (const spec of imports) {
         checked++;
         assert(
@@ -134,12 +153,64 @@ Deno.test({
 });
 
 Deno.test({
+  name: "boundary: the import scanner catches side-effect and dynamic import forms",
+  fn: () => {
+    // Red/green control on extractImportSpecifiers. The original scanner matched only
+    // `from "..."`, so both middle forms below crossed the boundary unseen — a
+    // violation the allowlist then never got the chance to reject. A sound predicate
+    // is worthless if the extraction feeding it is blind.
+    const sample = [
+      `import { a } from "../db.ts";`,
+      `import "../entityWorker.ts";`,
+      `const m = await import("../searchQuality.ts");`,
+      `export { x } from "./types.ts";`,
+    ].join("\n");
+
+    const found = extractImportSpecifiers(sample);
+    for (const spec of ["../db.ts", "../entityWorker.ts", "../searchQuality.ts", "./types.ts"]) {
+      assert(
+        found.includes(spec),
+        `scanner missed "${spec}" — the boundary check cannot reject what it cannot see`,
+      );
+    }
+
+    // ...and the allowlist must then reject the two memory-domain specifiers.
+    for (const spec of ["../entityWorker.ts", "../searchQuality.ts"]) {
+      assert(
+        !(isIntraModuleOrPackage(spec) || ALLOWED_IMPORTS.includes(spec)),
+        `allowlist wrongly permits "${spec}"`,
+      );
+    }
+  },
+});
+
+Deno.test({
+  name: "boundary: source enumeration reads the directory, not a hardcoded list",
+  fn: async () => {
+    // Control for the enumeration itself. With the previous hardcoded WORKFLOW_FILES
+    // array this failed: a file added to the module was never scanned and nothing
+    // noticed. Proves the scan picks up new files without editing this test.
+    const probe = new URL("./__enumeration_probe__.ts", WORKFLOW_DIR);
+    await Deno.writeTextFile(probe, "export const probe = 1;\n");
+    try {
+      const sources = await readWorkflowSource();
+      assert(
+        sources.has("__enumeration_probe__.ts"),
+        "a newly added module file was not scanned — the boundary check fails open",
+      );
+    } finally {
+      await Deno.remove(probe).catch(() => {});
+    }
+  },
+});
+
+Deno.test({
   name: "boundary: only store.ts holds the database handle",
   fn: async () => {
     const sources = await readWorkflowSource();
     for (const [name, raw] of sources) {
       const code = stripComments(raw);
-      const importsDb = /from\s+["']\.\.\/db\.ts["']/.test(code);
+      const importsDb = extractImportSpecifiers(code).includes("../db.ts");
       if (name === "store.ts" || name === "schema.ts") {
         assert(importsDb, `${name} is expected to hold the database handle`);
       } else {
