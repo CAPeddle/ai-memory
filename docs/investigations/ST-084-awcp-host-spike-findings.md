@@ -433,7 +433,91 @@ that assumes the host. Those are Stage 2 outcomes, for the PO to take on the evi
 
 ---
 
-## 12. Surprises and discoveries
+## 12. Dependency diagram
+
+Solid arrows are real imports. The dashed arrow is the **only** sanctioned route to
+the memory domain, and it is an optional adapter that never runs inside an
+operational transaction. The memory modules in grey are *not imported by anything in
+the workflow module* — a test enforces that by scanning the module's own source.
+
+```mermaid
+flowchart TB
+  subgraph WF["Workflow Operations — server/src/workflow/"]
+    V["service.ts<br/>orchestration"]
+    S["store.ts<br/>ALL SQL, sole db handle"]
+    A["attention.ts<br/>pure deterministic rules"]
+    P["ports.ts<br/>KnowledgeSearchPort<br/>KnowledgePromotionPort"]
+    T["types.ts"]
+  end
+
+  subgraph SHARED["Shared platform infrastructure — reused"]
+    DB["db.ts — postgres pool"]
+    MIG["migrate.ts"]
+    LOG["logging conventions"]
+  end
+
+  subgraph MEM["Memory domain — NOT imported by workflow"]
+    EW["entityWorker.ts"]
+    CW["consolidationWorker.ts"]
+    EMB["embeddings.ts"]
+    SQ["searchQuality.ts"]
+    PC["parseContext.ts"]
+  end
+
+  subgraph PG["PostgreSQL — one instance, two schemas"]
+    WSCH["schema workflow<br/>6 tables"]
+    PSCH["schema public<br/>thoughts, memory_graph, ..."]
+  end
+
+  V --> S
+  V --> A
+  V --> P
+  S --> T
+  A --> T
+  S --> DB
+  DB --> WSCH
+  MIG -. "007_workflow_schema.sql" .-> WSCH
+  P -. "optional adapter — outside any<br/>operational transaction" .-> MEM
+  MEM --> PSCH
+```
+
+The shape is the finding: **one solid line leaves the module** (`store.ts → db.ts`),
+and the memory domain is reachable only across a dashed, failure-tolerant boundary.
+That is what makes criteria 2 and 3 pass, and what keeps a later extraction possible.
+
+---
+
+## 13. Proposed ADR-016 amendments — for review, NOT applied
+
+Deliverable 10 of the plan. These are **proposals for the PO**; none has been applied,
+and ADR-016 remains Proposed/Conditional.
+
+1. **Keep the status at Proposed / Conditional.** Stage 1 supports the hypothesis but
+   does not discharge the gate. Recommend adding a line recording that criteria 1–4
+   are met and 5–7 outstanding, so the ADR carries its own progress.
+2. **Narrow §1's reuse argument to what the evidence supports.** The Candidate A row
+   lists "Postgres + pgvector + AGE storage, hybrid search (RRF/MMR), append-only
+   versioned shards, tag grammar" as the reuse case. The spike found those
+   **unnecessary for AWCP** (§5). The honest reuse case is *infrastructural* —
+   connection pooling, migrations, transactions, logging conventions, container and
+   test topology. Recommend rewriting the row to say that, because the current wording
+   overstates the benefit and would mislead a future reader comparing against
+   Candidate C.
+3. **Add an explicit acceptance pre-condition for the policy-scope obligation.**
+   §6.1 is a cost that Candidate A carries and Candidate C does not. Recommend ADR-016
+   state that accepting Candidate A requires the enforcement surface to be priced
+   first (Stage 2 / ST-082), rather than treating isolation as an orthogonal backlog
+   item.
+4. **Record the shared-blast-radius consequences in §3 (storage layout).** A bad
+   co-tenant migration exits the whole server, and MCP tool registration costs
+   out-of-module edits. Neither blocks the decision; both belong in the ADR's
+   trade-off list rather than only in this findings doc.
+5. **No change to §2 (topology) or §4 (source lineage).** Stage 1 produced no evidence
+   bearing on either; the remote-node half of §2 is exactly what Stage 2 tests.
+
+---
+
+## 14. Surprises and discoveries
 
 1. **`scope.tags` is enforced nowhere at all.** The expectation going in was "partially
    enforced"; the reality is zero retrieval paths. The tool descriptions are honest

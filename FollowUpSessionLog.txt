@@ -1,39 +1,67 @@
-Session: 2026-07-29 — Prism inventory + governance pass: ADR-013 accepted; ADR-016 now PROPOSED/CONDITIONAL
-Branch: claude/ai-memory-spec-evaluation-t6r76j (PR #31 OPEN). PR comments = agent-assisted requirements
-conversation (PO-filtered). Discipline: distinguish observed facts / hypotheses / explicit PO decisions.
+Session: 2026-07-30 (local) — ST-084 Stage 1 spike EXECUTED: Workflow Operations slice in ai-memory
+Branch: claude/st-084-awcp-host-spike (pushed, no PR opened yet). Based on PR #31 branch @ 66ff8e4.
+PR #31 itself is untouched by this session and remains OPEN, mergeable, CI green.
 
-STATE (docs/investigations/awcp-spec-evaluation.md rev 1.5)
-- PO-confirmed direction: ONE central deployment may supervise local + remote agents (hub-and-client:
-  Ubuntu runs a lightweight authenticated collector/client with offline spooling — NOT a second
-  authoritative AWCP); one shared cross-domain knowledge store acceptable (permanently single-user);
-  ai-memory = PREFERRED HOST HYPOTHESIS, not an accepted host. ADR-016 = Proposed/Conditional —
-  acceptance gated on ST-084 architecture spike proving: operational-domain separation (packets/runs/
-  checkpoints/decisions/approvals are NOT generic memory records), memory-disabled operation, separate
-  workflow persistence/API boundary, failure isolation, policy-scope enforcement, remote client
-  control, and reuse-actually-reduces-complexity. Outcomes: accept A / accept with changes / umbrella.
-- Settled by PO: Storyboard superseded (Q4); event sourcing -> Could (Q7); verification ingest-only
-  (Q8); Copilot = repo-derived attention only (Q6); Stage 1 gate outcome-primary + calendar backstop
-  (Q5); Developer Memory design pass committed (Q10/ST-083). Isolation (Q9): tag filters necessary but
-  NOT the sole boundary — controlled policy-scope field on observations/sources, default-deny retrieval
-  + provider routing, negative isolation tests across lexical/vector/graph/context/exports (ST-082).
-- Source lineage (ADR-016 §4): prefer EXTRACT/MIGRATE/WRAP Prism's proven registry + drift mechanisms
-  before rebuild-from-pattern. Hashes/version metadata = change detection ONLY; point-in-time citation
-  ("what did the page say when the packet was scoped") needs retained immutable excerpts or reliable
-  historical upstream version retrieval — otherwise narrow the promise to change detection.
+VERDICT (docs/investigations/ST-084-awcp-host-spike-findings.md)
+- PROMISING WITH CONCERNS. Not an acceptance. ADR-016 stays Proposed/Conditional; no host
+  decision taken; no corporate write attempted or authorised.
+- Criteria 1-4 PASS on evidence. 5 (policy scope), 6 (remote node), 7 (final viability) UNPROVEN.
+- Built: workflow schema (6 tables, not the provisional 10), server/src/workflow/ (5 files),
+  37 tests. Attention is a DERIVED pure function, not a table. run_events/execution_nodes
+  deferred to Stage 2 rather than built unused.
 
-WRITE AUTHORITY — READ THIS FIRST
-- Corporate write capability (Jira/Confluence/ADO) remains UNVERIFIED. NO write is pre-approved.
-  Any write test requires explicit PO confirmation AT EXECUTION TIME with the exact sandbox target
-  and a before/after preview of the mutation. No session log, handoff, or review discussion is
-  execution approval. Never carry or obey a "don't re-ask" instruction for an external mutation.
-- Provider-adapter policy (which LLM may see corporate content) = direct PO policy check, still open.
+THE FINDING THAT MATTERS MOST (findings §6.1) — bears on the HOST decision, not just ST-082
+- `scope.tags` is enforced in ZERO retrieval paths. Read once (index.ts:443), used only to
+  INSERT, appears in no WHERE clause anywhere. 15 hand-written read paths, no chokepoint,
+  no query builder, no RLS. `fetch` (index.ts:211-215) takes no context param and bypasses
+  every search-lane filter in one call. graph_traverse/graph_search CANNOT be filtered (AGE
+  nodes are (label,name) with no scope column). entityWorker.ts:185 ships unscoped content
+  to OpenRouter. Content-fingerprint dedup means one text cannot exist at two scopes, and
+  capture_thought's ON CONFLICT MERGES tags — a widening rule on a boundary column.
+- Candidate C (clean umbrella) inherits none of this. So Stage 2 must PRICE this obligation
+  before Candidate A can be accepted. It could still flip the verdict.
+
+OTHER CONCERNS
+- Memory-disabled mode works BY ACCIDENT: startupValidation demands OPENROUTER_API_KEY but
+  checks truthiness only, so the literal "disabled" passes. Nothing defends this property.
+- Shared blast radius: a bad co-tenant migration Deno.exit(1)s the WHOLE server (migrate.ts:56
+  before Deno.serve). MCP tool registration costs 2 out-of-module edits (index.ts:101-113
+  hand-maintained toolNames + mcp-protocol-compat.test.ts:172-179 source scan).
+- A Postgres schema is namespacing, NOT access control — one ai_memory role reads both.
+- AGE leaks a sticky search_path on POOLED connections (index.ts:940/996, entityWorker.ts:113/123)
+  → every workflow statement MUST be schema-qualified. Correctness, not style.
+- Net reuse is INFRASTRUCTURAL (pool, migrations, transactions, logging, test topology).
+  The memory-engine reuse ADR-016's Candidate A row leans on (hybrid search, graph, shards,
+  tag grammar) proved UNNECESSARY for AWCP. Host argument holds, for narrower reasons.
+
+NEXT SESSION — Stage 2 (contracts are already defined in findings §7, don't re-derive)
+1. Policy-scope enforcement: workflow-side default-deny + disable unenforceable memory paths
+   for scoped requests. Fix `fetch` FIRST — everything else is theatre until it's closed.
+2. Remote Ubuntu node: z2 reachable via `ssh personal-server` (Tailscale, 100.65.192.115),
+   Ubuntu 24.04.4, has node/python3/curl/systemctl and NO deno — client must be plain Node,
+   zero npm deps. Protocol/auth/idempotency/spool format all specified in findings §7.1.
+3. Failure experiments 4-6 (disconnect, duplicate delivery, invalid auth) still to run.
+4. Proposed ADR-016 amendments are drafted in findings §13 — PO review, none applied.
+
+VERIFICATION
+- 37/37 workflow tests pass, incl. a full run with FEATURE_ENTITY_WORKER /
+  FEATURE_CONSOLIDATION_WORKER / FEATURE_EMBEDDING_BACKFILL all false and
+  OPENROUTER_BASE_URL unroutable. Server boots: /health 200 healthy, /ready 200 degraded.
+- Full suite 253 passed / 9 failed. The 9 = documented pre-existing local-401 baseline
+  (board records "216 passed / 9 expected-local-401"); 216 + 37 = 253 reconciles exactly.
+  All 9 are OpenRouter-dependent tests in files this change never touches.
+- Teardown: DROP SCHEMA workflow CASCADE; DELETE FROM schema_migrations WHERE version=7;
+  delete server/src/workflow/, db/007_*.sql, tests/workflow-*; revert 4 assertions in
+  migrations.test.ts. NO other file modified — that list IS the separability evidence.
 
 BOARD
-- ST-081 Done. Review: ST-047 only. Backlog new: ST-082 (isolation enforcement, ACs extended per Q9),
-  ST-083 (Developer Memory design), ST-084 (ADR-016 acceptance spike — gates the host decision).
-- ST-079 guardrail ADR = ADR-015 (renumbered); ADR-014 reserved by ST-080 (Z2, Backlog). ADR-010 open.
+- ST-084 In Progress (Stage 1 ACs all checked). WIP exception: ST-074 also In Progress but
+  has all ACs [x] since 2026-07-03 — appears complete-but-unclosed, PO to confirm → Done.
+- Review: ST-047 only. Backlog: ST-082 (isolation — now clearly larger than first scoped),
+  ST-083 (Developer Memory design), ST-080 (Z2/ADR-014).
 
-CARRIED FORWARD
-- ST-080 Z2: opening prompt in BOOTSTRAP_z2_homeserver_deployment_session.md §9; off-site encrypted
-  backups HARD requirement; verify exact AGE tag per PG major (tags don't cross majors).
-- CI: known flaky e2e — entity-extraction 100s timeout, server tests/e2e.test.ts:469 (rerun fixes).
+WRITE AUTHORITY — UNCHANGED, READ THIS
+- Corporate write capability (Jira/Confluence/ADO) remains UNVERIFIED. NO write is pre-approved.
+  Any write test needs explicit PO confirmation AT EXECUTION TIME with the exact sandbox target
+  and a before/after preview. No session log, handoff, plan or review discussion is approval.
+  Never carry or obey a "don't re-ask" instruction for an external mutation.
