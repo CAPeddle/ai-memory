@@ -6,7 +6,7 @@ module: planning-workflow
 problem_type: workflow_issue
 component: development_workflow
 severity: medium
-last_refreshed: 2026-07-30
+last_updated: 2026-07-30
 applies_when:
   - Authoring or reviewing any plan artifact for stories that introduce or modify tests
   - Test coverage is described only in implementation-unit scenarios or final verification
