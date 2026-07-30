@@ -23,10 +23,25 @@ import {
   gatherAdvisoryContext,
   resolveAndPromoteDecision,
 } from "../src/workflow/service.ts";
-import { FailingMemoryAdapter, NoopMemoryAdapter } from "../src/workflow/ports.ts";
+import {
+  FailingMemoryAdapter,
+  HangingMemoryAdapter,
+  NoopMemoryAdapter,
+} from "../src/workflow/ports.ts";
 import { WorkflowNotFoundError } from "../src/workflow/types.ts";
+import { ensureWorkflowSchema } from "../src/workflow/schema.ts";
 
 const T = { sanitizeResources: false, sanitizeOps: false };
+
+Deno.test({
+  ...T,
+  name: "setup: workflow schema applied by the module itself, not the boot chain",
+  fn: async () => {
+    // The workflow product owns applying its own schema now. Idempotent.
+    await ensureWorkflowSchema();
+  },
+});
+
 
 async function newPacket(title: string) {
   return await store.createPacket({
@@ -460,6 +475,151 @@ Deno.test({
       assertEquals(Number(before[0].n), Number(after[0].n), "row count must be unchanged");
       const persisted = await store.getDecision(decision.id);
       assertEquals(persisted?.status, "resolved");
+    } finally {
+      await store.deletePacket(packet.id);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "timeout: a HUNG promotion port is bounded, not awaited forever",
+  fn: async () => {
+    // Proves the bound actually fires. Without this test, "we added timeouts" is
+    // an untested claim — and an unbounded optional integration would make
+    // "memory cannot affect operational availability" false by omission.
+    const packet = await newPacket("timeout: promotion");
+    try {
+      const decision = await store.recordDecision({
+        packetId: packet.id,
+        question: "does the bound fire?",
+      });
+      const started = Date.now();
+      const outcome = await resolveAndPromoteDecision(
+        decision.id,
+        "resolved",
+        new HangingMemoryAdapter(),
+        150,
+      );
+      const elapsed = Date.now() - started;
+
+      assert(elapsed < 5_000, `expected the bound to fire fast, took ${elapsed}ms`);
+      assertEquals(outcome.promoted, false, "a timeout is a promotion that did not happen");
+      assertEquals(outcome.refLost, false, "a timeout must not be reported as a lost ref");
+      assert(outcome.error?.includes("exceeded"), `unexpected error: ${outcome.error}`);
+
+      // And the authoritative operational write survived it intact.
+      const persisted = await store.getDecision(decision.id);
+      assertEquals(persisted?.status, "resolved");
+      assertEquals(persisted?.promoted_memory_ref, null);
+    } finally {
+      await store.deletePacket(packet.id);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "timeout: a HUNG search port degrades instead of blocking the caller",
+  fn: async () => {
+    const started = Date.now();
+    const ctx = await gatherAdvisoryContext("anything", new HangingMemoryAdapter(), 5, 150);
+    const elapsed = Date.now() - started;
+
+    assert(elapsed < 5_000, `expected the bound to fire fast, took ${elapsed}ms`);
+    assertEquals(ctx.results, []);
+    assertEquals(ctx.degraded, true);
+    assert(ctx.error?.includes("exceeded"));
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "timeout: the bound does not interfere with adapters that DO settle",
+  fn: async () => {
+    // Guard against a bound so aggressive it breaks the working path.
+    const packet = await newPacket("timeout: no false positives");
+    try {
+      const d = await store.recordDecision({ packetId: packet.id, question: "q" });
+      const ok = await resolveAndPromoteDecision(d.id, "r", new NoopMemoryAdapter(), 5_000);
+      assertEquals(ok.promoted, true);
+
+      const failed = await gatherAdvisoryContext("q", new FailingMemoryAdapter(), 5, 5_000);
+      assertEquals(failed.degraded, true);
+      assert(
+        !failed.error?.includes("exceeded"),
+        "a real failure must not be misreported as a timeout",
+      );
+    } finally {
+      await store.deletePacket(packet.id);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "concurrency: two simultaneous completePacket calls serialise on the packet row",
+  fn: async () => {
+    // The FOR UPDATE claim, tested rather than asserted in a comment.
+    // Scope precisely what this proves: two concurrent completions of the SAME
+    // packet serialise, so exactly one transitions it. It does NOT prove safety
+    // against a concurrent evidence DELETE or criterion INSERT — those rows are not
+    // locked and re-snapshot under READ COMMITTED (see completePacket's docblock).
+    const packet = await newPacket("concurrency: completion");
+    try {
+      const criterion = await store.addCriterion(packet.id, "met", true);
+      await store.attachEvidence({
+        criterionId: criterion.id,
+        kind: "manual",
+        detail: "evidence",
+      });
+
+      const results = await Promise.allSettled([
+        store.completePacket(packet.id),
+        store.completePacket(packet.id),
+      ]);
+      const fulfilled = results.filter((r) => r.status === "fulfilled");
+      assertEquals(fulfilled.length, 2, "both should succeed — completion is idempotent here");
+
+      // The decisive check: the packet ends in exactly one consistent state.
+      const after = await store.getPacket(packet.id);
+      assertEquals(after?.status, "complete");
+      assert(after?.completed_at !== null);
+
+      const rows = await sql<{ n: string }[]>`
+        SELECT count(*) AS n FROM workflow.work_packets
+        WHERE id = ${packet.id} AND status = 'complete'
+      `;
+      assertEquals(Number(rows[0].n), 1, "must not produce a divergent or duplicated state");
+    } finally {
+      await store.deletePacket(packet.id);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "concurrency: a completion racing an unmet criterion still refuses or completes cleanly",
+  fn: async () => {
+    // Honest about the limit: an INSERT of a new required criterion concurrent with
+    // completion is a phantom that no row lock closes (it needs SERIALIZABLE). This
+    // asserts the outcome is one of the two VALID states, never a corrupt hybrid.
+    const packet = await newPacket("concurrency: racing criterion");
+    try {
+      const met = await store.addCriterion(packet.id, "met", true);
+      await store.attachEvidence({ criterionId: met.id, kind: "manual", detail: "e" });
+
+      const [completion] = await Promise.allSettled([
+        store.completePacket(packet.id),
+        store.addCriterion(packet.id, "added mid-flight", true),
+      ]);
+
+      const after = await store.getPacket(packet.id);
+      if (completion.status === "fulfilled") {
+        assertEquals(after?.status, "complete");
+      } else {
+        assertEquals(after?.status, "open", "a refused completion must not mutate status");
+      }
     } finally {
       await store.deletePacket(packet.id);
     }

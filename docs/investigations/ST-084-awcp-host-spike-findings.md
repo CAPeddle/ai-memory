@@ -51,8 +51,10 @@ is a Stage 2 deliverable.
 
 ## 1. What was built
 
-A disposable vertical slice under `server/src/workflow/` (5 files, ~700 lines) plus
-one migration and four test files.
+A disposable vertical slice under `server/src/workflow/` (6 files) plus workflow-owned
+DDL in `server/db/workflow/` and four test files. The DDL deliberately sits **outside**
+the shared migration chain: that runner `Deno.exit(1)`s the whole server on failure, so
+a workflow migration living there would have made a workflow defect a platform outage.
 
 | Slice item (plan §Minimal vertical slice) | Stage 1 status |
 |---|---|
@@ -92,7 +94,7 @@ OPENROUTER_API_KEY=disabled
 OPENROUTER_BASE_URL=http://127.0.0.1:9/blocked
 ```
 
-**Result: 37 passed / 0 failed.** Every operational behaviour — packet creation, run
+**Result: 37 passed / 0 failed** (for the code as it stood at that run — see §13a Evidence limitations). Every operational behaviour — packet creation, run
 registration, checkpointing, blocking decisions, deterministic attention, the
 completion gate's refusal *and* its acceptance — works with no embeddings, no
 entity extraction, no consolidation, no graph traversal and no reachable model
@@ -131,12 +133,12 @@ adapter supports the complete flow.*
 
 | Sub-claim | Evidence |
 |---|---|
-| Independent persistence | Dedicated Postgres schema `workflow`, migration `007_workflow_schema.sql`. Applied cleanly at boot: `[migrate] applying 007_workflow_schema.sql... applied 1 new migration(s)` |
-| Migration touches no memory table | Test re-applies 007 inside a rolled-back transaction and asserts the `public` table list is byte-identical before and after |
+| Independent persistence | Dedicated Postgres schema `workflow`, DDL at `server/db/workflow/001_workflow_schema.sql`, applied by the workflow module's own `ensureWorkflowSchema()` — **not** by the shared boot chain (see §13a fix 7) |
+| Migration touches no memory table | Test re-applies the DDL inside a rolled-back transaction and asserts the `public` table list is byte-identical before and after |
 | Operational entities are not thoughts | Test creates a packet, then asserts zero `public.thoughts` rows contain its text |
 | No structural dependency on memory | Test enumerates every foreign key in schema `workflow` and asserts all resolve within `workflow` |
 | Memory reached only via ports | Test scans the module's own source and fails the build unless every import is on an **allowlist** (`./*` intra-module, `../db.ts`, `../logging.ts`, or a package specifier). A paired red/green control test proves the allowlist actually rejects `../entityWorker.ts`, `../index.ts` etc. — see the §3 correction |
-| Only `store.ts` holds the DB handle | Source scan asserts no other workflow file imports `../db.ts` |
+| Only `store.ts`/`schema.ts` hold the DB handle | Source scan asserts no other workflow file imports `../db.ts` |
 | No memory-domain SQL | Source scan rejects 14 forbidden identifiers (`thoughts`, `memory_graph`, `cypher(`, `vector(`, `embedding`, …) |
 | All SQL schema-qualified | Source scan asserts every `FROM`/`INTO`/`UPDATE`/`JOIN` identifier starts `workflow.` |
 | **No-op adapter supports the complete flow** | A full slice — run, checkpoint, decision, resolve+promote, criterion, evidence, completion — passes against `NoopMemoryAdapter` |
@@ -437,14 +439,14 @@ knows it exists.
 
 | Suite | Result |
 |---|---|
-| `workflow-attention.test.ts` (pure, no DB) | 16 passed / 0 failed |
+| `workflow-attention.test.ts` (pure, no DB) | 18 passed / 0 failed (+zero-criteria reconciliation) |
 | `workflow-store.test.ts` | 6 passed / 0 failed |
-| `workflow-boundary.test.ts` | 10 passed / 0 failed (+2: allowlist and scan control tests) |
-| `workflow-failure-isolation.test.ts` | 12 passed / 0 failed (+5: 3a/3b split, scope fidelity, refLost, typed not-found) |
-| **All four, post-review** | **44 passed / 0 failed** (was 37 pre-review) |
+| `workflow-boundary.test.ts` | 14 passed / 0 failed (+allowlist control, scan control, no-process-termination, schema idempotency) |
+| `workflow-failure-isolation.test.ts` | 17 passed / 0 failed (+3a/3b split, scope fidelity, refLost, typed not-found, 3 timeout bounds, 2 concurrency) |
+| **All four, post-review** | **58 passed / 0 failed** (37 pre-review -> 44 after review fixes -> 58 after the PO's four must-fixes) |
 | **All four, memory fully disabled + provider unroutable** | **37 passed / 0 failed** (pre-review run; the 7 added tests are memory-independent by construction) |
-| `migrations.test.ts` (regression risk) | 6 passed / 0 failed |
-| **Full server suite** | **253 passed / 9 failed** (pre-review) |
+| `migrations.test.ts` | 6 passed / 0 failed — **now untouched by this spike**; the workflow DDL left the shared chain, so the 4 hardcoded version assertions were reverted to pristine |
+| **Full server suite** | **274 passed / 9 failed** — 216 documented baseline + 58 workflow tests reconciles exactly |
 
 The 9 failures are the **documented pre-existing local baseline** — the board records
 "216 passed / 9 expected-local-401 (CI is arbiter for LLM tests)" — and all 9 are
@@ -574,6 +576,79 @@ and ADR-016 remains Proposed/Conditional.
    trade-off list rather than only in this findings doc.
 5. **No change to §2 (topology) or §4 (source lineage).** Stage 1 produced no evidence
    bearing on either; the remote-node half of §2 is exactly what Stage 2 tests.
+
+---
+
+## 13a. Disposition of every review finding
+
+Four buckets, per PO direction — so nothing is silently absorbed into prose.
+
+### Resolved before Stage 1 submission
+
+**Four P1 defects**, all found by independent review of code that already had 37
+passing tests:
+
+| # | Defect | Resolution |
+|---|---|---|
+| 1 | `resolveAndPromoteDecision` reported `promoted: false` when the projection had **succeeded** but its ref failed to record — a retry would duplicate the projection | `try` narrowed to the port call alone; `refLost` flag added so "never happened" (retry) and "happened, ref lost" (reconcile) are distinguishable |
+| 2 | Promotion **hardcoded `policyScope: "personal"`**, silently widening the security boundary for corporate/mixed/public packets | Reads the packet's real scope; `PromotionInput.policyScope` is now the closed `PolicyScope` union, making the class of bug a compile error |
+| 3 | The import-boundary **blocklist** omitted `index.ts` and six more, and permitted every future memory module by default | Inverted to an allowlist with a red/green control test |
+| 4 | The plan carried no YAML frontmatter, breaking the mandated `story: ST-NNN` link | Added; the PO-supplied body untouched |
+
+**Three architectural findings** the PO required fixed before submission:
+
+| # | Finding | Resolution |
+|---|---|---|
+| 5 | Both memory ports were **unbounded** — a hung adapter would block an operational command indefinitely | `withPortTimeout` bounds both; a `HangingMemoryAdapter` proves the bound fires, and a further test proves it does not misfire on adapters that settle |
+| 6 | The `FOR UPDATE` guarantee was asserted **only in a comment** | Two concurrency tests, scoped precisely to what the lock provides (same-packet completions serialise) and explicitly not to what it doesn't (phantom criterion INSERT) |
+| 7 | The workflow migration sat in the shared chain, whose runner `Deno.exit(1)`s the **whole server** before `Deno.serve` | DDL moved to `server/db/workflow/`, invisible to the shared runner. A workflow-owned `ensureWorkflowSchema()` applies it and throws a typed `WorkflowSchemaError`. Tests assert the module contains no `Deno.exit`/`process.exit` and that no workflow DDL sits in the shared chain |
+| 8 | Zero-required-criteria packets completed but never reached `ready-for-review` — the gate and the attention queue disagreed | Rule chosen and applied consistently: **zero required criteria means verification-ready**. Gate, attention and tests now agree |
+
+Plus three false claims in comments, now corrected or genuinely proven: `experiment 3`
+tested the one branch where `search_path` pollution is impossible; the `completePacket`
+docblock asserted an invariant the code does not provide; the schema-qualification scan
+was case-sensitive.
+
+**A bonus from fix 7:** with the DDL out of the shared chain, `migrations.test.ts` no
+longer needs modifying at all. Stage 1 now touches **zero files outside
+`server/src/workflow/`, `server/db/workflow/` and its own tests** — a materially
+stronger separability result than the original submission.
+
+### Known Stage 1 residuals (accepted, recorded)
+
+Not fixed, do not affect the criteria 1–4 conclusion: client-versus-database clock skew
+in staleness; untested not-found branches on `attentionForPacket`/`completePacket`;
+test-only mutators (`backdateRunActivity`, `clearPromotionRef`) interleaved with
+production functions in `store.ts`; test-helper duplication across the four test files
+(the reviewer explicitly advised **against** extracting at 2–3 call sites); the plan not
+following the canonical Product Contract shape (it is a deliberately preserved PO spec);
+and `listCheckpoints` having no ORDER BY tiebreaker for identical timestamps (no current
+test depends on equal timestamps). `setPacketStatus` and `POLICY_SCOPES` remain exported
+without callers.
+
+### Deferred to Stage 2
+
+Criterion 5 (policy-scope enforcement), criterion 6 (remote execution node), criterion 7
+(final extraction viability). Contracts for all three are specified in §7 so Stage 2 does
+not begin from assumptions. `fetch` must be fixed first — see §6.1.
+
+### Evidence limitations
+
+- **The adversarial lens did not run.** The cross-model peer (`codex`, gpt-5.6-luna at
+  xhigh) started but died on repeated 401s from the detached job's execution context.
+  Because the peer owned the lens, the in-process fallback was correctly removed at the
+  routing boundary. Coverage is **degraded**, not merely uncorroborated. The two risks it
+  was specifically briefed on were caught by the testing and correctness lenses.
+- **`withPortTimeout` bounds the caller's wait, not the underlying work.** It does not
+  cancel an in-flight operation; a real adapter holding a socket should also accept an
+  `AbortSignal`.
+- **A Postgres schema is namespacing, not access control** (§6.3).
+- **The memory-disabled run predates the last two fix rounds.** The 37/37 disabled-mode
+  result stands for the code as it was; the 21 tests added since are memory-independent
+  by construction (they use in-process adapters and workflow tables only), but that
+  specific disabled-mode invocation was not re-run against them.
+- **No concurrency test covers a concurrent criterion INSERT** — a phantom no row lock
+  can close. Documented in `completePacket`'s docblock rather than papered over.
 
 ---
 

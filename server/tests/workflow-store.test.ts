@@ -13,8 +13,19 @@ import * as store from "../src/workflow/store.ts";
 import { attentionForPacket, resolveAndPromoteDecision } from "../src/workflow/service.ts";
 import { NoopMemoryAdapter } from "../src/workflow/ports.ts";
 import { CompletionBlockedError } from "../src/workflow/types.ts";
+import { ensureWorkflowSchema } from "../src/workflow/schema.ts";
 
 const T = { sanitizeResources: false, sanitizeOps: false };
+
+Deno.test({
+  ...T,
+  name: "setup: workflow schema applied by the module itself, not the boot chain",
+  fn: async () => {
+    // The workflow product owns applying its own schema now. Idempotent.
+    await ensureWorkflowSchema();
+  },
+});
+
 
 async function newPacket(title = "ST-084 slice") {
   return await store.createPacket({

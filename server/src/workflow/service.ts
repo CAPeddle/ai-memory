@@ -17,10 +17,11 @@
  * SPIKE / DISPOSABLE.
  */
 
-import type {
-  KnowledgePromotionPort,
-  KnowledgeSearchPort,
-  KnowledgeSearchResult,
+import {
+  type KnowledgePromotionPort,
+  type KnowledgeSearchPort,
+  type KnowledgeSearchResult,
+  withPortTimeout,
 } from "./ports.ts";
 import * as store from "./store.ts";
 import { evaluateAttention } from "./attention.ts";
@@ -60,6 +61,7 @@ export async function resolveAndPromoteDecision(
   decisionId: string,
   resolution: string,
   promotionPort: KnowledgePromotionPort,
+  timeoutMs?: number,
 ): Promise<PromotionOutcome> {
   // 1. Authoritative operational write — committed before memory is touched at all.
   const decision = await store.resolveDecision(decisionId, resolution);
@@ -81,13 +83,21 @@ export async function resolveAndPromoteDecision(
   //    ONLY the port call is inside this try — see step 3.
   let ref: string;
   try {
-    ref = await promotionPort.promoteDecision({
-      packetId: decision.packet_id,
-      decisionId: decision.id,
-      question: decision.question,
-      resolution,
-      policyScope: packet.policy_scope,
-    });
+    // Bounded: a hung memory implementation must not block an operational command
+    // indefinitely. A timeout lands here as an ordinary promotion failure —
+    // promoted:false, safe to retry — which is the correct classification, since a
+    // call that never returned also never confirmed a projection.
+    ref = await withPortTimeout(
+      "KnowledgePromotionPort.promoteDecision",
+      promotionPort.promoteDecision({
+        packetId: decision.packet_id,
+        decisionId: decision.id,
+        question: decision.question,
+        resolution,
+        policyScope: packet.policy_scope,
+      }),
+      timeoutMs,
+    );
   } catch (err) {
     // The projection genuinely did not happen. Safe to retry.
     return {
@@ -125,9 +135,14 @@ export async function gatherAdvisoryContext(
   query: string,
   searchPort: KnowledgeSearchPort,
   limit = 5,
+  timeoutMs?: number,
 ): Promise<{ results: KnowledgeSearchResult[]; degraded: boolean; error: string | null }> {
   try {
-    const results = await searchPort.search(query, limit);
+    const results = await withPortTimeout(
+      "KnowledgeSearchPort.search",
+      searchPort.search(query, limit),
+      timeoutMs,
+    );
     return { results, degraded: false, error: null };
   } catch (err) {
     return { results: [], degraded: true, error: (err as Error).message };

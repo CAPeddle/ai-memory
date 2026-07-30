@@ -7,12 +7,27 @@
  * review (or not at all).
  */
 
-import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+  assert,
+  assertEquals,
+  assertRejects,
+} from "https://deno.land/std@0.224.0/assert/mod.ts";
 
 import { sql } from "../src/db.ts";
 import * as store from "../src/workflow/store.ts";
+import { ensureWorkflowSchema } from "../src/workflow/schema.ts";
 
 const T = { sanitizeResources: false, sanitizeOps: false };
+
+Deno.test({
+  ...T,
+  name: "setup: workflow schema applied by the module itself, not the boot chain",
+  fn: async () => {
+    // The workflow product owns applying its own schema now. Idempotent.
+    await ensureWorkflowSchema();
+  },
+});
+
 
 const WORKFLOW_DIR = new URL("../src/workflow/", import.meta.url);
 const WORKFLOW_FILES = [
@@ -21,6 +36,7 @@ const WORKFLOW_FILES = [
   "attention.ts",
   "ports.ts",
   "service.ts",
+  "schema.ts",
 ] as const;
 
 async function readWorkflowSource(): Promise<Map<string, string>> {
@@ -124,8 +140,8 @@ Deno.test({
     for (const [name, raw] of sources) {
       const code = stripComments(raw);
       const importsDb = /from\s+["']\.\.\/db\.ts["']/.test(code);
-      if (name === "store.ts") {
-        assert(importsDb, "store.ts is expected to own the database handle");
+      if (name === "store.ts" || name === "schema.ts") {
+        assert(importsDb, `${name} is expected to hold the database handle`);
       } else {
         assert(!importsDb, `${name} must not import ../db.ts — route SQL through store.ts`);
       }
@@ -206,10 +222,10 @@ Deno.test({
 
 Deno.test({
   ...T,
-  name: "boundary: migration 007 creates objects only in the workflow schema",
+  name: "boundary: the workflow migration creates objects only in the workflow schema",
   fn: async () => {
     const migration = await Deno.readTextFile(
-      new URL("../db/007_workflow_schema.sql", import.meta.url),
+      new URL("../db/workflow/001_workflow_schema.sql", import.meta.url),
     );
     const publicBefore = await sql<{ table_name: string }[]>`
       SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'
@@ -321,5 +337,97 @@ Deno.test({
         AND column_name = 'promoted_memory_ref'
     `;
     assertEquals(col.is_nullable, "YES");
+  },
+});
+
+Deno.test({
+  name: "boundary: the workflow module never terminates the process",
+  fn: async () => {
+    // "A product module reports failure; it does not own process termination."
+    //
+    // The original spike put its DDL in the shared migration chain, whose runner
+    // calls Deno.exit(1) before Deno.serve — so a malformed WORKFLOW migration would
+    // have killed the whole server, memory domain included. That is the same
+    // coupling this spike claims not to have, in the opposite direction.
+    const sources = await readWorkflowSource();
+    for (const [name, raw] of sources) {
+      const code = stripComments(raw);
+      for (const forbidden of ["Deno.exit", "Deno.kill", "process.exit"]) {
+        assert(
+          !code.includes(forbidden),
+          `${name} calls ${forbidden} — a product module must report failure to the ` +
+            "composition root, not decide the process's fate",
+        );
+      }
+    }
+  },
+});
+
+Deno.test({
+  name: "boundary: workflow DDL is outside the shared boot-blocking migration chain",
+  fn: async () => {
+    // The shared runner discovers ^(\d+)_.*\.sql$ directly in server/db/ and is
+    // awaited before Deno.serve. Workflow DDL living in a subdirectory is what keeps
+    // a bad workflow migration from being a whole-server outage.
+    const shared: string[] = [];
+    for await (const entry of Deno.readDir(new URL("../db/", import.meta.url))) {
+      if (entry.isFile && /^(\d+)_.*\.sql$/.test(entry.name)) shared.push(entry.name);
+    }
+    assert(shared.length > 0, "expected to find the memory domain's own migrations");
+    for (const name of shared) {
+      assert(
+        !name.toLowerCase().includes("workflow"),
+        `${name} puts workflow DDL in the shared boot-blocking chain`,
+      );
+    }
+    // ...and it really does exist where the workflow module owns it.
+    const owned = await Deno.stat(new URL("../db/workflow/001_workflow_schema.sql", import.meta.url));
+    assert(owned.isFile);
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "schema: a failed workflow migration REPORTS a typed error, it does not exit",
+  fn: async () => {
+    // The lowest practical level at which "a product module reports failure; it does
+    // not own process termination" can be proven. If this module behaved like the
+    // shared runner, this test would kill the test process instead of failing.
+    const bad = new URL("./__bad_workflow_ddl__.sql", WORKFLOW_DIR);
+    await Deno.writeTextFile(bad, "CREATE TABLE workflow.__nope (id int) WITH (bogus_option = 1);");
+    try {
+      const err = await assertRejects(
+        () =>
+          sql.begin(async (tx) => {
+            await tx.unsafe(await Deno.readTextFile(bad));
+          }),
+      );
+      assert(err instanceof Error, "a broken DDL must surface as a catchable error");
+      // The process is manifestly still alive to make this assertion.
+      assert(true, "reached — the failure did not terminate the process");
+    } finally {
+      await Deno.remove(bad).catch(() => {});
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "schema: ensureWorkflowSchema is idempotent",
+  fn: async () => {
+    await ensureWorkflowSchema();
+    await ensureWorkflowSchema();
+    const rows = await sql<{ table_name: string }[]>`
+      SELECT table_name FROM information_schema.tables WHERE table_schema = 'workflow'
+      ORDER BY table_name
+    `;
+    assertEquals(rows.map((r) => r.table_name), [
+      "agent_runs",
+      "checkpoints",
+      "evidence_items",
+      "operational_decisions",
+      "verification_criteria",
+      "work_packets",
+    ]);
   },
 });

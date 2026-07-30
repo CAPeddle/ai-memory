@@ -18,6 +18,50 @@
 
 import type { PolicyScope } from "./types.ts";
 
+/**
+ * Default bound on any call across the memory boundary.
+ *
+ * Both ports are OPTIONAL integrations. Without a bound, a hung memory
+ * implementation blocks an operational command indefinitely — which would make
+ * "memory cannot affect operational availability" false by omission, even though
+ * no transaction is shared. The spike's own adapters are synchronous, so this
+ * exists for the real adapter that replaces them.
+ */
+export const PORT_TIMEOUT_MS = 5_000;
+
+/** Raised when a memory-port call exceeds its bound. */
+export class PortTimeoutError extends Error {
+  readonly port: string;
+  readonly timeoutMs: number;
+  constructor(port: string, timeoutMs: number) {
+    super(`${port} exceeded its ${timeoutMs}ms bound`);
+    this.name = "PortTimeoutError";
+    this.port = port;
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+/**
+ * Bound a port call. Rejects with {@link PortTimeoutError} past the deadline.
+ *
+ * Note the honest limitation: this bounds how long the *caller* waits, it does not
+ * cancel the underlying work. A real adapter holding a socket should also accept an
+ * AbortSignal. Recorded rather than implied.
+ */
+export function withPortTimeout<T>(
+  port: string,
+  op: Promise<T>,
+  timeoutMs: number = PORT_TIMEOUT_MS,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const bound = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new PortTimeoutError(port, timeoutMs)), timeoutMs);
+  });
+  return Promise.race([op, bound]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  }) as Promise<T>;
+}
+
 export interface KnowledgeSearchResult {
   id: string;
   excerpt: string;
@@ -86,5 +130,18 @@ export class FailingMemoryAdapter implements KnowledgeSearchPort, KnowledgePromo
 
   promoteDecision(_input: PromotionInput): Promise<string> {
     return Promise.reject(new Error(this.message));
+  }
+}
+
+/**
+ * An adapter that never settles, for proving the timeout bound actually fires.
+ * Without this, "we added timeouts" is an untested claim.
+ */
+export class HangingMemoryAdapter implements KnowledgeSearchPort, KnowledgePromotionPort {
+  search(_query: string, _limit: number): Promise<KnowledgeSearchResult[]> {
+    return new Promise(() => {});
+  }
+  promoteDecision(_input: PromotionInput): Promise<string> {
+    return new Promise(() => {});
   }
 }

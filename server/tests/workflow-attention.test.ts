@@ -104,7 +104,10 @@ function baseInput(overrides: Partial<AttentionInput> = {}): AttentionInput {
     runs: [],
     checkpoints: [],
     decisions: [],
-    criteria: [],
+    // One UNSATISFIED required criterion by default, so the baseline packet is not
+    // verification-ready and each test observes only the rule it is exercising.
+    // (Zero required criteria now means ready-for-review — see the dedicated test.)
+    criteria: [criterion()],
     evidenceCountByCriterion: new Map(),
     now: NOW,
     ...overrides,
@@ -252,4 +255,23 @@ Deno.test("attention: evaluation is deterministic across repeated calls", () => 
   for (let i = 0; i < 20; i++) {
     assertEquals(JSON.stringify(evaluateAttention(input)), first);
   }
+});
+
+Deno.test("attention: a packet with NO required criteria is verification-ready", () => {
+  // Reconciles the gate and the attention queue. Previously `required.length > 0`
+  // meant such a packet could be completed by completePacket (nothing is unmet) yet
+  // never surfaced as ready-for-review — the two disagreed about the same packet.
+  assertEquals(reasons(baseInput({ criteria: [], evidenceCountByCriterion: new Map() })), [
+    "ready-for-review",
+  ]);
+});
+
+Deno.test("attention: non-required criteria alone still leave a packet ready", () => {
+  assertEquals(
+    reasons(baseInput({
+      criteria: [criterion({ required: false })],
+      evidenceCountByCriterion: new Map(),
+    })),
+    ["ready-for-review"],
+  );
 });

@@ -104,15 +104,24 @@ export function evaluateAttention(input: AttentionInput): AttentionItem[] {
 
   // Rule 5: ready-for-review — every required criterion has evidence and the
   // packet is not yet complete. This is the positive signal, not a fault.
+  //
+  // Zero required criteria counts as SATISFIED, deliberately. The original
+  // `required.length > 0 &&` guard made a packet with no criteria completable by
+  // `completePacket` (nothing is unmet) while never surfacing as ready-for-review —
+  // the gate and the attention queue disagreed about the same packet. Of the two
+  // available rules ("zero required means immediately verification-ready" vs "every
+  // packet must carry at least one required criterion") this takes the first, so
+  // nothing silently becomes completable-but-invisible.
   const required = criteria.filter((c) => c.required);
-  const allSatisfied = required.length > 0 &&
-    required.every((c) => (evidenceCountByCriterion.get(c.id) ?? 0) > 0);
+  const allSatisfied = required.every((c) => (evidenceCountByCriterion.get(c.id) ?? 0) > 0);
   if (allSatisfied && packet.status !== "complete") {
     items.push({
       packet_id: packet.id,
       run_id: null,
       reason: "ready-for-review",
-      detail: `${required.length} required criterion/criteria satisfied`,
+      detail: required.length === 0
+        ? "No required criteria — verification-ready by default"
+        : `${required.length} required criterion/criteria satisfied`,
     });
   }
 

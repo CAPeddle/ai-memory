@@ -116,6 +116,23 @@ export interface AttentionItem {
 }
 
 /**
+ * Raised when applying the workflow schema fails.
+ *
+ * A typed, catchable failure is the whole point: the workflow module reports that
+ * its schema could not be applied and lets the composition root decide whether that
+ * should abort startup, degrade, or disable the product. It must never terminate
+ * the process itself.
+ */
+export class WorkflowSchemaError extends Error {
+  override readonly cause?: Error;
+  constructor(message: string, cause?: Error) {
+    super(cause ? `${message}: ${cause.message}` : message);
+    this.name = "WorkflowSchemaError";
+    this.cause = cause;
+  }
+}
+
+/**
  * Raised when a workflow record does not exist.
  *
  * A distinct class rather than a bare `Error` so a caller can tell "you asked for
