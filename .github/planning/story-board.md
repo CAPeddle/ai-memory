@@ -4,27 +4,11 @@
 > Next planning target: (TBD after ST-072 completes).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review). ST-070 + ST-071 done 2026-07-03 (integration suite green in CI, PR #21 merged).
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
-> Last updated: 2026-07-29 (governance round on PR #31: ADR-016 downgraded to Proposed/Conditional — host is a preferred hypothesis gated on new ST-084 spike; ST-082 ACs extended with policy-scope/default-deny/negative-isolation controls; no corporate write is pre-approved — execution-time PO confirmation required)
+> Last updated: 2026-07-30 (ST-084 Backlog → In Progress: ADR-016 host-acceptance spike, staged per PO — Stage 1 fully proves criteria 1–4, criteria 5–7 deferred to Stage 2 and reported UNPROVEN. WIP exception noted: ST-074 appears complete-but-unclosed since 2026-07-03)
 
 ---
 
 ## Backlog
-
-### ST-084: Architecture spike — ADR-016 host-acceptance gate (ai-memory as AWCP host)
-- Type: spike / architecture decision
-- Source: PR #31 governance round (2026-07-29) — host acceptance must be proven, not presumed; ADR-016 held at Proposed/Conditional until this spike reports
-- phase: 0 (architecture)
-- Value: 4
-- Blocked by: —
-- Touches: `docs/investigations/` (spike findings doc, new); `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` (status flip or revision on outcome); prototype/branch code as needed (disposable — schemas-survive rule from awcp-spec-evaluation §6.1 applies)
-- Acceptance criteria:
-  - [ ] Bounded spike (time-boxed; disposable code) exercises ai-memory's actual codebase against the seven ADR-016 §1 gate criteria: operational-domain separation (WorkPackets/runs/checkpoints/decisions/approvals as a distinct domain — own types, state machines, API surface — not generic memory records); memory-disabled operation; separate workflow persistence/API boundaries; failure isolation (worker faults cannot corrupt/block operational state); policy-scope enforceability (ST-082's controls implementable at this boundary); remote-client control (hub-and-client event ingestion + spooled replay); reuse-reduces-complexity assessment
-  - [ ] Each criterion gets an explicit pass/fail/pass-with-changes verdict with evidence, not narrative
-  - [ ] Outcome recorded as exactly one of: accept Candidate A / accept A with required changes (enumerated) / recommend clean umbrella (Candidate C) — and ADR-016 updated accordingly (status flip to Accepted, or revision)
-  - [ ] No schema or migration work assumes the host before this spike concludes (guard restated in findings doc)
-- Plan: (to be created — `docs/plans/`)
-- Docs: `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` §1; `docs/investigations/awcp-spec-evaluation.md` §7, §9; `docs/investigations/prism-ground-truth-inventory.md` §4
-- Notes: Filed by the PR #31 governance round that downgraded ADR-016 from Accepted to Proposed/Conditional: ai-memory is the preferred host *hypothesis*, and the burden of proof sits with the spike, not with the preference. Verify ADR-016 section refs still hold on pickup — memories freeze in time.
 
 ### ST-083: Developer Memory design pass (module spec)
 - Type: design
@@ -503,6 +487,33 @@
 ## Refined
 
 ## In Progress
+
+### ST-084: Architecture spike — ADR-016 host-acceptance gate (ai-memory as AWCP host)
+- Type: spike / architecture decision
+- Source: PR #31 governance round (2026-07-29) — host acceptance must be proven, not presumed; ADR-016 held at Proposed/Conditional until this spike reports
+- phase: 0 (architecture)
+- Value: 4
+- Blocked by: —
+- Branch: `claude/st-084-awcp-host-spike`
+- Touches: `server/db/007_workflow_schema.sql` (new); `server/src/workflow/` (new module — first subdirectory under `server/src/`); `server/tests/workflow-*.test.ts` (new); `server/tests/migrations.test.ts` (4 hardcoded version assertions); `docs/investigations/ST-084-awcp-host-spike-findings.md` (new); `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` (disposition on outcome — **not** flipped to Accepted by this story)
+- **Staged execution (PO decision 2026-07-30):** the supplied plan is ~3 sessions of work; rather than thinly demonstrating all seven criteria, Stage 1 fully proves four and honestly marks the rest UNPROVEN.
+- Acceptance criteria — **Stage 1**:
+  - [ ] **Criterion 1 — operational independence:** WorkPacket, AgentRun, Checkpoint, OperationalDecision, AttentionItem, Evidence and completion gating all function with OpenRouter, embeddings, entity extraction, AGE, hybrid ranking, consolidation and knowledge promotion disabled
+  - [ ] **Criterion 2 — separate persistence and API boundary:** independent transactional persistence in a `workflow` Postgres schema; operational entities are not thoughts/shards/graph records; memory reached only via explicit ports; a **no-op memory adapter supports the complete operational flow**
+  - [ ] **Criterion 3 — failure isolation:** knowledge-search failure, knowledge-promotion failure, graph unavailability and central-service restart each proven not to corrupt or roll back operational state; promotion proven to be an optional projection (deleting it leaves the decision intact)
+  - [ ] **Criterion 4 — reuse and coupling:** the ten named ai-memory components classified (directly reusable / adapter-reusable / modification-required / unnecessary / harmful coupling), with the slice's actual introduced dependencies recorded
+  - [ ] Dependency rule enforced **by a test that scans the module's own source**, not by documentation alone
+  - [ ] Stage 2 contracts *defined but not implemented*: remote-node protocol, auth + idempotency, spool format, policy-scope model, and the enumerated paths requiring enforcement — so Stage 2 does not begin from assumptions
+  - [ ] Preliminary findings doc with a verdict of **promising / promising with concerns / unlikely to fit** (deliberately weaker vocabulary than the final accept/reject), marking criteria 5 and 6 explicitly **UNPROVEN**
+  - [ ] Full server test suite green (spike must not red the existing suite)
+  - [ ] **ADR-016 is NOT marked Accepted by this story** and no final host decision is taken
+- Acceptance criteria — **Stage 2** (separate PR, not started):
+  - [ ] Criterion 5 — policy-scope enforcement (controlled field, not descriptive tags; default-deny; every enabled retrieval/graph/context/export/provider path enforces or fails closed)
+  - [ ] Criterion 6 — remote Ubuntu execution node (authenticated registration, heartbeat, checkpoint, repo-state; offline spool + idempotent replay; disconnection/duplicate/invalid-auth experiments)
+  - [ ] Criterion 7 — final extraction viability and the final ADR-016 recommendation
+- Plan: [docs/plans/2026-07-29-001-awcp-ai-memory-host-spike.md](../../docs/plans/2026-07-29-001-awcp-ai-memory-host-spike.md) — PO-supplied controlling spec, plus an Implementation Addendum recording exact module locations, migration approach, dependency rules, Stage 2 contracts, test commands and rollback steps
+- Docs: `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` §1; `docs/investigations/awcp-spec-evaluation.md` §7, §9; `docs/investigations/prism-ground-truth-inventory.md` §4
+- Notes: Burden of proof sits with the spike, not with the preference — ai-memory is the *hypothesis*. **WIP exception:** entered In Progress while ST-074 also sits there; ST-074 has all three ACs checked `[x]` and has not moved since 2026-07-03, so it appears complete-but-unclosed rather than genuinely active — PO to confirm and move it to Done. Code is **disposable** (`DROP SCHEMA workflow CASCADE` + one `schema_migrations` delete + delete three paths); the schemas/contracts are the intended survivors per awcp-spec-evaluation §6.1.
 
 ### ST-074: Reconcile `ExtractionItem` shape — Opt 3 provenance accessors
 - Type: bug / design

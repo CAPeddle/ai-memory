@@ -1,0 +1,130 @@
+/**
+ * ST-084 spike — Workflow Operations domain types.
+ *
+ * These are OPERATIONAL types, deliberately distinct from the memory domain's
+ * `thought` representation. Nothing here is a thought, shard, wiki row, or graph
+ * entity. That separation is criterion 1 of the ADR-016 host-acceptance gate.
+ *
+ * SPIKE / DISPOSABLE — see docs/plans/2026-07-29-001-awcp-ai-memory-host-spike.md
+ */
+
+/** Controlled policy scope. NOT a descriptive tag — a closed vocabulary. */
+export type PolicyScope = "personal" | "corporate" | "mixed" | "public";
+
+export const POLICY_SCOPES: readonly PolicyScope[] = [
+  "personal",
+  "corporate",
+  "mixed",
+  "public",
+] as const;
+
+export type PacketStatus = "open" | "in_progress" | "blocked" | "complete";
+export type RunStatus = "running" | "ended" | "failed";
+export type DecisionStatus = "open" | "resolved";
+export type EvidenceKind = "manual" | "command_result" | "external_build";
+
+export interface WorkPacket {
+  id: string;
+  title: string;
+  objective: string;
+  scope: string;
+  constraints: string;
+  repository: string | null;
+  branch: string | null;
+  policy_scope: PolicyScope;
+  status: PacketStatus;
+  created_at: Date;
+  updated_at: Date;
+  completed_at: Date | null;
+}
+
+export interface AgentRun {
+  id: string;
+  packet_id: string;
+  agent_type: string;
+  host: string;
+  node_id: string | null;
+  working_dir: string | null;
+  repository: string | null;
+  branch: string | null;
+  status: RunStatus;
+  started_at: Date;
+  ended_at: Date | null;
+  last_event_at: Date;
+}
+
+export interface Checkpoint {
+  id: string;
+  run_id: string;
+  completed_work: string;
+  current_state: string;
+  blockers: string | null;
+  next_action: string | null;
+  repo_commit: string | null;
+  created_at: Date;
+}
+
+export interface OperationalDecision {
+  id: string;
+  packet_id: string;
+  run_id: string | null;
+  question: string;
+  rationale: string | null;
+  resolution: string | null;
+  blocking: boolean;
+  status: DecisionStatus;
+  /**
+   * Pointer OUT to an optional memory projection. Nullable, non-authoritative,
+   * and deliberately NOT a foreign key — the memory domain may lose this row
+   * without invalidating the decision. Criterion 3 depends on this property.
+   */
+  promoted_memory_ref: string | null;
+  created_at: Date;
+  resolved_at: Date | null;
+}
+
+export interface VerificationCriterion {
+  id: string;
+  packet_id: string;
+  description: string;
+  required: boolean;
+  created_at: Date;
+}
+
+export interface EvidenceItem {
+  id: string;
+  criterion_id: string;
+  kind: EvidenceKind;
+  detail: string;
+  recorded_commit: string | null;
+  created_at: Date;
+}
+
+/** Deterministic attention reasons. No LLM inference is permitted (plan §Attention logic). */
+export type AttentionReason =
+  | "decision-required"
+  | "blocked"
+  | "stale"
+  | "ended-without-checkpoint"
+  | "ready-for-review";
+
+export interface AttentionItem {
+  packet_id: string;
+  run_id: string | null;
+  reason: AttentionReason;
+  detail: string;
+}
+
+/** Raised when the completion gate rejects a packet. Carries the unmet criteria. */
+export class CompletionBlockedError extends Error {
+  readonly unmetCriteria: readonly string[];
+  constructor(unmetCriteria: readonly string[]) {
+    super(
+      `Completion refused: ${unmetCriteria.length} verification criterion/criteria lack evidence: ${
+        unmetCriteria.join("; ")
+      }`,
+    );
+    this.name = "CompletionBlockedError";
+    this.unmetCriteria = unmetCriteria;
+  }
+}

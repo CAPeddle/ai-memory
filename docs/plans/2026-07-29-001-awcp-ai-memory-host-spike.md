@@ -408,3 +408,255 @@ Evidence:
 ```
 
 ADR-016 shall remain Proposed or Conditional until this report is reviewed by Christopher.
+
+---
+
+# Implementation Addendum (agent, 2026-07-30)
+
+Everything above this line is the PO-supplied controlling specification, preserved
+verbatim. Everything below is the engineering detail required before implementation,
+derived from direct inspection of the codebase at `66ff8e4`.
+
+## A. Execution staging (PO decision, 2026-07-30)
+
+The supplied plan is ~3 sessions of work. The PO directed a **two-stage** execution
+rather than spreading effort thinly across all seven acceptance criteria:
+
+> "Do not spread implementation effort thinly across all seven criteria. The spike
+> exists to produce reliable architectural evidence, not to maximise the number of
+> partially demonstrated features."
+
+**Stage 1 (this PR) — fully prove four criteria:**
+
+1. **Operational independence** — WorkPacket, AgentRun, Checkpoint, OperationalDecision,
+   AttentionItem, Evidence and completion gating all work with semantic memory disabled.
+2. **Separate persistence and API boundary** — independent transactional persistence;
+   operational entities are not thoughts/shards/graph records; memory reached only
+   through explicit ports; a no-op adapter supports the complete operational flow.
+3. **Failure isolation** — knowledge-search failure, knowledge-promotion failure, graph
+   unavailability, and central-service restart cannot corrupt or roll back operational
+   state; promotion is an optional projection.
+4. **Reuse and coupling assessment** — the ten named components classified; actual
+   dependencies introduced by the slice recorded.
+
+**Stage 1 explicitly does NOT prove** (must be marked UNPROVEN in the findings):
+policy-scope enforcement (criterion 5) and remote-node operation (criterion 6).
+Stage 1 *defines* their contracts (§F, §G below) so Stage 2 does not start from
+assumptions. Stage 1's recommendation vocabulary is deliberately weaker than the
+final one: **promising / promising with concerns / unlikely to fit** — not
+accept/reject. ADR-016 stays Proposed/Conditional either way.
+
+## B. Schema — reduced from ten tables to six
+
+Per the PO: *"Use the smallest schema and module structure necessary… Do not create
+unused tables merely because they appeared in the provisional model."*
+
+| Provisional table | Stage 1 disposition |
+|---|---|
+| `workflow.work_packets` | **Built** |
+| `workflow.agent_runs` | **Built** |
+| `workflow.checkpoints` | **Built** |
+| `workflow.operational_decisions` | **Built** |
+| `workflow.verification_criteria` | **Built** |
+| `workflow.evidence_items` | **Built** |
+| `workflow.repository_bindings` | **Dropped** — inlined as columns on `work_packets`/`agent_runs`. A join table for a 1:1 field is unused structure. |
+| `workflow.attention_items` | **Dropped as a table** — attention is *derived*, not stored. Computed by a pure function (`attention.ts`) over current state. A stored table can drift from the state it describes; a pure function cannot, and it makes "deterministic rules only, no LLM" checkable by reading ~40 lines. |
+| `workflow.run_events` | **Deferred to Stage 2** — exists only to serve remote spool/replay. |
+| `workflow.execution_nodes` | **Deferred to Stage 2** — same. |
+
+`policy_scope` ships as a **column** in Stage 1 (`NOT NULL`, `CHECK (policy_scope IN
+('personal','corporate','mixed','public'))`, **no DEFAULT**) — the model is defined,
+enforcement is Stage 2. No DEFAULT is deliberate: see §F.
+
+## C. Migration approach — exact
+
+- **File:** `server/db/007_workflow_schema.sql`. `007` is the next free number
+  (`006_tags_replace_profile.sql` is highest).
+- **No change needed to `migrate.ts`** — its discovery regex `/^(\d+)_.*\.sql$/`
+  (`migrate.ts:92`) is generic, and `detectBootstrapVersions` (`migrate.ts:108-197`)
+  probes only versions 1–6, so it will never mis-mark 007 as pre-applied.
+- **Do NOT touch `schema.sql`** and do NOT add the file to
+  `docker/postgres-age/Dockerfile`. Post-ST-042 convention is runner-only; only
+  `002` is still copied into initdb, for stated historical reasons.
+- **Every object must be schema-qualified `workflow.*`.** This is a correctness
+  requirement, not style: four sites issue `SET search_path = ag_catalog, "$user",
+  public` inside a bare multi-statement `sql.unsafe` on a *pooled* connection
+  (`index.ts:940-942`, `index.ts:996-998`, `entityWorker.ts:113-119`, `:123-130`).
+  That `SET` is session-scoped and sticky, so any pooled connection that has served
+  a graph query keeps a polluted path for its lifetime. `workflow` is never implicitly
+  on the path. Do not attempt to fix this with `ALTER DATABASE … SET search_path`.
+- **Migration failure is fatal to the whole server** — `migrate.ts:56` calls
+  `Deno.exit(1)`, and `runMigrations()` is awaited at `index.ts:46` *before*
+  `Deno.serve`. A malformed `007` bricks the memory MCP, not just the spike. Roll
+  back is clean (DDL is transactional, `migrate.ts:51-53`) but the process dies.
+- **Honesty about what a schema buys:** namespacing and clean teardown
+  (`DROP SCHEMA workflow CASCADE`), **not** access control. The single `ai_memory`
+  role reads and writes both schemas freely. Real enforcement needs a second role
+  plus `REVOKE` — out of scope, and must be stated as such in the findings.
+
+## D. Module layout — exact
+
+First subdirectory under `server/src/` (currently 17 flat files). Justified by the
+separability requirement, not by existing convention — flagged as a departure.
+
+```
+server/src/workflow/types.ts       domain types; zod raw shapes
+server/src/workflow/store.ts       ALL SQL; the only file importing { sql } from "../db.ts"
+server/src/workflow/attention.ts   deterministic attention rules (pure)
+server/src/workflow/ports.ts       KnowledgeSearchPort / KnowledgePromotionPort + no-op adapter
+server/src/workflow/service.ts     orchestration: completion gate, optional promotion
+server/db/007_workflow_schema.sql  DDL
+server/tests/workflow-*.test.ts    flat, per repo convention
+```
+
+## E. Dependency rules — mechanically checkable
+
+Workflow may import: `../db.ts` (store.ts only), `../logging.ts`, npm packages
+already in the frozen lock. Workflow must **not** import `entityWorker.ts`,
+`consolidationWorker.ts`, `consolidationLLM.ts`, `embeddings.ts`,
+`embeddingBackfill.ts`, `searchQuality.ts`, or `parseContext.ts`, and must not
+reference `thoughts`, `entity_mentions`, `memory_graph`, `cypher(`, or `vector(`
+in SQL. **A test asserts this by scanning the module's own source** — the rule is
+enforced, not documented.
+
+**Zero new dependencies.** `deno.json:2-5` sets `"lock": { "frozen": true }` and every
+test command passes `--frozen`; a new npm import reds the entire suite.
+
+## F. Policy-scope model — DEFINED for Stage 2, not enforced in Stage 1
+
+Direct inspection produced the single most consequential finding of the inspection
+phase, and it reshapes what Stage 2 can promise:
+
+**`scope.tags` is enforced in exactly zero retrieval paths.** It is read at one
+place (`index.ts:443`) and used only to INSERT. It appears in no WHERE clause
+anywhere in the codebase. The honest count of what Stage 2 faces:
+
+- **15 read paths** would each need an independent predicate — there is no query
+  builder, no repository layer, no row-level security. Each is a hand-written tagged
+  template that can be forgotten individually.
+- **`fetch` (`index.ts:211-215`) is a one-call bypass** of every search-lane filter:
+  `WHERE id = ${id} AND active = true`, and the tool accepts no `context` parameter
+  at all. Search returns ids under one scope; fetch retrieves them under any. Fixing
+  the lanes without fixing `fetch` is theatre.
+- **`graph_traverse` / `graph_search` cannot be filtered.** AGE nodes carry only
+  `(label, name)` with no scope column and no in-graph join to `thoughts`. The fix is
+  extraction-time filtering (`entityWorker.ts:185`) or gating the tool — not a WHERE
+  clause.
+- **Global content-fingerprint dedup** (`schema.sql:45-48`) means the same text
+  cannot exist at two scopes, and `capture_thought`'s `ON CONFLICT` *merges* tags
+  (`index.ts:482-487`). A merge rule applied to a security column is a widening rule.
+- `project` is a **×1.2 ranking boost**, not a filter, unless `strict` is set
+  (`index.ts:344-353`) — and bare `strict` with no `project:` token is a complete
+  no-op (`index.ts:271`). Neither idiom may be copied for a security column.
+
+**Consequence for the plan's criterion-5 wording.** The supplied plan asks the spike
+to demonstrate that "lexical search, vector search, graph traversal, context assembly,
+and exports cannot bypass the scope rule." On the *memory* side that is currently false
+in 15 places and structurally unfixable in two. Closing it is ST-082's job and is larger
+than this spike. Stage 2 will therefore prove the narrower, decisive claim — which is
+the plan's own escape clause, invoked deliberately rather than discovered late:
+
+> the workflow module's own records and retrieval paths enforce policy scope with
+> default-deny, and every memory path that cannot enforce scope is **disabled for a
+> scoped request** and documented.
+
+**Stage 1 does not change any memory-side retrieval semantics.** A disposable spike
+must not quietly alter production read paths.
+
+## G. Remote execution-node protocol — DEFINED for Stage 2, not implemented
+
+Recorded now so Stage 2 does not begin from assumptions.
+
+- **Transport:** HTTPS to the central hub over Tailscale. Node → hub only; the hub
+  never dials the node. No inbound port on the node, and no general-purpose remote
+  shell — a hard constraint from the supplied plan.
+- **Runtime:** the node has `node` v-installed and **no deno** (verified on z2,
+  Ubuntu 24.04.4). The client is therefore plain Node with zero npm dependencies, or
+  a POSIX shell + `curl`. It must not require installing a new runtime.
+- **Auth:** a per-node bearer token, distinct from `MEMORY_API_KEY`, in its own env
+  var, validated by its own function alongside (not replacing) `requireApiKey`.
+  `requireApiKey` is a plain `(req) => Response | null` invoked manually at
+  `index.ts:1073-1077`, not middleware — so a second credential type composes cleanly
+  without touching `/mcp`. It must **not** be added to `startupValidation.ts`'s
+  `REQUIRED_ENV` (that list hard-exits on absence; an optional module must not).
+- **Idempotency:** every event carries `(node_id, client_seq)`, unique-constrained.
+  Replay is `ON CONFLICT DO NOTHING`. The hub's acknowledgement is the node's cue to
+  drop its spool entry — never the send itself.
+- **Spool:** append-only JSONL under the node's state dir, one event per line,
+  fsynced. Replayed oldest-first on reconnect. Bounded size with oldest-dropped +
+  a recorded counter, so a long outage cannot fill the disk silently.
+- **Control messages** (narrowly typed, allow-listed): request-status,
+  request-checkpoint, request-repo-rescan, pause-reporting, resume-reporting.
+
+## H. Memory-disabled mode — verified recipe
+
+Env-only; **no code change required**:
+
+```
+FEATURE_ENTITY_WORKER=false          # entity extraction AND all AGE writes
+FEATURE_CONSOLIDATION_WORKER=false   # consolidation + knowledge promotion
+FEATURE_EMBEDDING_BACKFILL=false     # backfill sweep
+OPENROUTER_API_KEY=disabled          # placeholder; validated for truthiness only
+```
+
+Findings worth recording in their own right:
+
+- `startupValidation.ts:1` hard-requires `OPENROUTER_API_KEY` and `Deno.exit(1)`s
+  without it — but validates **truthiness only**, never against the provider. A
+  placeholder satisfies it. So memory-disabled boot works *by accident of weak
+  validation*, not by design. There is **no first-class degraded/disabled mode** in
+  this codebase.
+- Prefer the `FEATURE_*` flags over `*_DISABLED`: only `FEATURE_*` makes
+  `/ready`'s worker probe report `n/a` rather than continuing to expect runs
+  (`healthCheck.ts:146-149`).
+- `/health` is a **static literal** (`index.ts:1055`) — the Docker healthcheck cannot
+  fail due to disabled capabilities, so the container stays up. `/ready` returns 200
+  `degraded`; only a Postgres error yields `unhealthy`.
+- AGE and pgvector **cannot be removed** from the image (initdb would abort and the
+  DB would never become healthy). Disable *use*, not *presence*.
+
+## I. Test commands
+
+```bash
+# Bring up the isolated test stack (ephemeral tmpfs DB on :5433, seeded)
+docker compose --profile test up -d
+
+# Workflow slice
+docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/workflow-store.test.ts
+docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/workflow-boundary.test.ts
+docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/workflow-failure-isolation.test.ts
+
+# Regression: the migration suite is the one most likely to break (see below)
+docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/migrations.test.ts
+
+# Full suite
+docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/
+```
+
+**Do not run migration tests natively** — native `deno test` targets the shared *dev*
+Postgres and `migrations.test.ts` does `DROP TABLE schema_migrations`.
+
+**Known breakage to fix as part of this work:** `migrations.test.ts` hardcodes the
+migration version list in four places — lines **17**, **18-25**, **31**, **97** — all
+asserting `[1,2,3,4,5,6]`. Adding `007` reds the suite until each is updated. Line 90
+(`[1,2,4,5]`) is unaffected: it calls `detectBootstrapVersions`, which never probes v7.
+
+## J. Rollback and cleanup
+
+The spike is disposable by construction. Full teardown:
+
+```sql
+DROP SCHEMA workflow CASCADE;
+DELETE FROM schema_migrations WHERE version = 7;
+```
+
+Code teardown — delete `server/src/workflow/`, `server/db/007_workflow_schema.sql`,
+and `server/tests/workflow-*.test.ts`; revert the four `migrations.test.ts` version
+assertions. **No other file is modified in Stage 1.** That list *is* the separability
+proof for criterion 4, and it is deliberately short enough to state in one sentence.
+
+If MCP tools are registered (optional for Stage 1), two further out-of-module edits
+become necessary and must be recorded as coupling evidence: the hand-maintained
+`toolNames` array at `index.ts:101-113`, and `mcp-protocol-compat.test.ts:172-179`,
+which regex-scans `server/index.ts` alone for `server.registerTool(` and asserts a
+two-way match against `tools/list`.

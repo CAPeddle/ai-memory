@@ -14,7 +14,7 @@ Deno.test({
     const afterBootstrap = await sql<{ version: number; filename: string }[]>`
       SELECT version, filename FROM schema_migrations ORDER BY version
     `;
-    assertEquals(afterBootstrap.map((row) => row.version), [1, 2, 3, 4, 5, 6]);
+    assertEquals(afterBootstrap.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7]);
     assertEquals(afterBootstrap.map((row) => row.filename), [
       "001_initial.sql",
       "002_needs_embedding.sql",
@@ -22,13 +22,14 @@ Deno.test({
       "004_worker_runs.sql",
       "005_feedback_events.sql",
       "006_tags_replace_profile.sql",
+      "007_workflow_schema.sql",
     ]);
 
     await runMigrations();
     const afterRerun = await sql<{ version: number }[]>`
       SELECT version FROM schema_migrations ORDER BY version
     `;
-    assertEquals(afterRerun.map((row) => row.version), [1, 2, 3, 4, 5, 6]);
+    assertEquals(afterRerun.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7]);
 
     const tempVersion = 999;
     const tempFilename = `${tempVersion}_test_marker.sql`;
@@ -94,7 +95,7 @@ Deno.test({
     const afterPartial = await sql<{ version: number; filename: string }[]>`
       SELECT version, filename FROM schema_migrations ORDER BY version
     `;
-    assertEquals(afterPartial.map((row) => row.version), [1, 2, 3, 4, 5, 6]);
+    assertEquals(afterPartial.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7]);
 
     const [recallProfileColumn] = await sql`
       SELECT 1 AS found FROM information_schema.columns
