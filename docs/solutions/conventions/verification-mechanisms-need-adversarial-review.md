@@ -345,8 +345,8 @@ fix here would be to read the directory rather than a literal.
   control: audit whether the check, as written, is even capable of failing. Neither
   substitutes for the other — ST-084's blocklist was a well-specified assertion target that
   still decayed silently. That doc's rule #5 ("Use semantic regex patterns over exact
-  prose.") needs the red/green control described here: a pattern-based check over a growing
-  surface is the blocklist hazard in another costume.
+  prose.") now carries a caveat pointing back here, because a pattern-based check over a
+  growing surface is the blocklist hazard in another costume.
 - [Always schema-qualify SQL — AGE leaves a sticky `search_path` on pooled connections](./schema-qualify-sql-age-search-path-pollution.md)
   — the SQL convention from this same spike. The two docs share one incident from opposite
   ends: that doc records the `search_path` hazard; this one records why the test certifying

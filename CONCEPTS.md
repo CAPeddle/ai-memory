@@ -56,6 +56,19 @@ Projecting a resolved Operational Decision into the Memory Domain as durable kno
 
 Promotion is optional, one-way, and non-authoritative. It happens outside the operational transaction, so a failure leaves the Decision intact and resolved; the resulting reference is a nullable pointer, and the Memory Domain may lose it without invalidating anything.
 
+## Delivery Workflow
+
+### Story
+The tracked unit of deliverable work, identified by a stable label that appears in its board entry, in its Plan, and in the trailer of every commit made for it.
+
+Stories move across a continuous-flow board — backlog, in progress, in review, done — under strict limits on how many may occupy the working states at once, rather than through sprint boundaries. Implementation is gated: a Story needs a board entry and a written Plan before work on it begins.
+
+### Plan
+The written decision artifact for a Story, carrying its product contract, requirements, and implementation units.
+*Avoid:* ExecPlan — the retired predecessor format, kept only as historical record.
+
+A Plan records decisions, not progress: execution state is derived from commit history rather than written back into the document body. A Plan and its Story cross-reference each other, and neither is considered ready without that link.
+
 ## Boundaries
 
 ### Memory Domain
