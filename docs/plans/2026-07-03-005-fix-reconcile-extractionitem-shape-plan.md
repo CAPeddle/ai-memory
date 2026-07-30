@@ -1,7 +1,7 @@
 ---
 title: "fix: Reconcile ExtractionItem shape drift via provenance accessors (Opt 3)"
 type: fix
-status: in-progress
+status: complete
 date: 2026-07-03
 story: ST-074
 ---

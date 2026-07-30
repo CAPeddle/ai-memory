@@ -55,8 +55,11 @@ VERIFICATION
   migrations.test.ts. NO other file modified — that list IS the separability evidence.
 
 BOARD
-- ST-084 In Progress (Stage 1 ACs all checked). WIP exception: ST-074 also In Progress but
-  has all ACs [x] since 2026-07-03 — appears complete-but-unclosed, PO to confirm → Done.
+- ST-084 In Progress (Stage 1 ACs all checked) — now the SOLE In Progress entry; WIP limit holds.
+- ST-074 CLOSED → Done 2026-07-30 after independent verification (not just trusting its tick
+  marks): accessors present and pure, adapter genuinely routes through getPrimaryQuote, doc note
+  resolved, contact-memory suite re-run 79/0 matching the claim, commit f919fda confirmed an
+  ancestor of main. Its plan frontmatter flipped in-progress → complete.
 - Review: ST-047 only. Backlog: ST-082 (isolation — now clearly larger than first scoped),
   ST-083 (Developer Memory design), ST-080 (Z2/ADR-014).
 

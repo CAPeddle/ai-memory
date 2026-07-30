@@ -4,7 +4,7 @@
 > Next planning target: (TBD after ST-072 completes).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review). ST-070 + ST-071 done 2026-07-03 (integration suite green in CI, PR #21 merged).
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
-> Last updated: 2026-07-30 (ST-084 Backlog → In Progress: ADR-016 host-acceptance spike, staged per PO — Stage 1 fully proves criteria 1–4, criteria 5–7 deferred to Stage 2 and reported UNPROVEN. WIP exception noted: ST-074 appears complete-but-unclosed since 2026-07-03)
+> Last updated: 2026-07-30 (ST-084 Backlog → In Progress: ADR-016 host-acceptance spike, staged per PO — Stage 1 fully proves criteria 1–4, criteria 5–7 deferred to Stage 2 and reported UNPROVEN. ST-074 → Done after independent verification, restoring the WIP limit: ST-084 is now the sole In Progress entry)
 
 ---
 
@@ -514,22 +514,7 @@
 - Plan: [docs/plans/2026-07-29-001-awcp-ai-memory-host-spike.md](../../docs/plans/2026-07-29-001-awcp-ai-memory-host-spike.md) — PO-supplied controlling spec, plus an Implementation Addendum recording exact module locations, migration approach, dependency rules, Stage 2 contracts, test commands and rollback steps
 - Findings: [docs/investigations/ST-084-awcp-host-spike-findings.md](../../docs/investigations/ST-084-awcp-host-spike-findings.md) — **Stage 1 verdict: PROMISING WITH CONCERNS.** Criteria 1–4 pass on evidence (37/37 tests, including a full run with all memory capabilities disabled and the provider unroutable). The qualifying concern is the policy-scope enforcement surface (§6.1): `scope.tags` is enforced in **zero** retrieval paths today, across 15 hand-written read paths with no chokepoint, a one-call `fetch` bypass, and two structurally unfilterable graph tools — a cost Candidate A carries that Candidate C would not, so it is a host-decision input rather than only an ST-082 item. Criteria 5–7 UNPROVEN.
 - Docs: `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` §1; `docs/investigations/awcp-spec-evaluation.md` §7, §9; `docs/investigations/prism-ground-truth-inventory.md` §4
-- Notes: Burden of proof sits with the spike, not with the preference — ai-memory is the *hypothesis*. **WIP exception:** entered In Progress while ST-074 also sits there; ST-074 has all three ACs checked `[x]` and has not moved since 2026-07-03, so it appears complete-but-unclosed rather than genuinely active — PO to confirm and move it to Done. Code is **disposable** (`DROP SCHEMA workflow CASCADE` + one `schema_migrations` delete + delete three paths); the schemas/contracts are the intended survivors per awcp-spec-evaluation §6.1.
-
-### ST-074: Reconcile `ExtractionItem` shape — Opt 3 provenance accessors
-- Type: bug / design
-- Source: PO (compass_artifact_wf.md residual concern #3, 2026-07-03)
-- phase: contact-memory
-- Value: 3
-- Blocked by: — (ST-073 done; PO chose Opt 3 2026-07-03)
-- Touches: `contact-memory/parser/types.ts`, `contact-memory/commit/captureThoughtAdapter.ts`, `contact-memory/tests/parser/types.test.ts`, `docs/investigations/compass_artifact_wf.md`
-- Acceptance criteria:
-  - [x] Direction chosen by PO — **Option 3**: keep the union shape, add pure accessors + document the `evidence[0]` convention (2026-07-03)
-  - [x] `getPrimaryQuote` / `getAllSourceIds` accessors added to `parser/types.ts`; adapter routes its provenance quote through `getPrimaryQuote` and documents the `evidence[0]` convention; doc shape note updated to "done"
-  - [x] All existing contact-memory tests pass (plus new accessor unit tests) — 79 passed / 0 failed
-- Plan: [docs/plans/2026-07-03-005-fix-reconcile-extractionitem-shape-plan.md](../../docs/plans/2026-07-03-005-fix-reconcile-extractionitem-shape-plan.md)
-- Docs: `docs/investigations/compass_artifact_wf.md`
-- Notes: Confirmed mismatch 2026-07-03 — doc proposes `{kind, payload, quote, source_ids, char_span}`; actual [`ExtractionItem`](../../contact-memory/parser/types.ts#L152) is a flattened discriminated union with provenance in `evidence: EvidenceReference[]`. Opt 3 closes the drift without restructuring the union: accessors centralize the primary-quote + full-source-id patterns the doc's flat shape implied.
+- Notes: Burden of proof sits with the spike, not with the preference — ai-memory is the *hypothesis*. (A transient WIP exception on 2026-07-30 — ST-074 also sitting In Progress — was resolved the same day: ST-074 was verified complete and moved to Done, so this is now the sole In Progress entry and the WIP limit holds.) Code is **disposable** (`DROP SCHEMA workflow CASCADE` + one `schema_migrations` delete + delete three paths); the schemas/contracts are the intended survivors per awcp-spec-evaluation §6.1.
 
 ## Review
 
@@ -549,6 +534,25 @@
 (Empty)
 
 ## Done
+
+### ST-074: Reconcile `ExtractionItem` shape — Opt 3 provenance accessors
+- Type: bug / design
+- Source: PO (compass_artifact_wf.md residual concern #3, 2026-07-03)
+- phase: contact-memory
+- Value: 3
+- Blocked by: — (ST-073 done; PO chose Opt 3 2026-07-03)
+- Completed: 2026-07-03 (closed on the board 2026-07-30 after independent verification)
+- Commit: `f919fda` — fix(contact-memory): reconcile ExtractionItem shape via provenance accessors
+- Touches: `contact-memory/parser/types.ts`, `contact-memory/commit/captureThoughtAdapter.ts`, `contact-memory/tests/parser/types.test.ts`, `docs/investigations/compass_artifact_wf.md`
+- Acceptance criteria:
+  - [x] Direction chosen by PO — **Option 3**: keep the union shape, add pure accessors + document the `evidence[0]` convention (2026-07-03)
+  - [x] `getPrimaryQuote` / `getAllSourceIds` accessors added to `parser/types.ts`; adapter routes its provenance quote through `getPrimaryQuote` and documents the `evidence[0]` convention; doc shape note updated to "done"
+  - [x] All existing contact-memory tests pass (plus new accessor unit tests) — 79 passed / 0 failed
+- Plan: [docs/plans/2026-07-03-005-fix-reconcile-extractionitem-shape-plan.md](../../docs/plans/2026-07-03-005-fix-reconcile-extractionitem-shape-plan.md)
+- Docs: `docs/investigations/compass_artifact_wf.md`
+- Notes: Confirmed mismatch 2026-07-03 — doc proposes `{kind, payload, quote, source_ids, char_span}`; actual [`ExtractionItem`](../../contact-memory/parser/types.ts#L152) is a flattened discriminated union with provenance in `evidence: EvidenceReference[]`. Opt 3 closes the drift without restructuring the union: accessors centralize the primary-quote + full-source-id patterns the doc's flat shape implied.
+- Closure verification (2026-07-30): all three ACs re-checked independently against the code rather than trusting the tick marks. `getPrimaryQuote`/`getAllSourceIds` confirmed present and pure ([`parser/types.ts:172-192`](../../contact-memory/parser/types.ts#L172)); the adapter genuinely routes through the accessor ([`captureThoughtAdapter.ts:140`](../../contact-memory/commit/captureThoughtAdapter.ts#L140)) rather than inlining `evidence[0].quote`; the `evidence[0]` convention is documented at both the adapter and the accessor; the doc shape note is marked resolved (`compass_artifact_wf.md:155`). Contact-memory suite re-run with the CI command: **79 passed / 0 failed**, matching the claim exactly. `f919fda` confirmed an ancestor of `main` — nothing stranded on a side branch. The residual `candidate.evidence[0]` at `captureThoughtAdapter.ts:139` is deliberate, not an oversight: the plan's Scope Boundaries keep the metadata line's existing message-id semantics.
+
 
 ### ST-081: Formalise platform/product definitions (ADR-013 + SRS v1.2 supersession banners)
 - Type: chore / governance
