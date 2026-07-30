@@ -115,6 +115,24 @@ export interface AttentionItem {
   detail: string;
 }
 
+/**
+ * Raised when a workflow record does not exist.
+ *
+ * A distinct class rather than a bare `Error` so a caller can tell "you asked for
+ * something that isn't there" from an infrastructure fault. A bare Error made the
+ * two indistinguishable to anyone branching on error type.
+ */
+export class WorkflowNotFoundError extends Error {
+  readonly kind: string;
+  readonly id: string;
+  constructor(kind: string, id: string) {
+    super(`No such ${kind}: ${id}`);
+    this.name = "WorkflowNotFoundError";
+    this.kind = kind;
+    this.id = id;
+  }
+}
+
 /** Raised when the completion gate rejects a packet. Carries the unmet criteria. */
 export class CompletionBlockedError extends Error {
   readonly unmetCriteria: readonly string[];

@@ -135,7 +135,7 @@ adapter supports the complete flow.*
 | Migration touches no memory table | Test re-applies 007 inside a rolled-back transaction and asserts the `public` table list is byte-identical before and after |
 | Operational entities are not thoughts | Test creates a packet, then asserts zero `public.thoughts` rows contain its text |
 | No structural dependency on memory | Test enumerates every foreign key in schema `workflow` and asserts all resolve within `workflow` |
-| Memory reached only via ports | Test scans the module's own source for imports of the eight memory modules — fails the build on violation |
+| Memory reached only via ports | Test scans the module's own source and fails the build unless every import is on an **allowlist** (`./*` intra-module, `../db.ts`, `../logging.ts`, or a package specifier). A paired red/green control test proves the allowlist actually rejects `../entityWorker.ts`, `../index.ts` etc. — see the §3 correction |
 | Only `store.ts` holds the DB handle | Source scan asserts no other workflow file imports `../db.ts` |
 | No memory-domain SQL | Source scan rejects 14 forbidden identifiers (`thoughts`, `memory_graph`, `cypher(`, `vector(`, `embedding`, …) |
 | All SQL schema-qualified | Source scan asserts every `FROM`/`INTO`/`UPDATE`/`JOIN` identifier starts `workflow.` |
@@ -145,15 +145,52 @@ adapter supports the complete flow.*
 dependency rule stated in a comment is a rule that gets violated in six months by
 someone reasonably adding an import. These tests fail CI instead.
 
+> **Correction (post-review) — the enforcement was weaker than this section claimed.**
+> The original import check was a **blocklist** of eight memory modules. It omitted
+> `../index.ts` — the composition root that registers every MCP tool — plus `auth.ts`,
+> `healthCheck.ts`, `logging.ts`, `mcpDiagnostics.ts`, `migrate.ts` and
+> `workerLogger.ts`. The workflow module could have imported straight from `index.ts`
+> and this test would still have passed green. Structurally worse than the omission: a
+> blocklist over a directory that grows permits every *future* memory module by default.
+>
+> Inverted to an allowlist, so an unlisted import now fails and adding a dependency is a
+> deliberate edit to a reviewed list. The schema-qualification scan had the same class of
+> hole — it was case-**sensitive**, so lowercase `from thoughts` was skipped silently;
+> now case-insensitive with its own control test.
+>
+> The verdict does not change: manual inspection confirms the module never imported any
+> of those files, so criterion 2 was genuinely met. What was defective was the
+> **evidence**, and on a spike whose output *is* evidence that distinction is the whole
+> point. Recorded rather than quietly fixed, because "our green tests certified a claim
+> they could not actually check" is the most transferable finding in this report.
+
 **One finding that strengthens the case unexpectedly:** every workflow statement had
 to be schema-qualified anyway, for a reason unrelated to tidiness. Four sites in the
 memory domain issue a bare `SET search_path = ag_catalog, "$user", public` inside a
-multi-statement `sql.unsafe()` on a *pooled* connection (`index.ts:940`, `:996`;
-`entityWorker.ts:113`, `:123`). That `SET` is session-scoped and sticky, so any pooled
-connection that has served a graph query keeps a polluted path for its lifetime. The
-spike proved this is survivable — experiment 3 deliberately runs workflow operations
-on a connection after a failed AGE query — but it is a live sharp edge in the shared
-runtime that any co-tenant module inherits.
+multi-statement `sql.unsafe()` on a *pooled* connection (`index.ts:941`, `:997`;
+`entityWorker.ts:115`, `:125`). That `SET` is session-scoped and sticky, so any pooled
+connection that has served a graph query keeps a polluted path for its lifetime — a
+live sharp edge in the shared runtime that any co-tenant module inherits.
+
+> **Correction (post-review).** The first version of this section claimed the spike had
+> proved this survivable because "experiment 3 deliberately runs workflow operations on
+> a connection after a failed AGE query." That was **wrong, and the test was wrong with
+> it**. A failed statement aborts its implicit transaction and rolls the `SET` back, so
+> the failure path cannot pollute anything — the test exercised the one branch where the
+> hazard is impossible while asserting the opposite. Verified directly against the
+> PG15+AGE container:
+>
+> ```
+> SET search_path = ag_catalog,...; SELECT 1/0;  ->  search_path = "$user", public   (rolled back)
+> SET search_path = ag_catalog,...; SELECT 1;    ->  search_path = ag_catalog, ...    (persists)
+> ```
+>
+> The claim is now genuinely proven, by a different test. `experiment 3b` reserves a
+> connection, pollutes it via a *succeeding* statement, asserts the pollution persisted,
+> then shows a qualified `workflow.work_packets` query resolves while an unqualified
+> `work_packets` fails — so the qualification is demonstrably what defeats the hazard.
+> `experiment 3a` pins the rollback behaviour that misled the original test, and `3c`
+> keeps the honest isolation half. See §12.
 
 ---
 
@@ -184,6 +221,28 @@ pointer rather than a foreign key. Those two choices are what make memory failur
 and memory *absence* equivalent from the operational side. Had promotion been
 modelled as an FK or an in-transaction call, every one of these experiments would
 fail — and that is precisely the coupling a naive implementation would introduce.
+
+> **Correction (post-review) — the ordering was right, the error handling was not.**
+> The original `resolveAndPromoteDecision` wrapped three operations in one `try`: the
+> optional port call *and* two operational writes (`attachPromotionRef`, `getDecision`).
+> So a projection that **succeeded** but whose reference failed to record reported
+> `promoted: false` — and a caller retrying on that signal would create a **duplicate
+> projection**, since `KnowledgePromotionPort` carries no dedup contract. That directly
+> contradicted this section's claim that promotion failure is "visible and retryable."
+>
+> Fixed by narrowing the `try` to the port call alone and adding a `refLost` flag, so
+> "never happened" (retry) and "happened, reference lost" (reconcile) are distinguishable.
+> Two further defects in the same path: promotion **hardcoded `policyScope: "personal"`**
+> for every packet regardless of its real scope — silently widening the security boundary
+> §6.1 warns about, and invisible because every test used personal-scoped packets — and
+> `resolveDecision` returned `undefined` typed as `OperationalDecision` for an unknown id,
+> surfacing through that same catch as an opaque `TypeError` misattributed to promotion
+> failure. `PromotionInput.policyScope` is now the closed `PolicyScope` union rather than
+> `string`, making that class of widening a compile error.
+>
+> Criterion 3 still passes — no memory failure corrupts or rolls back operational state,
+> which was and remains true. But three of these were found by independent review, not by
+> the 37 passing tests, and one of them was a live security-boundary widening.
 
 ---
 
@@ -380,11 +439,12 @@ knows it exists.
 |---|---|
 | `workflow-attention.test.ts` (pure, no DB) | 16 passed / 0 failed |
 | `workflow-store.test.ts` | 6 passed / 0 failed |
-| `workflow-boundary.test.ts` | 8 passed / 0 failed |
-| `workflow-failure-isolation.test.ts` | 7 passed / 0 failed |
-| **All four, memory fully disabled + provider unroutable** | **37 passed / 0 failed** |
+| `workflow-boundary.test.ts` | 10 passed / 0 failed (+2: allowlist and scan control tests) |
+| `workflow-failure-isolation.test.ts` | 12 passed / 0 failed (+5: 3a/3b split, scope fidelity, refLost, typed not-found) |
+| **All four, post-review** | **44 passed / 0 failed** (was 37 pre-review) |
+| **All four, memory fully disabled + provider unroutable** | **37 passed / 0 failed** (pre-review run; the 7 added tests are memory-independent by construction) |
 | `migrations.test.ts` (regression risk) | 6 passed / 0 failed |
-| **Full server suite** | **253 passed / 9 failed** |
+| **Full server suite** | **253 passed / 9 failed** (pre-review) |
 
 The 9 failures are the **documented pre-existing local baseline** — the board records
 "216 passed / 9 expected-local-401 (CI is arbiter for LLM tests)" — and all 9 are
@@ -517,8 +577,59 @@ and ADR-016 remains Proposed/Conditional.
 
 ---
 
-## 14. Surprises and discoveries
+## 14. What the code review changed — and the one lesson worth keeping
 
+The Stage 1 implementation was reviewed by seven independent lenses plus an attempted
+cross-model adversarial pass. It found **four P1 defects in code that already had 37
+passing tests**, and the pattern across them is more valuable than any individual fix.
+
+| # | Defect | Why the tests missed it |
+|---|---|---|
+| 1 | `resolveAndPromoteDecision` reported `promoted: false` when the projection had succeeded but its ref failed to record — inviting a duplicate projection on retry | No test failed `attachPromotionRef` independently of the port |
+| 2 | Promotion **hardcoded `policyScope: "personal"`**, silently widening the security boundary for corporate/mixed/public packets | Every test created personal-scoped packets, so the hardcode was indistinguishable from correct behaviour |
+| 3 | The import-boundary **blocklist** omitted `index.ts` and six other memory modules; a blocklist also permits every future one by default | The test asserted over a list, and the list was the bug — nothing checks a check |
+| 4 | The plan carried no YAML frontmatter, breaking the mandated `story: ST-NNN` cross-link | No automated frontmatter check exists for `docs/plans/*.md` |
+
+Plus three claims that were false in comments while the tests passed: `experiment 3`
+exercised the one branch where `search_path` pollution is impossible; the
+`completePacket` docblock asserted a `FOR UPDATE` invariant the code does not provide
+(the lock covers the packet row, not the criteria/evidence rows it reads, which
+re-snapshot under READ COMMITTED); and the schema-qualification scan was
+case-sensitive.
+
+**The lesson.** Every one of these had green tests. The tests were not merely
+incomplete — several *certified claims they could not actually check*. That is a
+specific failure mode, not general sloppiness, and it is sharpest exactly here: when a
+spike's deliverable **is** evidence, the evidence mechanism needs adversarial review as
+much as the production code does. Three concrete habits follow:
+
+1. **Prefer allowlists to blocklists for any boundary check.** A blocklist over a
+   growing surface silently weakens with every file added.
+2. **Give every verification mechanism a red/green control** — a test proving the check
+   *fires*, not just that it stayed quiet. Both boundary scans now have one.
+3. **A comment asserting an invariant is a claim that needs a test or a correction.**
+   Two of the three false claims above lived only in prose.
+
+This is also the argument for having run the review at all rather than shipping on the
+author's own verification: the author wrote both the code and the tests that certified
+it, and reviewed the diff before the review — and still missed all four.
+
+**Adversarial coverage gap, recorded honestly:** the cross-model peer (`codex`, gpt-5.6-luna
+at xhigh) started but died on repeated 401s from the detached job's execution context.
+Because the peer owned the lens, the in-process fallback was correctly removed at the
+routing boundary — so **the adversarial lens did not run**. Coverage is therefore
+*degraded*, not merely uncorroborated. Mitigating but not equivalent: the two risks the
+peer was specifically briefed on (the silent-pass boundary scans, and experiment 3's
+branch) were both caught by the testing and correctness lenses.
+
+---
+
+## 15. Surprises and discoveries
+
+0. **Four P1 defects survived 37 passing tests** — see §14. The most transferable
+   finding in this report is not architectural: it is that a spike's own verification
+   mechanism needs adversarial review, because green tests certified three claims that
+   were false.
 1. **`scope.tags` is enforced nowhere at all.** The expectation going in was "partially
    enforced"; the reality is zero retrieval paths. The tool descriptions are honest
    about it (`index.ts:242`: *"tags are not search filters in this tool"*) — the gap is

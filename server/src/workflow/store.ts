@@ -4,10 +4,10 @@
  * This is the ONLY workflow file that imports the database handle. Every
  * statement is schema-qualified `workflow.*` — mandatory, because AGE graph
  * queries leave a sticky polluted `search_path` on pooled connections
- * (server/index.ts:940, entityWorker.ts:113), so `workflow` is never implicit.
+ * (server/index.ts:941, entityWorker.ts:115), so `workflow` is never implicit.
  *
  * No statement here touches `thoughts`, `entity_mentions`, `memory_graph`, or any
- * other memory-domain object. `workflow-dependency.test.ts` asserts that by
+ * other memory-domain object. `workflow-boundary.test.ts` asserts that by
  * scanning this module's source.
  *
  * SPIKE / DISPOSABLE.
@@ -24,6 +24,7 @@ import {
   type PolicyScope,
   type VerificationCriterion,
   type WorkPacket,
+  WorkflowNotFoundError,
 } from "./types.ts";
 
 type SqlExecutor = typeof sql;
@@ -174,7 +175,7 @@ export async function recordCheckpoint(
       UPDATE workflow.agent_runs SET last_event_at = now() WHERE id = ${input.runId}
     `;
     return rows[0];
-  }) as Checkpoint;
+  });
 }
 
 export async function listCheckpoints(packetId: string): Promise<Checkpoint[]> {
@@ -226,6 +227,13 @@ export async function resolveDecision(
     WHERE id = ${decisionId}
     RETURNING *
   `;
+  // Explicit existence check: `rows[0]` on a no-match UPDATE is `undefined` while
+  // the signature promises OperationalDecision. Returning it unchecked pushed an
+  // opaque TypeError downstream, where a caller's catch misattributed it to a
+  // memory-promotion failure.
+  if (rows.length === 0) {
+    throw new WorkflowNotFoundError("operational decision", decisionId);
+  }
   return rows[0];
 }
 
@@ -333,12 +341,23 @@ export async function evidenceCountsForPacket(
 // --------------------------------------------------------------------------
 
 /**
- * Atomically verify every required criterion has evidence, then mark complete.
+ * Verify every required criterion has evidence, then mark the packet complete.
+ * Throws `CompletionBlockedError` when criteria are unmet — the gate is a refusal,
+ * not a warning.
  *
- * The check and the write share one transaction with `FOR UPDATE` on the packet,
- * so a concurrent evidence deletion cannot produce a completed packet with unmet
- * criteria. Throws `CompletionBlockedError` when criteria are unmet — the gate is
- * a refusal, not a warning.
+ * **What the locking actually guarantees — stated precisely, because an earlier
+ * version of this comment overclaimed it.** `FOR UPDATE` locks the one
+ * `work_packets` row, so two concurrent `completePacket` calls for the same packet
+ * serialise. It does **not** lock `verification_criteria` or `evidence_items`,
+ * which this transaction reads: under Postgres's default READ COMMITTED those are
+ * re-snapshotted per statement. So a concurrent evidence DELETE or a concurrent
+ * INSERT of a new required criterion can still interleave, and no row lock can
+ * close the phantom-insert case — that needs SERIALIZABLE.
+ *
+ * Not reachable from inside this module today (the only evidence-deletion route is
+ * `deletePacket`'s cascade, which blocks on the same packet lock), but reachable by
+ * any external writer. Deliberately left as-is for the spike and recorded as a
+ * residual risk rather than papered over.
  *
  * Note this touches ONLY workflow tables and calls no port: completion never
  * depends on the memory domain being reachable (criterion 1).
@@ -349,7 +368,7 @@ export async function completePacket(packetId: string): Promise<WorkPacket> {
       SELECT * FROM workflow.work_packets WHERE id = ${packetId} FOR UPDATE
     `;
     if (packets.length === 0) {
-      throw new Error(`Work packet ${packetId} not found`);
+      throw new WorkflowNotFoundError("work packet", packetId);
     }
 
     const unmet = await tx<{ description: string }[]>`
@@ -373,7 +392,7 @@ export async function completePacket(packetId: string): Promise<WorkPacket> {
       RETURNING *
     `;
     return updated[0];
-  }) as WorkPacket;
+  });
 }
 
 // --------------------------------------------------------------------------

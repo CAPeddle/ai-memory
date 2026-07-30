@@ -10,7 +10,11 @@
  * unchanged, and the failed optional operation is visible and retryable.
  */
 
-import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+  assert,
+  assertEquals,
+  assertRejects,
+} from "https://deno.land/std@0.224.0/assert/mod.ts";
 
 import { sql } from "../src/db.ts";
 import * as store from "../src/workflow/store.ts";
@@ -20,6 +24,7 @@ import {
   resolveAndPromoteDecision,
 } from "../src/workflow/service.ts";
 import { FailingMemoryAdapter, NoopMemoryAdapter } from "../src/workflow/ports.ts";
+import { WorkflowNotFoundError } from "../src/workflow/types.ts";
 
 const T = { sanitizeResources: false, sanitizeOps: false };
 
@@ -163,18 +168,19 @@ Deno.test({
 
 Deno.test({
   ...T,
-  name: "experiment 3: graph unavailability does not affect operational state",
+  name: "experiment 3a: a FAILED graph query does not pollute search_path (it rolls back)",
   fn: async () => {
-    // The workflow module issues no Cypher at all, so an AGE outage is invisible
-    // to it. Proven by breaking the graph inside a transaction and exercising the
-    // full slice against it: search_path pollution and a missing graph must not
-    // reach workflow tables.
-    const packet = await newPacket("exp3 graph unavailable");
+    // Corrects a real error in this file's first version. That version ran a
+    // FAILING AGE query and asserted the connection "may now carry a polluted
+    // search_path" — but a failed statement aborts the implicit transaction and
+    // rolls the SET back with it, so pollution cannot occur on this path. The old
+    // test therefore exercised the one branch where the hazard is impossible while
+    // claiming to prove the opposite. Verified against the real PG15+AGE container.
+    const reserved = await sql.reserve();
     try {
-      // Confirm the graph path genuinely fails while workflow work continues.
       let graphFailed = false;
       try {
-        await sql.unsafe(`
+        await reserved.unsafe(`
           LOAD 'age';
           SET search_path = ag_catalog, "$user", public;
           SELECT * FROM cypher('__nonexistent_graph__', $$ MATCH (n) RETURN n $$) AS t(result agtype);
@@ -184,8 +190,82 @@ Deno.test({
       }
       assert(graphFailed, "expected the nonexistent-graph query to fail");
 
-      // The pooled connection may now carry a polluted search_path. Workflow SQL
-      // is fully schema-qualified, so it must still work.
+      const [{ search_path }] = await reserved<{ search_path: string }[]>`SHOW search_path`;
+      assert(
+        !search_path.includes("ag_catalog"),
+        `a failed statement must roll its SET back, but search_path is "${search_path}"`,
+      );
+    } finally {
+      await reserved.release();
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "experiment 3b: schema-qualified workflow SQL resolves on a GENUINELY polluted connection",
+  fn: async () => {
+    // The real hazard: a SUCCEEDING search_path change persists for the life of a
+    // pooled connection. This is the test that actually proves qualification is
+    // what defeats it. A reserved connection is required — on the shared pool there
+    // is no guarantee the polluted connection is the one the next query lands on.
+    const reserved = await sql.reserve();
+    try {
+      await reserved.unsafe(`
+        LOAD 'age';
+        SET search_path = ag_catalog, "$user", public;
+        SELECT 1;
+      `);
+
+      const [{ search_path }] = await reserved<{ search_path: string }[]>`SHOW search_path`;
+      assert(
+        search_path.includes("ag_catalog"),
+        `expected a persisted polluted search_path, got "${search_path}"`,
+      );
+
+      // `workflow` is NOT on that path. A qualified reference must still resolve...
+      const rows = await reserved<{ n: string }[]>`
+        SELECT count(*) AS n FROM workflow.work_packets
+      `;
+      assert(Number(rows[0].n) >= 0, "qualified workflow query must resolve when polluted");
+
+      // ...and an UNQUALIFIED one must fail, proving the qualification is doing the
+      // work rather than the path happening to contain `workflow` anyway.
+      let unqualifiedFailed = false;
+      try {
+        await reserved.unsafe(`SELECT count(*) FROM work_packets`);
+      } catch {
+        unqualifiedFailed = true;
+      }
+      assert(
+        unqualifiedFailed,
+        "unqualified work_packets resolved unexpectedly — the test proves nothing",
+      );
+    } finally {
+      await reserved.release();
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "experiment 3c: the full slice completes after a graph failure",
+  fn: async () => {
+    // The surviving half of the original experiment 3, stated honestly: the
+    // workflow module issues no Cypher, so an AGE outage is invisible to it. This
+    // is an isolation test, NOT a search_path test (see 3a/3b for that).
+    const packet = await newPacket("exp3c graph unavailable");
+    try {
+      let graphFailed = false;
+      try {
+        await sql.unsafe(
+          `SELECT * FROM cypher('__nonexistent_graph__', $$ MATCH (n) RETURN n $$) AS t(result agtype);`,
+        );
+      } catch {
+        graphFailed = true;
+      }
+      assert(graphFailed, "expected the nonexistent-graph query to fail");
+
       const run = await store.registerRun({
         packetId: packet.id,
         agentType: "claude-code",
@@ -267,6 +347,92 @@ Deno.test({
     } finally {
       await store.deletePacket(packet.id);
     }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "promotion carries the packet's REAL policy scope, not a hardcoded default",
+  fn: async () => {
+    // Closes the gap that hid a live defect: promotion hardcoded `personal` for
+    // every packet, so corporate/mixed/public decisions were silently mislabelled
+    // on the way into the memory domain. Every test previously used personal-scoped
+    // packets, so nothing caught it. Assert the value the port actually receives.
+    for (const scope of ["corporate", "mixed", "public", "personal"] as const) {
+      const packet = await store.createPacket({
+        title: `scope fidelity ${scope}`,
+        objective: "promotion must carry this scope verbatim",
+        policyScope: scope,
+      });
+      try {
+        const decision = await store.recordDecision({
+          packetId: packet.id,
+          question: `decided under ${scope}`,
+        });
+        const noop = new NoopMemoryAdapter();
+        const outcome = await resolveAndPromoteDecision(decision.id, "done", noop);
+
+        assertEquals(outcome.promoted, true);
+        assertEquals(noop.promotionCalls.length, 1);
+        assertEquals(
+          noop.promotionCalls[0].policyScope,
+          scope,
+          `promotion must forward the packet's ${scope} scope, never a default`,
+        );
+      } finally {
+        await store.deletePacket(packet.id);
+      }
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "promotion distinguishes 'never happened' from 'happened but ref lost'",
+  fn: async () => {
+    // The two must not collapse into promoted:false. A caller retrying on
+    // "projection failed" when the projection actually succeeded creates a
+    // duplicate, because the port carries no dedup contract.
+    const packet = await newPacket("refLost distinction");
+    try {
+      // Case 1: the port itself fails -> genuinely not promoted, safe to retry.
+      const d1 = await store.recordDecision({ packetId: packet.id, question: "q1" });
+      const failed = await resolveAndPromoteDecision(d1.id, "r1", new FailingMemoryAdapter());
+      assertEquals(failed.promoted, false);
+      assertEquals(failed.refLost, false, "a port failure is not a lost ref");
+      assertEquals(failed.ref, null);
+
+      // Case 2: the port succeeds -> promoted, ref recorded, nothing lost.
+      const d2 = await store.recordDecision({ packetId: packet.id, question: "q2" });
+      const ok = await resolveAndPromoteDecision(d2.id, "r2", new NoopMemoryAdapter());
+      assertEquals(ok.promoted, true);
+      assertEquals(ok.refLost, false);
+      assert(ok.ref !== null);
+
+      // Both decisions remain authoritative regardless of projection outcome.
+      assertEquals((await store.getDecision(d1.id))?.status, "resolved");
+      assertEquals((await store.getDecision(d2.id))?.status, "resolved");
+    } finally {
+      await store.deletePacket(packet.id);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "resolving an unknown decision id raises a typed not-found error",
+  fn: async () => {
+    // Previously returned `undefined` typed as OperationalDecision, surfacing
+    // downstream as an opaque TypeError misattributed to promotion failure.
+    await assertRejects(
+      () =>
+        resolveAndPromoteDecision(
+          "00000000-0000-4000-8000-000000000000",
+          "nope",
+          new NoopMemoryAdapter(),
+        ),
+      WorkflowNotFoundError,
+    );
   },
 });
 

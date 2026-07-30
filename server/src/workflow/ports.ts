@@ -2,7 +2,7 @@
  * ST-084 spike — the memory adapter boundary.
  *
  * This file is the ONLY sanctioned route from Workflow Operations to the memory
- * domain. The dependency rule (enforced by `workflow-dependency.test.ts`, not just
+ * domain. The dependency rule (enforced by `workflow-boundary.test.ts`, not just
  * documented) is that no other workflow file may import the memory subsystem.
  *
  * Two ports, both optional by construction:
@@ -15,6 +15,8 @@
  *
  * SPIKE / DISPOSABLE.
  */
+
+import type { PolicyScope } from "./types.ts";
 
 export interface KnowledgeSearchResult {
   id: string;
@@ -43,7 +45,13 @@ export interface PromotionInput {
   decisionId: string;
   question: string;
   resolution: string;
-  policyScope: string;
+  /**
+   * Typed to the closed `PolicyScope` union, not `string`. A bare `string` here
+   * let a caller pass any value — and did: the original implementation hardcoded
+   * `"personal"` for every packet, silently mislabelling corporate/mixed/public
+   * decisions. The narrow type makes that class of widening a compile error.
+   */
+  policyScope: PolicyScope;
 }
 
 /**

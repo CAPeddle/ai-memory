@@ -38,31 +38,81 @@ function stripComments(source: string): string {
     .replace(/^\s*\/\/.*$/gm, "");
 }
 
+/**
+ * The sanctioned import surface. This is an ALLOWLIST, deliberately.
+ *
+ * An earlier version of this test used a blocklist of eight known memory modules.
+ * That is the wrong shape for a boundary: it omitted `../index.ts` (which registers
+ * every MCP tool) along with auth/healthCheck/logging/mcpDiagnostics/migrate/
+ * workerLogger, so the module could have imported straight from the composition
+ * root and this test would still have passed green. Worse, a blocklist over a
+ * directory that grows permits every FUTURE memory module by default.
+ *
+ * Inverted: anything not named here fails. Adding a dependency to the workflow
+ * module is now a deliberate, reviewable edit to this list.
+ */
+const ALLOWED_IMPORTS = [
+  "../db.ts", // store.ts only — separately asserted below
+  "../logging.ts",
+];
+
+/** Relative within the module (`./types.ts`), or a package specifier. */
+function isIntraModuleOrPackage(spec: string): boolean {
+  if (spec.startsWith("./")) return true;
+  return /^(npm:|jsr:|node:|https:)/.test(spec);
+}
+
 Deno.test({
-  name: "boundary: workflow module imports no memory-domain module",
+  name: "boundary: workflow module imports ONLY from its allowlisted surface",
   fn: async () => {
-    const forbidden = [
-      "entityWorker.ts",
-      "consolidationWorker.ts",
-      "consolidationLLM.ts",
-      "consolidationScoring.ts",
-      "embeddings.ts",
-      "embeddingBackfill.ts",
-      "searchQuality.ts",
-      "parseContext.ts",
-    ];
     const sources = await readWorkflowSource();
+    let checked = 0;
     for (const [name, raw] of sources) {
       const code = stripComments(raw);
       const imports = [...code.matchAll(/from\s+["']([^"']+)["']/g)].map((m) => m[1]);
       for (const spec of imports) {
-        for (const bad of forbidden) {
-          assert(
-            !spec.includes(bad),
-            `${name} imports forbidden memory module ${bad} (via "${spec}")`,
-          );
-        }
+        checked++;
+        assert(
+          isIntraModuleOrPackage(spec) || ALLOWED_IMPORTS.includes(spec),
+          `${name} imports "${spec}", which is outside the workflow module's ` +
+            `allowlisted surface (${ALLOWED_IMPORTS.join(", ")}, ./*, or a package). ` +
+            `If this dependency is intended, add it to ALLOWED_IMPORTS deliberately.`,
+        );
       }
+    }
+    // Guard against the assertion loop passing vacuously if the source read or the
+    // import regex ever silently yields nothing.
+    assert(checked > 0, "expected to inspect at least one import specifier");
+  },
+});
+
+Deno.test({
+  name: "boundary: the allowlist itself rejects a memory-domain import",
+  fn: () => {
+    // Red/green control on the mechanism above. Without this, a scan that matched
+    // nothing would look identical to a scan that found no violations — the exact
+    // silent-pass failure mode this whole test file exists to prevent.
+    const violations = [
+      "../entityWorker.ts",
+      "../consolidationWorker.ts",
+      "../searchQuality.ts",
+      "../parseContext.ts",
+      "../embeddings.ts",
+      "../index.ts", // the composition root — missed entirely by the old blocklist
+      "../../index.ts",
+    ];
+    for (const spec of violations) {
+      assert(
+        !(isIntraModuleOrPackage(spec) || ALLOWED_IMPORTS.includes(spec)),
+        `allowlist wrongly permits "${spec}" — the boundary check is not sound`,
+      );
+    }
+    // And it must still permit the legitimate ones, or it would be uselessly strict.
+    for (const spec of ["./types.ts", "../db.ts", "../logging.ts", "npm:postgres@3.4.4"]) {
+      assert(
+        isIntraModuleOrPackage(spec) || ALLOWED_IMPORTS.includes(spec),
+        `allowlist wrongly rejects legitimate import "${spec}"`,
+      );
     }
   },
 });
@@ -122,14 +172,35 @@ Deno.test({
     // Unqualified DML would land in whichever schema the pooled connection's
     // sticky search_path happens to point at (AGE pollution — see 007 header).
     const code = stripComments(await Deno.readTextFile(new URL("store.ts", WORKFLOW_DIR)));
-    const clauses = [...code.matchAll(/\b(?:FROM|INTO|UPDATE|JOIN)\s+([A-Za-z_][\w.]*)/g)];
+    // Case-INSENSITIVE deliberately: the original regex had no /i flag, so a
+    // lowercase `from thoughts` would have been skipped entirely rather than
+    // flagged — a scan that silently ignores the very style it should catch.
+    const clauses = [...code.matchAll(/\b(?:FROM|INTO|UPDATE|JOIN)\s+([A-Za-z_][\w.]*)/gi)];
     assert(clauses.length > 0, "expected SQL clauses in store.ts");
     for (const [, identifier] of clauses) {
       assert(
-        identifier.startsWith("workflow."),
+        identifier.toLowerCase().startsWith("workflow."),
         `unqualified or non-workflow SQL identifier "${identifier}" in store.ts`,
       );
     }
+  },
+});
+
+Deno.test({
+  name: "boundary: the schema-qualification scan catches lowercase and unqualified SQL",
+  fn: () => {
+    // Red/green control on the scan above, for the same reason as the allowlist
+    // control: prove the mechanism fires, not just that it stayed quiet.
+    const scan = (code: string) =>
+      [...code.matchAll(/\b(?:FROM|INTO|UPDATE|JOIN)\s+([A-Za-z_][\w.]*)/gi)]
+        .map(([, id]) => id)
+        .filter((id) => !id.toLowerCase().startsWith("workflow."));
+
+    assertEquals(scan("SELECT * FROM workflow.work_packets"), []);
+    assertEquals(scan("select * from workflow.work_packets"), [], "lowercase, qualified");
+    assertEquals(scan("SELECT * FROM thoughts"), ["thoughts"], "uppercase, unqualified");
+    assertEquals(scan("select * from thoughts"), ["thoughts"], "lowercase, unqualified");
+    assertEquals(scan("INSERT INTO public.thoughts"), ["public.thoughts"], "wrong schema");
   },
 });
 

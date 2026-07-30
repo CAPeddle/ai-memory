@@ -33,6 +33,17 @@ export interface PromotionOutcome {
   ref: string | null;
   /** The failure message, when it did not. Surfaced so the failure is visible and retryable. */
   error: string | null;
+  /**
+   * True when the projection SUCCEEDED but recording its reference did not.
+   *
+   * This is deliberately distinct from `promoted: false`. Collapsing the two
+   * (the original shape here) told a caller "promotion failed" when the memory
+   * projection had in fact already happened — and a caller that retries on that
+   * signal creates a duplicate projection, because `KnowledgePromotionPort`
+   * carries no dedup contract. Retry on `promoted: false`; reconcile, do not
+   * re-promote, on `refLost: true`.
+   */
+  refLost: boolean;
   /** The decision AFTER the attempt — authoritative either way. */
   decision: OperationalDecision;
 }
@@ -53,24 +64,54 @@ export async function resolveAndPromoteDecision(
   // 1. Authoritative operational write — committed before memory is touched at all.
   const decision = await store.resolveDecision(decisionId, resolution);
 
+  // The packet is the only authority for policy scope: OperationalDecision carries
+  // none of its own. Reading it here (rather than defaulting) prevents a
+  // corporate/mixed/public decision being projected into memory labelled
+  // `personal` — a silent widening of the very boundary the scope field exists
+  // to enforce.
+  const packet = await store.getPacket(decision.packet_id);
+  if (packet === null) {
+    throw new Error(
+      `Work packet ${decision.packet_id} not found for decision ${decision.id}; ` +
+        "refusing to promote without an authoritative policy scope",
+    );
+  }
+
   // 2. Optional projection. Deliberately outside any operational transaction.
+  //    ONLY the port call is inside this try — see step 3.
+  let ref: string;
   try {
-    const ref = await promotionPort.promoteDecision({
+    ref = await promotionPort.promoteDecision({
       packetId: decision.packet_id,
       decisionId: decision.id,
       question: decision.question,
       resolution,
-      policyScope: "personal",
+      policyScope: packet.policy_scope,
     });
-    await store.attachPromotionRef(decision.id, ref);
-    const after = await store.getDecision(decision.id);
-    return { promoted: true, ref, error: null, decision: after ?? decision };
   } catch (err) {
-    // Visible and retryable, not silent. The decision remains authoritative.
+    // The projection genuinely did not happen. Safe to retry.
     return {
       promoted: false,
       ref: null,
       error: (err as Error).message,
+      refLost: false,
+      decision,
+    };
+  }
+
+  // 3. The projection HAS happened. Recording its reference is a separate
+  //    operational write whose failure must not be reported as "promotion
+  //    failed" — that would invite a retry and duplicate the projection.
+  try {
+    await store.attachPromotionRef(decision.id, ref);
+    const after = await store.getDecision(decision.id);
+    return { promoted: true, ref, error: null, refLost: false, decision: after ?? decision };
+  } catch (err) {
+    return {
+      promoted: true,
+      ref,
+      error: `projection succeeded but its reference was not recorded: ${(err as Error).message}`,
+      refLost: true,
       decision,
     };
   }

@@ -1,3 +1,11 @@
+---
+title: "spike: Validate ai-memory as the AWCP host (ST-084)"
+type: spike
+status: stage-1-complete
+date: 2026-07-29
+story: ST-084
+---
+
 # ST-084: Validate ai-memory as the AWCP Host
 
 ## Status

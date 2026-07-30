@@ -8,8 +8,8 @@
 -- Every object below is schema-qualified `workflow.*`. This is a correctness
 -- requirement, not a style preference: four sites in the memory domain issue a
 -- bare `SET search_path = ag_catalog, "$user", public` inside a multi-statement
--- sql.unsafe() on a POOLED connection (server/index.ts:940, :996;
--- server/src/entityWorker.ts:113, :123). That SET is session-scoped and sticky,
+-- sql.unsafe() on a POOLED connection (server/index.ts:941, :997;
+-- server/src/entityWorker.ts:115, :125). That SET is session-scoped and sticky,
 -- so any pooled connection which has served an AGE graph query keeps a polluted
 -- search_path for its lifetime. `workflow` is therefore NEVER implicitly on the
 -- path. Unqualified objects would land in the wrong schema non-deterministically.
