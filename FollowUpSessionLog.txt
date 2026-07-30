@@ -15,21 +15,30 @@ Also durable now: docs/solutions/conventions/schema-qualify-sql-age-search-path-
 
 *** 10 OPEN REVIEW THREADS ON PR #34 — from the agent that originated the AWCP concept. READ THEM. ***
 Independently verified as CORRECT before acting; this reviewer is not systematically wrong.
-FIXED this session (see the ce-resolve-pr-feedback commit): this handoff (stale + leaked a private IP);
-findings §6.2 migration-reuse misclassification; findings §9 teardown; the completePacket concurrency test
-(proved nothing — would pass with FOR UPDATE removed); the boundary test's hardcoded file list.
-STILL OPEN — 4 threads left for PO decision, each changes what Stage 1 concludes:
+FIXED: this handoff (stale + leaked a private IP); findings §6.2 migration-reuse misclassification;
+findings §9 teardown; experiment 7's restart overclaim; the boundary test's hardcoded file list and its
+blind import scanner; the completePacket concurrency test (proved nothing — passed with FOR UPDATE gone).
+FIXED (PO-directed): addCriterion now takes the packet lock AND refuses once complete
+(CriteriaFrozenError). Closing that window made FOR UPDATE observable for the first time — there is now a
+DETERMINISTIC red/green control for it, verified by deleting the clause and watching the test go red.
+64 workflow tests; full suite 280 passed / 9 failed (the 9 are the pre-existing OpenRouter/401 baseline).
+STILL OPEN — 3 threads for PO decision, each changes what Stage 1 concludes:
 1. P1 service.ts:90 — a port TIMEOUT is an INDETERMINATE outcome, not a failure. Promise.race does not
    cancel promoteDecision, so a late commit + promoted:false invites the duplicate projection the code
    exists to prevent. Options: indeterminate outcome / idempotency key on decisionId / AbortSignal.
-2. P1 store.ts:357 — the completion-gate race is reachable IN-MODULE, not just by external writers:
-   addCriterion() is a bare INSERT with no packet lock. Options: freeze the criteria set on completion /
-   lock in addCriterion / SERIALIZABLE. Until closed, the completion-gate invariant is NOT proven.
-3. P1 store.ts:374 — unresolved `blocking` decisions do NOT block completion; completePacket never reads
-   operational_decisions. Model says one thing, enforces another. Options: gate on it, or redefine
-   `blocking` as attention-only and correct the plan + findings.
-4. P2 001_workflow_schema.sql:105 — packet_id and run_id can point at DIFFERENT packets (both FKs valid
-   independently). Options: composite FK / derive packet_id from run_id / validate in one transaction.
+2. P1 store.ts:374 — unresolved `blocking` decisions do NOT block completion; completePacket never reads
+   operational_decisions. NOTE: the corpus supports the current behaviour — plan §5's only stated
+   consequence is the attention item, §6's only fail condition is criterion evidence. The normative AWCP
+   docx is NOT in this repo; if the PO holds it, it outranks that reading. Also: blocking defaults TRUE
+   (store.ts:213), so gating would make every packet with any decision uncompletable.
+3. P2 001_workflow_schema.sql:105 — packet_id and run_id can point at DIFFERENT packets (both FKs valid
+   independently). agent_runs needs UNIQUE(id,packet_id) first; needs PG15's ON DELETE SET NULL (run_id)
+   column-list form because packet_id is NOT NULL.
+*** STAGE 2 BLOCKER found while scoping #3: THIS MODULE CANNOT EVOLVE ITS SCHEMA. 001_workflow_schema.sql
+is IF NOT EXISTS-only and schema.ts hardcodes that one filename. Editing a CREATE TABLE body is a NO-OP on
+any existing DB; adding 002_*.sql is NEVER APPLIED. No test catches either. Fix the delivery mechanism
+(enumerate db/workflow/) before any Stage 2 schema work. Also: setPacketStatus is dead code but exported,
+and writes any status incl. complete with no gate — an ungated back door. Delete or gate it.
 
 NEXT SESSION — Stage 2 (contracts specified in findings §7; do NOT re-derive)
 1. Policy scope: fix `fetch` FIRST (index.ts:211-215 takes no context param, bypasses every search-lane

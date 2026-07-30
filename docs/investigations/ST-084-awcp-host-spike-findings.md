@@ -630,7 +630,7 @@ passing tests:
 | # | Finding | Resolution |
 |---|---|---|
 | 5 | Both memory ports were **unbounded** — a hung adapter would block an operational command indefinitely | `withPortTimeout` bounds both; a `HangingMemoryAdapter` proves the bound fires, and a further test proves it does not misfire on adapters that settle |
-| 6 | The `FOR UPDATE` guarantee was asserted **only in a comment** | Two concurrency tests, scoped precisely to what the lock provides (same-packet completions serialise) and explicitly not to what it doesn't (phantom criterion INSERT) |
+| 6 | The `FOR UPDATE` guarantee was asserted **only in a comment** | Two concurrency tests were added here, then **superseded 2026-07-30** by PR #34 review: neither could actually discriminate the lock, because `completePacket`'s own `UPDATE` takes the same row and blocks regardless — verified by deleting the clause and watching them still pass. Resolved properly by giving `addCriterion` the same lock plus a frozen-contract refusal, which created a real contender and made a deterministic red/green control possible. See §13a residuals. |
 | 7 | The workflow migration sat in the shared chain, whose runner `Deno.exit(1)`s the **whole server** before `Deno.serve` | DDL moved to `server/db/workflow/`, invisible to the shared runner. A workflow-owned `ensureWorkflowSchema()` applies it and throws a typed `WorkflowSchemaError`. Tests assert the module contains no `Deno.exit`/`process.exit` and that no workflow DDL sits in the shared chain |
 | 8 | Zero-required-criteria packets completed but never reached `ready-for-review` — the gate and the attention queue disagreed | Rule chosen and applied consistently: **zero required criteria means verification-ready**. Gate, attention and tests now agree |
 
@@ -677,8 +677,31 @@ not begin from assumptions. `fetch` must be fixed first — see §6.1.
   result stands for the code as it was; the 21 tests added since are memory-independent
   by construction (they use in-process adapters and workflow tables only), but that
   specific disabled-mode invocation was not re-run against them.
-- **No concurrency test covers a concurrent criterion INSERT** — a phantom no row lock
-  can close. Documented in `completePacket`'s docblock rather than papered over.
+- ~~**No concurrency test covers a concurrent criterion INSERT** — a phantom no row lock
+  can close.~~ **CLOSED 2026-07-30** after PR #34 review, which established that this was
+  reachable *in-module* via `addCriterion` (a bare INSERT with no lock), not only by an
+  external writer — so the completion-gate invariant was not proven. `addCriterion` now
+  takes the same packet row lock and refuses once the packet is complete
+  (`CriteriaFrozenError`). Both orderings are now safe: criterion first and the gate
+  refuses; gate first and the criterion refuses.
+
+  Two consequences worth recording. First, **the lock became testable**: with a real
+  contender on that row, `completePacket`'s `FOR UPDATE` is now covered by a
+  deterministic red/green control — hold the row lock, insert a required criterion while
+  completion waits, and completion must observe it. Delete `FOR UPDATE` and that test
+  fails, which was verified by doing exactly that. Before this change no test could
+  discriminate the clause at all, because the subsequent `UPDATE` took the same lock.
+  Second, **locking alone would not have been enough**: a criterion arriving *after*
+  completion commits is not a race, and only the frozen-contract refusal closes it.
+
+- **A concurrent evidence DELETE remains open.** Different writer, different table; the
+  packet lock does not cover it. In-module the only deletion route is `deletePacket`'s
+  cascade, which blocks on the same lock; an external writer is unconstrained. Closing it
+  generally needs SERIALIZABLE.
+
+- **`setPacketStatus` is an ungated back door.** Zero callers, but exported, and it writes
+  any status including `complete` with no lock and no criteria check — bypassing the gate
+  entirely rather than racing it. Found while scoping the above; recorded, not fixed.
 
 ---
 

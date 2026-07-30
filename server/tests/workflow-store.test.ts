@@ -12,7 +12,11 @@ import { assert, assertEquals, assertRejects } from "https://deno.land/std@0.224
 import * as store from "../src/workflow/store.ts";
 import { attentionForPacket, resolveAndPromoteDecision } from "../src/workflow/service.ts";
 import { NoopMemoryAdapter } from "../src/workflow/ports.ts";
-import { CompletionBlockedError } from "../src/workflow/types.ts";
+import {
+  CompletionBlockedError,
+  CriteriaFrozenError,
+  WorkflowNotFoundError,
+} from "../src/workflow/types.ts";
 import { ensureWorkflowSchema } from "../src/workflow/schema.ts";
 
 const T = { sanitizeResources: false, sanitizeOps: false };
@@ -150,6 +154,49 @@ Deno.test({
     } finally {
       await store.deletePacket(packet.id);
     }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "workflow: a completed packet's verification contract is FROZEN",
+  fn: async () => {
+    // The non-race half of the completion-gate invariant. A criterion added after
+    // completion is not a race at all — it simply arrives late — and a lock alone
+    // would not stop it. Without this refusal a complete packet could permanently
+    // hold an unmet required criterion.
+    const packet = await newPacket("gate: frozen contract");
+    try {
+      const c = await store.addCriterion(packet.id, "met", true);
+      await store.attachEvidence({ criterionId: c.id, kind: "manual", detail: "e" });
+      const completed = await store.completePacket(packet.id);
+      assertEquals(completed.status, "complete");
+
+      await assertRejects(
+        () => store.addCriterion(packet.id, "too late", true),
+        CriteriaFrozenError,
+      );
+      // Non-required criteria are refused too: the contract is closed, not filtered.
+      await assertRejects(
+        () => store.addCriterion(packet.id, "also too late", false),
+        CriteriaFrozenError,
+      );
+    } finally {
+      await store.deletePacket(packet.id);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "workflow: addCriterion raises a typed not-found for an unknown packet",
+  fn: async () => {
+    // Previously a bare INSERT, so this surfaced as a raw FK violation. Now that the
+    // packet is read first, the caller gets the module's own error type.
+    await assertRejects(
+      () => store.addCriterion("00000000-0000-0000-0000-000000000000", "x", true),
+      WorkflowNotFoundError,
+    );
   },
 });
 

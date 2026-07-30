@@ -578,10 +578,11 @@ Deno.test({
     // its own. There is no observable behaviour that distinguishes the two, so no test
     // of this shape can be a red/green control for the lock clause specifically.
     //
-    // The consequence worth carrying: as currently written, `FOR UPDATE` buys nothing
-    // over the UPDATE that follows it. It would start earning its keep only once
-    // something else contends for that lock — which is exactly what closing the
-    // addCriterion check-then-act window would require (open on PR #34).
+    // That WAS the whole story until addCriterion started taking the same lock. It no
+    // longer is: with a real contender on that row, the lock became observable, and
+    // the deterministic control for it is the "completion cannot miss a criterion
+    // inserted while it waits" test below. This test still cannot discriminate — but
+    // it is no longer the only evidence for the lock, which is what mattered.
     //
     // The version of this test before 2026-07-30 ran two completions concurrently and
     // asserted both fulfilled with one complete row. That proved nothing at all: it
@@ -672,28 +673,102 @@ Deno.test({
 
 Deno.test({
   ...T,
-  name: "concurrency: a completion racing an unmet criterion still refuses or completes cleanly",
+  name: "concurrency: a criterion racing completion — exactly one side is refused",
   fn: async () => {
-    // Honest about the limit: an INSERT of a new required criterion concurrent with
-    // completion is a phantom that no row lock closes (it needs SERIALIZABLE). This
-    // asserts the outcome is one of the two VALID states, never a corrupt hybrid.
+    // Now that addCriterion takes the same packet lock, this window is CLOSED and the
+    // two operations serialise. Both orderings are valid; the corrupt hybrid is not:
+    //   criterion first  -> completion refuses (CompletionBlockedError)
+    //   completion first -> criterion refuses  (CriteriaFrozenError)
+    // Previously this test accepted "a refused completion leaves status open" as one
+    // branch and could not distinguish a closed window from a lucky schedule.
     const packet = await newPacket("concurrency: racing criterion");
     try {
       const met = await store.addCriterion(packet.id, "met", true);
       await store.attachEvidence({ criterionId: met.id, kind: "manual", detail: "e" });
 
-      const [completion] = await Promise.allSettled([
+      const [completion, insertion] = await Promise.allSettled([
         store.completePacket(packet.id),
         store.addCriterion(packet.id, "added mid-flight", true),
       ]);
 
+      assert(
+        !(completion.status === "fulfilled" && insertion.status === "fulfilled"),
+        "completion AND a late required criterion both succeeded — the gate's invariant is broken",
+      );
+
+      // The invariant itself, checked directly rather than inferred from statuses.
       const after = await store.getPacket(packet.id);
-      if (completion.status === "fulfilled") {
-        assertEquals(after?.status, "complete");
-      } else {
-        assertEquals(after?.status, "open", "a refused completion must not mutate status");
+      if (after?.status === "complete") {
+        const [{ n }] = await sql<{ n: string }[]>`
+          SELECT count(*) AS n
+          FROM workflow.verification_criteria c
+          WHERE c.packet_id = ${packet.id}
+            AND c.required = true
+            AND NOT EXISTS (
+              SELECT 1 FROM workflow.evidence_items e WHERE e.criterion_id = c.id
+            )
+        `;
+        assertEquals(Number(n), 0, "a COMPLETE packet is holding an unmet required criterion");
       }
     } finally {
+      await store.deletePacket(packet.id);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "concurrency: completion cannot miss a criterion inserted while it waits (FOR UPDATE control)",
+  fn: async () => {
+    // The deterministic red/green control for completePacket's FOR UPDATE — possible
+    // only now that something else contends for the packet row.
+    //
+    // Hold the row lock, start completePacket, then insert a required criterion FROM
+    // the lock-holding connection and release. Where completePacket blocks decides it:
+    //   WITH FOR UPDATE    - blocks on statement 1, BEFORE reading criteria, so after
+    //                        release it observes the new one and REFUSES.
+    //   WITHOUT FOR UPDATE - statement 1 is an unlocked read, criteria are read
+    //                        immediately, and it blocks at the UPDATE instead —
+    //                        completing a packet that holds an unmet requirement.
+    //
+    // Delete FOR UPDATE from completePacket and this test fails. That is the point:
+    // the lock is now covered by evidence rather than by a comment claiming it works.
+    const packet = await newPacket("concurrency: lock ordering control");
+    const holder = await sql.reserve();
+    let released = false;
+    try {
+      const met = await store.addCriterion(packet.id, "met", true);
+      await store.attachEvidence({ criterionId: met.id, kind: "manual", detail: "e" });
+
+      await holder.unsafe("BEGIN");
+      await holder.unsafe(
+        `SELECT id FROM workflow.work_packets WHERE id = '${packet.id}' FOR UPDATE`,
+      );
+
+      const completion = store.completePacket(packet.id).then(
+        () => "fulfilled" as const,
+        () => "rejected" as const,
+      );
+      await new Promise((r) => setTimeout(r, 300));
+
+      await holder.unsafe(
+        `INSERT INTO workflow.verification_criteria (packet_id, description, required)
+         VALUES ('${packet.id}', 'inserted while completion waited', true)`,
+      );
+      await holder.unsafe("COMMIT");
+      released = true;
+
+      assertEquals(
+        await completion,
+        "rejected",
+        "completion did not observe a criterion inserted while it waited — its criteria " +
+          "read is not protected by the packet lock",
+      );
+      const after = await store.getPacket(packet.id);
+      assertEquals(after?.status, "open", "a refused completion must not mutate status");
+    } finally {
+      if (!released) await holder.unsafe("ROLLBACK").catch(() => {});
+      await holder.release();
       await store.deletePacket(packet.id);
     }
   },

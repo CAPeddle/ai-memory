@@ -18,6 +18,7 @@ import {
   type AgentRun,
   type Checkpoint,
   CompletionBlockedError,
+  CriteriaFrozenError,
   type EvidenceItem,
   type EvidenceKind,
   type OperationalDecision,
@@ -281,17 +282,44 @@ export async function clearPromotionRef(decisionId: string): Promise<void> {
 // Verification criteria + evidence
 // --------------------------------------------------------------------------
 
+/**
+ * Add a verification criterion, taking the packet lock first.
+ *
+ * **Why this locks, when a bare INSERT would satisfy the foreign key.** The
+ * completion gate reads the criteria set and then marks the packet complete. If a
+ * required criterion can be inserted between those two steps, the packet completes
+ * holding an unmet criterion — the gate's invariant broken by a writer the gate
+ * never sees. `FOR UPDATE` here takes the *same* row lock `completePacket` takes,
+ * so the two serialise instead of interleaving.
+ *
+ * Locking alone is not sufficient, which is easy to get wrong: it makes the race
+ * deterministic without making it safe, because a criterion inserted *after*
+ * completion commits is not a race at all and still breaks the invariant. Hence the
+ * status check — once a packet is complete its verification contract is frozen.
+ *
+ * Between them the two orderings are both safe: this call first, and the gate then
+ * sees the new unmet criterion and refuses; the gate first, and this call rejects.
+ */
 export async function addCriterion(
   packetId: string,
   description: string,
   required = true,
 ): Promise<VerificationCriterion> {
-  const rows = await sql<VerificationCriterion[]>`
-    INSERT INTO workflow.verification_criteria (packet_id, description, required)
-    VALUES (${packetId}, ${description}, ${required})
-    RETURNING *
-  `;
-  return rows[0];
+  return await sql.begin(async (tx: SqlExecutor) => {
+    const packets = await tx<WorkPacket[]>`
+      SELECT * FROM workflow.work_packets WHERE id = ${packetId} FOR UPDATE
+    `;
+    const packet = packets[0];
+    if (packet === undefined) throw new WorkflowNotFoundError("work packet", packetId);
+    if (packet.status === "complete") throw new CriteriaFrozenError(packetId);
+
+    const rows = await tx<VerificationCriterion[]>`
+      INSERT INTO workflow.verification_criteria (packet_id, description, required)
+      VALUES (${packetId}, ${description}, ${required})
+      RETURNING *
+    `;
+    return rows[0];
+  });
 }
 
 export async function listCriteria(packetId: string): Promise<VerificationCriterion[]> {
@@ -345,19 +373,26 @@ export async function evidenceCountsForPacket(
  * Throws `CompletionBlockedError` when criteria are unmet — the gate is a refusal,
  * not a warning.
  *
- * **What the locking actually guarantees — stated precisely, because an earlier
- * version of this comment overclaimed it.** `FOR UPDATE` locks the one
- * `work_packets` row, so two concurrent `completePacket` calls for the same packet
- * serialise. It does **not** lock `verification_criteria` or `evidence_items`,
- * which this transaction reads: under Postgres's default READ COMMITTED those are
- * re-snapshotted per statement. So a concurrent evidence DELETE or a concurrent
- * INSERT of a new required criterion can still interleave, and no row lock can
- * close the phantom-insert case — that needs SERIALIZABLE.
+ * **What the locking actually guarantees — stated precisely, because two earlier
+ * versions of this comment got it wrong in different ways.** `FOR UPDATE` locks the
+ * one `work_packets` row. It does **not** lock `verification_criteria` or
+ * `evidence_items`, which this transaction reads: under Postgres's default READ
+ * COMMITTED those are re-snapshotted per statement.
  *
- * Not reachable from inside this module today (the only evidence-deletion route is
- * `deletePacket`'s cascade, which blocks on the same packet lock), but reachable by
- * any external writer. Deliberately left as-is for the spike and recorded as a
- * residual risk rather than papered over.
+ * The criterion-insert window is nevertheless **closed**, not by this lock alone but
+ * because `addCriterion` now takes the *same* row lock and refuses once the packet
+ * is complete. That is what makes `FOR UPDATE` here load-bearing: with a contending
+ * writer on the same row, the two operations serialise, and whichever loses observes
+ * the other's committed state. Delete `FOR UPDATE` from this function and
+ * `workflow-failure-isolation.test.ts` fails — the lock is now covered by a genuine
+ * red/green control rather than asserted here in prose.
+ *
+ * **Still open — evidence DELETE.** A concurrent delete of an evidence row between
+ * the check and the update is a different writer on a different table, and this lock
+ * does not close it. In-module the only deletion route is `deletePacket`'s cascade,
+ * which blocks on this same packet lock; an external writer is unconstrained.
+ * Recorded as a residual rather than papered over. Closing it generally needs
+ * SERIALIZABLE, or the same lock-and-refuse treatment on `attachEvidence`'s inverse.
  *
  * Note this touches ONLY workflow tables and calls no port: completion never
  * depends on the memory domain being reachable (criterion 1).

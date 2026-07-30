@@ -150,6 +150,26 @@ export class WorkflowNotFoundError extends Error {
   }
 }
 
+/**
+ * Raised when the verification contract is modified after the packet is complete.
+ *
+ * A completed packet's contract is closed. Without this, a required criterion could
+ * be inserted after completion and leave a `complete` packet permanently holding an
+ * unmet required criterion — the completion gate's invariant broken *after* the gate
+ * had already passed, which no amount of locking inside `completePacket` can prevent.
+ */
+export class CriteriaFrozenError extends Error {
+  readonly packetId: string;
+  constructor(packetId: string) {
+    super(
+      `Work packet ${packetId} is complete; its verification contract is frozen and ` +
+        "cannot accept new criteria",
+    );
+    this.name = "CriteriaFrozenError";
+    this.packetId = packetId;
+  }
+}
+
 /** Raised when the completion gate rejects a packet. Carries the unmet criteria. */
 export class CompletionBlockedError extends Error {
   readonly unmetCriteria: readonly string[];
