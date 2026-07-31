@@ -4,11 +4,28 @@
 > Next planning target: (TBD after ST-072 completes).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review). ST-070 + ST-071 done 2026-07-03 (integration suite green in CI, PR #21 merged).
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
-> Last updated: 2026-07-30 (ST-084 Backlog → In Progress: ADR-016 host-acceptance spike, staged per PO — Stage 1 fully proves criteria 1–4, criteria 5–7 deferred to Stage 2 and reported UNPROVEN. ST-074 → Done after independent verification, restoring the WIP limit: ST-084 is now the sole In Progress entry)
+> Last updated: 2026-07-31 (ST-085 added to Backlog: local GPU inference as ST-082's compliant model provider — staged spike from a `ce-pov` verdict. No WIP change: ST-084 remains the sole In Progress entry.)
 
 ---
 
 ## Backlog
+
+### ST-085: Investigate local GPU inference as ST-082's compliant model provider
+- Type: spike / investigation
+- Source: `ce-pov` verdict 2026-07-31 (grade: Trial; reversibility tier 3)
+- phase: 2
+- Value: 3
+- Blocked by: — (subordinate to ST-082 — close unstarted if ST-082 concludes corporate-scoped content should never be processed at all)
+- Touches: `server/src/entityWorker.ts` (:66, hardcoded provider URL), `server/src/consolidationLLM.ts` (:37, same), `server/src/healthCheck.ts` (provider reachability), `server/tests/` (new extraction golden set)
+- Acceptance criteria:
+  - [ ] **Stage 1 (hard gate):** settle definitively, against AMD's official ROCm WSL compatibility matrix, whether the Radeon RX 7700S (gfx1102) is supported under WSL2 — currently **uncorroborated**. If it is not, prove reachability of a Windows-hosted Lemonade Server (`http://localhost:13305`) from the WSL-hosted Deno runtime, measure the added latency, record which device actually served the request, and confirm Lemonade supports the RX 7700S **at all on Windows** (assumed throughout, never verified)
+  - [ ] **Stage 2:** both chat-completion call sites take a configurable base URL mirroring the existing `OPENROUTER_BASE_URL` pattern (`server/src/embeddings.ts:6`, `server/src/healthCheck.ts:91,97`) — landing **with** ST-082's scope-aware routing, not bolted on afterwards
+  - [ ] **Stage 3:** an extraction golden set exists (none does today — `search-golden-set.test.ts` covers search only and the entity-worker tests cover crash-isolation/observability, not output quality; `server/tests/fixtures/consolidation-corpus.sql` can seed one) and a local 7–8B model is measured against `openai/gpt-4o-mini` for node/edge precision, recall, and malformed-JSON rate under `response_format: json_object`
+  - [ ] The **"do nothing"** baseline — deny corporate scope under ST-082, keep cloud for everything else — is explicitly beaten on compliance coverage, or the story closes with that conclusion recorded
+- Plan: `docs/plans/2026-07-31-001-spike-local-gpu-inference-provider.md`
+- Docs: ST-082 (the `model-provider routing` default-deny criterion this serves); ST-022 (established the OpenRouter extraction provider this revisits)
+- Notes: Explicitly **not** a cost-reduction play — the GPU is pursued only as ST-082's enabler, and the primary question is the product one (should corporate-scoped memories receive extraction at all). Local **embeddings** are out of scope: `embedding vector(512)` behind HNSW (`server/db/schema.sql:18`) makes any dimensionality change a one-way schema migration + full re-embed for near-zero reward. **NPU offload is hardware-infeasible** — Lemonade requires XDNA2 (Ryzen AI 300/400); this host is a Ryzen 7 7840HS (Phoenix/XDNA1). Reversal trigger fires immediately if Stage 1 finds only CPU or the 780M iGPU reachable.
+
 
 ### ST-083: Developer Memory design pass (module spec)
 - Type: design
