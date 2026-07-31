@@ -40,14 +40,18 @@ const WORKFLOW_DIR = new URL("../src/workflow/", import.meta.url);
  * the import blocklist to an allowlist did not fix the enumeration underneath it —
  * a sound predicate over an unsound input set is still unsound.
  */
-async function readWorkflowSource(): Promise<Map<string, string>> {
+async function readTsSources(dir: URL): Promise<Map<string, string>> {
   const out = new Map<string, string>();
-  for await (const entry of Deno.readDir(WORKFLOW_DIR)) {
+  for await (const entry of Deno.readDir(dir)) {
     if (!entry.isFile || !entry.name.endsWith(".ts")) continue;
-    out.set(entry.name, await Deno.readTextFile(new URL(entry.name, WORKFLOW_DIR)));
+    out.set(entry.name, await Deno.readTextFile(new URL(entry.name, dir)));
   }
-  if (out.size === 0) throw new Error("workflow source enumeration found no .ts files");
+  if (out.size === 0) throw new Error(`source enumeration found no .ts files in ${dir}`);
   return out;
+}
+
+function readWorkflowSource(): Promise<Map<string, string>> {
+  return readTsSources(WORKFLOW_DIR);
 }
 
 /**
@@ -188,19 +192,30 @@ Deno.test({
   name: "boundary: source enumeration reads the directory, not a hardcoded list",
   fn: async () => {
     // Control for the enumeration itself. With the previous hardcoded WORKFLOW_FILES
-    // array this failed: a file added to the module was never scanned and nothing
-    // noticed. Proves the scan picks up new files without editing this test.
-    const probe = new URL("./__enumeration_probe__.ts", WORKFLOW_DIR);
-    await Deno.writeTextFile(probe, "export const probe = 1;\n");
-    try {
-      const sources = await readWorkflowSource();
+    // array, a file added to the module was never scanned and nothing noticed — the
+    // whole boundary check failed open one level above the rule it enforces.
+    //
+    // Point the SAME function at a different real directory and require it to return
+    // that directory's contents. Since readWorkflowSource() is literally
+    // readTsSources(WORKFLOW_DIR), a function that reads whatever directory it is
+    // handed cannot be carrying a hardcoded workflow file list.
+    //
+    // (This used to write a probe file into the module directory and assert it was
+    // picked up. That version was stronger in principle and broken in practice: CI
+    // runs `deno test` with no --allow-write, so it failed there while passing
+    // locally. A control that only runs on one machine controls nothing.)
+    const elsewhere = await readTsSources(new URL("../src/", import.meta.url));
+    for (const expected of ["db.ts", "auth.ts"]) {
       assert(
-        sources.has("__enumeration_probe__.ts"),
-        "a newly added module file was not scanned — the boundary check fails open",
+        elsewhere.has(expected),
+        `enumeration did not return ${expected} from server/src/ — it is not ` +
+          "reading the directory it was given",
       );
-    } finally {
-      await Deno.remove(probe).catch(() => {});
     }
+    assert(
+      !elsewhere.has("store.ts"),
+      "server/src/ must not contain the workflow module's own files — wrong directory read",
+    );
   },
 });
 
@@ -315,7 +330,8 @@ Deno.test({
       assertEquals(
         publicAfter.map((r) => r.table_name),
         publicBefore.map((r) => r.table_name),
-        "migration 007 must not add, rename or drop any table in the public (memory) schema",
+        "the workflow migration must not add, rename or drop any table in the " +
+          "public (memory) schema",
       );
 
       const wf = await tx<{ table_name: string }[]>`
@@ -327,13 +343,18 @@ Deno.test({
         "checkpoints",
         "evidence_items",
         "operational_decisions",
+        // The module's OWN migration ledger. It lives inside the workflow schema
+        // deliberately — writing to the memory domain's public.schema_migrations
+        // would reintroduce the shared mutable state this separation exists to
+        // avoid, and would leave a row behind after DROP SCHEMA workflow CASCADE.
+        "schema_migrations",
         "verification_criteria",
         "work_packets",
       ]);
 
-      throw new Error("__rollback_007_boundary_fixture__");
+      throw new Error("__rollback_workflow_boundary_fixture__");
     }).catch((err) => {
-      if ((err as Error).message !== "__rollback_007_boundary_fixture__") throw err;
+      if ((err as Error).message !== "__rollback_workflow_boundary_fixture__") throw err;
     });
   },
 });
@@ -457,30 +478,13 @@ Deno.test({
   },
 });
 
-Deno.test({
-  ...T,
-  name: "schema: a failed workflow migration REPORTS a typed error, it does not exit",
-  fn: async () => {
-    // The lowest practical level at which "a product module reports failure; it does
-    // not own process termination" can be proven. If this module behaved like the
-    // shared runner, this test would kill the test process instead of failing.
-    const bad = new URL("./__bad_workflow_ddl__.sql", WORKFLOW_DIR);
-    await Deno.writeTextFile(bad, "CREATE TABLE workflow.__nope (id int) WITH (bogus_option = 1);");
-    try {
-      const err = await assertRejects(
-        () =>
-          sql.begin(async (tx) => {
-            await tx.unsafe(await Deno.readTextFile(bad));
-          }),
-      );
-      assert(err instanceof Error, "a broken DDL must surface as a catchable error");
-      // The process is manifestly still alive to make this assertion.
-      assert(true, "reached — the failure did not terminate the process");
-    } finally {
-      await Deno.remove(bad).catch(() => {});
-    }
-  },
-});
+// "A failed workflow migration REPORTS a typed error, it does not exit" used to live
+// here. It moved to workflow-migrations.test.ts, for two reasons: it needed to write a
+// fixture file (CI grants no --allow-write, so it failed there while passing locally),
+// and it proved the property against a hand-rolled `sql.begin` rather than against the
+// module's actual runner. Its replacement drives `applyMigrations` with a broken
+// migration and asserts the typed MigrationApplyError, the preserved cause, and that
+// the preceding migration stayed applied.
 
 Deno.test({
   ...T,
@@ -497,6 +501,7 @@ Deno.test({
       "checkpoints",
       "evidence_items",
       "operational_decisions",
+      "schema_migrations",
       "verification_criteria",
       "work_packets",
     ]);
