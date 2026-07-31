@@ -1,6 +1,7 @@
 ---
 title: "Review the verification mechanism as adversarially as the code — especially when the deliverable is evidence"
 date: 2026-07-30
+last_updated: 2026-07-31
 category: conventions
 module: server
 problem_type: convention
@@ -64,13 +65,20 @@ states the conclusion directly: the tests "were not merely incomplete — severa
 
 **Read "seven" as a denominator with care** — it is §14's count (four P1s plus three false
 comment claims), not everything the review produced. §13a of the same document disposes of
-four further architectural findings the PO required fixed before submission, and one of
-them belongs in the second row above: a packet with zero required criteria was completable
-by the gate yet never surfaced as ready-for-review, so the gate and the attention queue
-disagreed about the same packet while 37 tests stayed green. Counting those, the honest
-proportion is four of roughly eleven dispositioned findings. (§13a's own prose says "three
-architectural findings" above a four-row table — a miscount worth knowing before you
-recount from it.)
+further architectural findings the PO required fixed before submission, and one of them
+belongs in the second row above: a packet with zero required criteria was completable by the
+gate yet never surfaced as ready-for-review, so the gate and the attention queue disagreed
+about the same packet while 37 tests stayed green.
+
+**Do not chase a precise ratio here — it moved in both directions and will move again.**
+Two further review rounds landed after this doc was written, roughly doubling §13a's
+dispositioned findings; but the numerator grew too, because two of the new findings were
+themselves verification-layer defects (two concurrency tests that could not discriminate the
+property they were written for, and two controls that only ran on a developer machine). The
+durable claim is qualitative and unchanged: **a substantial share of what review found was
+in the verification layer, not in the production code it was certifying.** (§13a's own prose
+says "three architectural findings" above a four-row table — a miscount worth knowing before
+you recount from it.)
 
 The author wrote both the code and the tests that certified it, and reviewed the diff
 before the review ran. All four P1s survived that.
@@ -89,11 +97,17 @@ injection source and cleared the moment they could not be an attack vector; whet
 assertion actually exercised the property it named was never a question those lenses asked.
 
 **A note on the citations that follow.** The habits are the durable part; the code they
-point at is not. Every `file:line` below resolves on branch `claude/st-084-awcp-host-spike`
-only — PR #34 was open and targeted a feature branch rather than `main` as of 2026-07-30,
-and the module itself is stamped `SPIKE / DISPOSABLE`. If the spike is disposed of or the
-branch rebased, read the citations as historical illustration rather than live examples;
+point at is not. The citations resolve on branch `claude/st-084-awcp-host-spike` only — PR
+#34 was open against a feature branch rather than `main`, and the module itself is stamped
+`SPIKE / DISPOSABLE`. If the spike is disposed of, read them as historical illustration;
 nothing in the guidance depends on that code still existing.
+
+**Line numbers drift from ordinary review churn, not just from disposal — this doc learned
+that the hard way.** Two further review rounds on the same open PR moved roughly nine of its
+original `file:line` citations and falsified two of its worked examples, without the branch
+ever being rebased or the spike abandoned. Citations below now name **test names, functions,
+and files** in preference to line numbers, because those survive a round of review and line
+numbers do not. Re-verify after each round rather than at merge.
 
 ## Guidance
 
@@ -102,7 +116,7 @@ nothing in the guidance depends on that code still existing.
 A blocklist cannot distinguish "not yet enumerated" from "permitted." Over a directory
 that grows, that means every future module is allowed by default.
 
-The boundary test's own comment (`server/tests/workflow-boundary.test.ts:57-69`) records
+The boundary test's own comment on `ALLOWED_IMPORTS` (`server/tests/workflow-boundary.test.ts`) records
 what the earlier form was and why it was wrong: a blocklist of eight known memory modules
 that omitted `../index.ts` — the composition root that registers every MCP tool — so the
 workflow module could have imported straight from it and the test would still have passed
@@ -119,7 +133,7 @@ assert(isIntraModuleOrPackage(spec) || ALLOWED_IMPORTS.includes(spec));
 ```
 
 Adding a dependency is now a deliberate, reviewable edit to `ALLOWED_IMPORTS`
-(`server/tests/workflow-boundary.test.ts:70-73`) rather than a silent omission from a
+(the `ALLOWED_IMPORTS` array in `server/tests/workflow-boundary.test.ts`) rather than a silent omission from a
 list nobody rereads.
 
 ### 2. Give every check two proofs: non-vacuity *and* discrimination
@@ -160,23 +174,39 @@ that `SELECT ... FOR UPDATE` prevented completion with unmet criteria. The lock 
 `work_packets` row. It does not cover the `verification_criteria` or `evidence_items` rows
 the same transaction reads, and under READ COMMITTED those re-snapshot per statement.
 
-The corrected docblock states the scope explicitly, including the case no row lock can
-close:
+The docblock has since been corrected twice, and it now says so itself — which is the part
+worth copying (`server/src/workflow/store.ts`, `completePacket`):
 
-> `FOR UPDATE` locks the one `work_packets` row, so two concurrent `completePacket` calls
-> for the same packet serialise. It does **not** lock `verification_criteria` or
-> `evidence_items` … no row lock can close the phantom-insert case — that needs
-> SERIALIZABLE.
+> **What the locking actually guarantees — stated precisely, because two earlier versions
+> of this comment got it wrong in different ways.** `FOR UPDATE` locks the one
+> `work_packets` row. It does **not** lock `verification_criteria` or `evidence_items` …
+> The criterion-insert window is nevertheless **closed**, not by this lock alone but
+> because `addCriterion` now takes the *same* row lock and refuses once the packet is
+> complete.
 
-The claim was narrowed to exactly the lock's reach, and two tests were then added to hold
-it there: `concurrency: two simultaneous completePacket calls serialise on the packet row`,
-plus a companion, `concurrency: a completion racing an unmet criterion still refuses or
-completes cleanly`, which asserts the racing outcome is one of the two *valid* states
-rather than pretending the race is closed.
+**What happened between those two versions is a sharper lesson than the original claim.**
+Two concurrency tests were added to cash the prose claim — green, on-topic, and written
+specifically for it. *They still could not discriminate the lock.* Deleting `FOR UPDATE`
+from `completePacket` left them both passing, because the `UPDATE` that follows takes the
+same row lock and blocks on its own. Verified by deletion on 2026-07-30.
+
+So: **a test can be green, on-topic, purpose-written to cash a claim, and still not be
+evidence for it.** No test of that shape could have been, because no observable behaviour
+distinguished the two variants. The property was untestable until something else contended
+for the same row — which only happened once `addCriterion` started taking that lock too.
+Only then did a real control become possible: `concurrency: completion cannot miss a
+criterion inserted while it waits (FOR UPDATE control)` in
+`server/tests/workflow-failure-isolation.test.ts` holds the row, starts `completePacket`,
+inserts a required criterion from the lock-holding connection, and turns on *where*
+completion blocks. Delete `FOR UPDATE` and it goes red.
 
 Note the sequence, because it is the whole point: there was no earlier test to tighten.
-The invariant had only ever been asserted in prose, so this was not a loose test being
-narrowed — it was an unbacked claim finally being cashed.
+The invariant had only ever been asserted in prose, so this was never a loose test being
+narrowed — it was an unbacked claim that took two attempts to cash.
+
+(The SERIALIZABLE caveat did not disappear; it moved. It now attaches to a *different*
+residual — a concurrent evidence DELETE, which is a different writer on a different table
+that the packet lock genuinely does not cover.)
 
 Prose is not enforcement. Write the test, narrow the claim, or record the gap as a
 residual risk — all three are fine. Silently overclaiming is not.
@@ -190,7 +220,7 @@ from correct behaviour.
 Fixing this took two changes, not one. Vary the input **and** assert on the value crossing
 the boundary — a spy on the port, not just an absence of errors. The test `promotion
 carries the packet's REAL policy scope, not a hardcoded default` loops all four scopes and
-asserts against `NoopMemoryAdapter.promotionCalls` (`server/src/workflow/ports.ts:107-108`):
+asserts against `NoopMemoryAdapter.promotionCalls` (`server/src/workflow/ports.ts`):
 
 ```ts
 for (const scope of ["corporate", "mixed", "public", "personal"] as const) {
@@ -205,20 +235,42 @@ still promote successfully. The observation point has to sit where the value act
 crosses.
 
 The strongest version of this fix was not a test at all. `PromotionInput.policyScope`
-(`server/src/workflow/ports.ts:87-98`) was narrowed from `string` to the closed
-`PolicyScope` union (`server/src/workflow/types.ts:12`), backed by a database `CHECK`
-constraint (`server/db/workflow/001_workflow_schema.sql:42-43`) — so a future regression
+(`PromotionInput.policyScope` in `server/src/workflow/ports.ts`) was narrowed from `string` to the closed
+`PolicyScope` union (`server/src/workflow/types.ts`), backed by a database `CHECK`
+constraint on `policy_scope` (`server/db/workflow/001_workflow_schema.sql`) — so a future regression
 fails at compile time or at the write, neither of which can be silently green.
 **Where a constraint can replace an assertion, prefer the constraint.**
 
 **Positive example of fixture design:** `baseInput()` in
-`server/tests/workflow-attention.test.ts:101-115` deliberately seeds one *unsatisfied*
+`baseInput()` in `server/tests/workflow-attention.test.ts` deliberately seeds one *unsatisfied*
 required criterion, so the baseline packet is not already in its terminal state and each
 test observes only the rule it exercises. The zero-criteria case gets its own dedicated
 test rather than riding the default. A default that already sits at the interesting
 boundary hides every rule that would move it there.
 
-### 5. When the deliverable is evidence, the verification mechanism is the product
+### 5. A control that runs on one machine controls nothing
+
+Added after two further review rounds, because it is the same failure one level out: a
+check that cannot fire in the environment that gates merge is not a check.
+
+Two of this file's own controls wrote fixture files. CI runs `deno test` with no
+`--allow-write` (`.github/workflows/ci.yml`), so both threw `NotCapable` there while passing
+locally — green where it was cheap, absent where it mattered. The enumeration control was
+rebuilt to need no writes at all: it points the same enumeration function at a *different
+real directory* and requires that directory's contents back, which proves the function reads
+what it is handed rather than carrying a hardcoded list. The typed-failure test moved to the
+migrations suite, where it drives the real runner instead of a hand-rolled transaction.
+
+The check on a check: **would this run, unchanged, in CI?** Permissions, network, database
+availability, and writable paths all differ there. A control that silently no-ops in the one
+environment that gates merge is worse than no control, because its name still appears in the
+passing list.
+
+A near neighbour worth the same suspicion: **a test that cannot re-establish its own
+precondition.** If a test's setup is destroyed the first time it succeeds — because it wrote
+to shared state it also reads — it passes once and then silently tests nothing forever.
+
+### 6. When the deliverable is evidence, the verification mechanism is the product
 
 For a spike, the output is not code that ships — it is an architectural verdict, and the
 green suite is the artifact being trusted. That inverts the usual review priority: the
@@ -241,8 +293,10 @@ boundary test that permits the composition root is worse than no boundary test, 
 the next author reads it and concludes the boundary is enforced.
 
 Cost asymmetry: a red/green control is roughly ten lines with no fixtures and no database.
-The two controls now in `workflow-boundary.test.ts` would have caught two of the seven
-findings mechanically, at review time, without a reviewer needing to notice anything.
+`workflow-boundary.test.ts` now carries four of them — over the import allowlist, the
+import-form scanner, the directory enumeration, and the schema-qualification scan — and
+they would have caught several of these findings mechanically, at review time, without a
+reviewer needing to notice anything.
 
 ## When to Apply
 
@@ -324,18 +378,22 @@ Note what made the original untestable-as-written: pollution is only observable 
 *pooled*, *multi-statement*, *succeeding* path. A test that gets any one of those three
 conditions wrong is structurally incapable of failing.
 
-### Residual: the fix went one level deep, not two
+### Residual: the fix went one level deep, not two — now closed
 
-Worth stating because it is the same hazard the fix was addressing. `readWorkflowSource()`
-iterates `WORKFLOW_FILES`, a hardcoded six-name array at
-`server/tests/workflow-boundary.test.ts:33-40`. So the *import* check now fails closed, but
-the *file list* it runs over still fails open: a new file added to `server/src/workflow/`
-is never scanned at all, and no test notices. (Not listed in §14 — an observation from
-re-reading the post-fix file during this write-up.)
+This section originally recorded a live residual: the hardened import predicate ran over a
+hardcoded six-name `WORKFLOW_FILES` array, so the *import* check failed closed while the
+*file list* it iterated still failed open — a new file in `server/src/workflow/` was never
+scanned and no test noticed.
 
-The general form: **inverting one blocklist does not make the check sound if it sits on top
-of another enumeration.** Ask what the check iterates over, not just what it asserts. The
-fix here would be to read the directory rather than a literal.
+That is closed. `readTsSources` in `server/tests/workflow-boundary.test.ts` enumerates the
+directory and throws if it finds nothing, with a control that points the same function at a
+different real directory and requires its contents back.
+
+The general rule it illustrates — **ask what the check iterates over, not just what it
+asserts** — generalised beyond verification mechanisms and now lives in its own learning:
+[Fix the assumption, not the symptom](./fix-the-assumption-not-the-symptom.md) (Guidance #3
+and Instance 4). That doc treats this residual as one of four instances of a fix landing at
+the reported site while the same assumption survived one branch over.
 
 ## Related
 
@@ -355,7 +413,7 @@ fix here would be to read the directory rather than a literal.
   — the same maxim aimed at handoff narratives rather than code: a written claim about state
   is a hypothesis to test, not a fact to act on. Habit #3 above is that principle pointed at
   source comments.
-- `.github/instructions/coding-standards.instructions.md:76` already mandates red-green TDD,
+- `.github/instructions/coding-standards.instructions.md` already mandates red-green TDD,
   but scoped to *production behaviour*. Habit #2 extends the same discipline to the check
   itself. The "Deno / Server Testing" section (lines 125-136) governs test *hygiene* —
   isolation, cleanup, flakiness — and never test *validity*: a test can satisfy every rule

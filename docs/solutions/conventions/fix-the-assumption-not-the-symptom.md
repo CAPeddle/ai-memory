@@ -434,10 +434,8 @@ therefore only ran on one machine.
   sibling learning from this same PR, covering allowlist-vs-blocklist, non-vacuity and
   discrimination controls, and prose-only invariants. This doc is the *follow-through*: that
   one is about writing a check that can fail, this one is about what to search after a check
-  has been fixed. **Note:** its "Residual: the fix went one level deep, not two" section
-  cites a hardcoded `WORKFLOW_FILES` array at `workflow-boundary.test.ts:33-40`; that
-  residual is now closed by `readTsSources` (`workflow-boundary.test.ts:34-55`) with the
-  control at `:191-220`, so the citation is stale.
+  has been fixed. Its Residual section now defers the general rule here and records the
+  instance as closed.
 - [parseContext null safety in operator crash](../runtime-errors/parsecontext-null-safety-in-operator-crash-2026-06-23.md)
   — the strongest prior instance in this repo, six weeks older than ST-084: one unguarded
   `"isError" in` narrowing across three MCP handlers. Read its *What Didn't Work*, which is
