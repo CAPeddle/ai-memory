@@ -26,7 +26,9 @@ A Checkpoint is a meaningful event — recording one refreshes its Run's activit
 ### Operational Decision
 A question raised during execution that someone must answer before the work can be considered settled.
 
-A Decision is either blocking or not; only an unresolved blocking Decision demands attention. Resolving one records the answer and may trigger Promotion. A Decision remains authoritative whether or not its Promotion succeeds.
+A Decision is either blocking or not; only an unresolved blocking Decision demands attention. Blocking describes intent and drives notice — it does not gate a Work Packet's completion, which turns on Evidence alone.
+
+Resolution is once and final. Re-resolving with the same answer returns the stored record unchanged, preserving when the answer was originally given; a different answer is refused as a conflict rather than overwriting the first. Resolving may trigger Promotion, and a Decision remains authoritative whether or not its Promotion succeeds.
 
 ### Verification Criterion
 A named condition a Work Packet must satisfy, marked required or optional.
@@ -56,6 +58,8 @@ Projecting a resolved Operational Decision into the Memory Domain as durable kno
 
 Promotion is optional, one-way, and non-authoritative. It happens outside the operational transaction, so a failure leaves the Decision intact and resolved; the resulting reference is a nullable pointer, and the Memory Domain may lose it without invalidating anything.
 
+An attempt does not resolve to success or failure. It resolves to one of four outcomes, because what the caller should do next differs in each: the projection exists and its reference is recorded; it exists but the reference was not recorded, so it must be reconciled rather than repeated; it demonstrably never happened, which is the only case where simply repeating it is safe; or its status is unknown, because the attempt was abandoned or the far side never said — and an unknown attempt may still succeed after the caller has given up on it. Since unknown is unavoidable rather than exceptional, the Decision's own identity serves as the idempotency key: repeated attempts carrying it must yield at most one projection.
+
 ## Delivery Workflow
 
 ### Story
@@ -75,3 +79,28 @@ A Plan records decisions, not progress: execution state is derived from commit h
 The semantic-memory half of the system — the durable store of captured knowledge, together with the search and graph structures built over it — as distinct from Workflow Operations.
 
 The separation is structural, not conventional: operational records live in their own schema, carry no foreign key into the Memory Domain, and the whole operational flow completes with the Memory Domain absent rather than merely degraded.
+
+## Verification Practice
+
+These name a distinction this project draws sharply and relies on in code comments as well
+as prose: whether a check can actually fail for the reason it claims to exist.
+
+### Red/Green Control
+A test whose subject is *another* check's mechanism rather than the system under test — it establishes that the check fires when it should and stays quiet when it should not.
+
+Narrower than the general test-first sense of red/green. Here it names a companion test written specifically to prove that a scan, guard, or assertion is capable of failing at all. A check that has never been observed to fail is not yet known to work, and one that cannot fail is indistinguishable from one that found nothing.
+
+### Non-Vacuity Guard
+An assertion that a check examined something, kept separate from the assertion about what it found.
+
+A scan over an empty input set passes every claim made about its contents. The guard makes that case loud rather than green — it asserts that the inspected set was non-empty, so a scan that silently stopped matching cannot masquerade as a clean result.
+
+### Discrimination
+The property that a check produces different outcomes for the compliant and non-compliant cases.
+
+Distinct from Non-Vacuity, and the two are independent: a check can genuinely inspect its input and still pass regardless of what it finds. Discrimination is what a Red/Green Control demonstrates, and it is proven by removing the thing under test and confirming the check goes red — not by reasoning about what it ought to do.
+
+### Fails Open / Fails Closed
+Whether a check's own malfunction permits the thing it guards, or refuses it.
+
+A boundary check that fails open is worse than none, because its passing result is read as enforcement. The failure is usually one level below the rule itself — a sound predicate applied to an input set that was never complete.
