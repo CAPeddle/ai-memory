@@ -26,7 +26,9 @@ A Checkpoint is a meaningful event — recording one refreshes its Run's activit
 ### Operational Decision
 A question raised during execution that someone must answer before the work can be considered settled.
 
-A Decision is either blocking or not; only an unresolved blocking Decision demands attention. Resolving one records the answer and may trigger Promotion. A Decision remains authoritative whether or not its Promotion succeeds.
+A Decision is either blocking or not; only an unresolved blocking Decision demands attention. Blocking describes intent and drives notice — it does not gate a Work Packet's completion, which turns on Evidence alone.
+
+Resolution is once and final. Re-resolving with the same answer returns the stored record unchanged, preserving when the answer was originally given; a different answer is refused as a conflict rather than overwriting the first. Resolving may trigger Promotion, and a Decision remains authoritative whether or not its Promotion succeeds.
 
 ### Verification Criterion
 A named condition a Work Packet must satisfy, marked required or optional.
@@ -55,6 +57,8 @@ Policy Scope is deliberately not a descriptive tag: the set is fixed, enforced a
 Projecting a resolved Operational Decision into the Memory Domain as durable knowledge.
 
 Promotion is optional, one-way, and non-authoritative. It happens outside the operational transaction, so a failure leaves the Decision intact and resolved; the resulting reference is a nullable pointer, and the Memory Domain may lose it without invalidating anything.
+
+An attempt does not resolve to success or failure. It resolves to one of four outcomes, because what the caller should do next differs in each: the projection exists and its reference is recorded; it exists but the reference was not recorded, so it must be reconciled rather than repeated; it demonstrably never happened, which is the only case where simply repeating it is safe; or its status is unknown, because the attempt was abandoned or the far side never said — and an unknown attempt may still succeed after the caller has given up on it. Since unknown is unavoidable rather than exceptional, the Decision's own identity serves as the idempotency key: repeated attempts carrying it must yield at most one projection.
 
 ## Delivery Workflow
 
