@@ -3,10 +3,15 @@
  *
  * The service owns the two behaviours where the memory boundary actually matters:
  *
- *   1. `promoteDecisionToMemory` — an OPTIONAL projection. It runs strictly after
+ *   1. `resolveAndPromoteDecision` — an OPTIONAL projection. It runs strictly after
  *      the operational write has committed, catches every error, and reports the
- *      failure as data rather than propagating it. A promotion failure leaves the
- *      decision authoritative and untouched (criterion 3).
+ *      outcome as data rather than propagating it. No projection outcome — success,
+ *      failure, or unknown — can leave the decision anything but authoritative
+ *      (criterion 3).
+ *
+ *      The outcome is a four-valued {@link PromotionStatus}, not a boolean. Which
+ *      one a caller receives determines whether re-attempting is safe, and the
+ *      distinction is not cosmetic: see the timeout handling below.
  *
  *   2. `gatherAdvisoryContext` — advisory retrieval that degrades to empty. It is
  *      never on the path of an operational write.
@@ -21,31 +26,52 @@ import {
   type KnowledgePromotionPort,
   type KnowledgeSearchPort,
   type KnowledgeSearchResult,
+  PortTimeoutError,
   withPortTimeout,
 } from "./ports.ts";
 import * as store from "./store.ts";
 import { evaluateAttention } from "./attention.ts";
 import type { AttentionItem, OperationalDecision } from "./types.ts";
 
+/**
+ * What is known about the optional memory projection after an attempt.
+ *
+ * FOUR states, not a boolean, because the caller's correct next action differs in
+ * each and two of them are NOT "retry":
+ *
+ * - `promoted`      — the projection exists and the decision row records its ref.
+ *                     Nothing to do.
+ * - `ref-lost`      — the projection exists, but recording its reference failed.
+ *                     RECONCILE using the `ref` field; do not project again.
+ * - `failed`        — the adapter rejected. The projection definitely did not
+ *                     happen, so re-projecting cannot duplicate anything.
+ * - `indeterminate` — the bound elapsed with the request still in flight and
+ *                     UNCANCELLED. Whether a projection exists is unknown, and it
+ *                     may come into existence after this value is returned.
+ *
+ * `indeterminate` was previously collapsed into `promoted: false`, which asserted
+ * "the projection did not happen" on the one path where that is precisely what
+ * nobody knows. See the timeout handling in `resolveAndPromoteDecision`.
+ */
+export type PromotionStatus = "promoted" | "ref-lost" | "failed" | "indeterminate";
+
 export interface PromotionOutcome {
-  /** Whether the optional memory projection succeeded. */
-  promoted: boolean;
-  /** The projection reference, when promotion succeeded. */
-  ref: string | null;
-  /** The failure message, when it did not. Surfaced so the failure is visible and retryable. */
-  error: string | null;
   /**
-   * True when the projection SUCCEEDED but recording its reference did not.
-   *
-   * This is deliberately distinct from `promoted: false`. Collapsing the two
-   * (the original shape here) told a caller "promotion failed" when the memory
-   * projection had in fact already happened — and a caller that retries on that
-   * signal creates a duplicate projection, because `KnowledgePromotionPort`
-   * carries no dedup contract. Retry on `promoted: false`; reconcile, do not
-   * re-promote, on `refLost: true`.
+   * The discriminant. Branch on this, never on the text of `error` — a caller that
+   * has to string-match a message to tell "definitely didn't happen" from "unknown"
+   * is one message edit away from doing the wrong thing.
    */
-  refLost: boolean;
-  /** The decision AFTER the attempt — authoritative either way. */
+  status: PromotionStatus;
+  /**
+   * The projection reference. Present for `promoted`, and for `ref-lost` where it is
+   * the only handle on an existing projection the decision row does not know about.
+   * Always null for `failed` and `indeterminate` — in the latter case a reference may
+   * well exist on the memory side, but this process never received it.
+   */
+  ref: string | null;
+  /** Diagnostic detail for every non-`promoted` status. Never a control signal. */
+  error: string | null;
+  /** The decision AFTER the attempt — authoritative regardless of status. */
   decision: OperationalDecision;
 }
 
@@ -84,9 +110,7 @@ export async function resolveAndPromoteDecision(
   let ref: string;
   try {
     // Bounded: a hung memory implementation must not block an operational command
-    // indefinitely. A timeout lands here as an ordinary promotion failure —
-    // promoted:false, safe to retry — which is the correct classification, since a
-    // call that never returned also never confirmed a projection.
+    // indefinitely.
     ref = await withPortTimeout(
       "KnowledgePromotionPort.promoteDecision",
       promotionPort.promoteDecision({
@@ -99,14 +123,31 @@ export async function resolveAndPromoteDecision(
       timeoutMs,
     );
   } catch (err) {
-    // The projection genuinely did not happen. Safe to retry.
-    return {
-      promoted: false,
-      ref: null,
-      error: (err as Error).message,
-      refLost: false,
-      decision,
-    };
+    // A TIMEOUT IS NOT A FAILURE. `withPortTimeout` uses Promise.race, which abandons
+    // the losing promise without cancelling it — the adapter's request is still in
+    // flight and may still succeed after this returns. The honest classification is
+    // "unknown", and `LateSuccessMemoryAdapter` demonstrates the case: the projection
+    // lands afterwards, and because this function has already returned, nothing ever
+    // calls attachPromotionRef. The result is an ORPHANED projection that requires
+    // reconciliation — strictly worse than `ref-lost`, where at least the ref is
+    // known.
+    //
+    // This used to be reported as `promoted: false, safe to retry`, which asserted
+    // the projection had not happened on the one path where that is exactly what
+    // nobody knows.
+    if (err instanceof PortTimeoutError) {
+      return {
+        status: "indeterminate",
+        ref: null,
+        error: `${(err as Error).message}; the request was not cancelled and may still ` +
+          "succeed — whether a projection exists is unknown",
+        decision,
+      };
+    }
+
+    // A rejection, by contrast, IS a definite non-event: the adapter reported that it
+    // did not project. Re-projecting cannot duplicate anything.
+    return { status: "failed", ref: null, error: (err as Error).message, decision };
   }
 
   // 3. The projection HAS happened. Recording its reference is a separate
@@ -115,13 +156,12 @@ export async function resolveAndPromoteDecision(
   try {
     await store.attachPromotionRef(decision.id, ref);
     const after = await store.getDecision(decision.id);
-    return { promoted: true, ref, error: null, refLost: false, decision: after ?? decision };
+    return { status: "promoted", ref, error: null, decision: after ?? decision };
   } catch (err) {
     return {
-      promoted: true,
+      status: "ref-lost",
       ref,
       error: `projection succeeded but its reference was not recorded: ${(err as Error).message}`,
-      refLost: true,
       decision,
     };
   }

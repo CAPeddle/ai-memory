@@ -464,7 +464,7 @@ Deno.test({
       });
 
       const outcome = await resolveAndPromoteDecision(decision.id, "yes", noop);
-      assertEquals(outcome.promoted, true);
+      assertEquals(outcome.status, "promoted");
       assertEquals(outcome.decision.status, "resolved");
       assertEquals(outcome.decision.resolution, "yes");
       assertEquals(noop.promotionCalls.length, 1);

@@ -7,7 +7,15 @@
  * remote execution node and are Stage 2.
  *
  * Expected outcome in every case: authoritative operational state survives
- * unchanged, and the failed optional operation is visible and retryable.
+ * unchanged, and the outcome of the optional operation is reported precisely enough
+ * for a caller to choose its next action.
+ *
+ * Deliberately NOT "and is retryable". Retry safety is a property of the ADAPTER, not
+ * of this reporting, and nothing in this spike proves any adapter has it — the
+ * promotion port's `decisionId` idempotency key is specified in the contract and
+ * unproven in practice. A `failed` outcome is genuinely safe to re-attempt because the
+ * projection demonstrably did not happen; an `indeterminate` one is not, and saying so
+ * is the correction this file's timeout tests now encode.
  */
 
 import {
@@ -26,6 +34,7 @@ import {
 import {
   FailingMemoryAdapter,
   HangingMemoryAdapter,
+  LateSuccessMemoryAdapter,
   NoopMemoryAdapter,
 } from "../src/workflow/ports.ts";
 import { WorkflowNotFoundError } from "../src/workflow/types.ts";
@@ -103,7 +112,7 @@ Deno.test({
       );
 
       // The optional projection failed...
-      assertEquals(outcome.promoted, false);
+      assertEquals(outcome.status, "failed");
       assert(outcome.error?.includes("promotion backend unavailable"));
 
       // ...and the authoritative operational write survived it, committed.
@@ -165,7 +174,7 @@ Deno.test({
         "recorded",
         new NoopMemoryAdapter(),
       );
-      assertEquals(outcome.promoted, true);
+      assertEquals(outcome.status, "promoted");
       assert(outcome.decision.promoted_memory_ref !== null);
 
       // Simulate the memory-side row being deleted out from under us.
@@ -395,7 +404,7 @@ Deno.test({
         const noop = new NoopMemoryAdapter();
         const outcome = await resolveAndPromoteDecision(decision.id, "done", noop);
 
-        assertEquals(outcome.promoted, true);
+        assertEquals(outcome.status, "promoted");
         assertEquals(noop.promotionCalls.length, 1);
         assertEquals(
           noop.promotionCalls[0].policyScope,
@@ -411,30 +420,44 @@ Deno.test({
 
 Deno.test({
   ...T,
-  name: "promotion distinguishes 'never happened' from 'happened but ref lost'",
+  name: "promotion reports FOUR distinguishable outcomes, not a boolean",
   fn: async () => {
-    // The two must not collapse into promoted:false. A caller retrying on
-    // "projection failed" when the projection actually succeeded creates a
-    // duplicate, because the port carries no dedup contract.
-    const packet = await newPacket("refLost distinction");
+    // The caller's correct next action differs in each, and two of them are not
+    // "retry". Collapsing any pair loses information the caller cannot recover:
+    // retrying a projection that actually happened duplicates it, and treating an
+    // unknown as a definite non-event asserts something nobody knows.
+    const packet = await newPacket("promotion outcome vocabulary");
     try {
-      // Case 1: the port itself fails -> genuinely not promoted, safe to retry.
+      // failed — the adapter rejected. Definitely no projection.
       const d1 = await store.recordDecision({ packetId: packet.id, question: "q1" });
       const failed = await resolveAndPromoteDecision(d1.id, "r1", new FailingMemoryAdapter());
-      assertEquals(failed.promoted, false);
-      assertEquals(failed.refLost, false, "a port failure is not a lost ref");
+      assertEquals(failed.status, "failed");
       assertEquals(failed.ref, null);
 
-      // Case 2: the port succeeds -> promoted, ref recorded, nothing lost.
+      // promoted — projection exists and its ref is recorded.
       const d2 = await store.recordDecision({ packetId: packet.id, question: "q2" });
       const ok = await resolveAndPromoteDecision(d2.id, "r2", new NoopMemoryAdapter());
-      assertEquals(ok.promoted, true);
-      assertEquals(ok.refLost, false);
+      assertEquals(ok.status, "promoted");
       assert(ok.ref !== null);
 
-      // Both decisions remain authoritative regardless of projection outcome.
-      assertEquals((await store.getDecision(d1.id))?.status, "resolved");
-      assertEquals((await store.getDecision(d2.id))?.status, "resolved");
+      // indeterminate — the bound elapsed with the request uncancelled.
+      const d3 = await store.recordDecision({ packetId: packet.id, question: "q3" });
+      const unknown = await resolveAndPromoteDecision(
+        d3.id,
+        "r3",
+        new HangingMemoryAdapter(),
+        50,
+      );
+      assertEquals(unknown.status, "indeterminate");
+
+      // All three statuses are distinct — the property the old boolean could not hold.
+      const seen = new Set([failed.status, ok.status, unknown.status]);
+      assertEquals(seen.size, 3, "failed, promoted and indeterminate must not collapse");
+
+      // Every decision remains authoritative regardless of projection outcome.
+      for (const id of [d1.id, d2.id, d3.id]) {
+        assertEquals((await store.getDecision(id))?.status, "resolved");
+      }
     } finally {
       await store.deletePacket(packet.id);
     }
@@ -512,14 +535,77 @@ Deno.test({
       const elapsed = Date.now() - started;
 
       assert(elapsed < 5_000, `expected the bound to fire fast, took ${elapsed}ms`);
-      assertEquals(outcome.promoted, false, "a timeout is a promotion that did not happen");
-      assertEquals(outcome.refLost, false, "a timeout must not be reported as a lost ref");
+      // NOT "failed". The bound firing tells us the caller stopped waiting; it tells
+      // us nothing about whether the projection happened, because Promise.race
+      // abandons the losing promise without cancelling it. This assertion previously
+      // read `promoted: false, "a timeout is a promotion that did not happen"` — a
+      // claim the mechanism cannot support.
+      assertEquals(outcome.status, "indeterminate");
       assert(outcome.error?.includes("exceeded"), `unexpected error: ${outcome.error}`);
+      assert(
+        outcome.error?.includes("unknown"),
+        "the message must not describe an indeterminate result as a definite failure",
+      );
 
       // And the authoritative operational write survived it intact.
       const persisted = await store.getDecision(decision.id);
       assertEquals(persisted?.status, "resolved");
       assertEquals(persisted?.promoted_memory_ref, null);
+    } finally {
+      await store.deletePacket(packet.id);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "timeout: a LATE SUCCESS after the bound orphans a real projection",
+  fn: async () => {
+    // The concrete reason a timeout is `indeterminate` rather than `failed`, and the
+    // case HangingMemoryAdapter structurally cannot show: the adapter's request is
+    // still in flight when the bound fires, and it SUCCEEDS afterwards.
+    //
+    // `withPortTimeout` uses Promise.race, which abandons the losing promise without
+    // cancelling it. So resolveAndPromoteDecision has already returned by the time the
+    // projection lands, nothing calls attachPromotionRef, and the result is a real
+    // projection with no operational record pointing at it.
+    //
+    // Note this is strictly WORSE than `ref-lost`: there, the caller at least holds
+    // the ref and can reconcile. Here the ref exists only inside the memory domain.
+    // That asymmetry is why `decisionId` has to be the port's idempotency key — it is
+    // the only handle by which a later call could find the orphan instead of minting
+    // a second one.
+    const packet = await newPacket("timeout: late success orphan");
+    try {
+      const decision = await store.recordDecision({
+        packetId: packet.id,
+        question: "does a late success get recorded?",
+      });
+      const adapter = new LateSuccessMemoryAdapter(120);
+
+      const outcome = await resolveAndPromoteDecision(decision.id, "resolved", adapter, 30);
+      assertEquals(outcome.status, "indeterminate");
+      assertEquals(outcome.ref, null, "this process never received a reference");
+
+      // At this instant the projection has NOT happened yet — so the caller genuinely
+      // could not have known, which is the point of `indeterminate`.
+      assertEquals(adapter.mintedRefs.length, 0);
+
+      // Now let the abandoned work finish.
+      await adapter.settled;
+      assertEquals(adapter.mintedRefs.length, 1, "the projection really did happen");
+      assertEquals(adapter.promotionCalls.length, 1);
+
+      // ...and nothing recorded it. This is the orphan.
+      const persisted = await store.getDecision(decision.id);
+      assertEquals(persisted?.status, "resolved", "the operational write is unaffected");
+      assertEquals(
+        persisted?.promoted_memory_ref,
+        null,
+        "a projection exists in the memory domain with nothing pointing at it — " +
+          "this requires reconciliation, and is precisely what an `indeterminate` " +
+          "outcome is warning the caller about",
+      );
     } finally {
       await store.deletePacket(packet.id);
     }
@@ -550,7 +636,7 @@ Deno.test({
     try {
       const d = await store.recordDecision({ packetId: packet.id, question: "q" });
       const ok = await resolveAndPromoteDecision(d.id, "r", new NoopMemoryAdapter(), 5_000);
-      assertEquals(ok.promoted, true);
+      assertEquals(ok.status, "promoted");
 
       const failed = await gatherAdvisoryContext("q", new FailingMemoryAdapter(), 5, 5_000);
       assertEquals(failed.degraded, true);

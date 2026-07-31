@@ -44,9 +44,19 @@ export class PortTimeoutError extends Error {
 /**
  * Bound a port call. Rejects with {@link PortTimeoutError} past the deadline.
  *
- * Note the honest limitation: this bounds how long the *caller* waits, it does not
- * cancel the underlying work. A real adapter holding a socket should also accept an
- * AbortSignal. Recorded rather than implied.
+ * **This bounds how long the CALLER waits. It does not cancel the underlying work.**
+ * `Promise.race` abandons the losing promise; it does not stop it. The adapter's
+ * request is still in flight and may still succeed after this rejects.
+ *
+ * That is why a timeout is classified as INDETERMINATE rather than as a failure —
+ * see `PromotionOutcome` in service.ts. An earlier version of this comment described
+ * the limitation and then the calling code ignored it, treating the timeout as a
+ * definite non-event.
+ *
+ * An `AbortSignal` would let a real adapter actually cancel, and should be added when
+ * one exists. It is NOT a substitute for the indeterminate outcome: cancellation is
+ * itself racy — a request can commit on the server between the client's decision to
+ * abort and the abort arriving — so the caller still has to be able to say "unknown".
  */
 export function withPortTimeout<T>(
   port: string,
@@ -80,6 +90,24 @@ export interface KnowledgePromotionPort {
    * MUST reference the operational identifiers so the projection points back at
    * the authoritative record, never the reverse (plan: "Knowledge projections
    * reference operational records, not the reverse").
+   *
+   * **`input.decisionId` is the idempotency key of this operation.** An
+   * implementation MUST treat two calls carrying the same `decisionId` as the same
+   * projection: at most one is created, and both calls return the SAME reference.
+   *
+   * This is a contract requirement, not an optimisation, because the caller cannot
+   * avoid repeat calls. A promotion can return `indeterminate` (the bound elapsed
+   * while the request was still in flight and uncancelled), and the only recovery
+   * available to a caller holding "unknown" is to ask again. Without the key, that
+   * second call mints a second projection and the first is orphaned. The same applies
+   * to an ordinary retry after `resolveDecision` returns its idempotent
+   * already-resolved row.
+   *
+   * NOTHING IN THIS SPIKE PROVES AN ADAPTER HONOURS THIS. Stage 1 ships the contract
+   * and the outcome vocabulary; the adapters here are in-process fakes. Until a real
+   * adapter demonstrates it — a test that calls twice with one `decisionId` and
+   * asserts one projection and one identical reference — no retry in this system may
+   * be described as safe.
    */
   promoteDecision(input: PromotionInput): Promise<string>;
 }
@@ -143,5 +171,50 @@ export class HangingMemoryAdapter implements KnowledgeSearchPort, KnowledgePromo
   }
   promoteDecision(_input: PromotionInput): Promise<string> {
     return new Promise(() => {});
+  }
+}
+
+/**
+ * An adapter that SUCCEEDS, but slowly — after the caller's bound has already
+ * elapsed.
+ *
+ * This is the case {@link HangingMemoryAdapter} cannot express and the one that
+ * actually costs something. A hang that never completes leaves nothing behind; a call
+ * that times out and *then* succeeds leaves a real projection in the memory domain
+ * with nothing in the operational record pointing at it. `withPortTimeout` abandons
+ * the promise, it does not cancel the work, so the projection lands after the caller
+ * has already returned and moved on.
+ *
+ * `settled` resolves when the underlying work finishes, so a test can wait for the
+ * late success deterministically instead of sleeping and hoping.
+ */
+export class LateSuccessMemoryAdapter implements KnowledgeSearchPort, KnowledgePromotionPort {
+  readonly promotionCalls: PromotionInput[] = [];
+  /** Refs the adapter actually minted — i.e. projections that really exist. */
+  readonly mintedRefs: string[] = [];
+  /** Resolves once the late promotion has completed. */
+  readonly settled: Promise<void>;
+  #markSettled!: () => void;
+
+  constructor(private readonly delayMs = 50) {
+    this.settled = new Promise<void>((resolve) => {
+      this.#markSettled = resolve;
+    });
+  }
+
+  search(_query: string, _limit: number): Promise<KnowledgeSearchResult[]> {
+    return Promise.resolve([]);
+  }
+
+  promoteDecision(input: PromotionInput): Promise<string> {
+    this.promotionCalls.push(input);
+    return new Promise<string>((resolve) => {
+      setTimeout(() => {
+        const ref = `late:${input.decisionId}`;
+        this.mintedRefs.push(ref);
+        resolve(ref);
+        this.#markSettled();
+      }, this.delayMs);
+    });
   }
 }
