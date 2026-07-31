@@ -164,6 +164,16 @@ Story: ST-005
 
 **`docs/plans/*.md`-driven work** (compound-engineering `ce-work` or equivalent) uses `Story: ST-NNN` alone; execution progress is derived from git history, not stored in the plan body.
 
+### Merge strategy — squash, and keep the trailer
+
+**Squash-merge PRs into `main`.** This is the established convention (every merge on `main` to date) and it fits because PRs here are *story-scoped*: one PR ≈ one `ST-NNN` ≈ one reviewable unit, so a merge commit would group a group of one.
+
+**The load-bearing part is the squash message, not the squash.** It must carry the `Story: ST-NNN` trailer, because that trailer is the only thing that keeps "execution progress is derived from git history" true above — `git log --grep="Story: ST-084"` is how a story's shipped work is found. GitHub's default squash message (PR title + bulleted commit list) **drops the trailer**; write the message deliberately.
+
+Squashing does not lose the granular history: GitHub keeps a PR's individual commits browsable even after the branch is deleted, and the durable "how this evolved" knowledge belongs in [docs/solutions/](docs/solutions/) and investigation findings rather than in `main`'s log.
+
+**The exception: long-lived integration branches** carrying several stories (e.g. an umbrella branch accumulating a whole ST-0NN series). Squashing many stories into one commit destroys something worth keeping and lands an unreviewable blob — merge those, or land them story by story.
+
 ## High-level architecture (cloud MCP)
 
 The Deno MCP server in [server/](server/) is a thin Hono app over `@modelcontextprotocol/sdk`'s `StreamableHTTPTransport`. All requests to `/mcp` go through `requireApiKey` Bearer auth ([server/src/auth.ts](server/src/auth.ts)); `/health` is unauthenticated for Docker healthchecks.
