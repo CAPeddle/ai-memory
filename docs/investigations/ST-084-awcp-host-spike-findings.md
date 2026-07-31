@@ -54,7 +54,7 @@ is a Stage 2 deliverable.
 | Evidence-based packet completion | **PROVEN** |
 | Deterministic decision attention | **PROVEN** |
 | Schema namespacing (not access control — §6.3) | **PROVEN** |
-| Independent schema evolution | **PROVEN** — module-owned ordered migrations with a checksummed ledger; the 001→002 upgrade, idempotent rerun and drift-detection tests all pass |
+| Independent schema evolution | **PROVEN — mechanism.** Module-owned ordered migrations with a checksummed ledger; upgrade, idempotent rerun and drift detection all pass. The multi-migration case is exercised **synthetically**: the only real-directory test applies what is already there and skips it, because a third migration does not yet exist |
 | **Actual execution blocking** | **UNPROVEN — Stage 2.** `blocking` is modelled state; its only implemented consequence is the attention item |
 
 The schema is also **test-applied, not wired at boot** — `server/index.ts` never calls
@@ -534,11 +534,11 @@ Re-derived from the final tree at HEAD of `claude/st-084-awcp-host-spike` after 
 | Suite | Result |
 |---|---|
 | `workflow-attention.test.ts` (pure, no DB) | 18 passed / 0 failed |
-| `workflow-store.test.ts` | 16 passed / 0 failed (+frozen contract, 3 resolveDecision, 2 composite-FK integrity) |
+| `workflow-store.test.ts` | 14 passed / 0 failed (+frozen contract, 3 resolveDecision, 2 composite-FK integrity) |
 | `workflow-boundary.test.ts` | 16 passed / 0 failed (allowlist + scan + enumeration controls, no-process-termination, ledger in the workflow schema) |
 | `workflow-failure-isolation.test.ts` | 21 passed / 0 failed (+four-outcome vocabulary, late-success orphan, 3 timeout bounds, 4 concurrency) |
 | `workflow-migrations.test.ts` (new) | 9 passed / 0 failed — ordering, upgrade, idempotency, drift, drift-negative control, typed failure, discovery guards |
-| **All five, at HEAD** | **78 passed / 0 failed** (58 before this round) |
+| **All five, at HEAD** | **78 passed / 0 failed** (58 before this round) — 18 + 14 + 16 + 21 + 9 |
 | **All five, memory fully disabled + provider unroutable** | **78 passed / 0 failed** — re-run at HEAD, not carried forward |
 | `migrations.test.ts` (the memory domain's own) | untouched by this spike; the workflow DDL left the shared chain, so its version assertions stayed pristine |
 | **Full server suite** (`docker compose --profile test`) | **294 passed / 9 failed** |
@@ -550,6 +550,14 @@ observed pass count. All 9 are OpenRouter-dependent tests in `e2e.test.ts` (8) a
 `entity-worker-observability.test.ts` (1) — files this change never touches — and the
 `mcp-test` container log carries 346 OpenRouter `401`s for the run, so the cause is the
 absent provider credential and not this work.
+
+**Operational consequence of the drift check, recorded because it will surprise
+someone:** once a migration is applied, its checksum is frozen in the ledger of every
+database that ran it. Editing an applied `NNN_*.sql` — including a comment fix, or an
+EOL normalisation on checkout — then raises `MigrationDriftError` and, by the
+fail-closed ordering, blocks *all* pending migrations until the ledger row is removed
+or a new migration supersedes the change. That is the intended behaviour and the reason
+the check exists; it is also why `002` should now be treated as immutable.
 
 **Memory-disabled mode was re-run at HEAD**, closing the evidence limitation that the
 previous 37/37 result predated two fix rounds. Configuration, with the env verified to
