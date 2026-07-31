@@ -12,7 +12,7 @@ source_path: "docs/investigations/ST-084-awcp-host-spike-findings.md"
 # ST-084 Spike Findings — Stage 1
 
 **Story:** ST-084 — Architecture spike: validate ai-memory as the AWCP host (ADR-016 acceptance gate)
-**Date:** 2026-07-30
+**Date:** 2026-07-30 · **last re-derived from the tree** 2026-07-31 (second PR #34 review round)
 **Branch:** `claude/st-084-awcp-host-spike`
 **Status:** **Stage 1 complete. Criteria 5, 6 and 7 are UNPROVEN and out of Stage 1 scope.**
 **Plan:** [`docs/plans/2026-07-29-001-awcp-ai-memory-host-spike.md`](../plans/2026-07-29-001-awcp-ai-memory-host-spike.md)
@@ -47,12 +47,25 @@ This uses the deliberately weaker Stage 1 vocabulary — *promising / promising 
 concerns / unlikely to fit* — not the final accept/reject. The final recommendation
 is a Stage 2 deliverable.
 
+**What Stage 1 claims, separated so none is over-read** (full evidence in §10):
+
+| Claim | Status |
+|---|---|
+| Evidence-based packet completion | **PROVEN** |
+| Deterministic decision attention | **PROVEN** |
+| Schema namespacing (not access control — §6.3) | **PROVEN** |
+| Independent schema evolution | **PROVEN** — module-owned ordered migrations with a checksummed ledger; the 001→002 upgrade, idempotent rerun and drift-detection tests all pass |
+| **Actual execution blocking** | **UNPROVEN — Stage 2.** `blocking` is modelled state; its only implemented consequence is the attention item |
+
+The schema is also **test-applied, not wired at boot** — `server/index.ts` never calls
+`ensureWorkflowSchema`. See §8.
+
 ---
 
 ## 1. What was built
 
 A disposable vertical slice under `server/src/workflow/` (6 files) plus workflow-owned
-DDL in `server/db/workflow/` and four test files. The DDL deliberately sits **outside**
+DDL in `server/db/workflow/` (two ordered migrations) and five test files. The DDL deliberately sits **outside**
 the shared migration chain: that runner `Deno.exit(1)`s the whole server on failure, so
 a workflow migration living there would have made a workflow defect a platform outage.
 
@@ -62,10 +75,31 @@ a workflow migration living there would have made a workflow defect a platform o
 | 2. Local run — agent type, host, working dir, repo, branch, start time, status | **Built** |
 | 3. Remote Ubuntu run | **Stage 2** — protocol defined (§7.1), not implemented |
 | 4. Checkpoint — completed work, current state, blockers, next action, commit, timestamp | **Built** |
-| 5. Operational decision that blocks execution → deterministic `decision-required` | **Built** |
+| 5. Operational decision that blocks execution → deterministic `decision-required` | **Partly built — read the note below.** The attention half is built and proven. The "blocks execution" half is **modelled state only** and is Stage 2. |
 | 6. Completion gate — refuse without evidence, succeed with it | **Built** |
 | 7. Optional memory projection through `KnowledgePromotionPort` | **Built** |
 | 8. Deterministic attention (5 rules, no LLM) | **Built** |
+
+**On slice item 5 — what `blocking` does and does not do.** An unresolved `blocking`
+decision deterministically raises a `decision-required` attention item. That is its
+*only* implemented consequence. It does not gate packet completion (the gate is
+evidence-based per plan §6, and `completePacket` never reads `operational_decisions`),
+and it does not halt a running agent, because Stage 1 has no execution node to halt.
+
+This was previously overstated. The DDL comment read "A decision here can block a run
+and gate completion" — false in both halves, and a PR #34 reviewer read that comment
+and filed a P1 against the code for not doing what the comment promised. The PO
+withdrew that direction on 2026-07-31: making `blocking` gate completion would be a
+**product-contract amendment**, not enforcement of an existing requirement, because
+plan §5 names the attention item as the sole consequence and plan §6 names missing
+evidence as the sole fail condition. Actual execution blocking is recorded as a Stage 2
+design requirement, and the eventual model should distinguish **advisory**,
+**run-blocking** and **completion-gating** decisions rather than overloading one
+boolean to mean all three.
+
+`workflow-store.test.ts` now asserts explicitly that the packet completes with its
+blocking decision still open, so changing that semantic requires a visible edit rather
+than a quiet behaviour change.
 
 **Schema reduced from ten tables to six**, per the PO's "smallest schema necessary"
 direction. `repository_bindings` was inlined (it is 1:1 with the packet — a join
@@ -94,7 +128,8 @@ OPENROUTER_API_KEY=disabled
 OPENROUTER_BASE_URL=http://127.0.0.1:9/blocked
 ```
 
-**Result: 37 passed / 0 failed** (for the code as it stood at that run — see §13a Evidence limitations). Every operational behaviour — packet creation, run
+**Result: 78 passed / 0 failed**, re-run against HEAD on 2026-07-31 (the earlier 37/37
+figure was for the code as it stood then). Every operational behaviour — packet creation, run
 registration, checkpointing, blocking decisions, deterministic attention, the
 completion gate's refusal *and* its acceptance — works with no embeddings, no
 entity extraction, no consolidation, no graph traversal and no reachable model
@@ -241,8 +276,10 @@ fail — and that is precisely the coupling a naive implementation would introdu
 > projection**, since `KnowledgePromotionPort` carries no dedup contract. That directly
 > contradicted this section's claim that promotion failure is "visible and retryable."
 >
-> Fixed by narrowing the `try` to the port call alone and adding a `refLost` flag, so
-> "never happened" (retry) and "happened, reference lost" (reconcile) are distinguishable.
+> Fixed by narrowing the `try` to the port call alone and distinguishing the outcomes.
+> **Superseded 2026-07-31:** the `refLost` boolean became a four-valued
+> `PromotionStatus`, because two outcomes were still collapsed — a *timeout* was
+> reported as a definite non-event when it is in fact unknown. See §13a.
 > Two further defects in the same path: promotion **hardcoded `policyScope: "personal"`**
 > for every packet regardless of its real scope — silently widening the security boundary
 > §6.1 warns about, and invisible because every test used personal-scoped packets — and
@@ -348,6 +385,21 @@ spike must not quietly alter production read paths.
   with the DDL relocated, `migrations.test.ts` was reverted to pristine and is now
   untouched by this spike. The co-tenancy tax is real but avoidable — by not joining
   the shared chain, which is itself the finding.
+- **Leaving the shared chain left the module with no way to evolve its schema at all,
+  and that went unnoticed until PR #34 review.** The replacement was a single
+  `IF NOT EXISTS` DDL file whose name was hardcoded in `schema.ts`, which meant editing
+  a `CREATE TABLE` body was a silent no-op against any existing database and adding
+  `002_*.sql` was never applied. No test caught either, so "the workflow module owns
+  its schema" was true only for the single act of creating it once. **Closed
+  2026-07-31:** the module now has its own ordered runner — discovery of
+  `server/db/workflow/NNN_*.sql`, a ledger at `workflow.schema_migrations` carrying
+  version / filename / SHA-256 checksum / applied timestamp, one transaction per
+  migration, and typed failures that never call `Deno.exit`. The ledger lives inside
+  the workflow schema deliberately: writing to `public.schema_migrations` would
+  reintroduce exactly the shared mutable state this separation exists to avoid, and
+  would survive `DROP SCHEMA workflow CASCADE`. Note the shape of the original error —
+  the module escaped a coupling and acquired a *capability gap* in its place, and the
+  gap was invisible because nothing tested for the absence of a behaviour.
 - **Registering MCP tools costs two out-of-module edits**: the hand-maintained
   `toolNames` array at `index.ts:101-113`, and `mcp-protocol-compat.test.ts:172-179`,
   which regex-scans `server/index.ts` *alone* for `server.registerTool(` and asserts a
@@ -417,9 +469,18 @@ Stated plainly so this report cannot be over-read:
 
 | Criterion | Status |
 |---|---|
+| **Actual execution blocking** | **UNPROVEN — Stage 2.** `blocking` is modelled operational state whose only implemented consequence is deterministic attention. Nothing in Stage 1 halts, pauses or refuses work on the strength of it, and there is no execution node against which it could. See §1's note on slice item 5. |
 | 5 — Policy-scope enforcement | **UNPROVEN.** Model defined and DB-enforced as a column; no retrieval enforcement built or tested. §6.1 may change the host verdict. |
 | 6 — Remote Ubuntu execution node | **UNPROVEN.** Protocol defined (§7.1); no client written, no registration/heartbeat/checkpoint/spool/replay exercised; experiments 4–6 not run. z2 reachability confirmed, nothing more. |
 | 7 — Final migration and extraction viability | **UNPROVEN.** Stage 2 deliverable. |
+
+**The workflow schema is TEST-APPLIED, not wired at boot.** `server/index.ts` contains
+no reference to the workflow module and never calls `ensureWorkflowSchema` — the schema
+exists in a database only because a test applied it. Every "proven" claim in this report
+is therefore *proven against the module's own entry points*, not against a deployed
+server. Wiring it into a composition root is deliberate Stage 2 work (the whole point of
+`tryEnsureWorkflowSchema` returning an outcome instead of exiting is that the
+composition root decides), but a reader must not infer deployment from these results.
 
 Also not established: production deployment, backup/DR, dashboard, VS Code extension,
 Copilot lifecycle automation, event sourcing, and any Jira/Confluence/ADO write.
@@ -443,9 +504,19 @@ rm -rf server/src/workflow/ server/db/workflow/ server/tests/workflow-*.test.ts
 *Corrected 2026-07-30 after PR #34 review.* The previous version of this section was
 written against the superseded design and left the real DDL behind: it deleted
 `server/db/007_workflow_schema.sql` (the file now lives at
-`server/db/workflow/001_workflow_schema.sql`), removed a `schema_migrations` row that
-is never written (the module deliberately does not register a version), and reverted
-`migrations.test.ts`, which this spike no longer touches.
+`server/db/workflow/001_workflow_schema.sql`), removed a `public.schema_migrations`
+row that is never written, and reverted `migrations.test.ts`, which this spike no
+longer touches.
+
+*Still true after the 2026-07-31 migration work, and worth stating explicitly because
+adding a ledger is exactly the kind of change that usually breaks a teardown claim.*
+The module's ledger is `workflow.schema_migrations` — **inside** the schema being
+dropped — so `DROP SCHEMA workflow CASCADE` still removes every trace in one statement.
+Had the ledger been a row in the memory domain's `public.schema_migrations`, teardown
+would now require unwinding shared bookkeeping, and criterion 4's separability
+evidence would be measurably weaker. The `rm` line already covers
+`002_decision_run_packet_integrity.sql` and `workflow-migrations.test.ts` via its
+existing globs.
 
 **No other file is modified — the teardown is now strictly `rm` plus one `DROP
 SCHEMA`.** That is *stronger* separability evidence for criterion 4 than the original
@@ -457,21 +528,49 @@ nothing outside the module knows it exists.
 
 ## 10. Verification summary
 
+Re-derived from the final tree at HEAD of `claude/st-084-awcp-host-spike` after the
+2026-07-31 PO-directed round, not carried forward from earlier runs.
+
 | Suite | Result |
 |---|---|
-| `workflow-attention.test.ts` (pure, no DB) | 18 passed / 0 failed (+zero-criteria reconciliation) |
-| `workflow-store.test.ts` | 6 passed / 0 failed |
-| `workflow-boundary.test.ts` | 14 passed / 0 failed (+allowlist control, scan control, no-process-termination, schema idempotency) |
-| `workflow-failure-isolation.test.ts` | 17 passed / 0 failed (+3a/3b split, scope fidelity, refLost, typed not-found, 3 timeout bounds, 2 concurrency) |
-| **All four, post-review** | **58 passed / 0 failed** (37 pre-review -> 44 after review fixes -> 58 after the PO's four must-fixes) |
-| **All four, memory fully disabled + provider unroutable** | **37 passed / 0 failed** (pre-review run; the 7 added tests are memory-independent by construction) |
-| `migrations.test.ts` | 6 passed / 0 failed — **now untouched by this spike**; the workflow DDL left the shared chain, so the 4 hardcoded version assertions were reverted to pristine |
-| **Full server suite** | **274 passed / 9 failed** — 216 documented baseline + 58 workflow tests reconciles exactly |
+| `workflow-attention.test.ts` (pure, no DB) | 18 passed / 0 failed |
+| `workflow-store.test.ts` | 16 passed / 0 failed (+frozen contract, 3 resolveDecision, 2 composite-FK integrity) |
+| `workflow-boundary.test.ts` | 16 passed / 0 failed (allowlist + scan + enumeration controls, no-process-termination, ledger in the workflow schema) |
+| `workflow-failure-isolation.test.ts` | 21 passed / 0 failed (+four-outcome vocabulary, late-success orphan, 3 timeout bounds, 4 concurrency) |
+| `workflow-migrations.test.ts` (new) | 9 passed / 0 failed — ordering, upgrade, idempotency, drift, drift-negative control, typed failure, discovery guards |
+| **All five, at HEAD** | **78 passed / 0 failed** (58 before this round) |
+| **All five, memory fully disabled + provider unroutable** | **78 passed / 0 failed** — re-run at HEAD, not carried forward |
+| `migrations.test.ts` (the memory domain's own) | untouched by this spike; the workflow DDL left the shared chain, so its version assertions stayed pristine |
+| **Full server suite** (`docker compose --profile test`) | **294 passed / 9 failed** |
 
-The 9 failures are the **documented pre-existing local baseline** — the board records
-"216 passed / 9 expected-local-401 (CI is arbiter for LLM tests)" — and all 9 are
-OpenRouter-dependent tests in `e2e.test.ts` and `entity-worker-observability.test.ts`,
-files this change never touches. The arithmetic reconciles exactly: 216 + 37 = 253.
+**The 9 failures are the documented pre-existing baseline, and the arithmetic proves no
+test was lost behind an unchanged total:** the board records "216 passed / 9
+expected-local-401 (CI is arbiter for LLM tests)", and 216 + 78 = **294**, exactly the
+observed pass count. All 9 are OpenRouter-dependent tests in `e2e.test.ts` (8) and
+`entity-worker-observability.test.ts` (1) — files this change never touches — and the
+`mcp-test` container log carries 346 OpenRouter `401`s for the run, so the cause is the
+absent provider credential and not this work.
+
+**Memory-disabled mode was re-run at HEAD**, closing the evidence limitation that the
+previous 37/37 result predated two fix rounds. Configuration, with the env verified to
+take precedence over `--env-file` rather than assumed to:
+
+```
+FEATURE_ENTITY_WORKER=false
+FEATURE_CONSOLIDATION_WORKER=false
+FEATURE_EMBEDDING_BACKFILL=false
+OPENROUTER_API_KEY=disabled
+OPENROUTER_BASE_URL=http://127.0.0.1:9/blocked
+```
+
+**A defect this round found in the verification mechanism itself, worth recording
+because it is the same class the spike keeps producing:** two boundary tests wrote
+fixture files and so required `--allow-write`, which CI does not grant
+(`.github/workflows/ci.yml:56`). They passed locally and failed in CI — a control that
+runs on one machine controls nothing. Both were rebuilt to need no writes: the
+enumeration control now proves the scanner reads the directory it is handed, and the
+typed-failure test moved into the migrations suite where it drives the real runner
+instead of a hand-rolled `sql.begin`.
 
 ---
 
@@ -482,12 +581,24 @@ Recommendation:
 - PROMISING WITH CONCERNS (Stage 1 preliminary; NOT an acceptance)
 
 Evidence:
-- boundary tests:      37/37 passed, incl. full run with memory disabled
-                       and the model provider unroutable
+- workflow tests:      78/78 passed, INCLUDING a re-run at HEAD with memory
+                       disabled and the model provider unroutable
+- full server suite:   294 passed / 9 failed (the 9 = documented local
+                       OpenRouter-401 baseline; 216 + 78 = 294 reconciles)
 - criteria proven:     1 operational independence   PASS
                        2 separate persistence/API   PASS
                        3 failure isolation          PASS
                        4 reuse and coupling         ASSESSED
+- Stage 1 claims, stated separately so none is over-read:
+                       evidence-based packet completion   PROVEN
+                       deterministic decision attention   PROVEN
+                       schema namespacing                 PROVEN
+                       independent schema evolution       PROVEN
+                         (ordered runner + ledger; 001->002 upgrade,
+                          idempotent rerun and drift detection all pass)
+                       actual execution blocking          UNPROVEN, Stage 2
+                         (`blocking` is modelled state; its only implemented
+                          consequence is the attention item)
 - criteria unproven:   5 policy scope, 6 remote node, 7 final viability
 - reused components:   Postgres connection, transactions, logging
                        conventions, container/test topology
@@ -533,7 +644,7 @@ flowchart TB
     A["attention.ts<br/>pure deterministic rules"]
     P["ports.ts<br/>KnowledgeSearchPort<br/>KnowledgePromotionPort"]
     T["types.ts"]
-    SCH["schema.ts<br/>applies the module's OWN DDL<br/>reports a typed error, never exits"]
+    SCH["schema.ts<br/>the module's OWN ordered migration runner<br/>+ workflow.schema_migrations ledger<br/>reports typed errors, never exits"]
   end
 
   subgraph SHARED["Shared platform infrastructure — reused"]
@@ -554,8 +665,8 @@ flowchart TB
   end
 
   subgraph PG["PostgreSQL — one instance, two schemas"]
-    WSCH["schema workflow<br/>6 tables"]
-    PSCH["schema public<br/>thoughts, memory_graph, ..."]
+    WSCH["schema workflow<br/>6 tables + its own schema_migrations ledger"]
+    PSCH["schema public<br/>thoughts, memory_graph,<br/>public.schema_migrations"]
   end
 
   V --> S
@@ -566,9 +677,10 @@ flowchart TB
   S --> DB
   SCH --> DB
   DB --> WSCH
-  SCH -. "applies db/workflow/<br/>001_workflow_schema.sql" .-> WSCH
+  SCH -. "discovers + applies db/workflow/NNN_*.sql<br/>in version order, one tx each" .-> WSCH
   MIG -. "x  never applies workflow DDL" .-> WSCH
   MIG --> PSCH
+  SCH -. "x  never writes public.schema_migrations" .-> PSCH
   P -. "optional adapter — outside any<br/>operational transaction" .-> MEM
   MEM --> PSCH
 ```
@@ -620,7 +732,7 @@ passing tests:
 
 | # | Defect | Resolution |
 |---|---|---|
-| 1 | `resolveAndPromoteDecision` reported `promoted: false` when the projection had **succeeded** but its ref failed to record — a retry would duplicate the projection | `try` narrowed to the port call alone; `refLost` flag added so "never happened" (retry) and "happened, ref lost" (reconcile) are distinguishable |
+| 1 | `resolveAndPromoteDecision` reported `promoted: false` when the projection had **succeeded** but its ref failed to record — a retry would duplicate the projection | `try` narrowed to the port call alone; outcomes made distinguishable. **Superseded 2026-07-31** by the four-valued `PromotionStatus`, which also splits *indeterminate* out of `failed` |
 | 2 | Promotion **hardcoded `policyScope: "personal"`**, silently widening the security boundary for corporate/mixed/public packets | Reads the packet's real scope; `PromotionInput.policyScope` is now the closed `PolicyScope` union, making the class of bug a compile error |
 | 3 | The import-boundary **blocklist** omitted `index.ts` and six more, and permitted every future memory module by default | Inverted to an allowlist with a red/green control test |
 | 4 | The plan carried no YAML frontmatter, breaking the mandated `story: ST-NNN` link | Added; the PO-supplied body untouched |
@@ -644,17 +756,58 @@ longer needs modifying at all. Stage 1 now touches **zero files outside
 `server/src/workflow/`, `server/db/workflow/` and its own tests** — a materially
 stronger separability result than the original submission.
 
+### Resolved in the second PR #34 review round (2026-07-31, PO-directed)
+
+Four further directions came from the same reviewer — the agent that originated the
+AWCP concept. All four were independently verified before acting; one was withdrawn by
+the PO after that verification contradicted its premise.
+
+| # | Direction | Disposition |
+|---|---|---|
+| 1 | A port **timeout** is indeterminate, not a failure; define `decisionId` as the promotion idempotency key; prove a late success orphans a projection | **DONE.** `PromotionOutcome` is now a four-valued status (`promoted` / `ref-lost` / `failed` / `indeterminate`) branchable without string-matching the error. `LateSuccessMemoryAdapter` proves the orphan. The idempotency key is specified in the port contract **and explicitly marked unproven** — no adapter demonstrates it, so no retry here is called safe |
+| 2 | Unresolved `blocking` decisions must gate completion | **WITHDRAWN by the PO.** Verification showed the premise was false: plan §5 names the attention item as the *only* consequence of a blocking decision and §6 names missing evidence as the *only* fail condition, so this would have been a product-contract amendment rather than enforcement of an existing requirement — and it would have broken the test that mirrors the plan's own vertical slice. **The reviewer was reading a comment I wrote:** `001_workflow_schema.sql` claimed a decision "can block a run and gate completion", which was false in both halves. Comment corrected; completion stays evidence-based; actual execution blocking recorded as Stage 2 |
+| 3 | Composite FK so a decision's `run_id` and `packet_id` cannot disagree | **DONE, in migration `002`.** As literally worded the direction would have shipped a **broken** FK: plain `ON DELETE SET NULL` nulls every referencing column, and `packet_id` is `NOT NULL`, so deleting a run — reachable through `deletePacket`'s cascade — would have failed. Implemented with PostgreSQL 15's column-list `ON DELETE SET NULL (run_id)` and default MATCH SIMPLE, both verified against the pinned PG 15.18 image and covered by tests including the null-`run_id` and run-deletion cases |
+| 4 | Remove `setPacketStatus` | **DONE.** Understated in the original finding: it manufactured `complete` packets *and* un-completed them, thawing the frozen verification contract. See residuals |
+
+Two further defects neither the reviewer nor the first pass had flagged, found while
+verifying the above and fixed in the same round: `resolveDecision` silently overwrote an
+already-resolved decision (now once-and-final — idempotent on the same answer with
+`resolved_at` preserved, typed `DecisionConflictError` on a different one), and the
+module **could not evolve its schema at all** (see §6.2).
+
 ### Known Stage 1 residuals (accepted, recorded)
 
 Not fixed, do not affect the criteria 1–4 conclusion: client-versus-database clock skew
 in staleness; untested not-found branches on `attentionForPacket`/`completePacket`;
 test-only mutators (`backdateRunActivity`, `clearPromotionRef`) interleaved with
-production functions in `store.ts`; test-helper duplication across the four test files
+production functions in `store.ts`; test-helper duplication across the test files
 (the reviewer explicitly advised **against** extracting at 2–3 call sites); the plan not
 following the canonical Product Contract shape (it is a deliberately preserved PO spec);
 and `listCheckpoints` having no ORDER BY tiebreaker for identical timestamps (no current
-test depends on equal timestamps). `setPacketStatus` and `POLICY_SCOPES` remain exported
-without callers.
+test depends on equal timestamps). `POLICY_SCOPES` remains exported without callers.
+
+~~`setPacketStatus` remains exported without callers.~~ **CLOSED 2026-07-31, PO-directed
+— and it was not merely dead code.** It wrote any status with no gate, so the public API
+contained a route that manufactured a `complete` packet whose required criteria had no
+evidence; and in reverse, `setPacketStatus(id, "open")` un-completed a packet and thawed
+the verification contract `addCriterion` freezes. Either direction invalidated the claim
+that this API preserves the completion invariant, no matter how well `completePacket`
+and `addCriterion` behave. Deleted rather than gated. Stage 1 now implements exactly two
+packet-status transitions, both earned — creation and verified completion — and
+`in_progress` / `blocked` are consequently unreachable, which is a recorded Stage 1 gap
+rather than an argument for reinstating a setter.
+
+Two new residuals from this round, recorded rather than papered over:
+
+- **`attachPromotionRef` overwrites unconditionally**, and idempotent `resolveDecision`
+  makes that more reachable: resolve → promote → retry → promote again ends with the
+  second projection's ref overwriting the first, orphaning projection #1. The fix is not
+  in the store — it is `decisionId` as the promotion port's idempotency key, now
+  specified in the contract and **unproven** (see below).
+- **`resolveAndPromoteDecision` can return `indeterminate` and no reconciliation path
+  consumes it.** The outcome vocabulary is correct; nothing yet acts on it. A caller
+  holding "unknown" has no sanctioned recovery in Stage 1 beyond calling again, which is
+  only safe once an adapter honours the idempotency key.
 
 ### Deferred to Stage 2
 
@@ -671,12 +824,25 @@ not begin from assumptions. `fetch` must be fixed first — see §6.1.
   was specifically briefed on were caught by the testing and correctness lenses.
 - **`withPortTimeout` bounds the caller's wait, not the underlying work.** It does not
   cancel an in-flight operation; a real adapter holding a socket should also accept an
-  `AbortSignal`.
+  `AbortSignal`. **Amended 2026-07-31:** the code previously drew the wrong conclusion
+  from this limitation — it classified a timeout as `promoted: false, safe to retry`,
+  asserting the projection had not happened on the one path where that is precisely
+  what nobody knows. A timeout is now an explicit `indeterminate` outcome, and
+  `LateSuccessMemoryAdapter` proves the case it was hiding: the projection lands after
+  the bound fires, `promoted_memory_ref` stays NULL, and the result is an orphaned
+  projection requiring reconciliation. An `AbortSignal` would help but is **not** a
+  substitute — cancellation is itself racy, so the caller still needs to be able to say
+  "unknown".
+- **No adapter has been shown to honour the promotion idempotency key.** `decisionId`
+  is now specified as `KnowledgePromotionPort`'s idempotency key — two calls with the
+  same key must yield at most one projection and the same reference — but every adapter
+  in this spike is an in-process fake. Until a real adapter demonstrates it, **no retry
+  in this system may be described as safe**, and the report does not claim it is.
 - **A Postgres schema is namespacing, not access control** (§6.3).
-- **The memory-disabled run predates the last two fix rounds.** The 37/37 disabled-mode
-  result stands for the code as it was; the 21 tests added since are memory-independent
-  by construction (they use in-process adapters and workflow tables only), but that
-  specific disabled-mode invocation was not re-run against them.
+- ~~**The memory-disabled run predates the last two fix rounds.**~~ **CLOSED
+  2026-07-31.** Re-run against HEAD with the same configuration: **78 passed / 0
+  failed** with all capabilities off and the provider endpoint unroutable. The env was
+  verified to take precedence over `--env-file` rather than assumed to.
 - ~~**No concurrency test covers a concurrent criterion INSERT** — a phantom no row lock
   can close.~~ **CLOSED 2026-07-30** after PR #34 review, which established that this was
   reachable *in-module* via `addCriterion` (a bare INSERT with no lock), not only by an
@@ -699,9 +865,11 @@ not begin from assumptions. `fetch` must be fixed first — see §6.1.
   cascade, which blocks on the same lock; an external writer is unconstrained. Closing it
   generally needs SERIALIZABLE.
 
-- **`setPacketStatus` is an ungated back door.** Zero callers, but exported, and it writes
-  any status including `complete` with no lock and no criteria check — bypassing the gate
-  entirely rather than racing it. Found while scoping the above; recorded, not fixed.
+- ~~**`setPacketStatus` is an ungated back door.**~~ **CLOSED 2026-07-31 — deleted.** It
+  wrote any status including `complete` with no lock and no criteria check, bypassing the
+  gate rather than racing it; and in reverse it un-completed packets, thawing the frozen
+  verification contract. Recorded here originally as "not fixed"; the PR #34 reviewer was
+  right that leaving it invalidated the completion-invariant claim outright.
 
 ---
 
@@ -737,6 +905,29 @@ much as the production code does. Three concrete habits follow:
    *fires*, not just that it stayed quiet. Both boundary scans now have one.
 3. **A comment asserting an invariant is a claim that needs a test or a correction.**
    Two of the three false claims above lived only in prose.
+
+**The second review round made habit 3 concrete in a way the first round did not, and
+it is worth stating because it raises the cost of a stale comment.** The DDL comment on
+`operational_decisions` claimed a decision "can block a run and gate completion". Both
+halves were false. A reviewer read that comment, believed the code was meant to do it,
+and filed a P1 directing that `completePacket` be changed to match — a direction the PO
+then had to withdraw once the plan was checked. So a false comment did not merely fail
+to describe the code: **it nearly rewrote it.** The failure mode is not "documentation
+drifts", it is "documentation is an input to other people's decisions, including
+reviewers' and future agents'."
+
+Two further habits earned in that round:
+
+4. **A control that runs on one machine controls nothing.** Two boundary tests needed
+   `--allow-write`, which CI does not grant. They passed locally and failed in CI —
+   green where it was cheap, absent where it mattered. Check that a verification
+   mechanism runs *in the environment that gates merge*, not just the one you are
+   sitting at.
+5. **Distrust a test that cannot re-establish its own precondition.** "Prove an existing
+   001 upgrades through 002" destroys its own setup the first time it succeeds. Written
+   against shared state it would have passed exactly once and then silently tested
+   nothing — the same silent-pass family as the blocklist, arriving by a different
+   route.
 
 This is also the argument for having run the review at all rather than shipping on the
 author's own verification: the author wrote both the code and the tests that certified
