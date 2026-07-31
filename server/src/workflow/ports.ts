@@ -29,6 +29,33 @@ import type { PolicyScope } from "./types.ts";
  */
 export const PORT_TIMEOUT_MS = 5_000;
 
+/**
+ * Thrown by a promotion adapter to declare POSITIVELY that no projection was created.
+ *
+ * This exists because `promoteDecision(): Promise<string>` cannot express the
+ * difference between the two ways a rejection happens, and the difference decides
+ * whether a retry is safe:
+ *
+ *   - the adapter never reached the memory domain, or reached it and it refused —
+ *     nothing was committed, so re-attempting cannot duplicate anything;
+ *   - the adapter committed the projection and then failed to *learn* that it had —
+ *     the response was lost, the connection reset, the payload failed to decode. The
+ *     projection exists; a retry duplicates it.
+ *
+ * A bare `throw new Error(...)` is indistinguishable between these, so the service
+ * classifies an undeclared rejection as `indeterminate`. An adapter that can prove the
+ * first case throws THIS, and gets the more useful `failed` classification. The
+ * contract is opt-in and fail-safe: silence costs precision, never correctness.
+ */
+export class PromotionNotAttemptedError extends Error {
+  override readonly cause?: Error;
+  constructor(message: string, cause?: Error) {
+    super(message);
+    this.name = "PromotionNotAttemptedError";
+    this.cause = cause;
+  }
+}
+
 /** Raised when a memory-port call exceeds its bound. */
 export class PortTimeoutError extends Error {
   readonly port: string;
@@ -108,6 +135,15 @@ export interface KnowledgePromotionPort {
    * adapter demonstrates it — a test that calls twice with one `decisionId` and
    * asserts one projection and one identical reference — no retry in this system may
    * be described as safe.
+   *
+   * **On rejection: this signature cannot promise that throwing means nothing
+   * happened.** A remote adapter can commit the projection and then reject because the
+   * response was lost, the connection reset, or decoding failed. The service therefore
+   * treats an undeclared rejection as `indeterminate`, NOT as a definite non-event. An
+   * implementation that can prove nothing was committed should throw
+   * {@link PromotionNotAttemptedError} to say so and earn the `failed` classification.
+   * Requiring "reject only before any side effect" in prose would be an invariant the
+   * type system cannot enforce and the network cannot honour.
    */
   promoteDecision(input: PromotionInput): Promise<string>;
 }
@@ -156,8 +192,41 @@ export class FailingMemoryAdapter implements KnowledgeSearchPort, KnowledgePromo
     return Promise.reject(new Error(this.message));
   }
 
+  /**
+   * Rejects with {@link PromotionNotAttemptedError}, which is the truthful signal for
+   * this adapter: it is an in-process fake that provably touches nothing. That is what
+   * earns it the `failed` classification rather than `indeterminate`.
+   */
   promoteDecision(_input: PromotionInput): Promise<string> {
-    return Promise.reject(new Error(this.message));
+    return Promise.reject(new PromotionNotAttemptedError(this.message));
+  }
+}
+
+/**
+ * An adapter that COMMITS the projection and then rejects.
+ *
+ * The case a real remote adapter hits and neither the hanging nor the failing adapter
+ * can express: the write lands, and the acknowledgement is lost on the way back. The
+ * rejection is a plain `Error`, deliberately — this adapter does NOT declare
+ * `PromotionNotAttemptedError`, because it cannot honestly do so. It is therefore the
+ * test of the conservative default: an undeclared rejection must classify as
+ * `indeterminate`, not `failed`.
+ */
+export class CommitThenRejectMemoryAdapter
+  implements KnowledgeSearchPort, KnowledgePromotionPort {
+  readonly promotionCalls: PromotionInput[] = [];
+  /** Refs the adapter actually minted — i.e. projections that really exist. */
+  readonly mintedRefs: string[] = [];
+
+  search(_query: string, _limit: number): Promise<KnowledgeSearchResult[]> {
+    return Promise.resolve([]);
+  }
+
+  promoteDecision(input: PromotionInput): Promise<string> {
+    this.promotionCalls.push(input);
+    // The side effect happens FIRST. Only then does the call fail.
+    this.mintedRefs.push(`committed:${input.decisionId}`);
+    return Promise.reject(new Error("connection reset after commit; response lost"));
   }
 }
 

@@ -37,6 +37,7 @@ import {
   checksumOfText,
   type DiscoveredMigration,
   discoverMigrations,
+  MIGRATION_LOCK_KEY,
   orderMigrationVersions,
   runWorkflowMigrations,
 } from "../src/workflow/schema.ts";
@@ -220,6 +221,119 @@ Deno.test({
       );
       await applyMigrations([only], opts);
       const report = await applyMigrations([only], opts);
+      assertEquals(report.applied, []);
+      assertEquals(report.skipped.map((s) => s.version), [1]);
+    });
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "migrations: a concurrent runner with DIFFERENT bytes for the same version is refused",
+  fn: async () => {
+    // The deployment race the advisory lock exists to make safe, and the one the
+    // pre-lock drift scan CANNOT cover: when that scan ran, the ledger row did not
+    // exist yet.
+    //
+    // Two runners start from an empty ledger holding different contents for version 1
+    // — a mid-rollout deploy with two instances on different commits. A version-only
+    // recheck under the lock would report the loser's migration as a clean `skipped`
+    // while the database actually holds the winner's contents.
+    //
+    // Made deterministic the same way as completePacket's FOR UPDATE control: hold the
+    // advisory lock from a reserved connection, let runner B block on it, insert
+    // runner A's ledger row from the lock holder, then release.
+    await withScratchSchema("wf_migtest_race", async (opts) => {
+      const runnerA = await migration(
+        1,
+        "001_alpha.sql",
+        `CREATE TABLE ${opts.schemaName}.alpha (id int);`,
+      );
+      const runnerB = await migration(
+        1,
+        "001_alpha.sql",
+        `CREATE TABLE ${opts.schemaName}.alpha (id int, extra text);`,
+      );
+      assert(runnerA.checksum !== runnerB.checksum);
+
+      // Create the schema and ledger up front so the lock holder can insert into it.
+      await applyMigrations([], opts);
+
+      const holder = await sql.reserve();
+      let released = false;
+      try {
+        await holder.unsafe("BEGIN");
+        await holder.unsafe(`SELECT pg_advisory_xact_lock(${MIGRATION_LOCK_KEY})`);
+
+        // Runner B: passes its pre-lock drift scan (ledger is empty), then blocks.
+        const b = applyMigrations([runnerB], opts).then(
+          () => null,
+          (err: Error) => err,
+        );
+
+        // NON-VACUITY GUARD. A green result means nothing unless B genuinely waited:
+        // if it raced past before the insert, the test would prove something else
+        // entirely (or fail confusingly on a primary-key violation). Require the
+        // waiter to be visible in pg_locks before proceeding.
+        let blocked = false;
+        for (let i = 0; i < 100 && !blocked; i++) {
+          const [{ n }] = await sql<{ n: string }[]>`
+            SELECT count(*) AS n FROM pg_locks
+            WHERE locktype = 'advisory' AND NOT granted
+              AND objid = ${MIGRATION_LOCK_KEY}
+          `;
+          if (Number(n) > 0) blocked = true;
+          else await new Promise((r) => setTimeout(r, 20));
+        }
+        assert(blocked, "runner B never blocked on the advisory lock — test is vacuous");
+
+        // Runner A wins: its contents are applied and recorded.
+        await holder.unsafe(
+          `INSERT INTO ${opts.ledgerTable} (version, filename, checksum) VALUES ($1,$2,$3)`,
+          [runnerA.version, runnerA.filename, runnerA.checksum],
+        );
+        await holder.unsafe("COMMIT");
+        released = true;
+
+        const err = await b;
+        assert(
+          err instanceof MigrationDriftError,
+          `runner B must be refused, got ${err === null ? "a clean skip" : err.name}`,
+        );
+        assertEquals((err as MigrationDriftError).appliedChecksum, runnerA.checksum);
+        assertEquals((err as MigrationDriftError).currentChecksum, runnerB.checksum);
+
+        // And it must NOT have been reported as a successful skip.
+        const ledger = await ledgerRows(opts.ledgerTable);
+        assertEquals(ledger.length, 1);
+        assertEquals(ledger[0].checksum, runnerA.checksum, "runner A's contents stand");
+      } finally {
+        if (!released) await holder.unsafe("ROLLBACK").catch(() => {});
+        holder.release();
+      }
+    });
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "migrations: a concurrent runner with the SAME bytes skips cleanly",
+  fn: async () => {
+    // Green control for the test above: identical contents arriving through the same
+    // race must be an ordinary skip, not drift. Without this, a recheck that raised
+    // unconditionally would look identical to one that compares correctly.
+    await withScratchSchema("wf_migtest_race_ok", async (opts) => {
+      const m = await migration(
+        1,
+        "001_alpha.sql",
+        `CREATE TABLE ${opts.schemaName}.alpha (id int);`,
+      );
+      await applyMigrations([], opts);
+      await sql.unsafe(
+        `INSERT INTO ${opts.ledgerTable} (version, filename, checksum) VALUES ($1,$2,$3)`,
+        [m.version, m.filename, m.checksum],
+      );
+      const report = await applyMigrations([m], opts);
       assertEquals(report.applied, []);
       assertEquals(report.skipped.map((s) => s.version), [1]);
     });

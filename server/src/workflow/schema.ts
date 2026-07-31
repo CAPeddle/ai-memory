@@ -65,7 +65,7 @@ const DEFAULT_SCHEMA_NAME = "workflow";
  * both decide the same migration is pending and race to apply it. Arbitrary but
  * stable; derived from the story number.
  */
-const MIGRATION_LOCK_KEY = 840_084;
+export const MIGRATION_LOCK_KEY = 840_084;
 
 /** Migration filenames: `001_something.sql`. */
 const MIGRATION_FILE = /^(\d+)_.*\.sql$/;
@@ -288,11 +288,35 @@ export async function applyMigrations(
         // Re-check under the lock: another runner may have applied this version
         // between our ledger read and here. Without this the loser's DDL would run a
         // second time and its ledger INSERT would fail on the primary key.
-        const already = await tx.unsafe<{ version: number }[]>(
-          `SELECT version FROM ${ledgerTable} WHERE version = $1`,
+        //
+        // **Read the checksum too, not just the version.** The pre-lock drift scan
+        // cannot cover this window by construction: at the time it ran the ledger row
+        // did not exist yet. If two runners start from an empty ledger holding
+        // DIFFERENT bytes for the same version — a mid-rollout deploy with two
+        // instances on different commits — both pre-scans see nothing, the winner
+        // applies its file, and a version-only recheck would report the loser's
+        // migration as a clean `skipped`. The database would then hold the winner's
+        // contents while the loser reported success for a file that never ran, which
+        // is precisely the divergence the checksum exists to detect. This is the
+        // deployment race the advisory lock is here to make safe, so the comparison
+        // belongs inside the lock.
+        const already = await tx.unsafe<{ filename: string; checksum: string }[]>(
+          `SELECT filename, checksum FROM ${ledgerTable} WHERE version = $1`,
           [migration.version],
         );
-        if (already.length > 0) return false;
+        const recorded = already[0];
+        if (recorded !== undefined) {
+          if (recorded.checksum !== migration.checksum) {
+            throw new MigrationDriftError(
+              migration.version,
+              migration.filename,
+              recorded.checksum,
+              migration.checksum,
+              recorded.filename,
+            );
+          }
+          return false;
+        }
 
         await tx.unsafe(migration.statements);
         await tx.unsafe(
@@ -306,6 +330,10 @@ export async function applyMigrations(
       if (didApply) report.applied.push(entry);
       else report.skipped.push(entry);
     } catch (err) {
+      // Drift is not an apply failure and must keep its own type. Wrapping it would
+      // collapse "this database was migrated with different contents" into "this
+      // migration would not run", destroying the distinction the subclasses exist for.
+      if (err instanceof MigrationDriftError) throw err;
       throw new MigrationApplyError(migration.version, migration.filename, err as Error);
     }
   }

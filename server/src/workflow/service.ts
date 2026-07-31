@@ -27,6 +27,7 @@ import {
   type KnowledgeSearchPort,
   type KnowledgeSearchResult,
   PortTimeoutError,
+  PromotionNotAttemptedError,
   withPortTimeout,
 } from "./ports.ts";
 import * as store from "./store.ts";
@@ -43,15 +44,19 @@ import type { AttentionItem, OperationalDecision } from "./types.ts";
  *                     Nothing to do.
  * - `ref-lost`      — the projection exists, but recording its reference failed.
  *                     RECONCILE using the `ref` field; do not project again.
- * - `failed`        — the adapter rejected. The projection definitely did not
- *                     happen, so re-projecting cannot duplicate anything.
+ * - `failed`        — the adapter DECLARED that nothing was committed, by rejecting
+ *                     with `PromotionNotAttemptedError`. Only then can re-projecting
+ *                     be said not to duplicate anything.
  * - `indeterminate` — the bound elapsed with the request still in flight and
  *                     UNCANCELLED. Whether a projection exists is unknown, and it
  *                     may come into existence after this value is returned.
  *
- * `indeterminate` was previously collapsed into `promoted: false`, which asserted
- * "the projection did not happen" on the one path where that is precisely what
- * nobody knows. See the timeout handling in `resolveAndPromoteDecision`.
+ * `indeterminate` is also the DEFAULT for any undeclared rejection, not just for a
+ * timeout. Both were previously collapsed into "definitely did not happen" — the
+ * timeout first, and then, one branch over, every other rejection. A remote adapter
+ * can commit the projection and reject afterwards because the response was lost or
+ * the connection reset, and `promoteDecision(): Promise<string>` cannot express the
+ * difference. So silence means unknown, and an adapter must opt in to `failed`.
  */
 export type PromotionStatus = "promoted" | "ref-lost" | "failed" | "indeterminate";
 
@@ -145,8 +150,26 @@ export async function resolveAndPromoteDecision(
       };
     }
 
-    // A rejection, by contrast, IS a definite non-event: the adapter reported that it
-    // did not project. Re-projecting cannot duplicate anything.
+    // Any OTHER rejection defaults to indeterminate too. `throws` does not mean
+    // "nothing happened": an adapter can commit the projection and then fail to learn
+    // that it did — response lost, connection reset, payload undecodable — and the
+    // signature cannot distinguish that from never having started. Requiring "reject
+    // only before any side effect" in the port docs would be an invariant neither the
+    // type system nor the network can enforce, which is the kind of prose-only claim
+    // this PR keeps having to retract. Fail safe instead: silence costs precision,
+    // never correctness.
+    if (!(err instanceof PromotionNotAttemptedError)) {
+      return {
+        status: "indeterminate",
+        ref: null,
+        error: `${(err as Error).message}; the adapter did not declare whether a ` +
+          "projection was committed, so whether one exists is unknown",
+        decision,
+      };
+    }
+
+    // ...unless the adapter DECLARED it never projected, which is the only basis on
+    // which this can be called a definite non-event.
     return { status: "failed", ref: null, error: (err as Error).message, decision };
   }
 

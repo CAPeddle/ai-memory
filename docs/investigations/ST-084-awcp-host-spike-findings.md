@@ -128,7 +128,7 @@ OPENROUTER_API_KEY=disabled
 OPENROUTER_BASE_URL=http://127.0.0.1:9/blocked
 ```
 
-**Result: 78 passed / 0 failed**, re-run against HEAD on 2026-07-31 (the earlier 37/37
+**Result: 82 passed / 0 failed**, re-run against HEAD on 2026-07-31 (the earlier 37/37
 figure was for the code as it stood then). Every operational behaviour — packet creation, run
 registration, checkpointing, blocking decisions, deterministic attention, the
 completion gate's refusal *and* its acceptance — works with no embeddings, no
@@ -536,16 +536,16 @@ Re-derived from the final tree at HEAD of `claude/st-084-awcp-host-spike` after 
 | `workflow-attention.test.ts` (pure, no DB) | 18 passed / 0 failed |
 | `workflow-store.test.ts` | 14 passed / 0 failed (+frozen contract, 3 resolveDecision, 2 composite-FK integrity) |
 | `workflow-boundary.test.ts` | 16 passed / 0 failed (allowlist + scan + enumeration controls, no-process-termination, ledger in the workflow schema) |
-| `workflow-failure-isolation.test.ts` | 21 passed / 0 failed (+four-outcome vocabulary, late-success orphan, 3 timeout bounds, 4 concurrency) |
-| `workflow-migrations.test.ts` (new) | 9 passed / 0 failed — ordering, upgrade, idempotency, drift, drift-negative control, typed failure, discovery guards |
-| **All five, at HEAD** | **78 passed / 0 failed** (58 before this round) — 18 + 14 + 16 + 21 + 9 |
-| **All five, memory fully disabled + provider unroutable** | **78 passed / 0 failed** — re-run at HEAD, not carried forward |
+| `workflow-failure-isolation.test.ts` | 23 passed / 0 failed (+four-outcome vocabulary, late-success orphan, undeclared-rejection default + declared control, 3 timeout bounds, 4 concurrency) |
+| `workflow-migrations.test.ts` (new) | 11 passed / 0 failed — ordering, upgrade, idempotency, drift, drift-negative control, two-runner race + same-bytes control, typed failure, discovery guards |
+| **All five, at HEAD** | **82 passed / 0 failed** (58 before these rounds) — 18 + 14 + 16 + 23 + 11 |
+| **All five, memory fully disabled + provider unroutable** | **82 passed / 0 failed** — re-run at HEAD, not carried forward |
 | `migrations.test.ts` (the memory domain's own) | untouched by this spike; the workflow DDL left the shared chain, so its version assertions stayed pristine |
-| **Full server suite** (`docker compose --profile test`) | **294 passed / 9 failed** |
+| **Full server suite** (`docker compose --profile test`) | **298 passed / 9 failed** |
 
 **The 9 failures are the documented pre-existing baseline, and the arithmetic proves no
 test was lost behind an unchanged total:** the board records "216 passed / 9
-expected-local-401 (CI is arbiter for LLM tests)", and 216 + 78 = **294**, exactly the
+expected-local-401 (CI is arbiter for LLM tests)", and 216 + 82 = **298**, exactly the
 observed pass count. All 9 are OpenRouter-dependent tests in `e2e.test.ts` (8) and
 `entity-worker-observability.test.ts` (1) — files this change never touches — and the
 `mcp-test` container log carries 346 OpenRouter `401`s for the run, so the cause is the
@@ -560,8 +560,8 @@ or a new migration supersedes the change. That is the intended behaviour and the
 the check exists; it is also why `002` should now be treated as immutable.
 
 **Memory-disabled mode was re-run at HEAD**, closing the evidence limitation that the
-previous 37/37 result predated two fix rounds. Configuration, with the env verified to
-take precedence over `--env-file` rather than assumed to:
+previous 37/37 result predated two fix rounds. **82 passed / 0 failed.** Configuration,
+with the env verified to take precedence over `--env-file` rather than assumed to:
 
 ```
 FEATURE_ENTITY_WORKER=false
@@ -589,10 +589,10 @@ Recommendation:
 - PROMISING WITH CONCERNS (Stage 1 preliminary; NOT an acceptance)
 
 Evidence:
-- workflow tests:      78/78 passed, INCLUDING a re-run at HEAD with memory
+- workflow tests:      82/82 passed, INCLUDING a re-run at HEAD with memory
                        disabled and the model provider unroutable
-- full server suite:   294 passed / 9 failed (the 9 = documented local
-                       OpenRouter-401 baseline; 216 + 78 = 294 reconciles)
+- full server suite:   298 passed / 9 failed (the 9 = documented local
+                       OpenRouter-401 baseline; 216 + 82 = 298 reconciles)
 - criteria proven:     1 operational independence   PASS
                        2 separate persistence/API   PASS
                        3 failure isolation          PASS
@@ -783,6 +783,17 @@ already-resolved decision (now once-and-final — idempotent on the same answer 
 `resolved_at` preserved, typed `DecisionConflictError` on a different one), and the
 module **could not evolve its schema at all** (see §6.2).
 
+### Resolved in the third PR #34 review round (2026-07-31)
+
+The same reviewer returned after the second round, **withdrew its own completion-gating
+direction** on the evidence (confirming the narrowing above), and raised two adjacent
+holes that the previous round's fixes had left open. Both were real.
+
+| Finding | Disposition |
+|---|---|
+| **The non-timeout `catch` still classified every rejection as a definite non-event.** A remote adapter can commit the projection and *then* reject — response lost, connection reset, decode failure — so retry is no safer than after a timeout, and `promoteDecision(): Promise<string>` cannot express the difference | **DONE, by inverting the default.** `failed` is now opt-in: an adapter must throw `PromotionNotAttemptedError` to declare that nothing was committed. Every undeclared rejection classifies as `indeterminate`. The alternative the reviewer offered — documenting "may reject only before any side effect" — was rejected as an invariant neither the type system nor the network can enforce, i.e. the same prose-only claim §14 lesson 3 exists to prevent. `CommitThenRejectMemoryAdapter` proves the default with a plain `Error`; a green control proves `failed` is still reachable, so the vocabulary is four-valued in fact and not just in name |
+| **P1 — the advisory-lock recheck could silently skip a different migration body.** Drift is checked *before* the lock. Two runners starting from an empty ledger with different bytes for the same version: both pre-scans see nothing, the winner applies, and a version-only recheck reports the loser's migration as a clean `skipped` while the database holds the winner's contents | **DONE.** The recheck now re-reads `filename, checksum` under the lock and raises `MigrationDriftError` on a checksum mismatch. Correctly identified as the exact race the advisory lock exists to make safe — and the pre-lock scan cannot cover it by construction, because the row did not exist when that scan ran. Proven by a two-runner test using the held-lock barrier, with a `pg_locks` non-vacuity guard (a green pass is meaningless unless runner B genuinely blocked) and a same-bytes green control. Verified red/green by deleting the comparison. A second defect found while fixing it: the surrounding `catch` would have wrapped the drift error in `MigrationApplyError`, collapsing the distinction the subclasses exist for |
+
 ### Known Stage 1 residuals (accepted, recorded)
 
 Not fixed, do not affect the criteria 1–4 conclusion: client-versus-database clock skew
@@ -804,6 +815,10 @@ and `addCriterion` behave. Deleted rather than gated. Stage 1 now implements exa
 packet-status transitions, both earned — creation and verified completion — and
 `in_progress` / `blocked` are consequently unreachable, which is a recorded Stage 1 gap
 rather than an argument for reinstating a setter.
+
+Also: `ref-lost` fires when `getDecision` throws *after* `attachPromotionRef` already
+succeeded, so it occasionally advises reconciling a row that already holds its ref.
+Harmless — reconciliation is a no-op there — but recorded rather than discovered later.
 
 Two new residuals from this round, recorded rather than papered over:
 
@@ -846,6 +861,15 @@ not begin from assumptions. `fetch` must be fixed first — see §6.1.
   same key must yield at most one projection and the same reference — but every adapter
   in this spike is an in-process fake. Until a real adapter demonstrates it, **no retry
   in this system may be described as safe**, and the report does not claim it is.
+- **A rejection does not mean nothing happened, and the signature cannot promise it
+  does.** Corrected 2026-07-31 in the third review round: after the timeout fix, the
+  catch one branch over still classified *every* other rejection as a definite
+  non-event. A remote adapter can commit the projection and then reject because the
+  response was lost or the connection reset. `failed` is now opt-in — an adapter must
+  throw `PromotionNotAttemptedError` to claim it — and every undeclared rejection
+  defaults to `indeterminate`. Documenting "reject only before any side effect" instead
+  would have been an invariant neither the type system nor the network can enforce,
+  i.e. exactly the prose-only claim §14 lesson 3 warns against.
 - **A Postgres schema is namespacing, not access control** (§6.3).
 - ~~**The memory-disabled run predates the last two fix rounds.**~~ **CLOSED
   2026-07-31.** Re-run against HEAD with the same configuration: **78 passed / 0

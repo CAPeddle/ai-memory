@@ -169,23 +169,34 @@ export class MigrationDriftError extends WorkflowMigrationError {
   readonly filename: string;
   readonly appliedChecksum: string;
   readonly currentChecksum: string;
+  /** The filename the ledger recorded, when it differs from the one being applied. */
+  readonly appliedFilename: string | null;
   constructor(
     version: number,
     filename: string,
     appliedChecksum: string,
     currentChecksum: string,
+    appliedFilename?: string,
   ) {
+    // The checksum is the discriminating signal and the only thing raised on. The
+    // recorded filename is carried for diagnosis — two runners in a mid-rollout deploy
+    // may hold the same version under different names — but a rename with identical
+    // contents is NOT drift and must not reach here.
+    const named = appliedFilename !== undefined && appliedFilename !== filename
+      ? ` (the ledger recorded it as ${appliedFilename})`
+      : "";
     super(
-      `Migration ${filename} (version ${version}) has changed since it was applied: ` +
-        `ledger recorded ${appliedChecksum.slice(0, 12)}…, file now hashes to ` +
-        `${currentChecksum.slice(0, 12)}…. Add a new migration instead of editing an ` +
-        `applied one.`,
+      `Migration ${filename} (version ${version}) does not match what was applied` +
+        `${named}: ledger recorded ${appliedChecksum.slice(0, 12)}…, this file hashes ` +
+        `to ${currentChecksum.slice(0, 12)}…. Add a new migration instead of editing ` +
+        `an applied one.`,
     );
     this.name = "MigrationDriftError";
     this.version = version;
     this.filename = filename;
     this.appliedChecksum = appliedChecksum;
     this.currentChecksum = currentChecksum;
+    this.appliedFilename = appliedFilename ?? null;
   }
 }
 

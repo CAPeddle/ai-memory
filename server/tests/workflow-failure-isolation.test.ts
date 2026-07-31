@@ -13,9 +13,9 @@
  * Deliberately NOT "and is retryable". Retry safety is a property of the ADAPTER, not
  * of this reporting, and nothing in this spike proves any adapter has it — the
  * promotion port's `decisionId` idempotency key is specified in the contract and
- * unproven in practice. A `failed` outcome is genuinely safe to re-attempt because the
- * projection demonstrably did not happen; an `indeterminate` one is not, and saying so
- * is the correction this file's timeout tests now encode.
+ * unproven in practice. A `failed` outcome is safe to re-attempt only because the
+ * adapter DECLARED nothing was committed; an `indeterminate` one is not. An undeclared
+ * rejection is indeterminate too — `throws` does not mean "nothing happened".
  */
 
 import {
@@ -32,6 +32,7 @@ import {
   resolveAndPromoteDecision,
 } from "../src/workflow/service.ts";
 import {
+  CommitThenRejectMemoryAdapter,
   FailingMemoryAdapter,
   HangingMemoryAdapter,
   LateSuccessMemoryAdapter,
@@ -428,7 +429,7 @@ Deno.test({
     // unknown as a definite non-event asserts something nobody knows.
     const packet = await newPacket("promotion outcome vocabulary");
     try {
-      // failed — the adapter rejected. Definitely no projection.
+      // failed — the adapter DECLARED nothing was committed (PromotionNotAttemptedError).
       const d1 = await store.recordDecision({ packetId: packet.id, question: "q1" });
       const failed = await resolveAndPromoteDecision(d1.id, "r1", new FailingMemoryAdapter());
       assertEquals(failed.status, "failed");
@@ -606,6 +607,69 @@ Deno.test({
           "this requires reconciliation, and is precisely what an `indeterminate` " +
           "outcome is warning the caller about",
       );
+    } finally {
+      await store.deletePacket(packet.id);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "promotion: an UNDECLARED rejection is indeterminate, not failed",
+  fn: async () => {
+    // The adjacent hole left after the timeout fix: the catch treated every non-timeout
+    // rejection as a definite non-event. A real remote adapter can commit the
+    // projection and THEN reject — response lost, connection reset, payload
+    // undecodable — and `promoteDecision(): Promise<string>` cannot express the
+    // difference. Retry after such a rejection is no safer than after a timeout.
+    //
+    // So the default is conservative and adapters opt IN to `failed`. This adapter
+    // deliberately rejects with a plain Error, exactly as an unaware third-party
+    // adapter would.
+    const packet = await newPacket("promotion: undeclared rejection");
+    try {
+      const decision = await store.recordDecision({
+        packetId: packet.id,
+        question: "did it commit before it failed?",
+      });
+      const adapter = new CommitThenRejectMemoryAdapter();
+      const outcome = await resolveAndPromoteDecision(decision.id, "resolved", adapter);
+
+      assertEquals(outcome.status, "indeterminate");
+      assertEquals(outcome.ref, null);
+
+      // The projection REALLY happened, which is what makes `failed` wrong here.
+      assertEquals(adapter.mintedRefs.length, 1);
+
+      // ...and nothing recorded it — the same orphan the late-success path produces,
+      // reached by a different route. `indeterminate` means the same thing on both.
+      const persisted = await store.getDecision(decision.id);
+      assertEquals(persisted?.status, "resolved", "the operational write is unaffected");
+      assertEquals(persisted?.promoted_memory_ref, null, "an orphaned projection");
+    } finally {
+      await store.deletePacket(packet.id);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "promotion: a DECLARED non-attempt is failed, not indeterminate",
+  fn: async () => {
+    // Green control for the conservative default. Without it, a classifier that
+    // returned `indeterminate` unconditionally would be indistinguishable from one
+    // that reads the declaration — and `failed` would be unreachable, making the
+    // four-outcome vocabulary a three-outcome one wearing four labels.
+    const packet = await newPacket("promotion: declared non-attempt");
+    try {
+      const decision = await store.recordDecision({ packetId: packet.id, question: "q" });
+      const outcome = await resolveAndPromoteDecision(
+        decision.id,
+        "r",
+        new FailingMemoryAdapter("backend refused before writing"),
+      );
+      assertEquals(outcome.status, "failed");
+      assert(outcome.error?.includes("backend refused before writing"));
     } finally {
       await store.deletePacket(packet.id);
     }
