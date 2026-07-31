@@ -3,7 +3,13 @@
 --
 -- SPIKE / DISPOSABLE. Full teardown:
 --   DROP SCHEMA workflow CASCADE;
---   DELETE FROM schema_migrations WHERE version = 7;
+--
+-- That single statement is the whole teardown. The module's migration ledger is
+-- `workflow.schema_migrations`, inside the schema being dropped — it deliberately
+-- does NOT write to the memory domain's `public.schema_migrations`, so there is no
+-- second row to clean up. (An earlier version of this header told you to
+-- `DELETE FROM schema_migrations WHERE version = 7`, left over from when this DDL
+-- lived in the shared boot chain as `server/db/007_*.sql`. It no longer does.)
 --
 -- Every object below is schema-qualified `workflow.*`. This is a correctness
 -- requirement, not a style preference: four sites in the memory domain issue a
@@ -93,12 +99,30 @@ CREATE INDEX IF NOT EXISTS idx_workflow_checkpoints_run
   ON workflow.checkpoints (run_id, created_at DESC);
 
 -- ---------------------------------------------------------------------------
--- Operational decisions — first-class blocking execution state.
+-- Operational decisions — first-class operational state.
 -- ---------------------------------------------------------------------------
--- These are NOT "thoughts". A decision here can block a run and gate completion;
--- it is authoritative transactional state. It may LATER be projected into memory
--- as promoted knowledge, but that projection is optional and non-authoritative:
--- deleting the projection must leave this row untouched (proven by test).
+-- These are NOT "thoughts": authoritative transactional state, not a retrievable
+-- memory. A decision MAY later be projected into memory as promoted knowledge, but
+-- that projection is optional and non-authoritative — deleting it must leave this
+-- row untouched (proven by test).
+--
+-- `blocking` — READ THIS BEFORE RELYING ON IT. In Stage 1 the flag is MODELLED
+-- state with exactly one implemented consequence: an unresolved blocking decision
+-- deterministically raises a `decision-required` attention item (attention.ts).
+--
+--   * It does NOT gate packet completion. The completion gate is evidence-based
+--     and reads only verification_criteria / evidence_items — see
+--     store.ts::completePacket, which never queries this table.
+--   * It does NOT halt a running agent. Stage 1 has no execution node to halt.
+--
+-- An earlier version of this comment claimed a decision here "can block a run and
+-- gate completion". Both halves were false, and a reviewer read this comment and
+-- filed a P1 against the code for not doing what the comment promised.
+--
+-- Actual execution blocking is a Stage 2 design requirement. The eventual model
+-- should distinguish advisory decisions, run-blocking decisions and
+-- completion-gating decisions rather than overloading one boolean to mean all
+-- three.
 CREATE TABLE IF NOT EXISTS workflow.operational_decisions (
   id                uuid         PRIMARY KEY DEFAULT gen_random_uuid(),
   packet_id         uuid         NOT NULL REFERENCES workflow.work_packets (id) ON DELETE CASCADE,

@@ -133,6 +133,75 @@ export class WorkflowSchemaError extends Error {
 }
 
 /**
+ * Base class for ordered-migration failures.
+ *
+ * Extends {@link WorkflowSchemaError} so an existing caller that catches "the
+ * workflow module could not set up its schema" keeps working, while a caller that
+ * wants to tell *which* way it failed — bad directory, drifted file, failed apply —
+ * can branch on the subclass. None of them terminate the process.
+ */
+export class WorkflowMigrationError extends WorkflowSchemaError {
+  constructor(message: string, cause?: Error) {
+    super(message, cause);
+    this.name = "WorkflowMigrationError";
+  }
+}
+
+/** Raised when the migration directory cannot be read or its contents are ambiguous. */
+export class MigrationDiscoveryError extends WorkflowMigrationError {
+  constructor(message: string, cause?: Error) {
+    super(message, cause);
+    this.name = "MigrationDiscoveryError";
+  }
+}
+
+/**
+ * Raised when an ALREADY-APPLIED migration's file contents no longer match what was
+ * applied.
+ *
+ * This is the failure mode that silently corrupts environments: someone edits an
+ * applied migration, it re-runs as a no-op because the ledger says "done", and the
+ * database quietly diverges from the file that claims to describe it. Detecting it
+ * requires storing a checksum, which is the whole reason the ledger has that column.
+ */
+export class MigrationDriftError extends WorkflowMigrationError {
+  readonly version: number;
+  readonly filename: string;
+  readonly appliedChecksum: string;
+  readonly currentChecksum: string;
+  constructor(
+    version: number,
+    filename: string,
+    appliedChecksum: string,
+    currentChecksum: string,
+  ) {
+    super(
+      `Migration ${filename} (version ${version}) has changed since it was applied: ` +
+        `ledger recorded ${appliedChecksum.slice(0, 12)}…, file now hashes to ` +
+        `${currentChecksum.slice(0, 12)}…. Add a new migration instead of editing an ` +
+        `applied one.`,
+    );
+    this.name = "MigrationDriftError";
+    this.version = version;
+    this.filename = filename;
+    this.appliedChecksum = appliedChecksum;
+    this.currentChecksum = currentChecksum;
+  }
+}
+
+/** Raised when a pending migration failed to apply. Its transaction was rolled back. */
+export class MigrationApplyError extends WorkflowMigrationError {
+  readonly version: number;
+  readonly filename: string;
+  constructor(version: number, filename: string, cause: Error) {
+    super(`Migration ${filename} (version ${version}) failed to apply`, cause);
+    this.name = "MigrationApplyError";
+    this.version = version;
+    this.filename = filename;
+  }
+}
+
+/**
  * Raised when a workflow record does not exist.
  *
  * A distinct class rather than a bare `Error` so a caller can tell "you asked for
@@ -167,6 +236,37 @@ export class CriteriaFrozenError extends Error {
     );
     this.name = "CriteriaFrozenError";
     this.packetId = packetId;
+  }
+}
+
+/**
+ * Raised when an already-resolved decision is re-resolved with a DIFFERENT answer.
+ *
+ * Resolution is once-and-final. A same-answer retry is idempotent and returns the
+ * stored record untouched, so a caller that retries after a network blip or an
+ * indeterminate promotion is safe. A different answer is not a retry — it is a
+ * second, conflicting decision wearing the first one's identity, and silently
+ * overwriting it would erase the resolution the packet's history already depends on.
+ * Carries both answers so the caller can show what it collided with.
+ */
+export class DecisionConflictError extends Error {
+  readonly decisionId: string;
+  readonly existingResolution: string | null;
+  readonly attemptedResolution: string;
+  constructor(
+    decisionId: string,
+    existingResolution: string | null,
+    attemptedResolution: string,
+  ) {
+    super(
+      `Operational decision ${decisionId} is already resolved as ` +
+        `${JSON.stringify(existingResolution)}; refusing to overwrite it with ` +
+        `${JSON.stringify(attemptedResolution)}`,
+    );
+    this.name = "DecisionConflictError";
+    this.decisionId = decisionId;
+    this.existingResolution = existingResolution;
+    this.attemptedResolution = attemptedResolution;
   }
 }
 

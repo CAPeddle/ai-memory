@@ -19,6 +19,7 @@ import {
   type Checkpoint,
   CompletionBlockedError,
   CriteriaFrozenError,
+  DecisionConflictError,
   type EvidenceItem,
   type EvidenceKind,
   type OperationalDecision,
@@ -69,16 +70,21 @@ export async function getPacket(id: string): Promise<WorkPacket | null> {
   return rows[0] ?? null;
 }
 
-export async function setPacketStatus(
-  id: string,
-  status: WorkPacket["status"],
-): Promise<void> {
-  await sql`
-    UPDATE workflow.work_packets
-    SET status = ${status}, updated_at = now()
-    WHERE id = ${id}
-  `;
-}
+// There is deliberately NO generic packet-status setter here.
+//
+// One existed (`setPacketStatus`) and was removed. It had no callers and wrote any
+// status, `complete` included, with no gate — so the public workflow API contained a
+// route that manufactured a completed packet while its required criteria sat without
+// evidence, and the reverse: `setPacketStatus(id, "open")` un-completed a packet and
+// silently thawed the verification contract that `addCriterion` freezes. Either
+// direction invalidates the claim that this API preserves the completion invariant,
+// regardless of how well `completePacket` and `addCriterion` behave.
+//
+// Stage 1 therefore implements exactly two packet-status transitions, both earned:
+// creation (`createPacket` → 'open') and verified completion (`completePacket` →
+// 'complete'). 'in_progress' and 'blocked' are defined in the CHECK constraint and
+// are currently unreachable; that is a known Stage 1 gap, not an invitation to add a
+// setter back. Whatever reaches them must carry its own preconditions.
 
 // --------------------------------------------------------------------------
 // Agent runs
@@ -218,24 +224,59 @@ export async function recordDecision(
   return rows[0];
 }
 
+/**
+ * Resolve an OPEN decision. Once-and-final, with an idempotent retry.
+ *
+ * Three outcomes, all deliberate:
+ *
+ *   - **open** → resolved. `resolved_at` is stamped now.
+ *   - **already resolved, same answer** → the stored row is returned *unchanged*,
+ *     original `resolved_at` intact. This is what makes retry safe, and it matters
+ *     more than it looks: {@link resolveAndPromoteDecision} can return an
+ *     indeterminate promotion outcome, and the caller's only sane recovery is to
+ *     call again. A blind re-UPDATE would have moved `resolved_at` forward on every
+ *     such retry, quietly falsifying when the decision was actually made.
+ *   - **already resolved, different answer** → {@link DecisionConflictError}.
+ *
+ * The read and the branch are in one transaction with `FOR UPDATE` for the same
+ * reason `addCriterion` is: read-then-write without the row lock is a race, and two
+ * concurrent resolutions with different answers could both observe `open` and the
+ * second would overwrite the first. The lock makes the loser see the winner's
+ * committed row and take the idempotent or conflict path.
+ *
+ * Note this deliberately does NOT clear `promoted_memory_ref` on the idempotent
+ * path — see attachPromotionRef.
+ */
 export async function resolveDecision(
   decisionId: string,
   resolution: string,
 ): Promise<OperationalDecision> {
-  const rows = await sql<OperationalDecision[]>`
-    UPDATE workflow.operational_decisions
-    SET status = 'resolved', resolution = ${resolution}, resolved_at = now()
-    WHERE id = ${decisionId}
-    RETURNING *
-  `;
-  // Explicit existence check: `rows[0]` on a no-match UPDATE is `undefined` while
-  // the signature promises OperationalDecision. Returning it unchecked pushed an
-  // opaque TypeError downstream, where a caller's catch misattributed it to a
-  // memory-promotion failure.
-  if (rows.length === 0) {
-    throw new WorkflowNotFoundError("operational decision", decisionId);
-  }
-  return rows[0];
+  return await sql.begin(async (tx: SqlExecutor) => {
+    const existing = await tx<OperationalDecision[]>`
+      SELECT * FROM workflow.operational_decisions WHERE id = ${decisionId} FOR UPDATE
+    `;
+    // Explicit existence check: a bare `rows[0]` on a no-match UPDATE is `undefined`
+    // while the signature promises OperationalDecision. Returning it unchecked pushed
+    // an opaque TypeError downstream, where a caller's catch misattributed it to a
+    // memory-promotion failure.
+    const current = existing[0];
+    if (current === undefined) {
+      throw new WorkflowNotFoundError("operational decision", decisionId);
+    }
+
+    if (current.status === "resolved") {
+      if (current.resolution === resolution) return current;
+      throw new DecisionConflictError(decisionId, current.resolution, resolution);
+    }
+
+    const rows = await tx<OperationalDecision[]>`
+      UPDATE workflow.operational_decisions
+      SET status = 'resolved', resolution = ${resolution}, resolved_at = now()
+      WHERE id = ${decisionId}
+      RETURNING *
+    `;
+    return rows[0];
+  });
 }
 
 export async function getDecision(id: string): Promise<OperationalDecision | null> {
@@ -257,6 +298,14 @@ export async function listDecisions(packetId: string): Promise<OperationalDecisi
  * Record the memory projection reference. Deliberately a standalone UPDATE run
  * AFTER the operational write has committed — never inside an operational
  * transaction — so a promotion failure cannot roll back operational state.
+ *
+ * RESIDUAL (not fixed here, recorded so it is not mistaken for handled): this
+ * overwrites unconditionally. With `resolveDecision` now idempotent on retry, the
+ * reachable sequence "resolve → promote → retry → promote again" ends with the
+ * second projection's ref overwriting the first, orphaning projection #1 with
+ * nothing pointing at it. The fix is not here — it is `decisionId` as the port's
+ * idempotency key, so the adapter returns the SAME ref rather than minting a
+ * second projection. See KnowledgePromotionPort.
  */
 export async function attachPromotionRef(
   decisionId: string,

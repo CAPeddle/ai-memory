@@ -9,12 +9,14 @@
 
 import { assert, assertEquals, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts";
 
+import { sql } from "../src/db.ts";
 import * as store from "../src/workflow/store.ts";
 import { attentionForPacket, resolveAndPromoteDecision } from "../src/workflow/service.ts";
 import { NoopMemoryAdapter } from "../src/workflow/ports.ts";
 import {
   CompletionBlockedError,
   CriteriaFrozenError,
+  DecisionConflictError,
   WorkflowNotFoundError,
 } from "../src/workflow/types.ts";
 import { ensureWorkflowSchema } from "../src/workflow/schema.ts";
@@ -75,7 +77,15 @@ Deno.test({
       assertEquals(cp.run_id, run.id);
       assertEquals(cp.blockers, null);
 
-      // 5. Operational decision that blocks execution
+      // 5. Operational decision flagged `blocking`.
+      //
+      // The plan's step 5 calls this "a decision that blocks execution". Stage 1
+      // MODELS that intent; it does not enforce it. The one implemented consequence
+      // is the deterministic attention item asserted below. Note what this test
+      // then goes on to prove at the end: the packet COMPLETES with this decision
+      // still open, because the completion gate is evidence-based (plan §6) and
+      // never reads operational_decisions. That is the specified Stage 1 behaviour,
+      // not an oversight — see 001_workflow_schema.sql's `blocking` note.
       const decision = await store.recordDecision({
         packetId: packet.id,
         runId: run.id,
@@ -113,6 +123,18 @@ Deno.test({
       const completed = await store.completePacket(packet.id);
       assertEquals(completed.status, "complete");
       assert(completed.completed_at !== null, "completed_at must be set");
+
+      // Make the Stage 1 semantics EXPLICIT rather than incidental: the packet
+      // completed while the blocking decision above is still unresolved. Anyone
+      // who later makes `blocking` gate completion must change this line, which
+      // is the point — it turns a plan amendment into a visible edit instead of a
+      // quiet behaviour change.
+      const decisionAfter = await store.getDecision(decision.id);
+      assertEquals(
+        decisionAfter?.status,
+        "open",
+        "the blocking decision is still unresolved at completion time",
+      );
 
       await store.endRun(run.id, "ended");
     } finally {
@@ -197,6 +219,168 @@ Deno.test({
       () => store.addCriterion("00000000-0000-0000-0000-000000000000", "x", true),
       WorkflowNotFoundError,
     );
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "workflow: re-resolving with the SAME answer is idempotent and preserves resolved_at",
+  fn: async () => {
+    const packet = await newPacket("decision: idempotent retry");
+    try {
+      const decision = await store.recordDecision({
+        packetId: packet.id,
+        question: "separate schema?",
+      });
+      const first = await store.resolveDecision(decision.id, "separate schema");
+      assertEquals(first.status, "resolved");
+      assert(first.resolved_at !== null, "resolved_at must be stamped");
+
+      const retry = await store.resolveDecision(decision.id, "separate schema");
+      assertEquals(retry.status, "resolved");
+      assertEquals(retry.resolution, "separate schema");
+      // The point of the test. A blind re-UPDATE would move this forward and the
+      // record would claim the decision was made later than it was — invisible
+      // unless asserted, because every other field looks identical.
+      assertEquals(
+        retry.resolved_at?.getTime(),
+        first.resolved_at?.getTime(),
+        "an idempotent retry must not restamp resolved_at",
+      );
+    } finally {
+      await store.deletePacket(packet.id);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "workflow: re-resolving with a DIFFERENT answer raises a typed conflict",
+  fn: async () => {
+    const packet = await newPacket("decision: conflicting resolution");
+    try {
+      const decision = await store.recordDecision({
+        packetId: packet.id,
+        question: "separate schema?",
+      });
+      await store.resolveDecision(decision.id, "separate schema");
+
+      const err = await assertRejects(
+        () => store.resolveDecision(decision.id, "same schema"),
+        DecisionConflictError,
+      );
+      assertEquals((err as DecisionConflictError).existingResolution, "separate schema");
+      assertEquals((err as DecisionConflictError).attemptedResolution, "same schema");
+
+      // The refusal must not have partially applied.
+      const after = await store.getDecision(decision.id);
+      assertEquals(after?.resolution, "separate schema");
+    } finally {
+      await store.deletePacket(packet.id);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "workflow: resolveDecision raises a typed not-found for an unknown decision",
+  fn: async () => {
+    await assertRejects(
+      () => store.resolveDecision("00000000-0000-0000-0000-000000000000", "x"),
+      WorkflowNotFoundError,
+    );
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "integrity: a decision cannot point at a run belonging to a DIFFERENT packet",
+  fn: async () => {
+    // Migration 002. Before it, packet_id and run_id were independent single-column
+    // references, so this insert succeeded and produced a decision that claimed one
+    // packet while pointing at another packet's run. Nothing rejected it, and every
+    // consumer walking decision → run → packet was trusting callers to be careful.
+    const a = await newPacket("integrity: owning packet");
+    const b = await newPacket("integrity: foreign packet");
+    try {
+      const foreignRun = await store.registerRun({
+        packetId: b.id,
+        agentType: "claude-code",
+        host: "local",
+      });
+
+      await assertRejects(
+        () =>
+          store.recordDecision({
+            packetId: a.id,
+            runId: foreignRun.id,
+            question: "should not insert",
+          }),
+        Error,
+        "operational_decisions_run_packet_fkey",
+      );
+
+      // Green control #1: the same shape with the run's OWN packet is accepted, so
+      // the rejection above is about the mismatch and not about the constraint
+      // refusing everything.
+      const ownRun = await store.registerRun({
+        packetId: a.id,
+        agentType: "claude-code",
+        host: "local",
+      });
+      const ok = await store.recordDecision({
+        packetId: a.id,
+        runId: ownRun.id,
+        question: "matched run and packet",
+      });
+      assertEquals(ok.run_id, ownRun.id);
+
+      // Green control #2 — MATCH SIMPLE. A decision with no run attached is
+      // legitimate and common. MATCH FULL would have rejected every one of these,
+      // i.e. the composite FK would have broken the majority case.
+      const detached = await store.recordDecision({
+        packetId: a.id,
+        question: "no run attached",
+      });
+      assertEquals(detached.run_id, null);
+    } finally {
+      await store.deletePacket(a.id);
+      await store.deletePacket(b.id);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "integrity: deleting a run nulls only run_id, leaving the decision intact",
+  fn: async () => {
+    // The reason 002 needs PostgreSQL 15's COLUMN-LIST `ON DELETE SET NULL (run_id)`.
+    // A plain `ON DELETE SET NULL` on a composite FK nulls EVERY referencing column,
+    // and packet_id is NOT NULL — so this delete would fail outright, and with it
+    // deletePacket's cascade. The distinction is invisible until exercised.
+    const packet = await newPacket("integrity: run delete");
+    try {
+      const run = await store.registerRun({
+        packetId: packet.id,
+        agentType: "claude-code",
+        host: "local",
+      });
+      const decision = await store.recordDecision({
+        packetId: packet.id,
+        runId: run.id,
+        question: "survives its run",
+      });
+      assertEquals(decision.run_id, run.id);
+
+      await sql`DELETE FROM workflow.agent_runs WHERE id = ${run.id}`;
+
+      const after = await store.getDecision(decision.id);
+      assert(after !== null, "the decision must survive its run's deletion");
+      assertEquals(after?.run_id, null, "run_id is nulled");
+      assertEquals(after?.packet_id, packet.id, "packet_id is untouched");
+    } finally {
+      await store.deletePacket(packet.id);
+    }
   },
 });
 
