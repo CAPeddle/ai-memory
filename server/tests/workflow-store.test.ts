@@ -483,3 +483,39 @@ Deno.test({
     }
   },
 });
+
+Deno.test({
+  ...T,
+  name: "workflow: endRun reports a missing run instead of silently succeeding",
+  fn: async () => {
+    // The store owns this contract, so the control for it belongs here rather than
+    // only in the e2e test's 404 mapping — that proves the HTTP layer translates the
+    // error, not that the store raises one.
+    //
+    // endRun used to return `void` from a bare UPDATE, so a run id that matched no row
+    // resolved successfully and was indistinguishable from a real close. Nothing
+    // anywhere recorded the disagreement between what the caller believed and what the
+    // database held.
+    await assertRejects(
+      () => store.endRun(crypto.randomUUID(), "ended"),
+      WorkflowNotFoundError,
+    );
+
+    // Discrimination: the same call against a REAL run must still succeed and return
+    // the updated row, or the rejection above would only prove endRun is broken.
+    const packet = await newPacket("endRun: discrimination control");
+    try {
+      const run = await store.registerRun({
+        packetId: packet.id,
+        agentType: "test",
+        host: "local",
+      });
+      const ended = await store.endRun(run.id, "ended");
+      assertEquals(ended.id, run.id);
+      assertEquals(ended.status, "ended");
+      assert(ended.ended_at !== null, "ended_at must be stamped");
+    } finally {
+      await store.deletePacket(packet.id);
+    }
+  },
+});

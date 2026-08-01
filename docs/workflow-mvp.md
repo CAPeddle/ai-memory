@@ -18,6 +18,12 @@ turns off every provider-dependent capability, and **clears** `OPENROUTER_API_KE
 rather than blanking it — startup validation only demands a provider credential when an
 enabled capability actually needs one.
 
+Requires **Docker Compose v2.24+** for the `!reset` directive (verified on v5.3.1). On
+an older Compose, change that one line in `docker-compose.workflow.yml` to
+`OPENROUTER_API_KEY: ""`; the stack still starts, because with all three capabilities
+off the credential is never demanded. That is a weaker demonstration — a present but
+empty variable rather than an absent one — not a broken configuration.
+
 Check it came up, and that the provider really is off:
 
 ```bash
@@ -87,6 +93,12 @@ grouped by reason; unresolved and recently resolved decisions; recent checkpoint
 criteria with their evidence. Three actions: **resolve a decision**, **attach manual
 evidence**, **complete a packet**. There is no status control — completion goes through
 the gate like every other caller.
+
+> **Coverage limit, stated rather than implied.** There is no browser in the test
+> container, so the page's *rendering* is not proven by automation. What is proven: the
+> page is served, it contains every required section and all three action affordances,
+> each targets an endpoint the process-boundary test exercises, and it offers no
+> status-editing control. Confirm the visual result by opening it once.
 
 Completion is refused while any *required* criterion lacks evidence, and the refusal
 names the unmet criteria. Add a criterion, try to complete, attach evidence, complete

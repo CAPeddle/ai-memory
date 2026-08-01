@@ -18,6 +18,16 @@
  * This file only asserts what a process boundary is required to show.
  *
  * Requires `--allow-run`. See CLAUDE.md's test commands.
+ *
+ * **This file drops the shared `workflow` schema, so it must not run concurrently with
+ * the other workflow suites.** Three things make that safe, and all three are load
+ * bearing: `deno test` runs test FILES sequentially unless `--parallel` is passed;
+ * neither CI (.github/workflows/ci.yml) nor CLAUDE.md's documented commands pass it;
+ * and the runtime is pinned to an exact image tag (`denoland/deno:2.0.0` in
+ * server/Dockerfile), so the default cannot drift under a floating version. Adding
+ * `--parallel` to the suite would break this file and, worse, would break the other
+ * workflow suites in ways that look nothing like their own subject — read this note
+ * before doing it, and give this file its own database if you do.
  */
 
 import {

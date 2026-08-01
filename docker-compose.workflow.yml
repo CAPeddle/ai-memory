@@ -10,9 +10,13 @@
 # provider-dependent capability off, MODEL_PROVIDER_ENABLED=false, and no
 # OPENROUTER_API_KEY. `!reset` clears the value the base file inherits from .env
 # rather than setting it to an empty string: `OPENROUTER_API_KEY=` would still be a
-# *present* variable, and the whole point is that startup validation does not demand
-# one. (Requires Compose v2.24+ for `!reset`; on older versions, comment out the base
-# file's OPENROUTER_API_KEY line instead.)
+# *present* variable, and the stronger claim is that the variable is not there at all.
+#
+# `!reset` needs Compose v2.24+ (verified here on v5.3.1). On an older Compose, replace
+# that line with `OPENROUTER_API_KEY: ""` — the stack still starts, because startup
+# validation demands the credential only when an enabled capability needs one and all
+# three are off above. That is a weaker demonstration, not a broken configuration, and
+# it needs no edit to the base file or any other tracked file.
 #
 # Only `mcp` is overridden. `db` is inherited unchanged, so the same Postgres serves
 # both modes and switching back is `docker compose up -d` with no override.

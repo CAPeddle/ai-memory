@@ -520,7 +520,7 @@
   - [x] The typed API supports the complete local workflow across 11 named commands; no generic row mutation, arbitrary SQL, shell execution, or packet-status setter
   - [x] Missing or out-of-vocabulary policy scope fails closed (400), with a same-request success as the discrimination control
   - [x] One real local repository/session reported a commit-bearing checkpoint through the CLI (`repo_commit` = actual `git rev-parse HEAD`)
-  - [x] The dashboard at `/workflow` shows active work, attention grouped by reason, decisions, checkpoints and criteria/evidence, and offers exactly resolve / attach-evidence / complete
+  - [x] The dashboard at `/workflow` shows active work, attention grouped by reason, decisions, checkpoints and criteria/evidence, and offers exactly resolve / attach-evidence / complete — **partially verified:** the served page is asserted to carry every required section, all three actions, and no status control, and each action targets an endpoint the process-boundary test exercises; there is no browser in the test container, so DOM *rendering* is unproven by automation and needs one manual look
   - [x] Completion remains evidence-gated — refused with the unmet criteria named, and the packet verified still not complete after the refusal
   - [x] Operational state survives an actual server restart (SIGTERM, port freed, second process); the second boot applies nothing and skips both migrations
   - [x] The slice runs with the memory workers and provider access disabled, with a provider sentinel recording **zero** requests
