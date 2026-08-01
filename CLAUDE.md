@@ -37,7 +37,7 @@ For Contact Memory work, apply [docs/architecture/ai_memory_architecture_decisio
 Higher tier wins on conflict unless the PO explicitly overrides:
 
 1. **Tier 1 (binding):** [docs/requirements/SRS.md](docs/requirements/SRS.md), [docs/design/adr/](docs/design/adr/) (ADR-001..ADR-011 — note ADR-011 supersedes ADR-002), [docs/design/SystemDesign.md](docs/design/SystemDesign.md), [docs/architecture/ai_memory_architecture_decisions.md](docs/architecture/ai_memory_architecture_decisions.md) (Contact Memory track — supersedes SRS/SystemDesign on conflict), [docs/planning/delivery-plan.md](docs/planning/delivery-plan.md)
-2. **Tier 2 (reference):** `docs/investigations/*`, `docs/solutions/` — documented solutions to past problems (bugs, best practices, workflow patterns), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in documented areas.
+2. **Tier 2 (reference):** `docs/investigations/*`, `docs/solutions/` — documented solutions to past problems (bugs, best practices, workflow patterns), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in documented areas. [CONCEPTS.md](CONCEPTS.md) — shared domain vocabulary (entities, named processes, status concepts); relevant when orienting to the codebase or discussing domain concepts.
 
 ## Workflow gate — DO NOT skip
 

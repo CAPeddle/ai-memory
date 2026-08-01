@@ -1,0 +1,106 @@
+# Concepts
+
+Shared domain vocabulary for this project — entities, named processes, and status concepts with project-specific meaning. Seeded with core domain vocabulary, then accretes as ce-compound and ce-compound-refresh process learnings; direct edits are fine. Glossary only, not a spec or catch-all.
+
+## Relationships
+
+A Work Packet owns everything beneath it. It has many Agent Runs, many Operational Decisions, and many Verification Criteria. An Agent Run has many Checkpoints. A Verification Criterion has many Evidence Items. Every one of those relationships is contained — nothing under a Work Packet points into the Memory Domain, and the single link that does point outward, Promotion, is a nullable, non-authoritative pointer rather than a dependency.
+
+## Workflow Operations
+
+### Work Packet
+The unit of supervised agent work: one objective, with its scope, constraints, an optional repository and branch binding, and a Policy Scope.
+
+A Work Packet is the only authority for its own Policy Scope — nothing beneath it carries one independently. Lifecycle: open, in progress, blocked, complete. It reaches complete only through the Completion Gate.
+
+### Agent Run
+One agent's working session against a Work Packet.
+
+A Run records whether it executed locally or on a remote execution node. It is running until it ends or fails, and it carries a last-activity time that Attention reads to judge staleness.
+
+### Checkpoint
+A narrated progress record within an Agent Run: what was completed, the current state, and optionally what is blocking and what comes next.
+
+A Checkpoint is a meaningful event — recording one refreshes its Run's activity and clears a staleness signal. A Run that ends after its last Checkpoint has left its final state un-narrated, which Attention surfaces.
+
+### Operational Decision
+A question raised during execution that someone must answer before the work can be considered settled.
+
+A Decision is either blocking or not; only an unresolved blocking Decision demands attention. Blocking describes intent and drives notice — it does not gate a Work Packet's completion, which turns on Evidence alone.
+
+Resolution is once and final. Re-resolving with the same answer returns the stored record unchanged, preserving when the answer was originally given; a different answer is refused as a conflict rather than overwriting the first. Resolving may trigger Promotion, and a Decision remains authoritative whether or not its Promotion succeeds.
+
+### Verification Criterion
+A named condition a Work Packet must satisfy, marked required or optional.
+
+### Evidence Item
+A record attached to a Verification Criterion that satisfies it — a manual note, a command result, or an external build reference.
+
+Evidence is what the Completion Gate counts. A Criterion with no Evidence is unmet regardless of how obviously true it may seem.
+
+### Completion Gate
+The refusal that prevents a Work Packet reaching complete while any required Verification Criterion lacks Evidence.
+
+The Gate is a refusal, not a warning: it rejects the completion outright and names the unmet criteria. Optional Criteria are ignored. A Packet carrying no required Criteria passes immediately.
+
+### Attention
+The derived set of reasons a Work Packet currently needs human notice.
+
+Attention is computed from state on demand and never stored, so it cannot drift from the state it describes. It is decided by fixed rules rather than model inference, and its reasons are additive — a Packet can be blocked and stale at once. Reasons cover an unresolved blocking Decision, an explicit blocker, a run idle past a threshold, a run that ended without a final Checkpoint, and the one positive signal: every required Criterion satisfied and the Packet not yet complete.
+
+### Policy Scope
+A closed, controlled set of values on a Work Packet governing how far its content may travel.
+
+Policy Scope is deliberately not a descriptive tag: the set is fixed, enforced at the database, and has no default, so every write must state a scope rather than inherit a permissive one. Anything derived from a Work Packet must carry that Packet's real scope — substituting a default silently widens the boundary the field exists to enforce.
+
+### Promotion
+Projecting a resolved Operational Decision into the Memory Domain as durable knowledge.
+
+Promotion is optional, one-way, and non-authoritative. It happens outside the operational transaction, so a failure leaves the Decision intact and resolved; the resulting reference is a nullable pointer, and the Memory Domain may lose it without invalidating anything.
+
+An attempt does not resolve to success or failure. It resolves to one of four outcomes, because what the caller should do next differs in each: the projection exists and its reference is recorded; it exists but the reference was not recorded, so it must be reconciled rather than repeated; it demonstrably never happened, which is the only case where simply repeating it is safe; or its status is unknown, because the attempt was abandoned or the far side never said — and an unknown attempt may still succeed after the caller has given up on it. Since unknown is unavoidable rather than exceptional, the Decision's own identity serves as the idempotency key: repeated attempts carrying it must yield at most one projection.
+
+## Delivery Workflow
+
+### Story
+The tracked unit of deliverable work, identified by a stable label that appears in its board entry, in its Plan, and in the trailer of every commit made for it.
+
+Stories move across a continuous-flow board — backlog, in progress, in review, done — under strict limits on how many may occupy the working states at once, rather than through sprint boundaries. Implementation is gated: a Story needs a board entry and a written Plan before work on it begins.
+
+### Plan
+The written decision artifact for a Story, carrying its product contract, requirements, and implementation units.
+*Avoid:* ExecPlan — the retired predecessor format, kept only as historical record.
+
+A Plan records decisions, not progress: execution state is derived from commit history rather than written back into the document body. A Plan and its Story cross-reference each other, and neither is considered ready without that link.
+
+## Boundaries
+
+### Memory Domain
+The semantic-memory half of the system — the durable store of captured knowledge, together with the search and graph structures built over it — as distinct from Workflow Operations.
+
+The separation is structural, not conventional: operational records live in their own schema, carry no foreign key into the Memory Domain, and the whole operational flow completes with the Memory Domain absent rather than merely degraded.
+
+## Verification Practice
+
+These name a distinction this project draws sharply and relies on in code comments as well
+as prose: whether a check can actually fail for the reason it claims to exist.
+
+### Red/Green Control
+A test whose subject is *another* check's mechanism rather than the system under test — it establishes that the check fires when it should and stays quiet when it should not.
+
+Narrower than the general test-first sense of red/green. Here it names a companion test written specifically to prove that a scan, guard, or assertion is capable of failing at all. A check that has never been observed to fail is not yet known to work, and one that cannot fail is indistinguishable from one that found nothing.
+
+### Non-Vacuity Guard
+An assertion that a check examined something, kept separate from the assertion about what it found.
+
+A scan over an empty input set passes every claim made about its contents. The guard makes that case loud rather than green — it asserts that the inspected set was non-empty, so a scan that silently stopped matching cannot masquerade as a clean result.
+
+### Discrimination
+The property that a check produces different outcomes for the compliant and non-compliant cases.
+
+Distinct from Non-Vacuity, and the two are independent: a check can genuinely inspect its input and still pass regardless of what it finds. Discrimination is what a Red/Green Control demonstrates, and it is proven by removing the thing under test and confirming the check goes red — not by reasoning about what it ought to do.
+
+### Fails Open / Fails Closed
+Whether a check's own malfunction permits the thing it guards, or refuses it.
+
+A boundary check that fails open is worse than none, because its passing result is read as enforcement. The failure is usually one level below the rule itself — a sound predicate applied to an input set that was never complete.

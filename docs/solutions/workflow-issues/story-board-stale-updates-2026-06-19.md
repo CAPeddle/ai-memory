@@ -1,7 +1,7 @@
 ---
 title: Keep story board updated as stories progress through development
 date: 2026-06-19
-last_updated: 2026-06-23
+last_updated: 2026-07-30
 category: workflow-issues
 module: project_management
 problem_type: workflow_issue
@@ -107,5 +107,10 @@ ST-029 moved to Done with `[x]` on all ACs, `Completed: 2026-06-23`, and notes r
 - `.github/prompts/governance-review.prompt.md` — detection-layer check that catches future recurrence
 - `.github/planning/execplans/_TEMPLATE.md` — the ExecPlan template whose closeout section covers Done but was not enforced for PR-merge paths
 - `.github/planning/story-board.md` — the board itself, which must be updated
-- `docs/solutions/workflow-issues/missing-start-stop-scripts-planning-gap-2026-06-18.md` — same root cause pattern (post-execution bookkeeping as blind spot)
 - `docs/solutions/workflow-issues/branch-from-main-between-stories-2026-06-19.md` — sibling facet of the same closeout gap: branch hygiene (branch fresh from main, not the previous feature branch)
+- `docs/solutions/workflow-issues/explicit-test-requirements-in-plans-2026-06-19.md` — the testing facet of the same family
+
+The root cause these siblings share: **post-execution bookkeeping is a blind
+spot**. Whatever the closeout step is — a board move, a fresh branch, a lifecycle
+script, a test assertion — a step that no artifact requires and no script enforces
+does not reliably happen.

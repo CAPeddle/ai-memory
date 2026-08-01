@@ -4,11 +4,62 @@
 > Next planning target: (TBD after ST-072 completes).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review). ST-070 + ST-071 done 2026-07-03 (integration suite green in CI, PR #21 merged).
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
-> Last updated: 2026-07-22 (ST-080 → Backlog; revisit deployment host — self-hosted homeserver + Tailscale vs Supabase)
+> Last updated: 2026-08-01 (ST-047 Review → Done after a tree audit — the work was complete and already on `main`; its note's "10 tools / 10 tests" figures were stale undercounts, now 11 and 15. The Review slot is now empty; ST-084 remains the sole In Progress entry.)
 
 ---
 
 ## Backlog
+
+### ST-085: Investigate local GPU inference as ST-082's compliant model provider
+- Type: spike / investigation
+- Source: `ce-pov` verdict 2026-07-31 (grade: Trial; reversibility tier 3)
+- phase: 2
+- Value: 3
+- Blocked by: — (subordinate to ST-082 — close unstarted if ST-082 concludes corporate-scoped content should never be processed at all)
+- Touches: `server/src/entityWorker.ts` (:66, hardcoded provider URL), `server/src/consolidationLLM.ts` (:37, same), `server/src/healthCheck.ts` (provider reachability), `server/tests/` (new extraction golden set)
+- Acceptance criteria:
+  - [ ] **Stage 1 (hard gate):** settle definitively, against AMD's official ROCm WSL compatibility matrix, whether the Radeon RX 7700S (gfx1102) is supported under WSL2 — currently **uncorroborated**. If it is not, prove reachability of a Windows-hosted Lemonade Server (`http://localhost:13305`) from the WSL-hosted Deno runtime, measure the added latency, record which device actually served the request, and confirm Lemonade supports the RX 7700S **at all on Windows** (assumed throughout, never verified)
+  - [ ] **Stage 2:** both chat-completion call sites take a configurable base URL mirroring the existing `OPENROUTER_BASE_URL` pattern (`server/src/embeddings.ts:6`, `server/src/healthCheck.ts:91,97`) — landing **with** ST-082's scope-aware routing, not bolted on afterwards
+  - [ ] **Stage 3:** an extraction golden set exists (none does today — `search-golden-set.test.ts` covers search only and the entity-worker tests cover crash-isolation/observability, not output quality; `server/tests/fixtures/consolidation-corpus.sql` can seed one) and a local 7–8B model is measured against `openai/gpt-4o-mini` for node/edge precision, recall, and malformed-JSON rate under `response_format: json_object`
+  - [ ] The **"do nothing"** baseline — deny corporate scope under ST-082, keep cloud for everything else — is explicitly beaten on compliance coverage, or the story closes with that conclusion recorded
+- Plan: `docs/plans/2026-07-31-001-spike-local-gpu-inference-provider.md`
+- Docs: ST-082 (the `model-provider routing` default-deny criterion this serves); ST-022 (established the OpenRouter extraction provider this revisits)
+- Notes: Explicitly **not** a cost-reduction play — the GPU is pursued only as ST-082's enabler, and the primary question is the product one (should corporate-scoped memories receive extraction at all). Local **embeddings** are out of scope: `embedding vector(512)` behind HNSW (`server/db/schema.sql:18`) makes any dimensionality change a one-way schema migration + full re-embed for near-zero reward. **NPU offload is hardware-infeasible** — Lemonade requires XDNA2 (Ryzen AI 300/400); this host is a Ryzen 7 7840HS (Phoenix/XDNA1). Reversal trigger fires immediately if Stage 1 finds only CPU or the 780M iGPU reachable.
+
+
+### ST-083: Developer Memory design pass (module spec)
+- Type: design
+- Source: AWCP §8 Q10 (PO decision 2026-07-29, PR #31); fires ADR-013's "Developer Memory design begins" revisit trigger
+- phase: 2
+- Value: 4
+- Blocked by: —
+- Touches: `docs/design/adr/ADR-007-consolidation-pipeline.md` (existing, may need revision); new Developer Memory module spec doc(s); `docs/design/adr/ADR-013-platform-product-definitions.md` §4(a) (disposition revisit)
+- Acceptance criteria:
+  - [ ] Developer Memory's module spec authored, covering at minimum `record_decision` / `search_decisions` / `get_project_context` — the shape AWCP's own knowledge needs already implied (`docs/investigations/awcp-spec-evaluation.md` §4, §8 Q10)
+  - [ ] Relationship to AWCP's operational module clarified: Developer Memory owns promoted/recalled knowledge (ADR-007 consolidation scoring — frequency, diversity, helpfulness), AWCP's operational model owns transactional execution state — per the truth-conditions distinction the `prism-llm-wiki` boundary plan drew (recall-promoted vs. correlation-expires)
+  - [ ] ADR-013 disposition (a) (consolidation worker, currently grandfathered) revisited: converts to relocated/fenced, or is explicitly re-grandfathered with rationale
+  - [ ] Storage/schema implications assessed against [ADR-016](../../docs/design/adr/ADR-016-awcp-consolidation-host-topology.md) §3's still-open storage-layout axis (informs, does not have to resolve, that decision)
+- Plan: (to be created — `docs/plans/`)
+- Docs: `docs/investigations/awcp-spec-evaluation.md` §4, §8 Q10; `docs/design/adr/ADR-007-consolidation-pipeline.md`; `docs/design/adr/ADR-013-platform-product-definitions.md` §4(a); `prism-llm-wiki` boundary plan (`docs/plans/2026-07-28-001-docs-developer-memory-prism-boundary-plan.md`) for the truth-conditions distinction
+- Notes: Committed as a real follow-on story rather than "raw platform primitives forever" (PO decision, AWCP §8 Q10, 2026-07-29) — AWCP's own knowledge requirements are effectively Developer Memory's spec already. Verify referenced file paths/sections still hold when picked up — memories freeze in time.
+
+### ST-082: Enforce `scope.tags` as a retrieval filter (corporate/personal isolation)
+- Type: hardening / security
+- Source: AWCP §8 Q9 (PO decision 2026-07-29, promoted to Must, PR #31)
+- phase: 2
+- Value: 4
+- Blocked by: —
+- Touches: `server/src/searchQuality.ts` (must consume `scope.tags` as a retrieval filter — currently parsed but not enforced), `server/src/parseContext.ts` (parsing already shipped), `server/tests/`
+- Acceptance criteria:
+  - [ ] `scope.tags`, already parsed by `parseContext.ts`, is enforced as a retrieval filter in `searchQuality.ts` across both `search_thoughts` and `list_thoughts` lanes — not merely available on the context object
+  - [ ] **Controlled policy-scope field** (extended per PR #31 governance round, AWCP §8 Q9): observations/sources carry a closed-vocabulary policy scope distinct from free-form descriptive tags — ordinary tags are not the sole policy boundary
+  - [ ] **Default-deny** semantics for retrieval *and* model-provider routing: content is never returned to, or sent through a provider for, a scope it wasn't granted; absence of scope means deny, not allow
+  - [ ] **Negative isolation tests across every egress path** — lexical search, vector search, graph traversal, context assembly, and exports — each proving corporate-scoped content is not reachable from a personal scope and vice versa (not just the search lanes)
+  - [ ] ADR-012's descriptive tag vocabulary is unchanged — the policy-scope field is additive, not a tag-vocabulary rewrite
+  - [ ] Documented as the load-bearing control set for corporate/personal isolation per `docs/investigations/prism-ground-truth-inventory.md` §6 item 1 and AWCP §8 Q9 (rev 1.5)
+- Plan: (to be created — `docs/plans/`)
+- Docs: `docs/investigations/awcp-spec-evaluation.md` §8 Q9; `docs/investigations/prism-ground-truth-inventory.md` §6 item 1; `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` §4
+- Notes: Promoted from a known, previously-deferred gap (`docs/investigations/awcp-spec-evaluation.md` §4) to a **Must** now that AWCP's local source-lineage tracker (ADR-016 §4) will co-locate corporate Confluence/Jira/ADO-derived content with personal memory in the same store. Should land before or alongside that tracker's implementation, not after — verify `parseContext.ts`/`searchQuality.ts` still match this description when picked up.
 
 ### ST-080: Revisit deployment host — self-hosted homeserver + Tailscale (fills ADR-009's deferred host decision)
 - Type: spike / architecture decision
@@ -35,12 +86,12 @@
 - phase: 0 (governance)
 - Value: 3
 - Blocked by: —
-- Touches: `docs/design/adr/ADR-013-*.md` (new — the guardrail ADR); `CLAUDE.md` (one-line pointer near the Contact Memory Supersession Map)
+- Touches: `docs/design/adr/ADR-015-*.md` (new — the guardrail ADR; renumbered from ADR-013 on 2026-07-28: ADR-013 taken by platform/product definitions per ST-081, ADR-014 reserved by ST-080); `CLAUDE.md` (one-line pointer near the Contact Memory Supersession Map)
 - Problem: The platform mandates Postgres + Apache AGE (ADR-003/009/011), but Contact Memory deploys on Supabase without AGE — a choice explicitly scoped "for Contact Memory deployment only" (`CLAUDE.md:32`). No document analyzes the resulting two-database divergence as a risk. Developer Memory's deployment target is undecided; a future "just use Supabase like Contact did" choice could silently strip the graph tier that ADR-003/011 treat as first-class, without anyone weighing the cost.
 - Acceptance criteria:
-  - [ ] New **ADR-013 "Products inherit the platform graph tier by default"**: products built on the Platform MCP inherit its storage capabilities including the AGE graph; moving a product onto a stack that omits AGE (as Contact→Supabase) is a **per-product decision that must explicitly account for losing graph-based retrieval (ADR-003 Mode 2 / entity traversal)** — it does not become the platform default
-  - [ ] ADR-013 cross-references ADR-003/009/011, the Contact supersession note (`CLAUDE.md:32`), and ST-024 for the version ceiling (Risk B)
-  - [ ] One-line pointer to ADR-013 added in `CLAUDE.md` near the Contact Memory Supersession Map
+  - [ ] New **ADR-015 "Products inherit the platform graph tier by default"** (renumbered from ADR-013, 2026-07-28): products built on the Platform MCP inherit its storage capabilities including the AGE graph; moving a product onto a stack that omits AGE (as Contact→Supabase) is a **per-product decision that must explicitly account for losing graph-based retrieval (ADR-003 Mode 2 / entity traversal)** — it does not become the platform default
+  - [ ] ADR-015 cross-references ADR-003/009/011, ADR-013 (platform/product definitions — the guardrail is a sub-rule of its platform-capability inheritance), the Contact supersession note (`CLAUDE.md:32`), and ST-024 for the version ceiling (Risk B)
+  - [ ] One-line pointer to ADR-015 added in `CLAUDE.md` near the Contact Memory Supersession Map
   - [ ] Guardrail is framed as "weigh the cost each time", **not** a ban on divergence — Contact's deliberate trade remains valid
   - [ ] No duplication of ST-024 (the deferred PG17/AGE-v1.7.0 upgrade owns Risk B); this story owns Risk A only
 - Plan: `docs/investigations/age-platform-divergence-product-impact.md` §7 (recommendation); ADR to be authored on pickup
@@ -454,22 +505,39 @@
 
 ## In Progress
 
-### ST-074: Reconcile `ExtractionItem` shape — Opt 3 provenance accessors
-- Type: bug / design
-- Source: PO (compass_artifact_wf.md residual concern #3, 2026-07-03)
-- phase: contact-memory
-- Value: 3
-- Blocked by: — (ST-073 done; PO chose Opt 3 2026-07-03)
-- Touches: `contact-memory/parser/types.ts`, `contact-memory/commit/captureThoughtAdapter.ts`, `contact-memory/tests/parser/types.test.ts`, `docs/investigations/compass_artifact_wf.md`
-- Acceptance criteria:
-  - [x] Direction chosen by PO — **Option 3**: keep the union shape, add pure accessors + document the `evidence[0]` convention (2026-07-03)
-  - [x] `getPrimaryQuote` / `getAllSourceIds` accessors added to `parser/types.ts`; adapter routes its provenance quote through `getPrimaryQuote` and documents the `evidence[0]` convention; doc shape note updated to "done"
-  - [x] All existing contact-memory tests pass (plus new accessor unit tests) — 79 passed / 0 failed
-- Plan: [docs/plans/2026-07-03-005-fix-reconcile-extractionitem-shape-plan.md](../../docs/plans/2026-07-03-005-fix-reconcile-extractionitem-shape-plan.md)
-- Docs: `docs/investigations/compass_artifact_wf.md`
-- Notes: Confirmed mismatch 2026-07-03 — doc proposes `{kind, payload, quote, source_ids, char_span}`; actual [`ExtractionItem`](../../contact-memory/parser/types.ts#L152) is a flattened discriminated union with provenance in `evidence: EvidenceReference[]`. Opt 3 closes the drift without restructuring the union: accessors centralize the primary-quote + full-source-id patterns the doc's flat shape implied.
+### ST-084: Architecture spike — ADR-016 host-acceptance gate (ai-memory as AWCP host)
+- Type: spike / architecture decision
+- Source: PR #31 governance round (2026-07-29) — host acceptance must be proven, not presumed; ADR-016 held at Proposed/Conditional until this spike reports
+- phase: 0 (architecture)
+- Value: 4
+- Blocked by: —
+- Branch: `claude/st-084-awcp-host-spike`
+- Touches: `server/db/007_workflow_schema.sql` (new); `server/src/workflow/` (new module — first subdirectory under `server/src/`); `server/tests/workflow-*.test.ts` (new); `server/tests/migrations.test.ts` (4 hardcoded version assertions); `docs/investigations/ST-084-awcp-host-spike-findings.md` (new); `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` (disposition on outcome — **not** flipped to Accepted by this story)
+- **Staged execution (PO decision 2026-07-30):** the supplied plan is ~3 sessions of work; rather than thinly demonstrating all seven criteria, Stage 1 fully proves four and honestly marks the rest UNPROVEN.
+- Acceptance criteria — **Stage 1**:
+  - [x] **Criterion 1 — operational independence:** WorkPacket, AgentRun, Checkpoint, OperationalDecision, AttentionItem, Evidence and completion gating all function with OpenRouter, embeddings, entity extraction, AGE, hybrid ranking, consolidation and knowledge promotion disabled
+  - [x] **Criterion 2 — separate persistence and API boundary:** independent transactional persistence in a `workflow` Postgres schema; operational entities are not thoughts/shards/graph records; memory reached only via explicit ports; a **no-op memory adapter supports the complete operational flow**
+  - [x] **Criterion 3 — failure isolation:** knowledge-search failure, knowledge-promotion failure, graph unavailability and central-service restart each proven not to corrupt or roll back operational state; promotion proven to be an optional projection (deleting it leaves the decision intact)
+  - [x] **Criterion 4 — reuse and coupling:** the ten named ai-memory components classified (directly reusable / adapter-reusable / modification-required / unnecessary / harmful coupling), with the slice's actual introduced dependencies recorded
+  - [x] Dependency rule enforced **by a test that scans the module's own source**, not by documentation alone
+  - [x] Stage 2 contracts *defined but not implemented*: remote-node protocol, auth + idempotency, spool format, policy-scope model, and the enumerated paths requiring enforcement — so Stage 2 does not begin from assumptions
+  - [x] Preliminary findings doc with a verdict of **promising / promising with concerns / unlikely to fit** (deliberately weaker vocabulary than the final accept/reject), marking criteria 5 and 6 explicitly **UNPROVEN**
+  - [x] Full server test suite green (spike must not red the existing suite) — 253 passed / 9 failed, the 9 being the documented pre-existing local-401 baseline (216 + 37 new = 253) in files this change never touches
+  - [x] **ADR-016 is NOT marked Accepted by this story** and no final host decision is taken
+- Acceptance criteria — **Stage 2** (separate PR, not started):
+  - [ ] Criterion 5 — policy-scope enforcement (controlled field, not descriptive tags; default-deny; every enabled retrieval/graph/context/export/provider path enforces or fails closed)
+  - [ ] Criterion 6 — remote Ubuntu execution node (authenticated registration, heartbeat, checkpoint, repo-state; offline spool + idempotent replay; disconnection/duplicate/invalid-auth experiments)
+  - [ ] Criterion 7 — final extraction viability and the final ADR-016 recommendation
+- Plan: [docs/plans/2026-07-29-001-awcp-ai-memory-host-spike.md](../../docs/plans/2026-07-29-001-awcp-ai-memory-host-spike.md) — PO-supplied controlling spec, plus an Implementation Addendum recording exact module locations, migration approach, dependency rules, Stage 2 contracts, test commands and rollback steps
+- Findings: [docs/investigations/ST-084-awcp-host-spike-findings.md](../../docs/investigations/ST-084-awcp-host-spike-findings.md) — **Stage 1 verdict: PROMISING WITH CONCERNS.** Criteria 1–4 pass on evidence (37/37 tests, including a full run with all memory capabilities disabled and the provider unroutable). The qualifying concern is the policy-scope enforcement surface (§6.1): `scope.tags` is enforced in **zero** retrieval paths today, across 15 hand-written read paths with no chokepoint, a one-call `fetch` bypass, and two structurally unfilterable graph tools — a cost Candidate A carries that Candidate C would not, so it is a host-decision input rather than only an ST-082 item. Criteria 5–7 UNPROVEN.
+- Docs: `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` §1; `docs/investigations/awcp-spec-evaluation.md` §7, §9; `docs/investigations/prism-ground-truth-inventory.md` §4
+- Notes: Burden of proof sits with the spike, not with the preference — ai-memory is the *hypothesis*. (A transient WIP exception on 2026-07-30 — ST-074 also sitting In Progress — was resolved the same day: ST-074 was verified complete and moved to Done, so this is now the sole In Progress entry and the WIP limit holds.) Code is **disposable** (`DROP SCHEMA workflow CASCADE` + one `schema_migrations` delete + delete three paths); the schemas/contracts are the intended survivors per awcp-spec-evaluation §6.1.
 
 ## Review
+
+(Empty)
+
+## Done
 
 ### ST-047: Tool descriptions
 - Type: dx
@@ -482,11 +550,45 @@
   - [x] All MCP tool descriptions include usage examples and parameter docs (AC-15)
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-047.md`
 - Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
-- Notes: 🟡 Should fix. All 10 tool descriptions enriched. Misleading metadata (search fallback wording, search_thoughts/list_thoughts profile-isolation claims) corrected to match runtime behavior. Protocol compatibility test expanded with source-of-truth derivation and targeted regression assertions. 10/10 tests pass.
+- Notes: 🟡 Should fix. All 11 tool descriptions enriched. Misleading metadata (search fallback wording, search_thoughts/list_thoughts profile-isolation claims) corrected to match runtime behavior. Protocol compatibility test expanded with source-of-truth derivation and targeted regression assertions. 15/15 tests pass. Audited against the tree 2026-08-01 before closing: 11/11 tool descriptions carry Parameters/Example/Returns/Errors, 21/21 inputSchema fields carry `.describe()`, zero `profile` references remain (consistent with ADR-012), and the work is present on `main`. The earlier "10 tools / 10 tests" figures were undercounts — the work grew past its own record.
 
-(Empty)
+### ST-074: Reconcile `ExtractionItem` shape — Opt 3 provenance accessors
+- Type: bug / design
+- Source: PO (compass_artifact_wf.md residual concern #3, 2026-07-03)
+- phase: contact-memory
+- Value: 3
+- Blocked by: — (ST-073 done; PO chose Opt 3 2026-07-03)
+- Completed: 2026-07-03 (closed on the board 2026-07-30 after independent verification)
+- Commit: `f919fda` — fix(contact-memory): reconcile ExtractionItem shape via provenance accessors
+- Touches: `contact-memory/parser/types.ts`, `contact-memory/commit/captureThoughtAdapter.ts`, `contact-memory/tests/parser/types.test.ts`, `docs/investigations/compass_artifact_wf.md`
+- Acceptance criteria:
+  - [x] Direction chosen by PO — **Option 3**: keep the union shape, add pure accessors + document the `evidence[0]` convention (2026-07-03)
+  - [x] `getPrimaryQuote` / `getAllSourceIds` accessors added to `parser/types.ts`; adapter routes its provenance quote through `getPrimaryQuote` and documents the `evidence[0]` convention; doc shape note updated to "done"
+  - [x] All existing contact-memory tests pass (plus new accessor unit tests) — 79 passed / 0 failed
+- Plan: [docs/plans/2026-07-03-005-fix-reconcile-extractionitem-shape-plan.md](../../docs/plans/2026-07-03-005-fix-reconcile-extractionitem-shape-plan.md)
+- Docs: `docs/investigations/compass_artifact_wf.md`
+- Notes: Confirmed mismatch 2026-07-03 — doc proposes `{kind, payload, quote, source_ids, char_span}`; actual [`ExtractionItem`](../../contact-memory/parser/types.ts#L152) is a flattened discriminated union with provenance in `evidence: EvidenceReference[]`. Opt 3 closes the drift without restructuring the union: accessors centralize the primary-quote + full-source-id patterns the doc's flat shape implied.
+- Closure verification (2026-07-30): all three ACs re-checked independently against the code rather than trusting the tick marks. `getPrimaryQuote`/`getAllSourceIds` confirmed present and pure ([`parser/types.ts:172-192`](../../contact-memory/parser/types.ts#L172)); the adapter genuinely routes through the accessor ([`captureThoughtAdapter.ts:140`](../../contact-memory/commit/captureThoughtAdapter.ts#L140)) rather than inlining `evidence[0].quote`; the `evidence[0]` convention is documented at both the adapter and the accessor; the doc shape note is marked resolved (`compass_artifact_wf.md:155`). Contact-memory suite re-run with the CI command: **79 passed / 0 failed**, matching the claim exactly. `f919fda` confirmed an ancestor of `main` — nothing stranded on a side branch. The residual `candidate.evidence[0]` at `captureThoughtAdapter.ts:139` is deliberate, not an oversight: the plan's Scope Boundaries keep the metadata line's existing message-id semantics.
 
-## Done
+
+### ST-081: Formalise platform/product definitions (ADR-013 + SRS v1.2 supersession banners)
+- Type: chore / governance
+- Source: PO (platform-vs-product formalisation request, 2026-07-28, following the AWCP spec evaluation on PR #31)
+- phase: 0 (governance)
+- Value: 4
+- Completed: 2026-07-29
+- Blocked by: —
+- Touches: `docs/design/adr/ADR-013-platform-product-definitions.md` (new); `docs/requirements/SRS.md` (v1.2 — header note + supersession banners on §4.3/§5.4/§5.5/§5.6 + revision history); this board (ST-079 ADR renumbered ADR-013 → ADR-015)
+- Acceptance criteria:
+  - [x] ADR-013 defines platform and product by **criteria** (litmus test: "decides what knowledge means / when it's trusted" → product; "stores/indexes/retrieves any knowledge identically" → platform), not just examples
+  - [x] Product register recorded: Contact Memory (active), Developer Memory (deferred), Workflow/Operations Memory (proposed — AWCP; host/topology/lineage decided per ADR-016, storage layout open)
+  - [x] Layering-vs-deployment clause: products may be co-deployed in one runtime (AWCP consolidation-first direction) without collapsing logical boundaries; separate infra (Contact→Supabase) stays a per-product decision
+  - [x] Known violations dispositioned: consolidation worker grandfathered as Developer Memory logic in the platform runtime (no new wiki-tier dependencies); Storyboard confirmed superseded by the WorkPacket model (AWCP §8 Q4); three-tier Brain/views marked product-layer
+  - [x] SRS bumped to v1.2 with banners in place (no section rewrites — supersession-map culture) and a revision-history row
+  - [x] PO accepts ADR-013 (status `proposed` → `accepted`) — accepted 2026-07-29 after AWCP §8 Q2–Q10 resolved
+- Plan: — (PO-directed governance drafting, same session as the request; no `docs/plans/` artifact — direct PO instruction 2026-07-28)
+- Docs: `docs/investigations/awcp-spec-evaluation.md` (PR #31), `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md`, `docs/architecture/ai_memory_architecture_decisions.md`
+- Notes: WIP-limit exception (entered Review directly alongside ST-047, PO-directed 2026-07-28) resolved by completion — ST-047 is now the sole Review entry. ST-079's planned guardrail ADR renumbered to ADR-015 (ADR-014 reserved by ST-080); ST-079 becomes a sub-rule of ADR-013's capability-inheritance frame. AWCP host/topology/source-lineage decided 2026-07-29 in [ADR-016](../../docs/design/adr/ADR-016-awcp-consolidation-host-topology.md); storage layout deferred to module design. Follow-on stories filed: ST-082 (tag-filter enforcement, AWCP §8 Q9) and ST-083 (Developer Memory design pass, AWCP §8 Q10). The grandfathered consolidation-worker relocation still has **no story yet** — tied to ST-083's design pass, not raised separately to avoid duplication.
 
 ### ST-078: Reconcile Apache AGE version drift (docs said v1.7.0; image ships PG15/v1.6.0-rc0)
 - Type: chore / docs correction

@@ -6,13 +6,14 @@ module: planning-workflow
 problem_type: workflow_issue
 component: development_workflow
 severity: medium
+last_updated: 2026-07-30
 applies_when:
-  - Authoring or reviewing ExecPlans for stories that introduce or modify tests
+  - Authoring or reviewing any plan artifact for stories that introduce or modify tests
   - Test coverage is described only in implementation-unit scenarios or final verification
   - A code review identifies misleading metadata that tests should have caught (e.g., descriptions claiming behavior the runtime does not provide)
   - Planning remediation work where targeted regression assertions matter more than broad suite greens
   - Writing a story's Definition of Ready or Definition of Done
-  - Using the /plan prompt to scope a story that changes tool descriptions, API contracts, or runtime behavior
+  - Scoping a story that changes tool descriptions, API contracts, or runtime behavior
 tags:
   - planning
   - execplan
@@ -57,8 +58,15 @@ rather than semantic ("does the test catch the actual risk?").
 
 ## Guidance
 
+> **A note on plan format (added 2026-07-30).** This learning was written against
+> the ExecPlan format, which has since been superseded: `docs/plans/*.md` is the
+> canonical format for new plans, and the `/plan` prompt targets the retired
+> ExecPlan shape (CLAUDE.md "Workflow gate"). The guidance below is format-agnostic
+> — read "plan" for "ExecPlan", and "implementation unit" for "§4.N task". The
+> ExecPlan-specific section numbers are kept as the original evidence.
+
 Treat test requirements as **first-class acceptance criteria**, not
-implementation-unit side notes. When writing or reviewing an ExecPlan:
+implementation-unit side notes. When writing or reviewing a plan:
 
 1. **Name the regression risks.** Before writing any code, list what the
    implementation must not regress and what specific incorrect behaviors the
@@ -67,11 +75,11 @@ implementation-unit side notes. When writing or reviewing an ExecPlan:
    `search_thoughts` filters by profile when it only filters by project," etc.
 
 2. **Write targeted test assertions before implementation.** The repo's
-   `/plan` prompt already mandates TDD sequencing ("Always encode test-bearing
+   `/plan` prompt already mandates TDD sequencing ("**Always** encode test-bearing
    work with explicit TDD sequencing in the ExecPlan: define the red step
-   first" — `plan.prompt.md:103`). Follow this rule: each implementation unit
-   that changes behavior must include its regression assertions in the plan
-   *before* the implementation step, not after.
+   first" — `.github/prompts/plan.prompt.md:105`). Follow this rule: each
+   implementation unit that changes behavior must include its regression
+   assertions in the plan *before* the implementation step, not after.
 
 3. **Distinguish test-code coverage from test-assertion precision.** A test
    file that runs and passes is necessary but insufficient. Each test must
@@ -80,16 +88,29 @@ implementation-unit side notes. When writing or reviewing an ExecPlan:
    that asserts `search` descriptions mention fallback behavior is
    high-precision.
 
-4. **Include test requirements in the Definition of Ready.** The ExecPlan
-   template's §2b "Definition of Ready" should be checked only after the plan
-   specifies *what the tests will assert*, not just *that tests will be
-   written*.
+4. **Include test requirements in the Definition of Ready.** Whatever the plan
+   format calls its readiness gate — the ExecPlan template's §2b "Definition of
+   Ready" (`.github/prompts/plan.prompt.md:57`) was the original instance — it
+   should be satisfied only after the plan specifies *what the tests will assert*,
+   not just *that tests will be written*.
 
-5. **Use semantic regex patterns over exact prose.** When testing documentation
-   or metadata strings, prefer structural pattern assertions (e.g., "description
-   contains a usage guidance sentence" or "description mentions fallback")
-   over exact-string matching. This avoids brittle test coupling while still
-   targeting specific semantic properties.
+5. **Use semantic regex patterns over exact prose — but prove the pattern
+   fires.** When testing documentation or metadata strings, prefer structural
+   pattern assertions (e.g., "description contains a usage guidance sentence" or
+   "description mentions fallback") over exact-string matching. This avoids
+   brittle test coupling while still targeting specific semantic properties.
+
+   **Caveat added 2026-07-30, from ST-084.** A pattern assertion carries its own
+   silent-pass hazard, and it is the same hazard in a different costume: a scan
+   whose pattern matched *nothing* is indistinguishable from a scan that found no
+   violations. ST-084 shipped a schema-qualification scan whose regex lacked the
+   `/i` flag, so it silently skipped the very lowercase style it existed to catch,
+   and an import-boundary check written as a *blocklist* over a growing directory,
+   which permitted every future module by default. Both were green. So: pair every
+   pattern assertion with a non-vacuity guard (assert it inspected something) and a
+   discrimination control (assert it rejects known-bad input), and prefer an
+   allowlist to a blocklist wherever the surface being checked can grow. See
+   [Review the verification mechanism as adversarially as the code](../conventions/verification-mechanisms-need-adversarial-review.md).
 
 ## Why This Matters
 
@@ -101,9 +122,16 @@ implementation-unit side notes. When writing or reviewing an ExecPlan:
   remediation cost is higher than writing targeted assertions upfront.
 - The cross-model review gate in `plan.prompt.md` was introduced precisely
   because "ST-008 shipped with all ACs 'checked' and 34/34 tests green, but a
-  cross-model review found 3 contract defects the tests didn't cover." This
-  learning is the same pattern: green tests that do not assert against the
-  actual risk.
+  cross-model review found 3 contract defects the tests didn't cover"
+  (`.github/prompts/plan.prompt.md:75`). This learning is the same pattern: green
+  tests that do not assert against the actual risk.
+- **This symptom has now recurred three times: ST-008, ST-047, and ST-084.** That
+  is worth reading as a signal about this doc's own remedy. The plan-time control
+  here is necessary but has not been sufficient on its own — ST-084's defects were
+  well-specified assertion targets that decayed *after* the plan was written, which
+  no amount of plan precision would have caught. Pair this with the review-time
+  control in
+  [Review the verification mechanism as adversarially as the code](../conventions/verification-mechanisms-need-adversarial-review.md).
 - Without explicit test requirements, the Definition of Ready checkbox "Tests
   planned" is a rubber stamp. The checkbox should require *what* the tests will
   assert, not just *that* tests will exist.
@@ -117,8 +145,11 @@ implementation-unit side notes. When writing or reviewing an ExecPlan:
   specific assertions
 - During code review: if a reviewer finds a bug that the test suite did not
   catch, the plan's test requirements were under-specified
-- During `/plan` or `/plan-new`: before marking a plan as Ready, verify each
-  implementation unit specifies named regression targets, not just "add tests"
+- Before marking any plan as Ready: verify each implementation unit specifies
+  named regression targets, not just "add tests"
+- When a test asserts an *absence* (no forbidden import, no unqualified
+  identifier, no missing field) — those are the assertions most able to pass
+  vacuously; see rule 5's caveat
 
 ## Examples
 
@@ -173,8 +204,12 @@ If any answer is "no," the plan's test requirements are under-specified.
 
 ## Related
 
-- [missing-start-stop-scripts-planning-gap-2026-06-18.md](./missing-start-stop-scripts-planning-gap-2026-06-18.md) — same root-cause family (planning didn't include operational acceptance criteria). This doc generalizes the pattern: whether it's lifecycle scripts or test assertions, requirements not written into the plan do not reliably happen.
+- [Review the verification mechanism as adversarially as the code](../conventions/verification-mechanisms-need-adversarial-review.md) — the **review-time** counterpart to this doc's **plan-time** control. This doc asks whether the plan named what the tests must assert; that one asks whether the check, as written, is even capable of failing. Neither substitutes for the other.
 - [story-board-stale-updates-2026-06-19.md](./story-board-stale-updates-2026-06-19.md) — sibling facet of the same closeout gap (board sync as a missing required step)
 - [branch-from-main-between-stories-2026-06-19.md](./branch-from-main-between-stories-2026-06-19.md) — sibling facet (branch hygiene as a missing required step)
-- `.github/prompts/plan.prompt.md` — line 103: TDD sequencing rule; lines 66-73: cross-model review gate introduced after ST-008 shipped with green tests that missed contract defects
+- `.github/prompts/plan.prompt.md` — line 105: TDD sequencing rule; line 57: the §2b Definition of Ready gate; lines 66-75: cross-model review gate, introduced after ST-008 shipped with green tests that missed contract defects
 - `docs/plans/2026-06-19-002-fix-st047-review-findings-plan.md` — remediation plan that added targeted regression assertions after review identified the gap
+
+The general form these siblings share: **requirements not written into the plan do
+not reliably happen** — whether the missing requirement is a lifecycle script, a
+board update, branch hygiene, or a test assertion.

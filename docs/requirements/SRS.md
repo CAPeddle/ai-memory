@@ -3,7 +3,7 @@ name: "Software Requirements Specification — ai-memory"
 summary: "IEEE-style SRS capturing all functional and non-functional requirements for the ai-memory system"
 asset_type: "specification"
 status: "active"
-version: "1.1"
+version: "1.2"
 owners:
   - "ai-memory-maintainers"
 source_path: "docs/requirements/SRS.md"
@@ -12,9 +12,11 @@ created: "2026-05-15"
 
 # Software Requirements Specification — ai-memory
 
-**Version:** 1.1  
-**Date:** 2026-05-15  
+**Version:** 1.2  
+**Date:** 2026-07-28  
 **Status:** Active
+
+> **Platform/product boundary (v1.2, [ADR-013](../design/adr/ADR-013-platform-product-definitions.md)):** this SRS predates the platform/product split formalised in the [Architecture Decisions Record](../architecture/ai_memory_architecture_decisions.md) and ADR-013. Sections describing curation, promotion, views, or task-board semantics (§4.3, §5.4, §5.5, §5.6) are now **product-layer** requirements, marked with banners in place. Platform-scope requirements (ingest, search, memory management, MCP primitives) remain binding as written, subject to ADR-012's tags migration.
 
 ---
 
@@ -93,6 +95,8 @@ The system serves:
 | UC-3 | **Storyboard management** — Create, update, and execute personal and professional task stories; agents pick up stories and update status | Developer / AI Agent | REST / MCP |
 
 ### 4.3 Conceptual Three-Tier Model
+
+> **Superseded at platform level ([ADR-013](../design/adr/ADR-013-platform-product-definitions.md) §4c, Architecture Decisions Record Decision 1):** the platform is **single-tier — shards only**. The Wiki tier and Views shown below are **product-layer projections** (Developer Memory / Workflow product), not platform capabilities. Diagram retained as historical record of the v1 conceptual model.
 
 ```
                 ┌─────────────────────────────────────────────┐
@@ -212,6 +216,8 @@ Requirements use the convention: `[FR]-[category]-[number]`. Categories: **I** (
 
 ### 5.4 Consolidation Pipeline
 
+> **Product-layer ([ADR-013](../design/adr/ADR-013-platform-product-definitions.md) §4a):** consolidation is **Developer Memory product logic** (ADR-007), not a platform capability. The current implementation (`server/src/consolidationWorker.ts`, ST-008) is grandfathered inside the platform runtime until Developer Memory is designed; no new platform capability may depend on the wiki tier it produces. FR-C-001..008 remain binding *as Developer Memory requirements*.
+
 **FR-C-001** The system shall implement a consolidation pipeline that evaluates episodic memories as candidates for promotion to semantic memory.
 
 **FR-C-002** The consolidation scoring formula shall be:
@@ -239,6 +245,8 @@ where:
 
 ### 5.5 View Generation and Synthesis
 
+> **Product-layer ([ADR-013](../design/adr/ADR-013-platform-product-definitions.md) §4c):** views are product projections over platform shards, not platform capabilities. FR-V-001..007 apply to whichever product owns the view in question (Developer Memory wiki views per ADR-006/ST-019; storyboard views per §5.6's reassignment).
+
 **FR-V-001** The system shall expose an `ISynthesisService` interface that, when invoked, generates or refreshes a named view over the Brain.
 
 **FR-V-002** The synthesis service shall support incremental view updates: it shall track the last-synthesised memory ID per view and only process delta records since that point.
@@ -256,6 +264,8 @@ where:
 ---
 
 ### 5.6 Storyboard
+
+> **Product-layer, reassignment pending ([ADR-013](../design/adr/ADR-013-platform-product-definitions.md) §4b):** the Storyboard is no longer a platform capability. It is the embryonic work-state model of the proposed **Workflow/Operations product** (AWCP — `docs/investigations/awcp-spec-evaluation.md`, PR #31); the AWCP consolidation architecture decisions (host/topology) settle whether FR-B-001..009 are absorbed into that product's WorkItem/WorkPacket model or retired. Do not build new platform features against these requirements in the interim.
 
 **FR-B-001** The system shall maintain a storyboard as a stateful projection over The Brain with story records containing: `id`, `title`, `description`, `status` (todo | in-progress | review | done), `priority`, `profile` (professional | personal), `project?`, `tags?[]`, `acceptance_criteria?[]`, `created_at`, `updated_at`.
 
@@ -599,3 +609,4 @@ where:
 | 1.0 | 2026-05-15 | ai-memory-maintainers | Initial SRS — synthesised from 12 investigation documents and 4 discussion ADRs |
 | 1.1 | 2026-05-15 | ai-memory-maintainers | Contextual scoping: FR-R-016, FR-API-013, FR-MCP-007, FR-B-009, FR-C-008 added; ADR-008 reference added to traceability matrix; version bumped |
 | 1.1 | 2026-05-15 | ai-memory-maintainers | Add contextual scoping requirements: FR-R-016, FR-API-013, FR-MCP-007, FR-B-009, FR-C-008; add ADR-008 reference; bump version |
+| 1.2 | 2026-07-28 | ai-memory-maintainers | Platform/product boundary per ADR-013: supersession banners on §4.3 (three-tier model → platform is single-tier), §5.4 (consolidation → Developer Memory product logic, grandfathered), §5.5 (views → product projections), §5.6 (Storyboard → reassigned to proposed Workflow/Operations product, pending AWCP host decision); header note added |

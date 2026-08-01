@@ -1,6 +1,7 @@
 ---
 title: Branch from fresh main before starting a new story
 date: 2026-06-19
+last_updated: 2026-07-30
 category: workflow-issues
 module: story workflow
 problem_type: workflow_issue
@@ -34,7 +35,7 @@ tags:
 
 ## Context
 
-The ai-memory repo runs a story-driven workflow: work items are tracked as `ST-XXX` on [.github/planning/story-board.md](.github/planning/story-board.md) with WIP limits of **1 In Progress, 1 in Review**. Implementation is gated by ExecPlans in `.github/planning/execplans/`, and the workflow prompts in `.github/prompts/` (`/plan-new`, `/plan`, `/continue`, `/recover`) drive the cycle. Each story is meant to live on its own `feat/ST-XXX-...` branch, flow through a PR, merge into `main`, and be closed out before the next story starts.
+The ai-memory repo runs a story-driven workflow: work items are tracked as `ST-XXX` on [.github/planning/story-board.md](../../../.github/planning/story-board.md) with WIP limits of **1 In Progress, 1 in Review**. Implementation was gated by ExecPlans in `.github/planning/execplans/`, driven by the workflow prompts in `.github/prompts/` (`/plan-new`, `/plan`, `/continue`, `/recover`); that format has since been superseded by `docs/plans/*.md`, but the branch-hygiene gap below is format-independent. Each story is meant to live on its own `feat/ST-XXX-...` branch, flow through a PR, merge into `main`, and be closed out before the next story starts.
 
 The gap: **story closeout is not enforced as an explicit step.** After PR #12 merged `feat/ST-043-context-validation-feature-flags` and `ce-clean-gone-branches` cleaned up the local branch (`git fetch --prune` → branch gone → switch to `main` → delete local → fast-forward `main` to `origin/main`), the session moved straight on. When `ST-041` was later started, the new branch was cut from the **tip of the previous feature branch**, not from the freshly-updated `main`. The closeout sequence (return to `main`, confirm `main` is current with `origin/main`, then branch fresh) was either skipped or never verified. The result: `ST-041`'s branch started life on the wrong base, dragging the previous story's commits (already on `main` via the merge) into the new branch's history.
 
@@ -196,4 +197,8 @@ echo "Branch feat/ST-${STORY_ID}-${SLUG} created from $(git rev-parse --short or
 ## Related
 
 - [story-board-stale-updates-2026-06-19.md](./story-board-stale-updates-2026-06-19.md) — sibling facet of the same closeout-hygiene gap. Covers the board-state facet (move merged stories to Done, check ACs). This doc covers the branch-hygiene facet (branch fresh from main). Both share the root cause: a missing post-merge workflow step in the ExecPlan closeout.
-- [missing-start-stop-scripts-planning-gap-2026-06-18.md](./missing-start-stop-scripts-planning-gap-2026-06-18.md) — same root-cause family (post-execution bookkeeping as blind spot), different problem domain.
+- [explicit-test-requirements-in-plans-2026-06-19.md](./explicit-test-requirements-in-plans-2026-06-19.md) — the testing facet of the same closeout-hygiene family.
+
+The root-cause family these share: **post-execution bookkeeping is a blind spot**.
+A step that no artifact requires and no script enforces does not reliably happen,
+whether that step is a branch reset, a board move, or a test assertion.
