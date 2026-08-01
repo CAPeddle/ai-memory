@@ -52,8 +52,14 @@ jobs:
           docker compose --profile test logs
           exit 1
 
+      # --allow-run is required by workflow-mvp-e2e.test.ts (ST-086), which starts and
+      # restarts a REAL server process — the only way to observe that the composition
+      # root applies workflow migrations at boot, that the process starts with no
+      # provider credential, and that operational state survives a restart. The grant
+      # is on this one step rather than an --ignore list of tests that do not need it,
+      # because an exclusion list drifts silently as tests are added.
       - name: Run integration tests
-        run: docker compose --profile test exec -T mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/
+        run: docker compose --profile test exec -T mcp-test deno test --frozen --allow-net --allow-env --allow-read --allow-run tests/
 
       - name: Print logs on failure
         if: failure()

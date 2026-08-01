@@ -94,6 +94,19 @@ function getEmbeddingCacheKey(env?: (name: string) => string | undefined): strin
 }
 
 async function probeEmbeddingApi(fetch: typeof globalThis.fetch, now: () => number, env?: (name: string) => string | undefined): Promise<CheckResult> {
+  // Capability gate, and the ONLY reason a "this process makes no model-provider
+  // request" claim can be true.
+  //
+  // This probe used to run unconditionally, so merely polling /ready issued an
+  // outbound GET to the provider — while every other probe here already honoured its
+  // capability flag. A deployment running with the provider switched off (ST-086's
+  // workflow-only mode) would therefore have contacted it anyway, on a schedule, and
+  // any test asserting zero provider requests would have been measuring a claim the
+  // health check itself falsified.
+  if (resolveEnv("MODEL_PROVIDER_ENABLED", env) === "false") {
+    return { status: "n/a", reason: "model provider disabled" };
+  }
+
   const baseUrl = resolveEnv("OPENROUTER_BASE_URL", env) ?? "https://openrouter.ai/api/v1";
   const cacheTtlMs = resolveThreshold("HEALTH_EMBEDDING_CACHE_TTL_MS", DEFAULT_EMBEDDING_CACHE_TTL_MS, env);
   const cacheKey = getEmbeddingCacheKey(env);

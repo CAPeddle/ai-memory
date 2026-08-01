@@ -29,6 +29,13 @@ import {
 } from "./src/identifierNormalization.ts";
 import { withTiming } from "./src/logging.ts";
 import {
+  bootstrapWorkflow,
+  workflowFeatureEnabled,
+  workflowReadiness,
+} from "./src/workflow/bootstrap.ts";
+import { createWorkflowApi } from "./src/workflow/api.ts";
+import { DASHBOARD_HTML } from "./src/workflow/dashboard.ts";
+import {
   type EmbeddingLane,
   emitRequestLog,
   extractSafeBodyFields,
@@ -44,6 +51,43 @@ import {
 
 ensureRequiredEnv();
 await runMigrations();
+
+// ---------------------------------------------------------------------------
+// Workflow Operations bootstrap (ST-086)
+// ---------------------------------------------------------------------------
+//
+// Opt-in via FEATURE_WORKFLOW=true. The module applies its own ordered migrations
+// from server/db/workflow/ and REPORTS the outcome; the decision below is the
+// composition root's, which is the only place that owns process lifetime.
+//
+// The chosen policy is fail-startup, and the reason is specific to how the flag
+// works: workflow is opt-in, so `FEATURE_WORKFLOW=true` is an operator explicitly
+// asking for this product. Serving a degraded server whose workflow routes 500 on
+// every call would be answering a request nobody made. Note this runs BEFORE
+// Deno.serve, so a workflow migration failure means the port never opens — the
+// process exits rather than accepting traffic it cannot serve.
+//
+// Contrast with runMigrations() above: that one calls Deno.exit(1) from inside the
+// shared runner. The workflow module cannot, by design and by test.
+const workflowBootstrap = await bootstrapWorkflow();
+if (workflowBootstrap.enabled) {
+  if (workflowBootstrap.ok) {
+    const { applied, skipped } = workflowBootstrap.report;
+    console.log(
+      `[server] Workflow Operations: enabled — migrations applied=[${
+        applied.map((m) => m.filename).join(", ")
+      }] skipped=[${skipped.map((m) => m.filename).join(", ")}]`,
+    );
+  } else {
+    console.error(
+      `[server] FATAL: Workflow Operations was enabled (FEATURE_WORKFLOW=true) but its ` +
+        `migrations failed: ${workflowBootstrap.error.name}: ${workflowBootstrap.error.message}`,
+    );
+    Deno.exit(1);
+  }
+} else {
+  console.log("[server] Workflow Operations: disabled (set FEATURE_WORKFLOW=true to enable)");
+}
 
 const CITATION_BASE_URL = Deno.env.get("AI_MEMORY_CITATION_BASE_URL") ?? "https://ai-memory.local/thoughts";
 const MAX_CONTENT_BYTES = 32_768; // 32 KB content limit per thought
@@ -1057,9 +1101,40 @@ app.get("/health", (c) => c.json({ status: "healthy" }));
 // Readiness endpoint for deep health check (used by orchestrators / Kuma / K8s)
 app.get("/ready", async (c) => {
   const result = await deepHealthCheckWithTimeout();
+
+  // Workflow readiness is merged HERE rather than added to deepHealthCheck's probe
+  // list, and the key is omitted entirely when the product is not deployed. Two
+  // reasons, both deliberate: deepHealthCheck knows only about memory-domain
+  // capabilities and should not grow a dependency on a separate operational domain,
+  // and every deployment that never opts in keeps /ready's existing seven-key shape
+  // byte for byte.
+  const workflow = workflowReadiness(workflowBootstrap);
+  const checks = workflow === null ? result.checks : { ...result.checks, workflow };
+
   const statusCode = result.status === "unhealthy" ? 503 : 200;
-  return c.json(result, statusCode);
+  return c.json({ ...result, checks }, statusCode);
 });
+
+// ---------------------------------------------------------------------------
+// Workflow Operations HTTP surface (ST-086) — mounted only when enabled
+// ---------------------------------------------------------------------------
+if (workflowFeatureEnabled()) {
+  // Auth is applied HERE, by the composition root, using the same bearer mechanism
+  // /mcp uses. The workflow module deliberately does not import ../auth.ts — its
+  // import surface is allowlist-enforced by workflow-boundary.test.ts, and a product
+  // module should not carry an opinion about how this deployment authenticates.
+  app.use("/api/workflow/*", async (c, next) => {
+    const denied = requireApiKey(c.req.raw);
+    if (denied) return c.text("Unauthorized", 401);
+    await next();
+  });
+  app.route("/api/workflow", createWorkflowApi());
+
+  // The dashboard SHELL is unauthenticated; it contains no operational data and
+  // obtains the operator's key in the browser. Every byte of content it renders
+  // arrives through the authenticated API above.
+  app.get("/workflow", (c) => c.html(DASHBOARD_HTML));
+}
 
 app.all("/mcp", async (c) => {
   const startMs = Date.now();
@@ -1101,7 +1176,12 @@ app.all("/mcp", async (c) => {
   }
 });
 
-Deno.serve({ port: 3000 }, app.fetch);
+// Port is configurable so a second instance can run alongside the primary one —
+// required by the restart test in workflow-mvp-e2e.test.ts, which starts a real
+// server process while the container's own server holds 3000. Defaults to 3000, so
+// every existing deployment and the Dockerfile's EXPOSE are unchanged.
+const PORT = Number(Deno.env.get("PORT") ?? "3000");
+Deno.serve({ port: PORT }, app.fetch);
 
 // Feature flags — set to "false" to disable
 const FEATURE_ENTITY_WORKER = Deno.env.get("FEATURE_ENTITY_WORKER") !== "false";
@@ -1121,5 +1201,8 @@ if (FEATURE_CONSOLIDATION_WORKER) {
   console.log("[server] Consolidation worker: disabled by feature flag (FEATURE_CONSOLIDATION_WORKER=false)");
 }
 
-// Start embedding backfill worker (recovers rows whose embedding call failed)
+// Start embedding backfill worker (recovers rows whose embedding call failed).
+// FEATURE_EMBEDDING_BACKFILL=false and EMBEDDING_BACKFILL_DISABLED=true are both
+// honoured inside startEmbeddingBackfill itself (embeddingBackfill.ts:77-84), so the
+// call stays unconditional here rather than duplicating the guard in two places.
 startEmbeddingBackfill();

@@ -1,0 +1,27 @@
+# ST-086 — workflow-only startup: Workflow Operations with NO model-provider access.
+#
+# Overlay on docker-compose.yml. Reproducible from a clean checkout:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.workflow.yml up -d --wait
+#
+# Then: dashboard at http://localhost:3000/workflow, API at /api/workflow.
+#
+# This is the configuration ST-086's acceptance criteria are stated against — every
+# provider-dependent capability off, MODEL_PROVIDER_ENABLED=false, and no
+# OPENROUTER_API_KEY. `!reset` clears the value the base file inherits from .env
+# rather than setting it to an empty string: `OPENROUTER_API_KEY=` would still be a
+# *present* variable, and the whole point is that startup validation does not demand
+# one. (Requires Compose v2.24+ for `!reset`; on older versions, comment out the base
+# file's OPENROUTER_API_KEY line instead.)
+#
+# Only `mcp` is overridden. `db` is inherited unchanged, so the same Postgres serves
+# both modes and switching back is `docker compose up -d` with no override.
+services:
+  mcp:
+    environment:
+      FEATURE_WORKFLOW: "true"
+      FEATURE_ENTITY_WORKER: "false"
+      FEATURE_CONSOLIDATION_WORKER: "false"
+      FEATURE_EMBEDDING_BACKFILL: "false"
+      MODEL_PROVIDER_ENABLED: "false"
+      OPENROUTER_API_KEY: !reset null

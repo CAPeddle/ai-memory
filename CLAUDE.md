@@ -70,8 +70,12 @@ docker compose --profile test up -d
 # Run a single Deno test file inside the mcp-test container
 docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/search-mmr.test.ts
 
-# Run all server tests
-docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/
+# Run all server tests. --allow-run is required by workflow-mvp-e2e.test.ts (ST-086),
+# which starts and restarts a real server process; without it that file errors.
+docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read --allow-run tests/
+
+# Workflow Operations only (local MVP — see docs/workflow-mvp.md)
+docker compose -f docker-compose.yml -f docker-compose.workflow.yml up -d --wait
 
 # Tail the MCP server logs
 docker compose logs -f mcp

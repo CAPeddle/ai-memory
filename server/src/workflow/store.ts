@@ -70,6 +70,21 @@ export async function getPacket(id: string): Promise<WorkPacket | null> {
   return rows[0] ?? null;
 }
 
+/**
+ * Packets that have not reached `complete` — the dashboard's active set.
+ *
+ * Filters on `status <> 'complete'` rather than listing the three open statuses, so a
+ * status added to the CHECK constraint later shows up as active by default instead of
+ * silently vanishing from the operator's view. Failing visible beats failing quiet.
+ */
+export async function listActivePackets(): Promise<WorkPacket[]> {
+  return await sql<WorkPacket[]>`
+    SELECT * FROM workflow.work_packets
+    WHERE status <> 'complete'
+    ORDER BY created_at DESC
+  `;
+}
+
 // There is deliberately NO generic packet-status setter here.
 //
 // One existed (`setPacketStatus`) and was removed. It had no callers and wrote any
@@ -118,15 +133,37 @@ export async function registerRun(input: RegisterRunInput): Promise<AgentRun> {
   return rows[0];
 }
 
+/**
+ * End a run, and report when there was no such run.
+ *
+ * The `RETURNING` and the existence check are load-bearing. This used to be a bare
+ * `UPDATE ... WHERE id = $1` returning `void`, which matched zero rows and resolved
+ * successfully for a run id that does not exist — so a caller ending a mistyped or
+ * already-deleted run received exactly the same answer as one ending a real run. Over
+ * HTTP that is a 200 for a write that changed nothing, which is the shape of a silent
+ * failure: the client believes the run is closed, the operator's dashboard still shows
+ * it running, and nothing anywhere records the disagreement.
+ */
 export async function endRun(
   runId: string,
   status: Extract<AgentRun["status"], "ended" | "failed">,
-): Promise<void> {
-  await sql`
+): Promise<AgentRun> {
+  const rows = await sql<AgentRun[]>`
     UPDATE workflow.agent_runs
     SET status = ${status}, ended_at = now(), last_event_at = now()
     WHERE id = ${runId}
+    RETURNING *
   `;
+  const updated = rows[0];
+  if (updated === undefined) throw new WorkflowNotFoundError("agent run", runId);
+  return updated;
+}
+
+export async function getRun(id: string): Promise<AgentRun | null> {
+  const rows = await sql<AgentRun[]>`
+    SELECT * FROM workflow.agent_runs WHERE id = ${id}
+  `;
+  return rows[0] ?? null;
 }
 
 export async function listRuns(packetId: string): Promise<AgentRun[]> {
@@ -191,6 +228,26 @@ export async function listCheckpoints(packetId: string): Promise<Checkpoint[]> {
     JOIN workflow.agent_runs r ON r.id = c.run_id
     WHERE r.packet_id = ${packetId}
     ORDER BY c.created_at ASC
+  `;
+}
+
+/**
+ * The most recent checkpoints for a packet, newest first.
+ *
+ * Bounded at the database rather than by slicing {@link listCheckpoints} in the
+ * caller: a long-running packet accumulates checkpoints without limit, and the
+ * dashboard only ever renders the tail of that list.
+ */
+export async function listRecentCheckpoints(
+  packetId: string,
+  limit = 10,
+): Promise<Checkpoint[]> {
+  return await sql<Checkpoint[]>`
+    SELECT c.* FROM workflow.checkpoints c
+    JOIN workflow.agent_runs r ON r.id = c.run_id
+    WHERE r.packet_id = ${packetId}
+    ORDER BY c.created_at DESC
+    LIMIT ${limit}
   `;
 }
 
@@ -398,6 +455,23 @@ export async function attachEvidence(input: AttachEvidenceInput): Promise<Eviden
     RETURNING *
   `;
   return rows[0];
+}
+
+export async function getCriterion(id: string): Promise<VerificationCriterion | null> {
+  const rows = await sql<VerificationCriterion[]>`
+    SELECT * FROM workflow.verification_criteria WHERE id = ${id}
+  `;
+  return rows[0] ?? null;
+}
+
+/** Every evidence item attached to any criterion of this packet, oldest first. */
+export async function listEvidenceForPacket(packetId: string): Promise<EvidenceItem[]> {
+  return await sql<EvidenceItem[]>`
+    SELECT e.* FROM workflow.evidence_items e
+    JOIN workflow.verification_criteria c ON c.id = e.criterion_id
+    WHERE c.packet_id = ${packetId}
+    ORDER BY e.created_at ASC
+  `;
 }
 
 export async function evidenceCountsForPacket(
