@@ -4,7 +4,7 @@
 > Next planning target: (TBD after ST-072 completes).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review). ST-070 + ST-071 done 2026-07-03 (integration suite green in CI, PR #21 merged).
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
-> Last updated: 2026-07-31 (ST-085 added to Backlog: local GPU inference as ST-082's compliant model provider — staged spike from a `ce-pov` verdict. No WIP change: ST-084 remains the sole In Progress entry.)
+> Last updated: 2026-08-01 (ST-047 Review → Done after a tree audit — the work was complete and already on `main`; its note's "10 tools / 10 tests" figures were stale undercounts, now 11 and 15. The Review slot is now empty; ST-084 remains the sole In Progress entry.)
 
 ---
 
@@ -535,6 +535,10 @@
 
 ## Review
 
+(Empty)
+
+## Done
+
 ### ST-047: Tool descriptions
 - Type: dx
 - Source: QP-038 (vectorize-mcp-worker best practices review, 2026-05-31)
@@ -546,11 +550,7 @@
   - [x] All MCP tool descriptions include usage examples and parameter docs (AC-15)
 - ExecPlan: `.github/planning/execplans/exec-plan-ST-047.md`
 - Query packet: `.github/planning/query-packets/QP-038-Vectorize-MCP-Repo-Review.md`
-- Notes: 🟡 Should fix. All 10 tool descriptions enriched. Misleading metadata (search fallback wording, search_thoughts/list_thoughts profile-isolation claims) corrected to match runtime behavior. Protocol compatibility test expanded with source-of-truth derivation and targeted regression assertions. 10/10 tests pass.
-
-(Empty)
-
-## Done
+- Notes: 🟡 Should fix. All 11 tool descriptions enriched. Misleading metadata (search fallback wording, search_thoughts/list_thoughts profile-isolation claims) corrected to match runtime behavior. Protocol compatibility test expanded with source-of-truth derivation and targeted regression assertions. 15/15 tests pass. Audited against the tree 2026-08-01 before closing: 11/11 tool descriptions carry Parameters/Example/Returns/Errors, 21/21 inputSchema fields carry `.describe()`, zero `profile` references remain (consistent with ADR-012), and the work is present on `main`. The earlier "10 tools / 10 tests" figures were undercounts — the work grew past its own record.
 
 ### ST-074: Reconcile `ExtractionItem` shape — Opt 3 provenance accessors
 - Type: bug / design
