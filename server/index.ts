@@ -19,7 +19,7 @@ import {
   MmrCandidate,
 } from "./src/searchQuality.ts";
 import { ensureRequiredEnv } from "./src/startupValidation.ts";
-import { getEmbedding, EMBEDDING_MODEL } from "./src/embeddings.ts";
+import { getEmbedding, EMBEDDING_MODEL, ModelProviderDisabledError } from "./src/embeddings.ts";
 import { startEmbeddingBackfill } from "./src/embeddingBackfill.ts";
 import { runMigrations } from "./src/migrate.ts";
 import { deepHealthCheckWithTimeout } from "./src/healthCheck.ts";
@@ -35,6 +35,7 @@ import {
 } from "./src/workflow/bootstrap.ts";
 import { createWorkflowApi } from "./src/workflow/api.ts";
 import { DASHBOARD_HTML } from "./src/workflow/dashboard.ts";
+import { requiresOperator } from "./src/workflow/policy.ts";
 import {
   type EmbeddingLane,
   emitRequestLog,
@@ -176,7 +177,18 @@ server.registerTool(
     try {
       const normalizedQuery = normalizeIdentifiers(query).retrievalText;
       const qEmb = normalizedQuery
-        ? await getEmbedding(normalizedQuery).catch(() => null)
+        ? await getEmbedding(normalizedQuery).catch((err) => {
+            // ModelProviderDisabledError must NOT be swallowed here — this tool's
+            // contract is semantic recall, so a disabled provider has to fail the
+            // call loudly rather than silently degrade to a lexical-only result the
+            // caller never asked for. Every OTHER embedding failure (timeout, 5xx,
+            // network) keeps degrading to the lexical lane exactly as before — that
+            // resilience is deliberate and must not regress. Rethrowing here lets the
+            // outer try/catch below report it the same way every other tool error is
+            // reported.
+            if (err instanceof ModelProviderDisabledError) throw err;
+            return null;
+          })
         : null;
       const aboveFloorRows = qEmb
         ? await sql`
@@ -302,7 +314,18 @@ server.registerTool(
       const normalizedQuery = normalizeIdentifiers(query).retrievalText;
 
       const qEmb = normalizedQuery
-        ? await getEmbedding(normalizedQuery).catch(() => null)
+        ? await getEmbedding(normalizedQuery).catch((err) => {
+            // ModelProviderDisabledError must NOT be swallowed here — this tool's
+            // contract is semantic recall, so a disabled provider has to fail the
+            // call loudly rather than silently degrade to a lexical-only result the
+            // caller never asked for. Every OTHER embedding failure (timeout, 5xx,
+            // network) keeps degrading to the lexical lane exactly as before — that
+            // resilience is deliberate and must not regress. Rethrowing here lets the
+            // outer try/catch below report it the same way every other tool error is
+            // reported.
+            if (err instanceof ModelProviderDisabledError) throw err;
+            return null;
+          })
         : null;
 
       // BM25 lane — drop the hard project filter unless strict
@@ -535,6 +558,17 @@ server.registerTool(
       // Fire-and-forget embedding update. On success, record the model and clear the
       // needs_embedding flag; on failure, log only — the backfill sweep owns retries
       // and the embedding_attempts counter (this inline attempt is best-effort).
+      //
+      // Deliberately NOT refused here, unlike the two retrieval call sites above. This
+      // call happens AFTER the row is already durably inserted, and capture_thought's
+      // contract is "store this thought" — which it has already fulfilled completely by
+      // this point; the embedding is a deferred enrichment, not part of the contract.
+      // Refusing here would either discard a write the caller was already told
+      // succeeded, or report failure for a row that is in fact stored — both are worse
+      // than deferring. So: while MODEL_PROVIDER_ENABLED=false, these rows simply
+      // accumulate with needs_embedding = true and are drained later by the backfill
+      // sweep once the provider is re-enabled. That's expected, configured behaviour,
+      // not a failure — logged calmly and distinctly, not as an alarming error.
       getEmbedding(searchText || content).then((emb) =>
         sql`
           UPDATE thoughts
@@ -544,7 +578,17 @@ server.registerTool(
               embedding_error = NULL
           WHERE id = ${insertResult.id}
         `
-      ).catch((err) => console.error(`[capture_thought] embedding update failed for ${insertResult.id}:`, err));
+      ).catch((err) => {
+        if (err instanceof ModelProviderDisabledError) {
+          console.log(
+            `[capture_thought] embedding deferred for ${insertResult.id}: model provider ` +
+              `disabled (needs_embedding stays true; the backfill sweep will drain it once ` +
+              `the provider is re-enabled)`,
+          );
+          return;
+        }
+        console.error(`[capture_thought] embedding update failed for ${insertResult.id}:`, err);
+      });
 
       return {
         content: [{
@@ -1132,9 +1176,58 @@ if (workflowFeatureEnabled()) {
   // /mcp uses. The workflow module deliberately does not import ../auth.ts — its
   // import surface is allowlist-enforced by workflow-boundary.test.ts, and a product
   // module should not carry an opinion about how this deployment authenticates.
+  //
+  // Two credentials may authenticate against /api/workflow:
+  //
+  //   - MEMORY_API_KEY, the OPERATOR key. Unconditional and unchanged — every
+  //     existing deployment and test that only ever set this one variable keeps
+  //     working with no config change, and it may call every route.
+  //   - AWCP_AGENT_API_KEY, an OPTIONAL agent key. When set, a request bearing it
+  //     may call only the reporting/read routes; `workflow/policy.ts`'s
+  //     `requiresOperator` names the four routes it must be REFUSED on (resolve a
+  //     decision, attach evidence, author a criterion, complete a packet — see that
+  //     module's docblock for why each one is supervision rather than reporting).
+  //     Unset (the default), behaviour is EXACTLY today's: only the operator key is
+  //     accepted anywhere under /api/workflow.
+  //
+  // This is the fix for a real defect: server/scripts/awcp.ts and
+  // docs/workflow-mvp.md used to claim that the CLI simply not shipping
+  // resolve/evidence/complete subcommands "is what stops an agent signing off its
+  // own verification." That was false — both credentials used to be the same
+  // MEMORY_API_KEY, so any caller holding it (including an agent, which the docs
+  // told to export that exact variable) could call those routes directly with curl.
+  // The enforcement below makes the claim true: the server refuses the agent key on
+  // those routes regardless of what any particular client does or doesn't expose.
+  //
+  // Startup refuses to boot at all if AWCP_AGENT_API_KEY is set equal to
+  // MEMORY_API_KEY (startupValidation.ts's agentKeyCollidesWithOperatorKey) — an
+  // equal pair would make every agent-key request classify as "operator" below and
+  // silently collapse this split into no split at all. By the time this handler
+  // runs, an agent key that authenticates is guaranteed distinct from the operator
+  // key.
   app.use("/api/workflow/*", async (c, next) => {
-    const denied = requireApiKey(c.req.raw);
-    if (denied) return c.text("Unauthorized", 401);
+    const operatorKey = Deno.env.get("MEMORY_API_KEY");
+    if (!operatorKey) {
+      // Mirrors requireApiKey's fail-closed behaviour: a deployment cannot serve
+      // this surface without its required credential configured at all.
+      throw new Error("MEMORY_API_KEY environment variable is not set");
+    }
+    const agentKey = Deno.env.get("AWCP_AGENT_API_KEY");
+    const bearer = c.req.raw.headers.get("Authorization");
+
+    let credential: "operator" | "agent" | null = null;
+    if (bearer === `Bearer ${operatorKey}`) credential = "operator";
+    else if (agentKey && bearer === `Bearer ${agentKey}`) credential = "agent";
+
+    if (credential === null) return c.text("Unauthorized", 401);
+
+    // Authenticated but not authorised. This is 403, not 401: the credential is
+    // valid, only the route is off-limits for it, and answering 401 here would
+    // wrongly tell an agent with a perfectly good key to go re-authenticate.
+    if (credential === "agent" && requiresOperator(c.req.method, c.req.path)) {
+      return c.text("Forbidden", 403);
+    }
+
     await next();
   });
   app.route("/api/workflow", createWorkflowApi());

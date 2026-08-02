@@ -47,7 +47,8 @@ SQL. It runs `git`, and only `git`, with fixed argument arrays; the `--allow-run
 grant is the evidence, checkable without reading the source.
 
 ```bash
-export MEMORY_API_KEY=...            # same key the server uses
+export AWCP_AGENT_API_KEY=...        # preferred if the deployment issued one — see below
+export MEMORY_API_KEY=...            # used when AWCP_AGENT_API_KEY is unset
 export AWCP_BASE_URL=http://localhost:3000
 
 DENO="deno run --allow-net --allow-env --allow-sys=hostname --allow-run=git server/scripts/awcp.ts"
@@ -76,9 +77,17 @@ $DENO decision --packet <PACKET_ID> \
 $DENO end-run --run <RUN_ID>
 ```
 
-Resolving decisions, attaching evidence and completing a packet are deliberately **not**
-in the CLI. They are supervision actions belonging to the operator at the dashboard, and
-keeping them apart is what stops an agent signing off its own verification.
+Resolving decisions, attaching evidence, authoring criteria and completing a packet are
+deliberately **not** in the CLI. They are supervision actions belonging to the operator
+at the dashboard, not to the agent-side reporter.
+
+That separation is enforced **by the server**, not by the CLI's choice of subcommands.
+Every `/api/workflow` route used to sit behind the single `MEMORY_API_KEY`, and this
+guide told an agent to export that exact variable to use `awcp` at all — so any caller
+holding it could reach `resolve`/`evidence`/`criteria`/`complete` directly over HTTP,
+CLI or no CLI. The server now accepts a second, optional credential,
+`AWCP_AGENT_API_KEY`, and refuses it on those four routes with **403**, regardless of
+which client sends the request. See [The API](#the-api) below for the full split.
 
 ## Supervise it
 
@@ -110,19 +119,44 @@ Eleven named commands under `/api/workflow`, all bearer-authenticated. There is 
 generic row mutation, no SQL passthrough, no shell execution and no packet-status
 setter.
 
-| Method | Path |
-|---|---|
-| POST | `/packets` |
-| POST | `/packets/:packetId/runs` |
-| POST | `/runs/:runId/checkpoints` |
-| POST | `/runs/:runId/end` |
-| POST | `/packets/:packetId/decisions` |
-| POST | `/decisions/:decisionId/resolve` |
-| POST | `/packets/:packetId/criteria` |
-| POST | `/criteria/:criterionId/evidence` |
-| POST | `/packets/:packetId/complete` |
-| GET | `/overview` |
-| GET | `/packets/:packetId` |
+**Two credentials, two different reaches.**
+
+- **`MEMORY_API_KEY`** — the operator key. Unconditional and unchanged: every existing
+  deployment keeps working with no config change, and it may call every route below.
+- **`AWCP_AGENT_API_KEY`** — an optional agent key. Unset (the default), only the
+  operator key is accepted anywhere and behaviour is exactly as it always was. When
+  set, a request bearing it may call only the routes marked **reporting/read**; on a
+  route marked **operator-only** it authenticates fine but the route itself is refused
+  with **403** — authenticated, not authorised, which is distinct from an unrecognised
+  or absent key (**401**). A misconfigured deployment that sets `AWCP_AGENT_API_KEY`
+  equal to `MEMORY_API_KEY` refuses to start (see `startupValidation.ts`'s
+  `agentKeyCollidesWithOperatorKey`) — an equal pair would collapse the split into no
+  split at all.
+
+The classification lives in `server/src/workflow/policy.ts`'s `requiresOperator`,
+applied by the composition root's `/api/workflow` middleware in `server/index.ts`.
+
+| Method | Path | Credential |
+|---|---|---|
+| POST | `/packets` | reporting/read |
+| POST | `/packets/:packetId/runs` | reporting/read |
+| POST | `/runs/:runId/checkpoints` | reporting/read |
+| POST | `/runs/:runId/end` | reporting/read |
+| POST | `/packets/:packetId/decisions` | reporting/read |
+| GET | `/overview` | reporting/read |
+| GET | `/packets/:packetId` | reporting/read |
+| POST | `/decisions/:decisionId/resolve` | **operator-only** |
+| POST | `/packets/:packetId/criteria` | **operator-only** |
+| POST | `/criteria/:criterionId/evidence` | **operator-only** |
+| POST | `/packets/:packetId/complete` | **operator-only** |
+
+The two `GET` routes are deliberately reporting/read: a resuming agent otherwise has no
+way to check whether a blocking decision it raised was ever resolved.
+
+`/packets/:packetId/criteria` is operator-only for a reason worth stating explicitly:
+criteria define the verification contract the agent will be judged against, so
+authoring that contract is supervision, not reporting — the same self-certification
+concern that puts `/complete` on the operator side, one step earlier in the process.
 
 Failures map deliberately: **400** malformed input or missing/invalid policy scope ·
 **404** unknown packet, run, decision or criterion (including a foreign-key miss, which

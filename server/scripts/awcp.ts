@@ -24,8 +24,21 @@
  *   awcp decision  --packet ID --question Q [--rationale R] [--run ID] [--advisory]
  *   awcp end-run   --run ID [--status ended|failed]
  *
- * Environment: MEMORY_API_KEY (required), AWCP_BASE_URL (default http://127.0.0.1:3000),
- * AWCP_TIMEOUT_MS (default 30000).
+ * Environment: AWCP_AGENT_API_KEY, else MEMORY_API_KEY (one of the two required —
+ * see below), AWCP_BASE_URL (default http://127.0.0.1:3000), AWCP_TIMEOUT_MS
+ * (default 30000).
+ *
+ * **Credential.** This CLI prefers `AWCP_AGENT_API_KEY` when it is set, falling
+ * back to `MEMORY_API_KEY` otherwise. Every subcommand this file exposes is a
+ * reporting/read route the agent key is allowed to call — `server/src/workflow/
+ * policy.ts`'s `requiresOperator` names the four routes (resolve a decision, attach
+ * evidence, author a criterion, complete a packet) that require the operator key,
+ * and the server enforces that regardless of which key this script happens to send.
+ * `MEMORY_API_KEY` still works here too — it is the operator key and can call
+ * everything — but exporting the narrower agent key for this CLI, when one has been
+ * issued, is the safer default: a leaked or logged agent key cannot resolve
+ * decisions, attach evidence, author criteria, or complete packets, unlike a leaked
+ * operator key.
  *
  * `--allow-sys=hostname` is granted for the default `--host` of a run, narrowed to
  * that one syscall. `defaultHost` below degrades to a literal if it is withheld, so
@@ -138,9 +151,21 @@ function resolveTimeoutMs(): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_TIMEOUT_MS;
 }
 
+/**
+ * Prefer the narrower agent key when one has been issued; fall back to the
+ * operator key so this CLI still works in the (documented, default) deployment
+ * shape where AWCP_AGENT_API_KEY was never set.
+ */
+function resolveApiKey(): string {
+  const agentKey = Deno.env.get("AWCP_AGENT_API_KEY");
+  if (agentKey) return agentKey;
+  const operatorKey = Deno.env.get("MEMORY_API_KEY");
+  if (!operatorKey) die("neither AWCP_AGENT_API_KEY nor MEMORY_API_KEY is set");
+  return operatorKey;
+}
+
 async function post(path: string, body: unknown): Promise<unknown> {
-  const key = Deno.env.get("MEMORY_API_KEY");
-  if (!key) die("MEMORY_API_KEY is not set");
+  const key = resolveApiKey();
 
   const timeoutMs = resolveTimeoutMs();
   let res: Response;
@@ -206,9 +231,13 @@ const USAGE =
   awcp end-run    --run ID [--status ended|failed]
 
 Environment:
-  MEMORY_API_KEY   bearer key for /api/workflow (required)
-  AWCP_BASE_URL    server base URL (default http://127.0.0.1:3000)
-  AWCP_TIMEOUT_MS  request timeout in milliseconds (default 30000)
+  AWCP_AGENT_API_KEY  bearer key for /api/workflow, preferred when set — grants
+                      reporting/read routes only; the server refuses it on
+                      resolve/evidence/criteria/complete with 403
+  MEMORY_API_KEY      bearer key for /api/workflow, used when AWCP_AGENT_API_KEY
+                      is unset — the operator key, grants every route
+  AWCP_BASE_URL       server base URL (default http://127.0.0.1:3000)
+  AWCP_TIMEOUT_MS     request timeout in milliseconds (default 30000)
 
 --repo, --branch and --commit default to this checkout, read via fixed git commands.
 --policy-scope has no default: it is a boundary value and must be stated.`;
@@ -323,9 +352,20 @@ async function main(): Promise<void> {
   }
 }
 
-// Resolving a decision, attaching evidence and completing a packet are deliberately
-// NOT here. They are supervision actions belonging to the operator at the dashboard,
-// not to the agent-side reporter, and the CLI is the agent's voice. Keeping the two
-// apart is what stops an agent from signing off its own verification.
+// Resolving a decision, attaching evidence, authoring a criterion and completing a
+// packet are deliberately NOT here. They are supervision actions belonging to the
+// operator at the dashboard, not to the agent-side reporter, and the CLI is the
+// agent's voice.
+//
+// That used to be enforced only by this CLI choosing not to expose those four
+// subcommands — which meant it was not actually enforced at all: every route sat
+// behind the one MEMORY_API_KEY the docs told an agent to export, so any caller
+// holding that key could reach them directly over HTTP regardless of what this
+// script does. The server now enforces the split itself: `server/src/workflow/
+// policy.ts`'s `requiresOperator`, applied by the composition root's
+// /api/workflow middleware in server/index.ts, refuses an AWCP_AGENT_API_KEY on
+// exactly those four routes with 403, whether the request comes from this CLI,
+// a different client, or a raw curl. Omitting the subcommands here keeps this
+// CLI honest about which key it needs; it is no longer what does the enforcing.
 
 await main();

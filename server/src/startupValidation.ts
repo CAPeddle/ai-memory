@@ -103,6 +103,27 @@ interface EnsureRequiredEnvOptions {
  */
 const MEMORY_TOOLS_REACH_PROVIDER = true;
 
+/**
+ * Whether `AWCP_AGENT_API_KEY` is set AND equal to `MEMORY_API_KEY`.
+ *
+ * The agent/operator credential split (see `server/src/workflow/policy.ts`) exists
+ * so that an agent key can authenticate to `/api/workflow` yet be refused on the
+ * operator-only routes (resolve a decision, attach evidence, author a criterion,
+ * complete a packet). If the two keys are equal, the composition root's middleware
+ * classifies every presented credential as "operator" — the "agent" branch becomes
+ * unreachable, and the split silently collapses into no split at all: whoever holds
+ * the one shared value can complete a packet again, exactly the defect this split
+ * closes. That is worse than never having offered the agent key, because it LOOKS
+ * enforced (the docs, the code, the tests all describe a boundary) while granting
+ * full operator access. An absent `AWCP_AGENT_API_KEY` is not a conflict — that is
+ * the documented "operator key only" deployment shape and must keep starting.
+ */
+export function agentKeyCollidesWithOperatorKey(readEnv: EnvReader = defaultEnv): boolean {
+  const agentKey = readEnv("AWCP_AGENT_API_KEY");
+  if (!agentKey) return false;
+  return agentKey === readEnv("MEMORY_API_KEY");
+}
+
 export function findMissingRequiredEnv(readEnv: EnvReader = defaultEnv): string[] {
   const missing: string[] = [];
   // Order is stable and OPENROUTER_API_KEY comes first — `ensureRequiredEnv` reports
@@ -136,9 +157,25 @@ export function ensureRequiredEnv(options: EnsureRequiredEnvOptions = {}): void 
   }
 
   const missing = findMissingRequiredEnv(readEnv);
-  if (!missing.length) return;
+  if (missing.length) {
+    // Keep message format stable for operational checks in ST-038.
+    logFatal(`FATAL: Required environment variable ${missing[0]} is not set. Exiting.`);
+    exit(1);
+    return;
+  }
 
-  // Keep message format stable for operational checks in ST-038.
-  logFatal(`FATAL: Required environment variable ${missing[0]} is not set. Exiting.`);
-  exit(1);
+  // Fail closed on misconfiguration: see agentKeyCollidesWithOperatorKey's docblock
+  // for why an equal pair is not a usable "belt and braces" configuration but a
+  // silent security regression that must never boot.
+  if (agentKeyCollidesWithOperatorKey(readEnv)) {
+    logFatal(
+      `FATAL: AWCP_AGENT_API_KEY is set to the same value as MEMORY_API_KEY. This ` +
+        `collapses the operator/agent credential split into no split at all — anyone ` +
+        `holding that value would get full operator access on every /api/workflow ` +
+        `route, including resolve/evidence/complete. Set AWCP_AGENT_API_KEY to a ` +
+        `distinct value, or unset it to run with the operator key only. Exiting.`,
+    );
+    exit(1);
+    return;
+  }
 }

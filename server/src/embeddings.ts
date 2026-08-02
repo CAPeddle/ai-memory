@@ -24,10 +24,38 @@ export interface GetEmbeddingOptions {
 }
 
 /**
+ * Thrown when `MODEL_PROVIDER_ENABLED=false` and something still calls `getEmbedding`.
+ * Named and exported so callers can `instanceof`-check it and choose to let it
+ * propagate — a caller whose contract requires the provider (e.g. a semantic search
+ * tool) must fail loudly rather than silently degrade, whereas every OTHER
+ * `getEmbedding` failure (timeout, 5xx, network) keeps being swallowed into a lexical
+ * fallback exactly as before. The message names the switch so an operator reading a
+ * log knows precisely which setting caused it.
+ */
+export class ModelProviderDisabledError extends Error {
+  constructor() {
+    super(
+      "MODEL_PROVIDER_ENABLED=false: the model provider is disabled for this " +
+        "deployment; getEmbedding() refuses to make a request.",
+    );
+    this.name = "ModelProviderDisabledError";
+  }
+}
+
+/**
  * 512-dim embedding via text-embedding-3-small truncation. Throws on non-2xx or timeout.
  * The AbortController ensures a hanging provider cannot stall the caller indefinitely.
  */
 export async function getEmbedding(text: string, opts: GetEmbeddingOptions = {}): Promise<number[]> {
+  // Read INSIDE the function, not at module scope. A module-scope read (like
+  // OPENROUTER_API_KEY above) freezes at import time — before any test or deployment
+  // has a chance to set the flag — and would make this guard untestable without
+  // re-importing the module. Checked first, before constructing any Request or
+  // touching fetch, so a disabled provider results in zero network activity.
+  if (Deno.env.get("MODEL_PROVIDER_ENABLED") === "false") {
+    throw new ModelProviderDisabledError();
+  }
+
   const timeoutMs = opts.timeoutMs ?? resolveTimeoutMs();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
