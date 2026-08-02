@@ -20,6 +20,7 @@
  */
 
 import { type MigrationReport, tryEnsureWorkflowSchema } from "./schema.ts";
+import { probeWorkflowSchemaLive } from "./store.ts";
 import type { WorkflowSchemaError } from "./types.ts";
 
 /** Reads an environment variable. Injectable so the flag rules are testable. */
@@ -67,25 +68,48 @@ export async function bootstrapWorkflow(
 }
 
 /**
- * Render a bootstrap result as the `/ready` check body.
+ * Render a bootstrap result as the `/ready` check body — a LIVE probe, not a replay
+ * of the boot-time report.
+ *
+ * This used to be synchronous and read only `result`, the value `bootstrapWorkflow`
+ * computed once before `Deno.serve`. That made `/ready` a snapshot of what happened
+ * at boot, not a statement about the present: if the workflow schema were dropped or
+ * made unusable afterward, this function had no way to notice, and `/ready` would
+ * report `workflow: {status: "ok"}` for the rest of the process's life. An
+ * orchestrator polling `/ready` would keep routing traffic to a server whose
+ * workflow routes all fail, for no reason `/ready` itself could ever surface.
  *
  * Returns `null` when workflow is disabled, and the composition root then omits the
  * key entirely rather than reporting `n/a`. That is a deliberate difference from the
  * memory domain's probes, which do report `n/a` for disabled capabilities: those are
  * capabilities of a product that is always deployed, whereas an absent `workflow` key
  * means the product is not deployed here at all. It also keeps `/ready`'s existing
- * seven-key contract exactly as it was for every deployment that never opted in.
+ * seven-key contract exactly as it was for every deployment that never opted in — the
+ * `!result.enabled` check is the very first thing this does, before any await, so
+ * that contract holds with zero database round-trips for those deployments.
+ *
+ * A failed boot (`result.ok === false`) is reported as an error without re-probing —
+ * there is nothing live to check when the schema was never successfully applied in
+ * the first place. Once boot succeeded, the migration report's `applied`/`skipped`
+ * lists are still carried in the payload (existing consumers depend on them), but
+ * `status` now additionally depends on {@link probeWorkflowSchemaLive} running THIS
+ * request, so a schema that vanishes after boot flips `status` to `"error"` on the
+ * very next `/ready` call instead of staying silently `"ok"` forever.
  */
-export function workflowReadiness(
+export async function probeWorkflowReadiness(
   result: WorkflowBootstrapResult,
-): { status: "ok" | "error"; [key: string]: unknown } | null {
+): Promise<{ status: "ok" | "error"; [key: string]: unknown } | null> {
   if (!result.enabled) return null;
-  if (result.ok) {
-    return {
-      status: "ok",
-      applied: result.report.applied.map((m) => m.filename),
-      skipped: result.report.skipped.map((m) => m.filename),
-    };
+  if (!result.ok) {
+    return { status: "error", error: `${result.error.name}: ${result.error.message}` };
   }
-  return { status: "error", error: `${result.error.name}: ${result.error.message}` };
+
+  const applied = result.report.applied.map((m) => m.filename);
+  const skipped = result.report.skipped.map((m) => m.filename);
+
+  const live = await probeWorkflowSchemaLive();
+  if (!live) {
+    return { status: "error", error: "workflow schema not present or unreachable", applied, skipped };
+  }
+  return { status: "ok", applied, skipped };
 }

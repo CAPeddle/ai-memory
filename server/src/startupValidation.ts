@@ -36,10 +36,26 @@ function capabilityEnabled(flag: string, readEnv: EnvReader): boolean {
 /**
  * Whether this deployment may contact the model provider at all.
  *
- * A master switch above the per-capability flags. `MODEL_PROVIDER_ENABLED=false` is a
- * statement about egress, not about features, which is why it is checked separately:
- * the operator asserting "this process makes no model-provider request" needs one
- * place to say so, and one place for a check to read.
+ * **What this actually gates today — stated precisely, because an earlier version of
+ * this comment claimed more than the code does, and a false comment here has
+ * previously caused a bug report against the code.** Two things read this switch:
+ * the `/ready` provider probe (`healthCheck.ts`'s `probeEmbeddingApi`, which reports
+ * `n/a` instead of polling the provider when this is `false`), and
+ * `findCapabilityConflicts` below, which refuses to start a deployment that sets
+ * this `false` while a provider-dependent background worker (entity extraction,
+ * consolidation, embedding backfill) is enabled.
+ *
+ * **What it does NOT gate: the request path.** `getEmbedding` is called directly,
+ * with no flag check, from three MCP tool handlers — server/index.ts:179 (`search`),
+ * :305 (`search_thoughts`), and :538 (`capture_thought`). Setting
+ * `MODEL_PROVIDER_ENABLED=false` does not stop those calls; it stops only the two
+ * things named above. An operator reading "this process makes no model-provider
+ * request" into this flag is wrong for any deployment that also serves those three
+ * tools. Closing that gap — actually gating the request path — is an outstanding
+ * design decision the PO has not made, deliberately out of scope here.
+ * `MEMORY_TOOLS_REACH_PROVIDER` below is the boot-time acknowledgement that the gap
+ * exists (it keeps `OPENROUTER_API_KEY` required whenever the provider is enabled at
+ * all), not a fix for it.
  */
 export function modelProviderEnabled(readEnv: EnvReader = defaultEnv): boolean {
   return readEnv("MODEL_PROVIDER_ENABLED") !== "false";
@@ -73,12 +89,32 @@ interface EnsureRequiredEnvOptions {
   exit?: (code: number) => unknown;
 }
 
+/**
+ * The MCP tools reach the model provider on the REQUEST path, unconditionally — see
+ * `getEmbedding` at server/index.ts:179 (`search`), :305 (`search_thoughts`), and
+ * :538 (`capture_thought`). None of those three call sites is gated by a
+ * `FEATURE_*` flag, so turning off the three background-worker flags alone does NOT
+ * make the provider optional: those tools still need a credential to answer a
+ * request. Without this, disabling the three worker flags let a deployment start
+ * with no `OPENROUTER_API_KEY` while `search`/`search_thoughts`/`capture_thought`
+ * still needed one — the previously unconditional fail-fast moved from boot time to
+ * the first request. This constant makes that always-on reach explicit rather than
+ * leaving it implicit in `enabledProviderCapabilities`'s three-worker list.
+ */
+const MEMORY_TOOLS_REACH_PROVIDER = true;
+
 export function findMissingRequiredEnv(readEnv: EnvReader = defaultEnv): string[] {
   const missing: string[] = [];
   // Order is stable and OPENROUTER_API_KEY comes first — `ensureRequiredEnv` reports
   // `missing[0]`, and operational checks (ST-038) match that message.
+  //
+  // `MEMORY_TOOLS_REACH_PROVIDER` is unconditional, so this reduces to
+  // `modelProviderEnabled(readEnv)` today — the `enabledProviderCapabilities(...)`
+  // check is kept alongside it rather than deleted, so the boot-time worker
+  // conflicts and the always-on request-path reach both stay independently visible
+  // here instead of collapsing into one term whose reason a future edit could lose.
   const needsProvider = modelProviderEnabled(readEnv) &&
-    enabledProviderCapabilities(readEnv).length > 0;
+    (enabledProviderCapabilities(readEnv).length > 0 || MEMORY_TOOLS_REACH_PROVIDER);
   if (needsProvider && !readEnv("OPENROUTER_API_KEY")) missing.push("OPENROUTER_API_KEY");
   if (!readEnv("MEMORY_API_KEY")) missing.push("MEMORY_API_KEY");
   return missing;

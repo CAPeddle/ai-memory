@@ -17,7 +17,8 @@
  * store, attention) are retained unchanged and are NOT duplicated here in weaker form.
  * This file only asserts what a process boundary is required to show.
  *
- * Requires `--allow-run`. See CLAUDE.md's test commands.
+ * Requires `--allow-run=deno` (the helper spawns only `Deno.execPath()`).
+ * See CLAUDE.md's test commands.
  *
  * **This file drops the shared `workflow` schema, so it must not run concurrently with
  * the other workflow suites.** Three things make that safe, and all three are load
@@ -263,6 +264,16 @@ Deno.test({
           },
         );
         assertEquals(orphan.status, 404);
+        // toHttpError's FK branch synthesizes the SAME discriminator the direct-throw
+        // WorkflowNotFoundError branch uses, so a consumer trusting `error ===
+        // "WorkflowNotFoundError"` to imply a stable body shape must see the same key
+        // set from both. The FK branch cannot know WHICH id was missing, but the key
+        // must still be present (as `null`) rather than silently absent.
+        assertEquals(orphan.body.error, "WorkflowNotFoundError");
+        assert(
+          "id" in orphan.body,
+          `expected the 404 body to carry an "id" key, got ${JSON.stringify(orphan.body)}`,
+        );
       });
 
       // ------------------------------------------------------------------
@@ -461,6 +472,58 @@ Deno.test({
       });
 
       // ------------------------------------------------------------------
+      await t.step("POST /runs/:runId/end ends a run, and a nonexistent run 404s", async () => {
+        // `POST /runs/:runId/end` is otherwise never exercised over HTTP anywhere in
+        // this suite, even though `awcp end-run` ships as a caller. A separate packet
+        // and run — deliberately NOT `packetId` — because the restart step right below
+        // this one asserts `view.body.runs.length === 1` for that packet; ending a
+        // second run under it would perturb that count for a reason that has nothing
+        // to do with what the restart step is checking. This exercises the route in
+        // isolation instead.
+        const endRunPacket = await apiCall(server!.baseUrl, API_KEY, "/api/workflow/packets", {
+          method: "POST",
+          body: JSON.stringify({
+            title: "ST-086 end-run coverage",
+            objective: "prove POST /runs/:runId/end over HTTP",
+            policyScope: "personal",
+          }),
+        });
+        assertEquals(endRunPacket.status, 201);
+
+        const endRunRun = await apiCall(
+          server!.baseUrl,
+          API_KEY,
+          `/api/workflow/packets/${endRunPacket.body.id}/runs`,
+          {
+            method: "POST",
+            body: JSON.stringify({ agentType: "local-cli", host: "test-host" }),
+          },
+        );
+        assertEquals(endRunRun.status, 201);
+
+        // No body: `awcp end-run` relies on `endRunSchema`'s `status` default of
+        // "ended", so proving the route with an empty body is the point, not an
+        // oversight.
+        const ended = await apiCall(
+          server!.baseUrl,
+          API_KEY,
+          `/api/workflow/runs/${endRunRun.body.id}/end`,
+          { method: "POST" },
+        );
+        assertEquals(ended.status, 200);
+        assertEquals(ended.body.status, "ended");
+        assert(ended.body.ended_at !== null, "ending a run must set ended_at");
+
+        const notFound = await apiCall(
+          server!.baseUrl,
+          API_KEY,
+          `/api/workflow/runs/${crypto.randomUUID()}/end`,
+          { method: "POST" },
+        );
+        assertEquals(notFound.status, 404);
+      });
+
+      // ------------------------------------------------------------------
       await t.step("operational state survives an actual server restart", async () => {
         await server!.stop();
         // The port must actually be free, or the "restart" would be the old process.
@@ -505,7 +568,38 @@ Deno.test({
       });
 
       // ------------------------------------------------------------------
-      await t.step("the whole slice made zero model-provider requests", () => {
+      await t.step("/ready is a LIVE workflow probe, not a frozen boot-time report", async () => {
+        // The boot-time migration report is fixed once at startup. Without a live
+        // check, /ready would keep answering `workflow: {status: "ok"}` forever even
+        // after the schema is gone — an orchestrator would keep routing traffic to a
+        // server whose workflow routes all fail. Drop the schema out from under the
+        // ALREADY-RUNNING server and prove /ready notices on the very next request,
+        // rather than only at the next restart.
+        await sql.unsafe("DROP SCHEMA IF EXISTS workflow CASCADE");
+        try {
+          const ready = await apiCall(server!.baseUrl, API_KEY, "/ready");
+          assertEquals(ready.status, 503);
+          assertEquals(ready.body.checks.workflow.status, "error");
+        } finally {
+          // Restore INLINE, in addition to this test's own outer `finally` restore.
+          // The next step below (zero-provider-requests) doesn't touch the database,
+          // but the outer `finally` doesn't run until the whole test function
+          // returns — leaving the shared `workflow` schema dropped for even one more
+          // step than necessary is the kind of thing that turns into a flake in an
+          // unrelated later test file. Restore now, not "eventually".
+          const { tryEnsureWorkflowSchema } = await import("../src/workflow/schema.ts");
+          const restored = await tryEnsureWorkflowSchema();
+          assert(
+            restored.ok,
+            `failed to restore the workflow schema inline: ${JSON.stringify(restored)}`,
+          );
+        }
+      });
+
+      // ------------------------------------------------------------------
+      await t.step(
+        "the whole slice made zero provider requests on the OPENROUTER_BASE_URL path",
+        () => {
         assertEquals(
           sentinel.hits,
           [],
@@ -519,8 +613,25 @@ Deno.test({
       // Restore the schema for whatever runs next. Without this, a failure above
       // leaves the shared test database without `workflow` and every later workflow
       // suite fails for a reason that has nothing to do with its own subject.
-      const { ensureWorkflowSchema } = await import("../src/workflow/schema.ts");
-      await ensureWorkflowSchema();
+      //
+      // Use the NON-THROWING variant deliberately. `ensureWorkflowSchema()` throws on
+      // any failure (see server/src/workflow/schema.ts), and JS `finally` semantics
+      // discard whatever exception is already in flight in favour of one thrown here —
+      // so if a real assertion above already failed AND this restore also failed, the
+      // throwing variant would silently replace the real failure with a cleanup
+      // failure while STILL leaving the shared `workflow` schema dropped, cascading
+      // into workflow-store/attention/failure-isolation/migrations for reasons that
+      // have nothing to do with their own subject. Report loudly instead.
+      const { tryEnsureWorkflowSchema } = await import("../src/workflow/schema.ts");
+      const restore = await tryEnsureWorkflowSchema();
+      if (!restore.ok) {
+        console.error(
+          "FATAL: failed to restore the shared `workflow` schema after " +
+            "workflow-mvp-e2e.test.ts finished — every later workflow suite will now " +
+            `fail for a reason unrelated to its own subject:`,
+          restore.error,
+        );
+      }
     }
   },
 });

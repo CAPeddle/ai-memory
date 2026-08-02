@@ -21,6 +21,7 @@
  */
 
 import { Hono } from "npm:hono@4.9.2";
+import type { Context } from "npm:hono@4.9.2";
 import { z } from "npm:zod@4.1.13";
 
 import { buildOverview, buildPacketView } from "./readModel.ts";
@@ -30,8 +31,10 @@ import {
   CriteriaFrozenError,
   DecisionConflictError,
   POLICY_SCOPES,
+  RunConflictError,
   WorkflowNotFoundError,
 } from "./types.ts";
+import type { PolicyScope } from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // Request schemas
@@ -45,7 +48,9 @@ import {
  * deeper in. Giving this a default would be the exact failure the column was designed
  * against: a permissive value minted wherever a caller forgot to state one.
  */
-const policyScopeSchema = z.enum(POLICY_SCOPES as unknown as [string, ...string[]]);
+const policyScopeSchema = z.enum(
+  POLICY_SCOPES as unknown as [PolicyScope, ...PolicyScope[]],
+);
 
 const createPacketSchema = z.object({
   title: z.string().min(1),
@@ -136,12 +141,19 @@ function sqlState(err: unknown): string | undefined {
  */
 export function toHttpError(err: unknown): HttpError {
   if (err instanceof WorkflowNotFoundError) {
-    return { status: 404, body: { error: err.name, message: err.message, id: err.id } };
+    return {
+      status: 404,
+      body: { error: err.name, message: err.message, id: err.id },
+    };
   }
   if (err instanceof CompletionBlockedError) {
     return {
       status: 409,
-      body: { error: err.name, message: err.message, unmetCriteria: err.unmetCriteria },
+      body: {
+        error: err.name,
+        message: err.message,
+        unmetCriteria: err.unmetCriteria,
+      },
     };
   }
   if (err instanceof CriteriaFrozenError) {
@@ -157,6 +169,16 @@ export function toHttpError(err: unknown): HttpError {
       },
     };
   }
+  if (err instanceof RunConflictError) {
+    return {
+      status: 409,
+      body: {
+        error: err.name,
+        message: err.message,
+        existingStatus: err.existingStatus,
+      },
+    };
+  }
 
   const state = sqlState(err);
   if (state === FK_VIOLATION) {
@@ -164,17 +186,30 @@ export function toHttpError(err: unknown): HttpError {
       status: 404,
       body: {
         error: "WorkflowNotFoundError",
-        message: "a referenced work packet, agent run or verification criterion does not exist",
+        message:
+          "a referenced work packet, agent run or verification criterion does not exist",
+        // Unlike the WorkflowNotFoundError branch above, the FK violation does not
+        // tell us WHICH id was missing — Postgres reports only that some constraint
+        // was violated. `null` rather than omitting the key: every WorkflowNotFoundError
+        // -discriminated 404 body must carry the same key set, or a consumer trusting
+        // the discriminator to imply a stable shape breaks on this branch specifically.
+        id: null,
       },
     };
   }
   if (state === INVALID_TEXT_REPRESENTATION) {
-    return { status: 400, body: { error: "BadRequest", message: "malformed identifier" } };
+    return {
+      status: 400,
+      body: { error: "BadRequest", message: "malformed identifier" },
+    };
   }
 
   return {
     status: 500,
-    body: { error: "InternalError", message: (err as Error)?.message ?? "unknown failure" },
+    body: {
+      error: "InternalError",
+      message: (err as Error)?.message ?? "unknown failure",
+    },
   };
 }
 
@@ -195,64 +230,84 @@ async function readJson(req: Request): Promise<unknown> {
   }
 }
 
+/**
+ * Wrap a handler with the shared error-mapping policy: run it, and map any thrown
+ * domain error through {@link toHttpError} instead of letting it fall through to
+ * Hono's default 500. `command()` and the two read-only GET routes below all go
+ * through this, which is what makes "every route maps errors the same way" true
+ * rather than merely asserted in a docblock.
+ */
+function withErrorMapping(
+  handler: (c: Context) => Promise<Response>,
+): (c: Context) => Promise<Response> {
+  return async (c: Context) => {
+    try {
+      return await handler(c);
+    } catch (err) {
+      const mapped = toHttpError(err);
+      return c.json(mapped.body, mapped.status);
+    }
+  };
+}
+
 export function createWorkflowApi(): Hono {
   const api = new Hono();
 
   /**
    * One handler shape for every route: validate the path id, validate the body, run
-   * the command, map failures. Centralised so no individual route can quietly grow a
-   * different error-mapping policy — the drift that ends with one endpoint answering
-   * 200 for a failure another answers 409 for.
+   * the command, map failures via {@link withErrorMapping}. Centralised so no
+   * individual route can quietly grow a different error-mapping policy — the drift
+   * that ends with one endpoint answering 200 for a failure another answers 409 for.
    */
   const command = <T>(
     schema: z.ZodType<T>,
     paramNames: string[],
     run: (body: T, params: Record<string, string>) => Promise<unknown>,
     successStatus: 200 | 201 = 201,
-    // deno-lint-ignore no-explicit-any
   ) =>
-  // deno-lint-ignore no-explicit-any
-  async (c: any) => {
-    const params: Record<string, string> = {};
-    for (const name of paramNames) {
-      const raw = c.req.param(name);
-      const parsed = idSchema.safeParse(raw);
-      if (!parsed.success) {
+    withErrorMapping(async (c: Context) => {
+      const params: Record<string, string> = {};
+      for (const name of paramNames) {
+        const raw = c.req.param(name);
+        const parsed = idSchema.safeParse(raw);
+        if (!parsed.success) {
+          return c.json(
+            {
+              error: "BadRequest",
+              message: `${name} must be a uuid`,
+              received: raw,
+            },
+            400,
+          );
+        }
+        params[name] = parsed.data;
+      }
+
+      const raw = await readJson(c.req.raw);
+      if (typeof raw === "symbol") {
+        return c.json({
+          error: "BadRequest",
+          message: "body is not valid JSON",
+        }, 400);
+      }
+      const body = schema.safeParse(raw);
+      if (!body.success) {
         return c.json(
-          { error: "BadRequest", message: `${name} must be a uuid`, received: raw },
+          {
+            error: "BadRequest",
+            message: "request body failed validation",
+            issues: body.error.issues.map((i) => ({
+              path: i.path.join("."),
+              message: i.message,
+            })),
+          },
           400,
         );
       }
-      params[name] = parsed.data;
-    }
 
-    const raw = await readJson(c.req.raw);
-    if (typeof raw === "symbol") {
-      return c.json({ error: "BadRequest", message: "body is not valid JSON" }, 400);
-    }
-    const body = schema.safeParse(raw);
-    if (!body.success) {
-      return c.json(
-        {
-          error: "BadRequest",
-          message: "request body failed validation",
-          issues: body.error.issues.map((i) => ({
-            path: i.path.join("."),
-            message: i.message,
-          })),
-        },
-        400,
-      );
-    }
-
-    try {
       const result = await run(body.data, params);
       return c.json(result as Json, successStatus);
-    } catch (err) {
-      const mapped = toHttpError(err);
-      return c.json(mapped.body, mapped.status);
-    }
-  };
+    });
 
   // --- Work packets -------------------------------------------------------
 
@@ -266,36 +321,43 @@ export function createWorkflowApi(): Hono {
         constraints: body.constraints,
         repository: body.repository ?? null,
         branch: body.branch ?? null,
-        // Narrowed by `policyScopeSchema`, which is built from POLICY_SCOPES itself.
-        policyScope: body.policyScope as (typeof POLICY_SCOPES)[number],
+        policyScope: body.policyScope,
       })),
   );
 
   api.post(
     "/packets/:packetId/runs",
-    command(registerRunSchema, ["packetId"], (body, params) =>
-      store.registerRun({
-        packetId: params.packetId,
-        agentType: body.agentType,
-        host: body.host,
-        nodeId: body.nodeId ?? null,
-        workingDir: body.workingDir ?? null,
-        repository: body.repository ?? null,
-        branch: body.branch ?? null,
-      })),
+    command(
+      registerRunSchema,
+      ["packetId"],
+      (body, params) =>
+        store.registerRun({
+          packetId: params.packetId,
+          agentType: body.agentType,
+          host: body.host,
+          nodeId: body.nodeId ?? null,
+          workingDir: body.workingDir ?? null,
+          repository: body.repository ?? null,
+          branch: body.branch ?? null,
+        }),
+    ),
   );
 
   api.post(
     "/runs/:runId/checkpoints",
-    command(checkpointSchema, ["runId"], (body, params) =>
-      store.recordCheckpoint({
-        runId: params.runId,
-        completedWork: body.completedWork,
-        currentState: body.currentState,
-        blockers: body.blockers ?? null,
-        nextAction: body.nextAction ?? null,
-        repoCommit: body.repoCommit ?? null,
-      })),
+    command(
+      checkpointSchema,
+      ["runId"],
+      (body, params) =>
+        store.recordCheckpoint({
+          runId: params.runId,
+          completedWork: body.completedWork,
+          currentState: body.currentState,
+          blockers: body.blockers ?? null,
+          nextAction: body.nextAction ?? null,
+          repoCommit: body.repoCommit ?? null,
+        }),
+    ),
   );
 
   api.post(
@@ -312,14 +374,18 @@ export function createWorkflowApi(): Hono {
 
   api.post(
     "/packets/:packetId/decisions",
-    command(decisionSchema, ["packetId"], (body, params) =>
-      store.recordDecision({
-        packetId: params.packetId,
-        runId: body.runId ?? null,
-        question: body.question,
-        rationale: body.rationale ?? null,
-        blocking: body.blocking,
-      })),
+    command(
+      decisionSchema,
+      ["packetId"],
+      (body, params) =>
+        store.recordDecision({
+          packetId: params.packetId,
+          runId: body.runId ?? null,
+          question: body.question,
+          rationale: body.rationale ?? null,
+          blocking: body.blocking,
+        }),
+    ),
   );
 
   /**
@@ -341,7 +407,8 @@ export function createWorkflowApi(): Hono {
     command(
       resolveSchema,
       ["decisionId"],
-      (body, params) => store.resolveDecision(params.decisionId, body.resolution),
+      (body, params) =>
+        store.resolveDecision(params.decisionId, body.resolution),
       200,
     ),
   );
@@ -350,19 +417,31 @@ export function createWorkflowApi(): Hono {
 
   api.post(
     "/packets/:packetId/criteria",
-    command(criterionSchema, ["packetId"], (body, params) =>
-      store.addCriterion(params.packetId, body.description, body.required ?? true)),
+    command(
+      criterionSchema,
+      ["packetId"],
+      (body, params) =>
+        store.addCriterion(
+          params.packetId,
+          body.description,
+          body.required ?? true,
+        ),
+    ),
   );
 
   api.post(
     "/criteria/:criterionId/evidence",
-    command(evidenceSchema, ["criterionId"], (body, params) =>
-      store.attachEvidence({
-        criterionId: params.criterionId,
-        kind: body.kind,
-        detail: body.detail,
-        recordedCommit: body.recordedCommit ?? null,
-      })),
+    command(
+      evidenceSchema,
+      ["criterionId"],
+      (body, params) =>
+        store.attachEvidence({
+          criterionId: params.criterionId,
+          kind: body.kind,
+          detail: body.detail,
+          recordedCommit: body.recordedCommit ?? null,
+        }),
+    ),
   );
 
   /**
@@ -375,26 +454,33 @@ export function createWorkflowApi(): Hono {
    */
   api.post(
     "/packets/:packetId/complete",
-    command(z.object({}), ["packetId"], (_body, params) => store.completePacket(params.packetId), 200),
+    command(
+      z.object({}),
+      ["packetId"],
+      (_body, params) => store.completePacket(params.packetId),
+      200,
+    ),
   );
 
   // --- Read model ---------------------------------------------------------
 
-  api.get("/overview", async (c) => {
-    try {
+  api.get(
+    "/overview",
+    withErrorMapping(async (c) => {
       return c.json(await buildOverview() as unknown as Json, 200);
-    } catch (err) {
-      const mapped = toHttpError(err);
-      return c.json(mapped.body, mapped.status);
-    }
-  });
+    }),
+  );
 
-  api.get("/packets/:packetId", async (c) => {
-    const parsed = idSchema.safeParse(c.req.param("packetId"));
-    if (!parsed.success) {
-      return c.json({ error: "BadRequest", message: "packetId must be a uuid" }, 400);
-    }
-    try {
+  api.get(
+    "/packets/:packetId",
+    withErrorMapping(async (c) => {
+      const parsed = idSchema.safeParse(c.req.param("packetId"));
+      if (!parsed.success) {
+        return c.json({
+          error: "BadRequest",
+          message: "packetId must be a uuid",
+        }, 400);
+      }
       const view = await buildPacketView(parsed.data);
       if (view === null) {
         return c.json(
@@ -407,11 +493,8 @@ export function createWorkflowApi(): Hono {
         );
       }
       return c.json(view as unknown as Json, 200);
-    } catch (err) {
-      const mapped = toHttpError(err);
-      return c.json(mapped.body, mapped.status);
-    }
-  });
+    }),
+  );
 
   return api;
 }

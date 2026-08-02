@@ -84,16 +84,41 @@ export async function buildOverview(now = new Date()): Promise<OverviewView> {
 }
 
 async function assemble(packet: WorkPacket, now: Date): Promise<PacketView> {
-  const [runs, allCheckpoints, recentCheckpoints, decisions, criteria, evidence, counts] =
-    await Promise.all([
+  const [runs, allCheckpoints, decisions, criteria, evidence] = await Promise
+    .all([
       store.listRuns(packet.id),
       store.listCheckpoints(packet.id),
-      store.listRecentCheckpoints(packet.id, RECENT_CHECKPOINT_LIMIT),
       store.listDecisions(packet.id),
       store.listCriteria(packet.id),
       store.listEvidenceForPacket(packet.id),
-      store.evidenceCountsForPacket(packet.id),
     ]);
+
+  // `listCheckpoints` is ASC by created_at and already fetched above for
+  // `evaluateAttention`'s full-history requirement (see comment below); the newest-N,
+  // newest-first slice `listRecentCheckpoints` would have queried separately is fully
+  // derivable from it: take the tail and reverse. Same resulting order, one fewer
+  // query.
+  const recentCheckpoints = allCheckpoints.slice(-RECENT_CHECKPOINT_LIMIT)
+    .reverse();
+
+  const evidenceByCriterion = new Map<string, EvidenceItem[]>();
+  for (const item of evidence) {
+    const bucket = evidenceByCriterion.get(item.criterion_id);
+    if (bucket === undefined) {
+      evidenceByCriterion.set(item.criterion_id, [item]);
+    } else bucket.push(item);
+  }
+
+  // `evidenceCountsForPacket`'s SQL LEFT JOINs criteria to evidence, so every
+  // criterion appears in the map even with zero evidence. Reproduced here by seeding
+  // every criterion at 0 before counting, so a criterion with no evidence still has a
+  // `.get(c.id)` entry rather than falling through to evaluateAttention's `?? 0`
+  // fallback — behaviourally equivalent either way, but kept exact to avoid a subtle
+  // divergence between the two paths.
+  const counts = new Map<string, number>(criteria.map((c) => [c.id, 0]));
+  for (const item of evidence) {
+    counts.set(item.criterion_id, (counts.get(item.criterion_id) ?? 0) + 1);
+  }
 
   // Attention is evaluated over the FULL checkpoint history, not the truncated tail
   // the dashboard renders. The `blocked` and `ended-without-checkpoint` rules both
@@ -109,13 +134,6 @@ async function assemble(packet: WorkPacket, now: Date): Promise<PacketView> {
     evidenceCountByCriterion: counts,
     now,
   });
-
-  const evidenceByCriterion = new Map<string, EvidenceItem[]>();
-  for (const item of evidence) {
-    const bucket = evidenceByCriterion.get(item.criterion_id);
-    if (bucket === undefined) evidenceByCriterion.set(item.criterion_id, [item]);
-    else bucket.push(item);
-  }
 
   const resolved = decisions
     .filter((d) => d.status === "resolved")

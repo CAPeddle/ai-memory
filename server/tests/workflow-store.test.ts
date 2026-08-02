@@ -17,6 +17,7 @@ import {
   CompletionBlockedError,
   CriteriaFrozenError,
   DecisionConflictError,
+  RunConflictError,
   WorkflowNotFoundError,
 } from "../src/workflow/types.ts";
 import { ensureWorkflowSchema } from "../src/workflow/schema.ts";
@@ -513,6 +514,79 @@ Deno.test({
       const ended = await store.endRun(run.id, "ended");
       assertEquals(ended.id, run.id);
       assertEquals(ended.status, "ended");
+      assert(ended.ended_at !== null, "ended_at must be stamped");
+    } finally {
+      await store.deletePacket(packet.id);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "workflow: re-ending with the SAME status is idempotent and preserves ended_at",
+  fn: async () => {
+    const packet = await newPacket("endRun: idempotent retry");
+    try {
+      const run = await store.registerRun({ packetId: packet.id, agentType: "test", host: "local" });
+      const first = await store.endRun(run.id, "ended");
+      assertEquals(first.status, "ended");
+      assert(first.ended_at !== null, "ended_at must be stamped");
+
+      const retry = await store.endRun(run.id, "ended");
+      assertEquals(retry.status, "ended");
+      // The point of the test. A blind re-UPDATE would move this forward, quietly
+      // claiming the run ended later than it did — invisible unless asserted, because
+      // every other field looks identical.
+      assertEquals(
+        retry.ended_at?.getTime(),
+        first.ended_at?.getTime(),
+        "an idempotent retry must not restamp ended_at",
+      );
+    } finally {
+      await store.deletePacket(packet.id);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "workflow: re-ending with a DIFFERENT status raises a typed conflict",
+  fn: async () => {
+    const packet = await newPacket("endRun: conflicting status");
+    try {
+      const run = await store.registerRun({ packetId: packet.id, agentType: "test", host: "local" });
+      await store.endRun(run.id, "ended");
+
+      const err = await assertRejects(
+        () => store.endRun(run.id, "failed"),
+        RunConflictError,
+      );
+      assertEquals((err as RunConflictError).existingStatus, "ended");
+      assertEquals((err as RunConflictError).attemptedStatus, "failed");
+
+      // The refusal must not have partially applied.
+      const after = await store.getRun(run.id);
+      assertEquals(after?.status, "ended");
+    } finally {
+      await store.deletePacket(packet.id);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "workflow: endRun on a still-RUNNING run ends normally (discrimination control)",
+  fn: async () => {
+    // Control for the two tests above: a run that is NOT yet terminal must still end
+    // through the ordinary path, or the terminal-state checks above could be passing
+    // vacuously by refusing everything regardless of state.
+    const packet = await newPacket("endRun: running control");
+    try {
+      const run = await store.registerRun({ packetId: packet.id, agentType: "test", host: "local" });
+      assertEquals(run.status, "running");
+
+      const ended = await store.endRun(run.id, "failed");
+      assertEquals(ended.status, "failed");
       assert(ended.ended_at !== null, "ended_at must be stamped");
     } finally {
       await store.deletePacket(packet.id);

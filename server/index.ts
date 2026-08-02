@@ -30,8 +30,8 @@ import {
 import { withTiming } from "./src/logging.ts";
 import {
   bootstrapWorkflow,
+  probeWorkflowReadiness,
   workflowFeatureEnabled,
-  workflowReadiness,
 } from "./src/workflow/bootstrap.ts";
 import { createWorkflowApi } from "./src/workflow/api.ts";
 import { DASHBOARD_HTML } from "./src/workflow/dashboard.ts";
@@ -1108,10 +1108,19 @@ app.get("/ready", async (c) => {
   // capabilities and should not grow a dependency on a separate operational domain,
   // and every deployment that never opts in keeps /ready's existing seven-key shape
   // byte for byte.
-  const workflow = workflowReadiness(workflowBootstrap);
+  //
+  // `probeWorkflowReadiness` is awaited HERE, on every request, rather than read from
+  // the `workflowBootstrap` value frozen before `Deno.serve`. Without that, a workflow
+  // schema dropped or made unusable after boot would leave `/ready` answering
+  // `workflow: {status: "ok"}` forever — see bootstrap.ts's docblock.
+  const workflow = await probeWorkflowReadiness(workflowBootstrap);
   const checks = workflow === null ? result.checks : { ...result.checks, workflow };
 
-  const statusCode = result.status === "unhealthy" ? 503 : 200;
+  // A live workflow failure contributes to 503 independently of `result.status`:
+  // deepHealthCheck knows nothing about the workflow domain, so its own status word
+  // (left untouched in the body below) cannot be made to carry this. The HTTP code is
+  // what an orchestrator actually acts on, and it must reflect both domains.
+  const statusCode = result.status === "unhealthy" || workflow?.status === "error" ? 503 : 200;
   return c.json({ ...result, checks }, statusCode);
 });
 

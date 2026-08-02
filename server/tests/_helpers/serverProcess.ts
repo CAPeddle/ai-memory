@@ -26,10 +26,15 @@ export interface ProviderSentinel {
 /**
  * A stand-in for the model provider that records rather than answers.
  *
- * This is the negative control for "no model-provider requests were made". Pointing
- * `OPENROUTER_BASE_URL` at it means any provider call the server makes lands here and
- * is counted — as opposed to asserting the absence of something nothing was watching
- * for, which is the shape of a check that cannot fail.
+ * This is the negative control for "no model-provider requests were made" — but only
+ * for provider calls that honour `OPENROUTER_BASE_URL`. Pointing that env var at this
+ * sentinel means any call built from it lands here and is counted, as opposed to
+ * asserting the absence of something nothing was watching for, which is the shape of a
+ * check that cannot fail. It is NOT a control on every provider path:
+ * `server/src/entityWorker.ts` and `server/src/consolidationLLM.ts` hardcode
+ * `https://openrouter.ai/api/v1/...` and never read `OPENROUTER_BASE_URL`, so calls
+ * from those two files are structurally invisible to this sentinel regardless of hit
+ * count (making them configurable is separate, ST-085-scoped work).
  *
  * It answers 200 with a plausible `/models` body deliberately. A sentinel that
  * returned an error would make "zero hits" and "provider unreachable" produce the same
@@ -120,7 +125,66 @@ export async function startServerProcess(
     return s;
   });
 
+  // Surface the child's own output and make sure the process is actually gone before
+  // reporting a boot failure. Without this a boot failure reads as a bare timeout and
+  // the actual FATAL line — which the child already printed — is lost.
+  const failBoot = async (reason: string): Promise<never> => {
+    if (!exited) {
+      // The child may have exited between our last check and here — killing an
+      // already-dead process throws (Deno.errors.NotFound-ish), and that throw must
+      // not replace the real boot-failure error below.
+      try {
+        child.kill("SIGKILL");
+      } catch { /* already gone */ }
+    }
+    await status.catch(() => {});
+    await draining.catch(() => {});
+    throw new Error(`${reason} on port ${port}. Output:\n${chunks.join("")}`);
+  };
+
   const deadline = Date.now() + BOOT_TIMEOUT_MS;
+
+  // `/health` is unauthenticated and answers 200 UNCONDITIONALLY (see
+  // server/src/auth.ts / index.ts), on a FIXED, well-known port (3142/3143 in the
+  // e2e suite). That combination means a bare `/health` 200 is not proof that this
+  // fetch reached the child we just spawned — it is only proof that *something* is
+  // listening on the port. `exited` cannot substitute for that proof either: it only
+  // flips once the `child.status` promise resolves, which happens strictly AFTER the
+  // first `fetch` below would already be in flight. So if a stale or competing
+  // process already holds this port, the new child fails to bind and exits, but the
+  // very first poll iteration can still get a 200 from the STALE process before
+  // `exited` has had any chance to become true — and this helper would then hand back
+  // a "healthy" handle pointing at the wrong process entirely, certifying whatever
+  // happened to be on the port instead of the process this test actually started.
+  //
+  // Deno.serve prints "Listening on http://<host>:<port>/" to stdout the moment IT
+  // binds successfully (server/index.ts's `Deno.serve({ port: PORT }, app.fetch)`
+  // passes no custom `onListen`, so this is Deno's own default log line — verified by
+  // running a bare `Deno.serve` under this exact Deno image). That line is specific to
+  // THIS child's stdout, which nothing else can write to, so it is the one signal
+  // available here that actually discriminates "this process bound the port" from
+  // "the port answers". Do NOT simplify this back to a bare health poll — that is
+  // precisely the bug this loop exists to prevent.
+  let bound = false;
+  while (Date.now() < deadline && !exited) {
+    if (chunks.join("").includes("Listening on")) {
+      bound = true;
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+
+  if (exited) {
+    await failBoot("server process exited before it reported binding the port");
+  }
+  if (!bound) {
+    await failBoot(
+      "server process never reported binding the port within the timeout",
+    );
+  }
+
+  // Only now, having proven THIS process bound the port, use /health as a readiness
+  // confirmation (the port being bound does not yet mean the handler is serving).
   let healthy = false;
   while (Date.now() < deadline && !exited) {
     try {
@@ -131,20 +195,13 @@ export async function startServerProcess(
         break;
       }
     } catch {
-      // Not listening yet.
+      // Not accepting connections yet.
     }
     await new Promise((r) => setTimeout(r, 250));
   }
 
   if (!healthy) {
-    // Surface the child's own output. Without this a boot failure reads as a bare
-    // timeout and the actual FATAL line — which the child already printed — is lost.
-    child.kill("SIGKILL");
-    await status.catch(() => {});
-    await draining.catch(() => {});
-    throw new Error(
-      `server process did not become healthy on port ${port}. Output:\n${chunks.join("")}`,
-    );
+    await failBoot("server process did not become healthy");
   }
 
   return {
@@ -152,7 +209,13 @@ export async function startServerProcess(
     output: () => chunks.join(""),
     stop: async () => {
       if (!exited) {
-        child.kill("SIGTERM");
+        // The child may have exited between the check above and here (e.g. it
+        // crashed on its own right after this line was scheduled) — an unguarded
+        // kill on an already-dead process throws, and stop() must not throw for that
+        // reason.
+        try {
+          child.kill("SIGTERM");
+        } catch { /* already gone */ }
         // SIGTERM is enough for Deno.serve; escalate only if the child ignores it.
         const escalate = setTimeout(() => {
           try {

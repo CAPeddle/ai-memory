@@ -24,14 +24,16 @@
  *   awcp decision  --packet ID --question Q [--rationale R] [--run ID] [--advisory]
  *   awcp end-run   --run ID [--status ended|failed]
  *
- * Environment: MEMORY_API_KEY (required), AWCP_BASE_URL (default http://127.0.0.1:3000).
+ * Environment: MEMORY_API_KEY (required), AWCP_BASE_URL (default http://127.0.0.1:3000),
+ * AWCP_TIMEOUT_MS (default 30000).
  *
  * `--allow-sys=hostname` is granted for the default `--host` of a run, narrowed to
  * that one syscall. `defaultHost` below degrades to a literal if it is withheld, so
  * running with a tighter grant costs a default rather than the subcommand.
  */
 
-const BASE_URL = (Deno.env.get("AWCP_BASE_URL") ?? "http://127.0.0.1:3000").replace(/\/$/, "");
+const BASE_URL = (Deno.env.get("AWCP_BASE_URL") ?? "http://127.0.0.1:3000")
+  .replace(/\/$/, "");
 const API_ROOT = `${BASE_URL}/api/workflow`;
 
 /**
@@ -96,7 +98,9 @@ function parseArgs(argv: string[]): Args {
   const command = argv[0] ?? "";
   for (let i = 1; i < argv.length; i++) {
     const token = argv[i];
-    if (!token.startsWith("--")) die(`unexpected argument ${JSON.stringify(token)}`);
+    if (!token.startsWith("--")) {
+      die(`unexpected argument ${JSON.stringify(token)}`);
+    }
     const name = token.slice(2);
     if (BOOLEAN_FLAGS.has(name)) {
       bools.add(name);
@@ -124,19 +128,41 @@ function required(args: Args, name: string): string {
 // HTTP
 // ---------------------------------------------------------------------------
 
+/** Default request timeout in milliseconds. Overridable via AWCP_TIMEOUT_MS env var. */
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+function resolveTimeoutMs(): number {
+  const raw = Deno.env.get("AWCP_TIMEOUT_MS");
+  if (!raw) return DEFAULT_TIMEOUT_MS;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_TIMEOUT_MS;
+}
+
 async function post(path: string, body: unknown): Promise<unknown> {
   const key = Deno.env.get("MEMORY_API_KEY");
   if (!key) die("MEMORY_API_KEY is not set");
 
+  const timeoutMs = resolveTimeoutMs();
   let res: Response;
   try {
     res = await fetch(`${API_ROOT}${path}`, {
       method: "POST",
-      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
+      headers: {
+        "Authorization": `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (err) {
-    die(`could not reach ${API_ROOT} — is the server running? (${(err as Error).message})`);
+    if ((err as Error).name === "TimeoutError") {
+      die(`timed out after ${timeoutMs}ms waiting for ${API_ROOT}${path}`);
+    }
+    die(
+      `could not reach ${API_ROOT} — is the server running? (${
+        (err as Error).message
+      })`,
+    );
   }
 
   const text = await res.text();
@@ -148,8 +174,12 @@ async function post(path: string, body: unknown): Promise<unknown> {
   }
 
   if (!res.ok) {
-    const detail = parsed as { message?: string; unmetCriteria?: string[] } | null;
-    const unmet = detail?.unmetCriteria?.length ? ` [${detail.unmetCriteria.join("; ")}]` : "";
+    const detail = parsed as
+      | { message?: string; unmetCriteria?: string[] }
+      | null;
+    const unmet = detail?.unmetCriteria?.length
+      ? ` [${detail.unmetCriteria.join("; ")}]`
+      : "";
     die(`${res.status} ${detail?.message ?? res.statusText}${unmet}`);
   }
   return parsed;
@@ -164,7 +194,8 @@ function emit(label: string, record: Record<string, unknown>): void {
 // Subcommands
 // ---------------------------------------------------------------------------
 
-const USAGE = `awcp — report a local development session into Workflow Operations
+const USAGE =
+  `awcp — report a local development session into Workflow Operations
 
   awcp packet     --title T --objective O --policy-scope personal|corporate|mixed|public
                   [--scope S] [--constraints C] [--repo R] [--branch B]
@@ -177,13 +208,21 @@ const USAGE = `awcp — report a local development session into Workflow Operati
 Environment:
   MEMORY_API_KEY   bearer key for /api/workflow (required)
   AWCP_BASE_URL    server base URL (default http://127.0.0.1:3000)
+  AWCP_TIMEOUT_MS  request timeout in milliseconds (default 30000)
 
 --repo, --branch and --commit default to this checkout, read via fixed git commands.
 --policy-scope has no default: it is a boundary value and must be stated.`;
 
 async function main(): Promise<void> {
   const args = parseArgs(Deno.args);
-  if (args.command === "" || args.bools.has("help") || args.command === "help") {
+  // `command` is `argv[0]`, and the flag-parsing loop below starts at `i = 1` — so
+  // when `--help`/`-h` is the FIRST argument it is never classified into `bools` and
+  // lands in `command` instead. Checked here explicitly so `awcp --help` prints usage
+  // and exits 0 rather than falling through to the "unknown subcommand" branch.
+  if (
+    args.command === "" || args.bools.has("help") || args.command === "help" ||
+    args.command === "--help" || args.command === "-h"
+  ) {
     console.log(USAGE);
     return;
   }
@@ -208,13 +247,16 @@ async function main(): Promise<void> {
     }
 
     case "run": {
-      const record = await post(`/packets/${required(args, "packet")}/runs`, {
-        agentType: args.flags.get("agent-type") ?? "local-cli",
-        host: args.flags.get("host") ?? defaultHost(),
-        workingDir: args.flags.get("working-dir") ?? await git("repoRoot"),
-        repository: args.flags.get("repo") ?? await git("repoRoot"),
-        branch: args.flags.get("branch") ?? await git("branch"),
-      }) as Record<string, unknown>;
+      const record = await post(
+        `/packets/${encodeURIComponent(required(args, "packet"))}/runs`,
+        {
+          agentType: args.flags.get("agent-type") ?? "local-cli",
+          host: args.flags.get("host") ?? defaultHost(),
+          workingDir: args.flags.get("working-dir") ?? await git("repoRoot"),
+          repository: args.flags.get("repo") ?? await git("repoRoot"),
+          branch: args.flags.get("branch") ?? await git("branch"),
+        },
+      ) as Record<string, unknown>;
       emit("run", record);
       return;
     }
@@ -226,34 +268,47 @@ async function main(): Promise<void> {
       const commit = args.bools.has("no-commit")
         ? null
         : args.flags.get("commit") ?? await git("head");
-      const record = await post(`/runs/${required(args, "run")}/checkpoints`, {
-        completedWork: required(args, "completed"),
-        currentState: required(args, "state"),
-        blockers: args.flags.get("blockers"),
-        nextAction: args.flags.get("next"),
-        repoCommit: commit,
-      }) as Record<string, unknown>;
+      const record = await post(
+        `/runs/${encodeURIComponent(required(args, "run"))}/checkpoints`,
+        {
+          completedWork: required(args, "completed"),
+          currentState: required(args, "state"),
+          blockers: args.flags.get("blockers"),
+          nextAction: args.flags.get("next"),
+          repoCommit: commit,
+        },
+      ) as Record<string, unknown>;
       emit("checkpoint", record);
       return;
     }
 
     case "decision": {
-      const record = await post(`/packets/${required(args, "packet")}/decisions`, {
-        question: required(args, "question"),
-        rationale: args.flags.get("rationale"),
-        runId: args.flags.get("run"),
-        // Blocking is the default; `--advisory` is the way to say otherwise. That
-        // matches the store's default and keeps the noisier choice the automatic one.
-        blocking: !args.bools.has("advisory"),
-      }) as Record<string, unknown>;
+      const record = await post(
+        `/packets/${encodeURIComponent(required(args, "packet"))}/decisions`,
+        {
+          question: required(args, "question"),
+          rationale: args.flags.get("rationale"),
+          runId: args.flags.get("run"),
+          // Blocking is the default; `--advisory` is the way to say otherwise. That
+          // matches the store's default and keeps the noisier choice the automatic one.
+          blocking: !args.bools.has("advisory"),
+        },
+      ) as Record<string, unknown>;
       emit("decision", record);
       return;
     }
 
     case "end-run": {
       const status = args.flags.get("status") ?? "ended";
-      if (status !== "ended" && status !== "failed") die("--status must be ended or failed");
-      const record = await post(`/runs/${required(args, "run")}/end`, { status }) as Record<
+      if (status !== "ended" && status !== "failed") {
+        die("--status must be ended or failed");
+      }
+      const record = await post(
+        `/runs/${encodeURIComponent(required(args, "run"))}/end`,
+        {
+          status,
+        },
+      ) as Record<
         string,
         unknown
       >;
@@ -262,7 +317,9 @@ async function main(): Promise<void> {
     }
 
     default:
-      die(`unknown subcommand ${JSON.stringify(args.command)} — try: awcp help`);
+      die(
+        `unknown subcommand ${JSON.stringify(args.command)} — try: awcp help`,
+      );
   }
 }
 

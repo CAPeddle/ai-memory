@@ -106,10 +106,12 @@ function apiKey() {
   return k;
 }
 
+let bannerTimer = null;
 function say(msg, kind) {
+  clearTimeout(bannerTimer);
   banner.textContent = msg;
   banner.className = kind;
-  if (kind === "ok") setTimeout(() => { banner.className = ""; }, 2500);
+  if (kind === "ok") bannerTimer = setTimeout(() => { banner.className = ""; }, 2500);
 }
 
 async function call(path, options) {
@@ -125,6 +127,17 @@ async function call(path, options) {
   let body = null;
   try { body = text ? JSON.parse(text) : null; } catch (_) { body = { message: text }; }
   if (!res.ok) {
+    // A 401 means the key THIS request sent was rejected -- evict it so the
+    // next call re-prompts. The eviction is scoped to the exact key that
+    // failed (only removed if sessionStorage still holds that same value)
+    // because this call may be a slow, now-stale request: if the operator
+    // used "Change key" while it was in flight, sessionStorage already holds
+    // a newer, untested key, and an unconditional removeItem here would wipe
+    // that valid key out from under them and force a needless re-prompt. Do
+    // not "simplify" this back to an unconditional removeItem.
+    if (res.status === 401 && sessionStorage.getItem(KEY_NAME) === key) {
+      sessionStorage.removeItem(KEY_NAME);
+    }
     const detail = body && body.unmetCriteria
       ? body.message + " [" + body.unmetCriteria.join("; ") + "]"
       : (body && body.message) || res.statusText;
@@ -353,9 +366,15 @@ function renderPacket(view, reload) {
   return card;
 }
 
+let loadGeneration = 0;
+
 async function load() {
+  const generation = ++loadGeneration;
   try {
     const data = await call("/overview");
+    // Discard this response if a newer load() has since been issued -- an
+    // earlier, slower request must never overwrite a later request's result.
+    if (generation !== loadGeneration) return;
     document.getElementById("stamp").textContent = "as of " + when(data.generatedAt);
     root.replaceChildren();
     if (!data.packets.length) {
@@ -364,8 +383,8 @@ async function load() {
     }
     for (const view of data.packets) root.appendChild(renderPacket(view, load));
   } catch (e) {
+    if (generation !== loadGeneration) return;
     say(e.message, "err");
-    if (String(e.message).indexOf("401") === 0) sessionStorage.removeItem(KEY_NAME);
   }
 }
 

@@ -281,6 +281,34 @@ export class DecisionConflictError extends Error {
   }
 }
 
+/**
+ * Raised when an already-terminal run is ended again with a DIFFERENT status.
+ *
+ * Mirrors {@link DecisionConflictError} for the same reason `store.endRun` mirrors
+ * `resolveDecision`: ending a run is once-and-final. A same-status retry is
+ * idempotent and returns the stored record untouched, so a caller that retries after
+ * a timed-out request is safe. A different status is not a retry — it is a second,
+ * conflicting verdict about how the run ended (e.g. `failed` arriving after `ended`
+ * was already recorded), and silently overwriting the first would erase the verdict
+ * the packet's history already depends on. Carries both statuses so the caller can
+ * show what it collided with.
+ */
+export class RunConflictError extends Error {
+  readonly runId: string;
+  readonly existingStatus: RunStatus;
+  readonly attemptedStatus: RunStatus;
+  constructor(runId: string, existingStatus: RunStatus, attemptedStatus: RunStatus) {
+    super(
+      `Agent run ${runId} is already ended as ${JSON.stringify(existingStatus)}; refusing ` +
+        `to overwrite it with ${JSON.stringify(attemptedStatus)}`,
+    );
+    this.name = "RunConflictError";
+    this.runId = runId;
+    this.existingStatus = existingStatus;
+    this.attemptedStatus = attemptedStatus;
+  }
+}
+
 /** Raised when the completion gate rejects a packet. Carries the unmet criteria. */
 export class CompletionBlockedError extends Error {
   readonly unmetCriteria: readonly string[];

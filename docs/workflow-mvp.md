@@ -127,25 +127,30 @@ setter.
 Failures map deliberately: **400** malformed input or missing/invalid policy scope ·
 **404** unknown packet, run, decision or criterion (including a foreign-key miss, which
 is a client mistake, not a server fault) · **409** completion blocked, criteria frozen,
-or a decision re-resolved with a different answer · **500** only for genuine
-infrastructure failure.
+a decision re-resolved with a different answer, or a run re-ended with a different
+terminal status · **500** only for genuine infrastructure failure.
 
 ## Verify it
 
 ```bash
 docker compose --profile test exec -T mcp-test \
-  deno test --frozen --allow-net --allow-env --allow-read --allow-run \
+  deno test --frozen --allow-net --allow-env --allow-read --allow-run=deno \
   tests/workflow-mvp-e2e.test.ts
 ```
 
-`--allow-run` is required: the test starts and restarts a **real server process**, which
+`--allow-run=deno` is required: the test starts and restarts a **real server process**, which
 is the only way to observe that the composition root applies the migrations at boot,
 that the process starts with no provider credential (the child is spawned with
 `clearEnv`, so the absence is a fact about the child rather than a hope about its
-parent), and that operational state survives a restart. A provider sentinel records
-every outbound provider call; the slice makes zero, and a companion test boots the same
-server with the provider **enabled** and requires the sentinel to record the call — so
-the zero is a discriminating result, not a quiet one.
+parent), and that operational state survives a restart.
+
+A provider sentinel counts outbound calls and the slice makes zero, with a companion
+test booting the same server with the provider **enabled** and requiring the sentinel to
+record the call — so the zero is a discriminating result, not a quiet one. **What that
+sentinel can and cannot see:** it observes every call that honours `OPENROUTER_BASE_URL`.
+`server/src/entityWorker.ts` and `server/src/consolidationLLM.ts` hardcode the provider
+URL, so they are invisible to it; making them configurable is ST-085's scope. Read the
+zero as "no call on the redirectable path", not "no call at all".
 
 ## What this is not
 
