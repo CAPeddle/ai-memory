@@ -164,6 +164,32 @@ broad `pkill`.
 > holds, and whose code is explicitly disposable — that price buys too little. The
 > decision is to verify by hand when `dashboard.ts` changes.
 
+#### What was checked, 2026-08-02 — 28/28
+
+The checklist is here rather than in a committed harness, because the harness would be an
+npm dependency in a Deno repo for code that is explicitly disposable. Re-run these by hand.
+
+Render and layout — the page renders packets fetched from `/api/workflow`; no uncaught
+console or page errors on load, or after the negative paths; policy scope renders exactly
+once per packet and is never copied per row; repository and branch render; attention items
+are grouped by reason, each group carries a count, and **every reason class resolves to a
+non-default colour** (the CSS vocabulary and the server's `reason` strings agree);
+criteria show met/unmet state.
+
+The completion gate — completion is refused while a required criterion lacks evidence; the
+refusal **names** the unmet criteria; the optional criterion is *not* named as blocking;
+the packet is still not complete after the refusal.
+
+The three interactions — an open decision offers a resolve control; resolving removes the
+`decision-required` attention item, empties the open-decision list, and shows the answer
+under "Recently resolved"; attaching manual evidence flips the criterion to met and
+displays the evidence beneath it; completion then succeeds, the optional criterion having
+not blocked it, and the completed packet leaves the active overview (`/overview` is every
+non-complete packet, so this is correct, not a disappearing bug).
+
+Auth — a bad key produces a 401 banner, the 401 clears the stored key, and it does not
+loop on the key prompt.
+
 If you run the native `deno test` commands against `db-test` on port 5433, recreate it
 afterwards (`docker compose --profile test rm -sf db-test seed mcp-test && docker compose
 --profile test up -d --wait`). Leftover rows there make the row-count assertions in
