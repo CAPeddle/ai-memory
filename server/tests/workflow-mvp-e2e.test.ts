@@ -439,10 +439,17 @@ Deno.test({
 
         // The page must carry every section the story requires and the three
         // interactions, and no more. This is a CONTRACT check on the served asset,
-        // not a rendering test: there is no browser in the test container, so what is
-        // proven here is that the affordances exist in the page and that each one
-        // targets the authenticated endpoint the e2e steps above already exercised.
-        // Actual DOM rendering is unproven by automation — recorded, not implied.
+        // and it is still NOT a rendering test: there is no browser in the test
+        // container, so what is proven here is that the affordances exist in the page
+        // and that each one targets the authenticated endpoint the e2e steps above
+        // already exercised.
+        //
+        // DOM rendering is therefore still unproven *by automation*. It was proven once
+        // by hand on 2026-08-02 in a real headless Chromium — 28 checks including the
+        // completion gate refusing and naming its unmet criteria. That is a point-in-time
+        // result, not a standing guarantee: re-run it when dashboard.ts changes. The
+        // procedure is in docs/workflow-mvp.md, "Verifying the dashboard in a real
+        // browser", which also records why automating it here was judged not worth it.
         for (const section of [
           "Attention",
           "Runs",

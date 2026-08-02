@@ -83,7 +83,8 @@ The separation is structural, not conventional: operational records live in thei
 ## Verification Practice
 
 These name a distinction this project draws sharply and relies on in code comments as well
-as prose: whether a check can actually fail for the reason it claims to exist.
+as prose: whether a check can actually fail for the reason it claims to exist — and, once a
+suite of such checks exists, how its result is judged from one run to the next.
 
 ### Red/Green Control
 A test whose subject is *another* check's mechanism rather than the system under test — it establishes that the check fires when it should and stays quiet when it should not.
@@ -104,3 +105,8 @@ Distinct from Non-Vacuity, and the two are independent: a check can genuinely in
 Whether a check's own malfunction permits the thing it guards, or refuses it.
 
 A boundary check that fails open is worse than none, because its passing result is read as enforcement. The failure is usually one level below the rule itself — a sound predicate applied to an input set that was never complete.
+
+### Baseline
+The set of tests currently accepted as failing for known environmental reasons, against which a new run is judged.
+
+A Baseline names *which* tests fail and why — characteristically, credentials that CI supplies and a local machine does not — so a run is read by comparing failure sets rather than totals. A pass count is deliberately not a Baseline: it is invalidated whenever anyone adds a test, so recording one trains a reader either to ignore genuine drift or to chase a number that was never the invariant. Where a total is still wanted, it is stated as a reconciliation identity over its parts, which recomputes as the suite grows instead of going stale.

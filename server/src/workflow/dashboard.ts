@@ -138,9 +138,14 @@ async function call(path, options) {
     if (res.status === 401 && sessionStorage.getItem(KEY_NAME) === key) {
       sessionStorage.removeItem(KEY_NAME);
     }
-    const detail = body && body.unmetCriteria
-      ? body.message + " [" + body.unmetCriteria.join("; ") + "]"
-      : (body && body.message) || res.statusText;
+    let detail = (body && body.message) || res.statusText;
+    // The completion refusal already names the unmet criteria inside its message.
+    // Append the list only when some other error carries them without saying them,
+    // so the most important message on the page never reads them out twice.
+    if (body && body.unmetCriteria && body.unmetCriteria.length) {
+      const named = body.unmetCriteria.join("; ");
+      if (String(detail).indexOf(named) === -1) detail = detail + " [" + named + "]";
+    }
     throw new Error(res.status + " " + detail);
   }
   return body;

@@ -88,7 +88,9 @@ curl http://localhost:3000/health
 
 **Dev vs Test isolation:** The default `docker compose up -d` starts only `db` + `mcp` (persistent dev data). The `--profile test` flag adds `db-test` (ephemeral, tmpfs — wiped on stop), `seed` (loads test corpus into `db-test`), and `mcp-test` (connects to `db-test`, port 3001). Tests never touch the dev database.
 
-The `./server` directory is bind-mounted to `/app` in the `mcp` container ([docker-compose.yml:33](docker-compose.yml#L33)), so file edits are picked up live without rebuilding. `.env` must define `MEMORY_API_KEY`, `DB_PASSWORD`, `OPENROUTER_API_KEY` (see [.env.example](.env.example)).
+That guarantee is about the *dev* database only. `db-test` is itself **shared and accumulating** — it is wiped when its container stops, not between runs — so successive `exec` runs, and host-side runs against its published `127.0.0.1:5433`, pollute each other. See [.github/instructions/dev-environment.instructions.md](.github/instructions/dev-environment.instructions.md) § Gotchas.
+
+The `./server` directory is bind-mounted to `/app` in the `mcp` container ([docker-compose.yml:33](docker-compose.yml#L33)), so file edits are picked up live without rebuilding — **edits in the checkout that ran `docker compose up`.** The mount is fixed at container creation and no project name is pinned, so with a `git worktree` in play the running stack may be serving a different checkout than the one you are editing; see [docs/solutions/workflow-issues/verify-worktree-change-against-docker-test-stack.md](docs/solutions/workflow-issues/verify-worktree-change-against-docker-test-stack.md). `.env` must define `MEMORY_API_KEY`, `DB_PASSWORD`, `OPENROUTER_API_KEY` (see [.env.example](.env.example)) — and a worktree does not inherit the main checkout's `.env`, since it is gitignored.
 
 ### WSL2-Native Dev (recommended inner loop)
 
@@ -219,7 +221,7 @@ When running in the Copilot/VS Code workflow, gather PO input via `vscode_askQue
 
 The user's auto-memory (loaded into every session) currently asserts:
 
-- **Tests run in `mcp-test`**, not `mcp`. Use `docker compose --profile test exec mcp-test deno test ...` in ExecPlan commands.
+- **Tests run in `mcp-test`**, not `mcp`. Use `docker compose --profile test exec mcp-test deno test ...` in ExecPlan commands. **Under-specified on one point:** the memory names the service and the flags but not the *working directory*. `exec` reaches whichever checkout ran `up`, so with a worktree on the machine this command can pass against code you did not edit — verify the mount first ([docs/solutions/workflow-issues/verify-worktree-change-against-docker-test-stack.md](docs/solutions/workflow-issues/verify-worktree-change-against-docker-test-stack.md)).
 - **ExecPlan verification should match deliverable scope** — don't run unrelated test suites as a safety net.
 - **Git EOL semantics:** `i/` is always LF for text; `w/` follows `eol=`; `git status` clean is the real success indicator.
 
