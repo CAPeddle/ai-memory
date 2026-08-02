@@ -191,10 +191,16 @@ durable:
   exactly the confusion a baseline should prevent, not create.
 - **A reconciliation identity.** This repo already uses one: the ST-084 findings doc
   reconciles `216 + 82 = 298`. It carries forward — 216 non-workflow **passing** (225
-  exist; the 9 above fail) plus 85 workflow is exactly the 301 observed here. Note the
-  identity is over *passing* counts, not test counts; anyone counting `Deno.test` blocks
-  gets 225 and concludes the identity is broken. An identity that recomputes beats a frozen
-  total only if it states precisely what it counts.
+  exist; the 9 above fail) plus 85 workflow was exactly the 301 observed at that commit.
+  Note the identity is over *passing* counts, not test counts; anyone counting `Deno.test`
+  blocks gets 225 and concludes the identity is broken. An identity that recomputes beats a
+  frozen total only if it states precisely what it counts.
+
+  **Every number in this section is already out of date, and that is the point.** Within
+  hours of it being written, a code-review pass added the workflow policy and agent-key
+  suites, taking the workflow count from 85 to 106. The failure set — 9, all pre-existing
+  OpenRouter-401, in those two named files — did not move. That is the difference between
+  a baseline and a tally.
 
 Note how fast this went stale: not "eventually", but *within the same story, on the same
 morning* — the handoff carrying `300` was written roughly nine hours before the run that
@@ -210,8 +216,9 @@ because the full suite is precisely the run that trips hazards 2 and 3.
 
 ST-086's change was to `server/src/workflow/dashboard.ts`, whose sole importer is
 `server/index.ts:37`, and only the workflow tests assert on it. Running
-`server/tests/workflow-*.test.ts` natively from the worktree — 85/85 — was sufficient and
-defensible, and unlike the full suite it was actually running the edited code. That one
+`server/tests/workflow-*.test.ts` natively from the worktree — 85/85 at the time, 106/106
+once the review pass landed — was sufficient and defensible, and unlike the full suite it
+was actually running the edited code. That one
 glob covers both relevant angles: `workflow-mvp-e2e.test.ts` asserts on the *served page*
 (that it carries every required section and action), while `workflow-boundary.test.ts`
 scans every file in `server/src/workflow/` — `dashboard.ts` included — for forbidden
@@ -285,7 +292,8 @@ ok | 85 passed | 0 failed
 + Baseline: 9 failures, all pre-existing OpenRouter-401 (placeholder key locally;
 +   CI injects the real secret) —
 +   server/tests/e2e.test.ts (8), server/tests/entity-worker-observability.test.ts (1).
-+ Reconciles as 216 non-workflow passing + 85 workflow passing = 301 passed.
++ Reconciles as 216 non-workflow passing + N workflow passing (85 at the time of
++   writing, 106 after the next review pass — recompute, do not copy).
 + A pass count is not a baseline; it moves whenever anyone adds a test.
 ```
 
