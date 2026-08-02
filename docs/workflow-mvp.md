@@ -103,15 +103,71 @@ criteria with their evidence. Three actions: **resolve a decision**, **attach ma
 evidence**, **complete a packet**. There is no status control — completion goes through
 the gate like every other caller.
 
-> **Coverage limit, stated rather than implied.** There is no browser in the test
-> container, so the page's *rendering* is not proven by automation. What is proven: the
-> page is served, it contains every required section and all three action affordances,
-> each targets an endpoint the process-boundary test exercises, and it offers no
-> status-editing control. Confirm the visual result by opening it once.
+> **Coverage limit, stated rather than implied.** There is still no browser in the test
+> container, so CI does not prove the page *renders* — `workflow-mvp-e2e.test.ts` checks
+> the served asset, not the DOM. That gap was closed **once, by hand** on 2026-08-02
+> against a real headless Chromium: 28 checks covering render, attention grouping and
+> reason colours, packet metadata, criteria met/unmet, all three interactions, the
+> completion gate refusing and naming its unmet criteria, and a 401 clearing the stored
+> key. See [Verifying the dashboard in a real browser](#verifying-the-dashboard-in-a-real-browser).
+> Re-run that by hand if you change `dashboard.ts`.
 
 Completion is refused while any *required* criterion lacks evidence, and the refusal
 names the unmet criteria. Add a criterion, try to complete, attach evidence, complete
 again — the loop the gate exists for.
+
+### Verifying the dashboard in a real browser
+
+There is no browser in this repo's toolchain, and deliberately so — see the cost note
+below. To check the page by hand on a WSL2 host with no desktop session:
+
+```bash
+# 1. A browser, installed OUTSIDE the repo. Do this from a scratch directory,
+#    never from server/ — server/deno.json pins "frozen": true and this must not
+#    become a project dependency.
+mkdir -p /tmp/awcp-browser && cd /tmp/awcp-browser
+npm init -y && npm i playwright
+npx playwright install chromium          # ~115 MB into ~/.cache/ms-playwright
+
+# 2. Chromium needs libnss3/libnspr4, which a headless WSL2 Ubuntu usually lacks.
+#    `sudo npx playwright install-deps chromium` is the normal fix. Without root,
+#    extract the two packages locally instead — no sudo required:
+mkdir -p libs && cd libs
+apt-get download libnss3 libnspr4
+for d in *.deb; do dpkg-deb -x "$d" root/; done
+export LD_LIBRARY_PATH=$PWD/root/usr/lib/x86_64-linux-gnu
+```
+
+Then start a **throwaway** server with a dummy key rather than typing the real
+`MEMORY_API_KEY` into a browser prompt or a terminal transcript:
+
+```bash
+docker compose up -d db --wait
+cd server && DATABASE_URL="postgresql://ai_memory:$DB_PASSWORD@127.0.0.1:5432/ai_memory" \
+  MEMORY_API_KEY="demo-key-not-a-secret" PORT=3199 FEATURE_WORKFLOW=true \
+  FEATURE_ENTITY_WORKER=false FEATURE_CONSOLIDATION_WORKER=false \
+  FEATURE_EMBEDDING_BACKFILL=false MODEL_PROVIDER_ENABLED=false \
+  deno run --allow-net --allow-env --allow-read index.ts
+```
+
+Open `http://127.0.0.1:3199/workflow` and answer the prompt with the dummy key. Seed a
+**disposable** packet through the API for the resolve → refuse-complete → attach-evidence
+→ complete sequence; those actions are one-way, so do not spend an existing packet on
+them. Stop the server by its listening port (`ss -lptn 'sport = :3199'`), not with a
+broad `pkill`.
+
+> **Why this is not in CI.** Automating it means a browser layer in `server/Dockerfile`
+> (`FROM denoland/deno:2.0.0`), which runs into the in-container HTTPS proxy that
+> [CLAUDE.md](../CLAUDE.md) documents, adds minutes to every CI run, and adds an npm
+> dependency to a Deno server whose lockfile is deliberately frozen. For one page with
+> five sections and three buttons — whose *contract* the process-boundary test already
+> holds, and whose code is explicitly disposable — that price buys too little. The
+> decision is to verify by hand when `dashboard.ts` changes.
+
+If you run the native `deno test` commands against `db-test` on port 5433, recreate it
+afterwards (`docker compose --profile test rm -sf db-test seed mcp-test && docker compose
+--profile test up -d --wait`). Leftover rows there make the row-count assertions in
+`consolidation-worker-observability.test.ts` fail on a later run.
 
 ## The API
 
