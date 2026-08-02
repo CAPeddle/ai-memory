@@ -69,6 +69,7 @@ The board's `Unblocked` line is particularly important: it tells `/plan` which s
 - When the `Last updated` date is more than 1 working day old and changes have landed on main
 - At the start of a new session if `git log origin/main --oneline | grep "ST-"` shows story-tagged commits not reflected on the board
 - At the end of every ExecPlan closeout step, before writing `FollowUpSessionLog.txt`
+- When a **recorded number** on the board no longer matches a fresh run — a test pass count, a coverage figure, a benchmark. This is a distinct staleness class from status drift: it goes stale silently, without anyone touching the board, the moment someone adds a test. The board carries one such figure today (ST-084's `253 passed / 9 failed`). Prefer recording the failure *set* and a reconciliation identity over a frozen total — see [verify-worktree-change-against-docker-test-stack.md](verify-worktree-change-against-docker-test-stack.md) § 4.
 
 ## Examples
 
