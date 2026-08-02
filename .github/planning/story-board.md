@@ -4,11 +4,31 @@
 > Next planning target: (TBD after ST-072 completes).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review). ST-070 + ST-071 done 2026-07-03 (integration suite green in CI, PR #21 merged).
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
-> Last updated: 2026-08-01 (ST-086 added and started — the AWCP local MVP vertical slice on ST-084's Stage 1 module. ST-084 In Progress → Review to hold 1/1: its Stage 1 work is merged and what remains is the PO's review of the findings and the proposed ADR-016 amendments. ST-084 Stage 2 remains unstarted and is not covered by ST-086; ADR-016 stays Proposed/Conditional.)
+> Last updated: 2026-08-02 (ST-086 code review applied — 18 findings fixed in `189b51c`, plus PO decisions on the five surfaced items: provider egress now refuses the tool call, the agent/operator credential split is enforced at the server, ST-086's missing plan is recorded as a deliberate soft-gate exception, CLI test coverage filed as ST-087, and the hardcoded provider URLs confirmed as ST-085 scope. Earlier on 2026-08-01: ST-086 added and started — the AWCP local MVP vertical slice on ST-084's Stage 1 module. ST-084 In Progress → Review to hold 1/1: its Stage 1 work is merged and what remains is the PO's review of the findings and the proposed ADR-016 amendments. ST-084 Stage 2 remains unstarted and is not covered by ST-086; ADR-016 stays Proposed/Conditional.)
 
 ---
 
 ## Backlog
+
+### ST-087: Test the `awcp` CLI — the one untested surface of the ST-086 slice
+- Type: test coverage
+- Source: ST-086 code review 2026-08-02 (testing + correctness reviewers, independently)
+- phase: 1
+- Value: 3
+- Blocked by: —
+- Touches: `server/tests/awcp-cli.test.ts` (new); possibly small testability seams in `server/scripts/awcp.ts`
+- Why it matters: `server/scripts/awcp.ts` is ~290 lines of argument parsing, git wrapping and HTTP client with **zero** automated coverage. The review found two real defects in it by reading alone (`--help` exited 2 instead of printing usage; path ids interpolated unencoded) — both now fixed, neither caught by any test. Board criterion 5 of ST-086 claims "one real local repository/session reported a commit-bearing checkpoint **through the CLI**", but the e2e test posts a hardcoded SHA; nothing proves the CLI produced it.
+- Approach: drive the real CLI as a subprocess against a real spawned server, reusing `startServerProcess` / `startProviderSentinel` from `server/tests/_helpers/serverProcess.ts`. The suite already has `--allow-run=deno` in CI; this needs `--allow-run` widened to include the CLI's own `git` grant, so confirm the narrowed grant still covers it or widen deliberately.
+- Acceptance criteria:
+  - [ ] Each subcommand (`packet`, `run`, `checkpoint`, `decision`, `end-run`) drives the real HTTP API end to end and the resulting row is asserted in the database
+  - [ ] **Criterion 5 of ST-086 is actually proven:** a checkpoint recorded via the CLI carries `repo_commit` equal to this checkout's real `git rev-parse HEAD`, obtained by the CLI rather than passed in
+  - [ ] Argument parsing is covered at its edges: missing required flag, flag with no value, unknown subcommand, `--help` / `-h` / no args (each with its expected exit code — `0` for help, `2` for usage errors)
+  - [ ] Git-derived defaults degrade correctly when git fails or is absent (the `null` path), and `--no-commit` opts out explicitly
+  - [ ] The HTTP timeout path (`AWCP_TIMEOUT_MS`) produces its distinct message, proven against a server that accepts and never responds
+  - [ ] Error surfaces are asserted to be *self-correcting for an agent*: a 400 must name the offending field. **This will fail today** — the API returns a per-field `issues[]` array that `post()` drops on the floor (`awcp.ts` reads only `message` and `unmetCriteria`), so a malformed `--policy-scope` yields a bare "400 request body failed validation". Surfacing `issues[]` is in scope.
+  - [ ] The agent/operator credential split is exercised from the CLI: with `AWCP_AGENT_API_KEY` set, the CLI's reporting subcommands succeed
+  - [ ] At least one **red control**: remove a guard the suite claims to cover and demonstrate the test goes red, per `docs/solutions/conventions/verification-mechanisms-need-adversarial-review.md`
+- Notes: A plan artifact is expected before this starts, per CLAUDE.md's workflow gate — unlike ST-086, this story has real design choices (how far to go on subprocess-level testing vs extracting testable functions from the CLI's single-file shape).
 
 ### ST-085: Investigate local GPU inference as ST-082's compliant model provider
 - Type: spike / investigation
@@ -24,7 +44,7 @@
   - [ ] The **"do nothing"** baseline — deny corporate scope under ST-082, keep cloud for everything else — is explicitly beaten on compliance coverage, or the story closes with that conclusion recorded
 - Plan: `docs/plans/2026-07-31-001-spike-local-gpu-inference-provider.md`
 - Docs: ST-082 (the `model-provider routing` default-deny criterion this serves); ST-022 (established the OpenRouter extraction provider this revisits)
-- Notes: Explicitly **not** a cost-reduction play — the GPU is pursued only as ST-082's enabler, and the primary question is the product one (should corporate-scoped memories receive extraction at all). Local **embeddings** are out of scope: `embedding vector(512)` behind HNSW (`server/db/schema.sql:18`) makes any dimensionality change a one-way schema migration + full re-embed for near-zero reward. **NPU offload is hardware-infeasible** — Lemonade requires XDNA2 (Ryzen AI 300/400); this host is a Ryzen 7 7840HS (Phoenix/XDNA1). Reversal trigger fires immediately if Stage 1 finds only CPU or the 780M iGPU reachable.
+- Notes: **Confirmed in scope by the ST-086 review (2026-08-02):** `entityWorker.ts:66` and `consolidationLLM.ts:37` hardcode `https://openrouter.ai/api/v1/chat/completions` and never read `OPENROUTER_BASE_URL`, so ST-086's provider sentinel is structurally blind to both. That is not merely a configurability gap — it means any "zero provider requests" evidence gathered by redirecting `OPENROUTER_BASE_URL` covers only two of the four egress paths. Stage 2's base-URL seam therefore also buys *observability of provider egress*, which the PO accepted as ST-085 scope rather than patching under ST-086. Explicitly **not** a cost-reduction play — the GPU is pursued only as ST-082's enabler, and the primary question is the product one (should corporate-scoped memories receive extraction at all). Local **embeddings** are out of scope: `embedding vector(512)` behind HNSW (`server/db/schema.sql:18`) makes any dimensionality change a one-way schema migration + full re-embed for near-zero reward. **NPU offload is hardware-infeasible** — Lemonade requires XDNA2 (Ryzen AI 300/400); this host is a Ryzen 7 7840HS (Phoenix/XDNA1). Reversal trigger fires immediately if Stage 1 finds only CPU or the 780M iGPU reachable.
 
 
 ### ST-083: Developer Memory design pass (module spec)
@@ -526,6 +546,7 @@
   - [x] The slice runs with the memory workers and provider access disabled, with a provider sentinel recording **zero** requests
   - [x] Out of scope and absent: remote collector, offline spool, Jira/Confluence/ADO writes, semantic operational search, graph representation, ADR-016 acceptance, broad memory refactor
 - Verification: `server/tests/workflow-mvp-e2e.test.ts` — a **process-boundary** test (spawns and restarts a real server with `clearEnv`), plus two red/green controls proven red by removing the behaviour: deleting the `probeEmbeddingApi` capability gate makes the zero-request assertion fail with 2 recorded `/models` hits, and removing the `bootstrapWorkflow()` call makes the migration-at-startup assertion fail.
+- Plan: **none — soft-gate exception recorded by PO decision 2026-08-02.** CLAUDE.md gates implementation on a `docs/plans/*.md` artifact, and this story shipped without one. The exception is deliberate, not an oversight: ST-086 was specified by a detailed external brief that already carried the product contract, scope boundaries and acceptance criteria, and that brief was transcribed into the acceptance-criteria list below rather than duplicated into a plan file. A retroactive plan would be a transcription of work already done — a decision artifact recording no decision. Recorded here so the gap is visible to an audit rather than silently absent.
 - Docs: [docs/workflow-mvp.md](../../docs/workflow-mvp.md) — run instructions and the CLI/dashboard sequence
 - Notes: This sits **beside** ST-084 Stage 2, it does not supersede or complete it. Criteria 5–7 (policy-scope enforcement across retrieval paths, remote execution node, final ADR-016 recommendation) remain UNPROVEN and unstarted. **ADR-016 stays Proposed/Conditional.** ST-084 moved to Review to hold the 1-In-Progress limit; its Stage 1 deliverable is merged and its outstanding item is the PO's review of the findings and proposed ADR amendments, which is a review activity.
 
