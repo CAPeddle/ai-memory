@@ -24,6 +24,7 @@ import {
   type EvidenceKind,
   type OperationalDecision,
   type PolicyScope,
+  RunConflictError,
   type VerificationCriterion,
   type WorkPacket,
   WorkflowNotFoundError,
@@ -68,6 +69,21 @@ export async function getPacket(id: string): Promise<WorkPacket | null> {
     SELECT * FROM workflow.work_packets WHERE id = ${id}
   `;
   return rows[0] ?? null;
+}
+
+/**
+ * Packets that have not reached `complete` — the dashboard's active set.
+ *
+ * Filters on `status <> 'complete'` rather than listing the three open statuses, so a
+ * status added to the CHECK constraint later shows up as active by default instead of
+ * silently vanishing from the operator's view. Failing visible beats failing quiet.
+ */
+export async function listActivePackets(): Promise<WorkPacket[]> {
+  return await sql<WorkPacket[]>`
+    SELECT * FROM workflow.work_packets
+    WHERE status <> 'complete'
+    ORDER BY created_at DESC
+  `;
 }
 
 // There is deliberately NO generic packet-status setter here.
@@ -118,15 +134,66 @@ export async function registerRun(input: RegisterRunInput): Promise<AgentRun> {
   return rows[0];
 }
 
+/**
+ * End a run. Once-and-final, with an idempotent retry — the same shape as
+ * {@link resolveDecision}, because it is the same problem.
+ *
+ * This used to be a bare `UPDATE ... WHERE id = $1` with no terminal-state check, and
+ * that was falsifiable in exactly the way `resolveDecision`'s docblock warns about at
+ * length: a timed-out client retrying its own "end" request re-stamped `ended_at` on
+ * every retry, and a second call reporting a DIFFERENT status (`failed` after `ended`
+ * was already recorded, or the reverse) silently overwrote the first verdict with no
+ * record that the two ever disagreed. Over HTTP that is a 200 for a write that quietly
+ * rewrote history, which is the shape of a silent failure.
+ *
+ * Three outcomes, all deliberate:
+ *
+ *   - **running** → ended/failed, as requested. `ended_at` and `last_event_at` are
+ *     stamped now.
+ *   - **already terminal, SAME status** → the stored row is returned *unchanged*,
+ *     original `ended_at` intact. A caller retrying its own "end" call after a
+ *     network blip must not see the run's close time move forward on every retry.
+ *   - **already terminal, DIFFERENT status** → {@link RunConflictError}.
+ *
+ * `FOR UPDATE` for the same reason `resolveDecision` takes it: read-then-write
+ * without the row lock is a race between two concurrent enders, and the lock makes
+ * the loser observe the winner's committed row and take the idempotent or conflict
+ * path instead of a second unconditional write.
+ *
+ * The existence check is unchanged from before: a run id that matches no row is a
+ * {@link WorkflowNotFoundError}, not a silently-successful no-op.
+ */
 export async function endRun(
   runId: string,
   status: Extract<AgentRun["status"], "ended" | "failed">,
-): Promise<void> {
-  await sql`
-    UPDATE workflow.agent_runs
-    SET status = ${status}, ended_at = now(), last_event_at = now()
-    WHERE id = ${runId}
+): Promise<AgentRun> {
+  return await sql.begin(async (tx: SqlExecutor) => {
+    const existing = await tx<AgentRun[]>`
+      SELECT * FROM workflow.agent_runs WHERE id = ${runId} FOR UPDATE
+    `;
+    const current = existing[0];
+    if (current === undefined) throw new WorkflowNotFoundError("agent run", runId);
+
+    if (current.status === "ended" || current.status === "failed") {
+      if (current.status === status) return current;
+      throw new RunConflictError(runId, current.status, status);
+    }
+
+    const rows = await tx<AgentRun[]>`
+      UPDATE workflow.agent_runs
+      SET status = ${status}, ended_at = now(), last_event_at = now()
+      WHERE id = ${runId}
+      RETURNING *
+    `;
+    return rows[0];
+  });
+}
+
+export async function getRun(id: string): Promise<AgentRun | null> {
+  const rows = await sql<AgentRun[]>`
+    SELECT * FROM workflow.agent_runs WHERE id = ${id}
   `;
+  return rows[0] ?? null;
 }
 
 export async function listRuns(packetId: string): Promise<AgentRun[]> {
@@ -191,6 +258,26 @@ export async function listCheckpoints(packetId: string): Promise<Checkpoint[]> {
     JOIN workflow.agent_runs r ON r.id = c.run_id
     WHERE r.packet_id = ${packetId}
     ORDER BY c.created_at ASC
+  `;
+}
+
+/**
+ * The most recent checkpoints for a packet, newest first.
+ *
+ * Bounded at the database rather than by slicing {@link listCheckpoints} in the
+ * caller: a long-running packet accumulates checkpoints without limit, and the
+ * dashboard only ever renders the tail of that list.
+ */
+export async function listRecentCheckpoints(
+  packetId: string,
+  limit = 10,
+): Promise<Checkpoint[]> {
+  return await sql<Checkpoint[]>`
+    SELECT c.* FROM workflow.checkpoints c
+    JOIN workflow.agent_runs r ON r.id = c.run_id
+    WHERE r.packet_id = ${packetId}
+    ORDER BY c.created_at DESC
+    LIMIT ${limit}
   `;
 }
 
@@ -400,6 +487,23 @@ export async function attachEvidence(input: AttachEvidenceInput): Promise<Eviden
   return rows[0];
 }
 
+export async function getCriterion(id: string): Promise<VerificationCriterion | null> {
+  const rows = await sql<VerificationCriterion[]>`
+    SELECT * FROM workflow.verification_criteria WHERE id = ${id}
+  `;
+  return rows[0] ?? null;
+}
+
+/** Every evidence item attached to any criterion of this packet, oldest first. */
+export async function listEvidenceForPacket(packetId: string): Promise<EvidenceItem[]> {
+  return await sql<EvidenceItem[]>`
+    SELECT e.* FROM workflow.evidence_items e
+    JOIN workflow.verification_criteria c ON c.id = e.criterion_id
+    WHERE c.packet_id = ${packetId}
+    ORDER BY e.created_at ASC
+  `;
+}
+
 export async function evidenceCountsForPacket(
   packetId: string,
 ): Promise<Map<string, number>> {
@@ -477,6 +581,38 @@ export async function completePacket(packetId: string): Promise<WorkPacket> {
     `;
     return updated[0];
   });
+}
+
+// --------------------------------------------------------------------------
+// Live readiness probe
+// --------------------------------------------------------------------------
+
+/**
+ * Cheap LIVE proof that the workflow schema is still present and queryable.
+ *
+ * `/ready` used to answer from the boot-time migration report alone — computed once
+ * before `Deno.serve` and read on every request after that, forever. If the schema
+ * were dropped or made unusable after boot, `/ready` would keep reporting
+ * `workflow: {status: "ok"}` indefinitely, so an orchestrator would keep routing
+ * traffic to a server whose workflow routes all fail. This is queried fresh on every
+ * readiness check instead of trusting that frozen report.
+ *
+ * `to_regclass` returns NULL for a relation that does not exist (including one whose
+ * schema was dropped entirely) rather than raising, so the boolean coercion above the
+ * catch is the ordinary path; the `catch` exists for the rest — connection failures,
+ * a permissions change, anything that makes the query itself impossible to run.
+ * Either kind of failure collapses to `false`: the caller only needs to know whether
+ * the workflow schema can currently answer a trivial query, not which way it failed.
+ */
+export async function probeWorkflowSchemaLive(): Promise<boolean> {
+  try {
+    const rows = await sql<{ present: boolean }[]>`
+      SELECT to_regclass('workflow.schema_migrations') IS NOT NULL AS present
+    `;
+    return rows[0]?.present === true;
+  } catch {
+    return false;
+  }
 }
 
 // --------------------------------------------------------------------------

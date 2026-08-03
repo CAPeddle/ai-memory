@@ -4,11 +4,33 @@
 > Next planning target: (TBD after ST-072 completes).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review). ST-070 + ST-071 done 2026-07-03 (integration suite green in CI, PR #21 merged).
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
-> Last updated: 2026-08-01 (ST-047 Review → Done after a tree audit — the work was complete and already on `main`; its note's "10 tools / 10 tests" figures were stale undercounts, now 11 and 15. The Review slot is now empty; ST-084 remains the sole In Progress entry.)
+> Last updated: 2026-08-02 (Two ST-086 workstreams landed. **Code review applied** — 18 findings fixed in `189b51c`, plus PO decisions on the five surfaced items: provider egress now refuses the tool call, the agent/operator credential split is enforced at the server, ST-086's missing plan is recorded as a deliberate soft-gate exception, CLI test coverage filed as ST-087, and the hardcoded provider URLs confirmed as ST-085 scope. **AC6 moved from *partially verified* to verified** — the dashboard was driven in a real headless Chromium, 28/28 checks, and the one defect it surfaced was fixed; CI still has no browser and deliberately gains none, see docs/workflow-mvp.md. ST-086 stays In Progress, ST-084 stays in Review, ADR-016 stays Proposed/Conditional.)
+>
+> Previously: 2026-08-01 (ST-086 added and started — the AWCP local MVP vertical slice on ST-084's Stage 1 module. ST-084 In Progress → Review to hold 1/1: its Stage 1 work is merged and what remains is the PO's review of the findings and the proposed ADR-016 amendments. ST-084 Stage 2 remains unstarted and is not covered by ST-086; ADR-016 stays Proposed/Conditional.)
 
 ---
 
 ## Backlog
+
+### ST-087: Test the `awcp` CLI — the one untested surface of the ST-086 slice
+- Type: test coverage
+- Source: ST-086 code review 2026-08-02 (testing + correctness reviewers, independently)
+- phase: 1
+- Value: 3
+- Blocked by: —
+- Touches: `server/tests/awcp-cli.test.ts` (new); possibly small testability seams in `server/scripts/awcp.ts`
+- Why it matters: `server/scripts/awcp.ts` is ~290 lines of argument parsing, git wrapping and HTTP client with **zero** automated coverage. The review found two real defects in it by reading alone (`--help` exited 2 instead of printing usage; path ids interpolated unencoded) — both now fixed, neither caught by any test. Board criterion 5 of ST-086 claims "one real local repository/session reported a commit-bearing checkpoint **through the CLI**", but the e2e test posts a hardcoded SHA; nothing proves the CLI produced it.
+- Approach: drive the real CLI as a subprocess against a real spawned server, reusing `startServerProcess` / `startProviderSentinel` from `server/tests/_helpers/serverProcess.ts`. The suite already has `--allow-run=deno` in CI; this needs `--allow-run` widened to include the CLI's own `git` grant, so confirm the narrowed grant still covers it or widen deliberately.
+- Acceptance criteria:
+  - [ ] Each subcommand (`packet`, `run`, `checkpoint`, `decision`, `end-run`) drives the real HTTP API end to end and the resulting row is asserted in the database
+  - [ ] **Criterion 5 of ST-086 is actually proven:** a checkpoint recorded via the CLI carries `repo_commit` equal to this checkout's real `git rev-parse HEAD`, obtained by the CLI rather than passed in
+  - [ ] Argument parsing is covered at its edges: missing required flag, flag with no value, unknown subcommand, `--help` / `-h` / no args (each with its expected exit code — `0` for help, `2` for usage errors)
+  - [ ] Git-derived defaults degrade correctly when git fails or is absent (the `null` path), and `--no-commit` opts out explicitly
+  - [ ] The HTTP timeout path (`AWCP_TIMEOUT_MS`) produces its distinct message, proven against a server that accepts and never responds
+  - [ ] Error surfaces are asserted to be *self-correcting for an agent*: a 400 must name the offending field. **This will fail today** — the API returns a per-field `issues[]` array that `post()` drops on the floor (`awcp.ts` reads only `message` and `unmetCriteria`), so a malformed `--policy-scope` yields a bare "400 request body failed validation". Surfacing `issues[]` is in scope.
+  - [ ] The agent/operator credential split is exercised from the CLI: with `AWCP_AGENT_API_KEY` set, the CLI's reporting subcommands succeed
+  - [ ] At least one **red control**: remove a guard the suite claims to cover and demonstrate the test goes red, per `docs/solutions/conventions/verification-mechanisms-need-adversarial-review.md`
+- Notes: A plan artifact is expected before this starts, per CLAUDE.md's workflow gate — unlike ST-086, this story has real design choices (how far to go on subprocess-level testing vs extracting testable functions from the CLI's single-file shape).
 
 ### ST-085: Investigate local GPU inference as ST-082's compliant model provider
 - Type: spike / investigation
@@ -24,7 +46,7 @@
   - [ ] The **"do nothing"** baseline — deny corporate scope under ST-082, keep cloud for everything else — is explicitly beaten on compliance coverage, or the story closes with that conclusion recorded
 - Plan: `docs/plans/2026-07-31-001-spike-local-gpu-inference-provider.md`
 - Docs: ST-082 (the `model-provider routing` default-deny criterion this serves); ST-022 (established the OpenRouter extraction provider this revisits)
-- Notes: Explicitly **not** a cost-reduction play — the GPU is pursued only as ST-082's enabler, and the primary question is the product one (should corporate-scoped memories receive extraction at all). Local **embeddings** are out of scope: `embedding vector(512)` behind HNSW (`server/db/schema.sql:18`) makes any dimensionality change a one-way schema migration + full re-embed for near-zero reward. **NPU offload is hardware-infeasible** — Lemonade requires XDNA2 (Ryzen AI 300/400); this host is a Ryzen 7 7840HS (Phoenix/XDNA1). Reversal trigger fires immediately if Stage 1 finds only CPU or the 780M iGPU reachable.
+- Notes: **Confirmed in scope by the ST-086 review (2026-08-02):** `entityWorker.ts:66` and `consolidationLLM.ts:37` hardcode `https://openrouter.ai/api/v1/chat/completions` and never read `OPENROUTER_BASE_URL`, so ST-086's provider sentinel is structurally blind to both. That is not merely a configurability gap — it means any "zero provider requests" evidence gathered by redirecting `OPENROUTER_BASE_URL` covers only two of the four egress paths. Stage 2's base-URL seam therefore also buys *observability of provider egress*, which the PO accepted as ST-085 scope rather than patching under ST-086. Explicitly **not** a cost-reduction play — the GPU is pursued only as ST-082's enabler, and the primary question is the product one (should corporate-scoped memories receive extraction at all). Local **embeddings** are out of scope: `embedding vector(512)` behind HNSW (`server/db/schema.sql:18`) makes any dimensionality change a one-way schema migration + full re-embed for near-zero reward. **NPU offload is hardware-infeasible** — Lemonade requires XDNA2 (Ryzen AI 300/400); this host is a Ryzen 7 7840HS (Phoenix/XDNA1). Reversal trigger fires immediately if Stage 1 finds only CPU or the 780M iGPU reachable.
 
 
 ### ST-083: Developer Memory design pass (module spec)
@@ -505,6 +527,33 @@
 
 ## In Progress
 
+### ST-086: Operate one local WorkPacket end to end (AWCP local MVP)
+- Type: feature / vertical slice
+- Source: PO direction 2026-08-01 — turn ST-084's proven Stage 1 module into one runnable local loop, without expanding the architecture spec or reopening settled Stage 1 decisions
+- phase: 1
+- Value: 4
+- Blocked by: —
+- Branch: `feat/st-086-awcp-local-mvp` (from `main` at `2bbb962`, after PR #31 merged)
+- Touches: `server/src/workflow/{bootstrap,api,readModel,dashboard}.ts` (new); `server/src/workflow/store.ts` (read-model additions, `endRun` now reports a missing run); `server/scripts/awcp.ts` (new CLI); `server/index.ts` (workflow bootstrap, `/api/workflow`, `/workflow`, `PORT`); `server/src/startupValidation.ts` (capability-aware); `server/src/healthCheck.ts` (provider probe gated); `server/tests/workflow-mvp-e2e.test.ts` + `server/tests/_helpers/serverProcess.ts` (new); `docker-compose.workflow.yml` (new); `.github/workflows/ci.yml` (`--allow-run`)
+- **No schema change.** Migrations `001` and `002` are untouched and no `003` was needed — the slice is composition, API and read model over the Stage 1 schema.
+- Acceptance criteria:
+  - [x] A clean checkout starts the local stack in workflow mode with **no** OpenRouter credential (`docker-compose.workflow.yml`; `OPENROUTER_API_KEY` cleared, not blanked)
+  - [x] Workflow migrations are invoked explicitly by the deployed composition root — proven by dropping the schema, booting a real process, and reading the ledger
+  - [x] The typed API supports the complete local workflow across 11 named commands; no generic row mutation, arbitrary SQL, shell execution, or packet-status setter
+  - [x] Missing or out-of-vocabulary policy scope fails closed (400), with a same-request success as the discrimination control
+  - [x] One real local repository/session reported a commit-bearing checkpoint through the CLI (`repo_commit` = actual `git rev-parse HEAD`)
+  - [x] The dashboard at `/workflow` shows active work, attention grouped by reason, decisions, checkpoints and criteria/evidence, and offers exactly resolve / attach-evidence / complete — **verified, in two layers:** the process-boundary test asserts the served page carries every required section, all three actions and no status control, each targeting an endpoint it exercises; and on 2026-08-02 the page was driven in a real headless Chromium, 28/28 checks — it renders, attention groups by reason with each reason class resolving to its intended colour, repository/branch/policy scope render with scope shown once per packet, criteria show met/unmet with evidence, all three interactions work end to end, completion is refused while a required criterion lacks evidence **with the unmet criteria named** (and the optional one correctly not named), a completed packet leaves the active overview, and a 401 clears the stored key without re-prompting. CI still has no browser, so the rendering layer is a **Point-in-Time Result** describing `server/src/workflow/dashboard.ts` at `0d3af13`: any commit touching that file — anyone's — expires it, checkable with `git diff 0d3af13..HEAD -- server/src/workflow/dashboard.ts` (non-empty ⇒ re-run the 28 checks before this box counts as ticked; the SHA is pre-squash, so re-anchor via `git log --grep="Story: ST-086"` after the merge to `main`). Procedure and the reasoned decision *not* to automate it are in [docs/workflow-mvp.md](../../docs/workflow-mvp.md#verifying-the-dashboard-in-a-real-browser). One defect was found by looking and fixed: the refusal banner named the unmet criteria twice, because the server message already embeds them and the page appended them again
+  - [x] Completion remains evidence-gated — refused with the unmet criteria named, and the packet verified still not complete after the refusal
+  - [x] Operational state survives an actual server restart (SIGTERM, port freed, second process); the second boot applies nothing and skips both migrations
+  - [x] The slice runs with the memory workers and provider access disabled, with a provider sentinel recording **zero** requests
+  - [x] Out of scope and absent: remote collector, offline spool, Jira/Confluence/ADO writes, semantic operational search, graph representation, ADR-016 acceptance, broad memory refactor
+- Verification: `server/tests/workflow-mvp-e2e.test.ts` — a **process-boundary** test (spawns and restarts a real server with `clearEnv`), plus two red/green controls proven red by removing the behaviour: deleting the `probeEmbeddingApi` capability gate makes the zero-request assertion fail with 2 recorded `/models` hits, and removing the `bootstrapWorkflow()` call makes the migration-at-startup assertion fail.
+- Plan: **none — soft-gate exception recorded by PO decision 2026-08-02.** CLAUDE.md gates implementation on a `docs/plans/*.md` artifact, and this story shipped without one. The exception is deliberate, not an oversight: ST-086 was specified by a detailed external brief that already carried the product contract, scope boundaries and acceptance criteria, and that brief was transcribed into the acceptance-criteria list below rather than duplicated into a plan file. A retroactive plan would be a transcription of work already done — a decision artifact recording no decision. Recorded here so the gap is visible to an audit rather than silently absent.
+- Docs: [docs/workflow-mvp.md](../../docs/workflow-mvp.md) — run instructions and the CLI/dashboard sequence
+- Notes: This sits **beside** ST-084 Stage 2, it does not supersede or complete it. Criteria 5–7 (policy-scope enforcement across retrieval paths, remote execution node, final ADR-016 recommendation) remain UNPROVEN and unstarted. **ADR-016 stays Proposed/Conditional.** ST-084 moved to Review to hold the 1-In-Progress limit; its Stage 1 deliverable is merged and its outstanding item is the PO's review of the findings and proposed ADR amendments, which is a review activity.
+
+## Review
+
 ### ST-084: Architecture spike — ADR-016 host-acceptance gate (ai-memory as AWCP host)
 - Type: spike / architecture decision
 - Source: PR #31 governance round (2026-07-29) — host acceptance must be proven, not presumed; ADR-016 held at Proposed/Conditional until this spike reports
@@ -531,11 +580,7 @@
 - Plan: [docs/plans/2026-07-29-001-awcp-ai-memory-host-spike.md](../../docs/plans/2026-07-29-001-awcp-ai-memory-host-spike.md) — PO-supplied controlling spec, plus an Implementation Addendum recording exact module locations, migration approach, dependency rules, Stage 2 contracts, test commands and rollback steps
 - Findings: [docs/investigations/ST-084-awcp-host-spike-findings.md](../../docs/investigations/ST-084-awcp-host-spike-findings.md) — **Stage 1 verdict: PROMISING WITH CONCERNS.** Criteria 1–4 pass on evidence (37/37 tests, including a full run with all memory capabilities disabled and the provider unroutable). The qualifying concern is the policy-scope enforcement surface (§6.1): `scope.tags` is enforced in **zero** retrieval paths today, across 15 hand-written read paths with no chokepoint, a one-call `fetch` bypass, and two structurally unfilterable graph tools — a cost Candidate A carries that Candidate C would not, so it is a host-decision input rather than only an ST-082 item. Criteria 5–7 UNPROVEN.
 - Docs: `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` §1; `docs/investigations/awcp-spec-evaluation.md` §7, §9; `docs/investigations/prism-ground-truth-inventory.md` §4
-- Notes: Burden of proof sits with the spike, not with the preference — ai-memory is the *hypothesis*. (A transient WIP exception on 2026-07-30 — ST-074 also sitting In Progress — was resolved the same day: ST-074 was verified complete and moved to Done, so this is now the sole In Progress entry and the WIP limit holds.) Code is **disposable** (`DROP SCHEMA workflow CASCADE` + one `schema_migrations` delete + delete three paths); the schemas/contracts are the intended survivors per awcp-spec-evaluation §6.1.
-
-## Review
-
-(Empty)
+- Notes: Burden of proof sits with the spike, not with the preference — ai-memory is the *hypothesis*. (A transient WIP exception on 2026-07-30 — ST-074 also sitting In Progress — was resolved the same day: ST-074 was verified complete and moved to Done.) Code is **disposable** (`DROP SCHEMA workflow CASCADE` — the ledger lives inside that schema, so it is the whole teardown — plus deleting the module paths); the schemas/contracts are the intended survivors per awcp-spec-evaluation §6.1. **Moved In Progress → Review on 2026-08-01** when ST-086 started: Stage 1 is merged and its remaining item is the PO's review of the findings and the proposed ADR-016 amendments. Stage 2 (criteria 5–7) is still unstarted and is **not** covered by ST-086.
 
 ## Done
 

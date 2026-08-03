@@ -28,6 +28,14 @@ services:
       DATABASE_URL: postgresql://ai_memory:${DB_PASSWORD}@db:5432/ai_memory
       MEMORY_API_KEY: ${MEMORY_API_KEY}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      # Optional agent credential for /api/workflow (ST-086). This block enumerates
+      # variables explicitly, so a value present in .env does NOT reach the container
+      # unless it is named here — without this line the operator/agent split would
+      # silently not apply on the Docker path and every agent-key request would 401.
+      # `:-` defaults it to empty when unset, which the server treats as "no agent
+      # key configured" (both the middleware and the collision guard test it for
+      # truthiness), so leaving it out of .env keeps today's single-key behaviour.
+      AWCP_AGENT_API_KEY: ${AWCP_AGENT_API_KEY:-}
     # Dev bind mount: host ./server is the source of truth at runtime so that
     # /continue can write new files (tests, src) and `docker compose exec mcp deno ...`
     # sees them immediately without rebuilding the image. Production deployment

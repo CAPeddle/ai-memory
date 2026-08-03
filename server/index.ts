@@ -19,7 +19,7 @@ import {
   MmrCandidate,
 } from "./src/searchQuality.ts";
 import { ensureRequiredEnv } from "./src/startupValidation.ts";
-import { getEmbedding, EMBEDDING_MODEL } from "./src/embeddings.ts";
+import { getEmbedding, EMBEDDING_MODEL, ModelProviderDisabledError } from "./src/embeddings.ts";
 import { startEmbeddingBackfill } from "./src/embeddingBackfill.ts";
 import { runMigrations } from "./src/migrate.ts";
 import { deepHealthCheckWithTimeout } from "./src/healthCheck.ts";
@@ -28,6 +28,14 @@ import {
   normalizeIdentifiers,
 } from "./src/identifierNormalization.ts";
 import { withTiming } from "./src/logging.ts";
+import {
+  bootstrapWorkflow,
+  probeWorkflowReadiness,
+  workflowFeatureEnabled,
+} from "./src/workflow/bootstrap.ts";
+import { createWorkflowApi } from "./src/workflow/api.ts";
+import { DASHBOARD_HTML } from "./src/workflow/dashboard.ts";
+import { requiresOperator } from "./src/workflow/policy.ts";
 import {
   type EmbeddingLane,
   emitRequestLog,
@@ -44,6 +52,43 @@ import {
 
 ensureRequiredEnv();
 await runMigrations();
+
+// ---------------------------------------------------------------------------
+// Workflow Operations bootstrap (ST-086)
+// ---------------------------------------------------------------------------
+//
+// Opt-in via FEATURE_WORKFLOW=true. The module applies its own ordered migrations
+// from server/db/workflow/ and REPORTS the outcome; the decision below is the
+// composition root's, which is the only place that owns process lifetime.
+//
+// The chosen policy is fail-startup, and the reason is specific to how the flag
+// works: workflow is opt-in, so `FEATURE_WORKFLOW=true` is an operator explicitly
+// asking for this product. Serving a degraded server whose workflow routes 500 on
+// every call would be answering a request nobody made. Note this runs BEFORE
+// Deno.serve, so a workflow migration failure means the port never opens — the
+// process exits rather than accepting traffic it cannot serve.
+//
+// Contrast with runMigrations() above: that one calls Deno.exit(1) from inside the
+// shared runner. The workflow module cannot, by design and by test.
+const workflowBootstrap = await bootstrapWorkflow();
+if (workflowBootstrap.enabled) {
+  if (workflowBootstrap.ok) {
+    const { applied, skipped } = workflowBootstrap.report;
+    console.log(
+      `[server] Workflow Operations: enabled — migrations applied=[${
+        applied.map((m) => m.filename).join(", ")
+      }] skipped=[${skipped.map((m) => m.filename).join(", ")}]`,
+    );
+  } else {
+    console.error(
+      `[server] FATAL: Workflow Operations was enabled (FEATURE_WORKFLOW=true) but its ` +
+        `migrations failed: ${workflowBootstrap.error.name}: ${workflowBootstrap.error.message}`,
+    );
+    Deno.exit(1);
+  }
+} else {
+  console.log("[server] Workflow Operations: disabled (set FEATURE_WORKFLOW=true to enable)");
+}
 
 const CITATION_BASE_URL = Deno.env.get("AI_MEMORY_CITATION_BASE_URL") ?? "https://ai-memory.local/thoughts";
 const MAX_CONTENT_BYTES = 32_768; // 32 KB content limit per thought
@@ -132,7 +177,18 @@ server.registerTool(
     try {
       const normalizedQuery = normalizeIdentifiers(query).retrievalText;
       const qEmb = normalizedQuery
-        ? await getEmbedding(normalizedQuery).catch(() => null)
+        ? await getEmbedding(normalizedQuery).catch((err) => {
+            // ModelProviderDisabledError must NOT be swallowed here — this tool's
+            // contract is semantic recall, so a disabled provider has to fail the
+            // call loudly rather than silently degrade to a lexical-only result the
+            // caller never asked for. Every OTHER embedding failure (timeout, 5xx,
+            // network) keeps degrading to the lexical lane exactly as before — that
+            // resilience is deliberate and must not regress. Rethrowing here lets the
+            // outer try/catch below report it the same way every other tool error is
+            // reported.
+            if (err instanceof ModelProviderDisabledError) throw err;
+            return null;
+          })
         : null;
       const aboveFloorRows = qEmb
         ? await sql`
@@ -258,7 +314,18 @@ server.registerTool(
       const normalizedQuery = normalizeIdentifiers(query).retrievalText;
 
       const qEmb = normalizedQuery
-        ? await getEmbedding(normalizedQuery).catch(() => null)
+        ? await getEmbedding(normalizedQuery).catch((err) => {
+            // ModelProviderDisabledError must NOT be swallowed here — this tool's
+            // contract is semantic recall, so a disabled provider has to fail the
+            // call loudly rather than silently degrade to a lexical-only result the
+            // caller never asked for. Every OTHER embedding failure (timeout, 5xx,
+            // network) keeps degrading to the lexical lane exactly as before — that
+            // resilience is deliberate and must not regress. Rethrowing here lets the
+            // outer try/catch below report it the same way every other tool error is
+            // reported.
+            if (err instanceof ModelProviderDisabledError) throw err;
+            return null;
+          })
         : null;
 
       // BM25 lane — drop the hard project filter unless strict
@@ -491,6 +558,17 @@ server.registerTool(
       // Fire-and-forget embedding update. On success, record the model and clear the
       // needs_embedding flag; on failure, log only — the backfill sweep owns retries
       // and the embedding_attempts counter (this inline attempt is best-effort).
+      //
+      // Deliberately NOT refused here, unlike the two retrieval call sites above. This
+      // call happens AFTER the row is already durably inserted, and capture_thought's
+      // contract is "store this thought" — which it has already fulfilled completely by
+      // this point; the embedding is a deferred enrichment, not part of the contract.
+      // Refusing here would either discard a write the caller was already told
+      // succeeded, or report failure for a row that is in fact stored — both are worse
+      // than deferring. So: while MODEL_PROVIDER_ENABLED=false, these rows simply
+      // accumulate with needs_embedding = true and are drained later by the backfill
+      // sweep once the provider is re-enabled. That's expected, configured behaviour,
+      // not a failure — logged calmly and distinctly, not as an alarming error.
       getEmbedding(searchText || content).then((emb) =>
         sql`
           UPDATE thoughts
@@ -500,7 +578,17 @@ server.registerTool(
               embedding_error = NULL
           WHERE id = ${insertResult.id}
         `
-      ).catch((err) => console.error(`[capture_thought] embedding update failed for ${insertResult.id}:`, err));
+      ).catch((err) => {
+        if (err instanceof ModelProviderDisabledError) {
+          console.log(
+            `[capture_thought] embedding deferred for ${insertResult.id}: model provider ` +
+              `disabled (needs_embedding stays true; the backfill sweep will drain it once ` +
+              `the provider is re-enabled)`,
+          );
+          return;
+        }
+        console.error(`[capture_thought] embedding update failed for ${insertResult.id}:`, err);
+      });
 
       return {
         content: [{
@@ -1057,9 +1145,98 @@ app.get("/health", (c) => c.json({ status: "healthy" }));
 // Readiness endpoint for deep health check (used by orchestrators / Kuma / K8s)
 app.get("/ready", async (c) => {
   const result = await deepHealthCheckWithTimeout();
-  const statusCode = result.status === "unhealthy" ? 503 : 200;
-  return c.json(result, statusCode);
+
+  // Workflow readiness is merged HERE rather than added to deepHealthCheck's probe
+  // list, and the key is omitted entirely when the product is not deployed. Two
+  // reasons, both deliberate: deepHealthCheck knows only about memory-domain
+  // capabilities and should not grow a dependency on a separate operational domain,
+  // and every deployment that never opts in keeps /ready's existing seven-key shape
+  // byte for byte.
+  //
+  // `probeWorkflowReadiness` is awaited HERE, on every request, rather than read from
+  // the `workflowBootstrap` value frozen before `Deno.serve`. Without that, a workflow
+  // schema dropped or made unusable after boot would leave `/ready` answering
+  // `workflow: {status: "ok"}` forever — see bootstrap.ts's docblock.
+  const workflow = await probeWorkflowReadiness(workflowBootstrap);
+  const checks = workflow === null ? result.checks : { ...result.checks, workflow };
+
+  // A live workflow failure contributes to 503 independently of `result.status`:
+  // deepHealthCheck knows nothing about the workflow domain, so its own status word
+  // (left untouched in the body below) cannot be made to carry this. The HTTP code is
+  // what an orchestrator actually acts on, and it must reflect both domains.
+  const statusCode = result.status === "unhealthy" || workflow?.status === "error" ? 503 : 200;
+  return c.json({ ...result, checks }, statusCode);
 });
+
+// ---------------------------------------------------------------------------
+// Workflow Operations HTTP surface (ST-086) — mounted only when enabled
+// ---------------------------------------------------------------------------
+if (workflowFeatureEnabled()) {
+  // Auth is applied HERE, by the composition root, using the same bearer mechanism
+  // /mcp uses. The workflow module deliberately does not import ../auth.ts — its
+  // import surface is allowlist-enforced by workflow-boundary.test.ts, and a product
+  // module should not carry an opinion about how this deployment authenticates.
+  //
+  // Two credentials may authenticate against /api/workflow:
+  //
+  //   - MEMORY_API_KEY, the OPERATOR key. Unconditional and unchanged — every
+  //     existing deployment and test that only ever set this one variable keeps
+  //     working with no config change, and it may call every route.
+  //   - AWCP_AGENT_API_KEY, an OPTIONAL agent key. When set, a request bearing it
+  //     may call only the reporting/read routes; `workflow/policy.ts`'s
+  //     `requiresOperator` names the four routes it must be REFUSED on (resolve a
+  //     decision, attach evidence, author a criterion, complete a packet — see that
+  //     module's docblock for why each one is supervision rather than reporting).
+  //     Unset (the default), behaviour is EXACTLY today's: only the operator key is
+  //     accepted anywhere under /api/workflow.
+  //
+  // This is the fix for a real defect: server/scripts/awcp.ts and
+  // docs/workflow-mvp.md used to claim that the CLI simply not shipping
+  // resolve/evidence/complete subcommands "is what stops an agent signing off its
+  // own verification." That was false — both credentials used to be the same
+  // MEMORY_API_KEY, so any caller holding it (including an agent, which the docs
+  // told to export that exact variable) could call those routes directly with curl.
+  // The enforcement below makes the claim true: the server refuses the agent key on
+  // those routes regardless of what any particular client does or doesn't expose.
+  //
+  // Startup refuses to boot at all if AWCP_AGENT_API_KEY is set equal to
+  // MEMORY_API_KEY (startupValidation.ts's agentKeyCollidesWithOperatorKey) — an
+  // equal pair would make every agent-key request classify as "operator" below and
+  // silently collapse this split into no split at all. By the time this handler
+  // runs, an agent key that authenticates is guaranteed distinct from the operator
+  // key.
+  app.use("/api/workflow/*", async (c, next) => {
+    const operatorKey = Deno.env.get("MEMORY_API_KEY");
+    if (!operatorKey) {
+      // Mirrors requireApiKey's fail-closed behaviour: a deployment cannot serve
+      // this surface without its required credential configured at all.
+      throw new Error("MEMORY_API_KEY environment variable is not set");
+    }
+    const agentKey = Deno.env.get("AWCP_AGENT_API_KEY");
+    const bearer = c.req.raw.headers.get("Authorization");
+
+    let credential: "operator" | "agent" | null = null;
+    if (bearer === `Bearer ${operatorKey}`) credential = "operator";
+    else if (agentKey && bearer === `Bearer ${agentKey}`) credential = "agent";
+
+    if (credential === null) return c.text("Unauthorized", 401);
+
+    // Authenticated but not authorised. This is 403, not 401: the credential is
+    // valid, only the route is off-limits for it, and answering 401 here would
+    // wrongly tell an agent with a perfectly good key to go re-authenticate.
+    if (credential === "agent" && requiresOperator(c.req.method, c.req.path)) {
+      return c.text("Forbidden", 403);
+    }
+
+    await next();
+  });
+  app.route("/api/workflow", createWorkflowApi());
+
+  // The dashboard SHELL is unauthenticated; it contains no operational data and
+  // obtains the operator's key in the browser. Every byte of content it renders
+  // arrives through the authenticated API above.
+  app.get("/workflow", (c) => c.html(DASHBOARD_HTML));
+}
 
 app.all("/mcp", async (c) => {
   const startMs = Date.now();
@@ -1101,7 +1278,12 @@ app.all("/mcp", async (c) => {
   }
 });
 
-Deno.serve({ port: 3000 }, app.fetch);
+// Port is configurable so a second instance can run alongside the primary one —
+// required by the restart test in workflow-mvp-e2e.test.ts, which starts a real
+// server process while the container's own server holds 3000. Defaults to 3000, so
+// every existing deployment and the Dockerfile's EXPOSE are unchanged.
+const PORT = Number(Deno.env.get("PORT") ?? "3000");
+Deno.serve({ port: PORT }, app.fetch);
 
 // Feature flags — set to "false" to disable
 const FEATURE_ENTITY_WORKER = Deno.env.get("FEATURE_ENTITY_WORKER") !== "false";
@@ -1121,5 +1303,8 @@ if (FEATURE_CONSOLIDATION_WORKER) {
   console.log("[server] Consolidation worker: disabled by feature flag (FEATURE_CONSOLIDATION_WORKER=false)");
 }
 
-// Start embedding backfill worker (recovers rows whose embedding call failed)
+// Start embedding backfill worker (recovers rows whose embedding call failed).
+// FEATURE_EMBEDDING_BACKFILL=false and EMBEDDING_BACKFILL_DISABLED=true are both
+// honoured inside startEmbeddingBackfill itself (embeddingBackfill.ts:77-84), so the
+// call stays unconditional here rather than duplicating the guard in two places.
 startEmbeddingBackfill();

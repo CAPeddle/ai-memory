@@ -70,8 +70,14 @@ docker compose --profile test up -d
 # Run a single Deno test file inside the mcp-test container
 docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/search-mmr.test.ts
 
-# Run all server tests
-docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/
+# Run all server tests. --allow-run=deno is required by workflow-mvp-e2e.test.ts
+# (ST-086), which starts and restarts a real server process; without it that file
+# errors. Narrowed to the `deno` binary — server/tests/_helpers/serverProcess.ts spawns
+# only Deno.execPath() — rather than a bare --allow-run.
+docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read --allow-run=deno tests/
+
+# Workflow Operations only (local MVP — see docs/workflow-mvp.md)
+docker compose -f docker-compose.yml -f docker-compose.workflow.yml up -d --wait
 
 # Tail the MCP server logs
 docker compose logs -f mcp
@@ -82,7 +88,9 @@ curl http://localhost:3000/health
 
 **Dev vs Test isolation:** The default `docker compose up -d` starts only `db` + `mcp` (persistent dev data). The `--profile test` flag adds `db-test` (ephemeral, tmpfs — wiped on stop), `seed` (loads test corpus into `db-test`), and `mcp-test` (connects to `db-test`, port 3001). Tests never touch the dev database.
 
-The `./server` directory is bind-mounted to `/app` in the `mcp` container ([docker-compose.yml:33](docker-compose.yml#L33)), so file edits are picked up live without rebuilding. `.env` must define `MEMORY_API_KEY`, `DB_PASSWORD`, `OPENROUTER_API_KEY` (see [.env.example](.env.example)).
+That guarantee is about the *dev* database only. `db-test` is itself **shared and accumulating** — it is wiped when its container stops, not between runs — so successive `exec` runs, and host-side runs against its published `127.0.0.1:5433`, pollute each other. See [.github/instructions/dev-environment.instructions.md](.github/instructions/dev-environment.instructions.md) § Gotchas.
+
+The `./server` directory is bind-mounted to `/app` in the `mcp` container ([docker-compose.yml:33](docker-compose.yml#L33)), so file edits are picked up live without rebuilding — **edits in the checkout that ran `docker compose up`.** The mount is fixed at container creation and no project name is pinned, so with a `git worktree` in play the running stack may be serving a different checkout than the one you are editing; see [docs/solutions/workflow-issues/verify-worktree-change-against-docker-test-stack.md](docs/solutions/workflow-issues/verify-worktree-change-against-docker-test-stack.md). `.env` must define `MEMORY_API_KEY`, `DB_PASSWORD`, `OPENROUTER_API_KEY` (see [.env.example](.env.example)) — and a worktree does not inherit the main checkout's `.env`, since it is gitignored.
 
 ### WSL2-Native Dev (recommended inner loop)
 
@@ -174,6 +182,8 @@ Squashing does not lose the granular history: GitHub keeps a PR's individual com
 
 **The exception: long-lived integration branches** carrying several stories (e.g. an umbrella branch accumulating a whole ST-0NN series). Squashing many stories into one commit destroys something worth keeping and lands an unreviewable blob — merge those, or land them story by story.
 
+**The verification cost of stacking, which this section otherwise leaves implicit:** [.github/workflows/ci.yml](.github/workflows/ci.yml) triggers only on `main` and PRs targeting `main`, so **a PR into an integration or feature branch runs no CI whatsoever** — and five of the last seven PRs here did exactly that. CI arrives only when the integration branch itself merges to `main`, by which point several stories' worth of change land on the first green-or-red signal. On a stacked PR the local run is the only gate, which makes a recorded verification's freshness load-bearing — see [docs/solutions/workflow-issues/verification-expires-when-the-verified-surface-changes.md](docs/solutions/workflow-issues/verification-expires-when-the-verified-surface-changes.md).
+
 ## High-level architecture (cloud MCP)
 
 The Deno MCP server in [server/](server/) is a thin Hono app over `@modelcontextprotocol/sdk`'s `StreamableHTTPTransport`. All requests to `/mcp` go through `requireApiKey` Bearer auth ([server/src/auth.ts](server/src/auth.ts)); `/health` is unauthenticated for Docker healthchecks.
@@ -213,7 +223,7 @@ When running in the Copilot/VS Code workflow, gather PO input via `vscode_askQue
 
 The user's auto-memory (loaded into every session) currently asserts:
 
-- **Tests run in `mcp-test`**, not `mcp`. Use `docker compose --profile test exec mcp-test deno test ...` in ExecPlan commands.
+- **Tests run in `mcp-test`**, not `mcp`. Use `docker compose --profile test exec mcp-test deno test ...` in ExecPlan commands. **Under-specified on one point:** the memory names the service and the flags but not the *working directory*. `exec` reaches whichever checkout ran `up`, so with a worktree on the machine this command can pass against code you did not edit — verify the mount first ([docs/solutions/workflow-issues/verify-worktree-change-against-docker-test-stack.md](docs/solutions/workflow-issues/verify-worktree-change-against-docker-test-stack.md)).
 - **ExecPlan verification should match deliverable scope** — don't run unrelated test suites as a safety net.
 - **Git EOL semantics:** `i/` is always LF for text; `w/` follows `eol=`; `git status` clean is the real success indicator.
 

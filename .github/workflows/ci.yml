@@ -52,8 +52,17 @@ jobs:
           docker compose --profile test logs
           exit 1
 
+      # --allow-run=deno is required by workflow-mvp-e2e.test.ts (ST-086), which starts
+      # and restarts a REAL server process — the only way to observe that the
+      # composition root applies workflow migrations at boot, that the process starts
+      # with no provider credential, and that operational state survives a restart.
+      # Narrowed to the `deno` binary (server/tests/_helpers/serverProcess.ts spawns
+      # only `Deno.execPath()`) rather than a bare --allow-run, so this step does not
+      # hand every test file in the suite unrestricted subprocess-spawn permission. The
+      # grant is on this one step rather than an --ignore list of tests that do not
+      # need it, because an exclusion list drifts silently as tests are added.
       - name: Run integration tests
-        run: docker compose --profile test exec -T mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/
+        run: docker compose --profile test exec -T mcp-test deno test --frozen --allow-net --allow-env --allow-read --allow-run=deno tests/
 
       - name: Print logs on failure
         if: failure()
