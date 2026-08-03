@@ -4,7 +4,7 @@
 > Next planning target: (TBD after ST-072 completes).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review). ST-070 + ST-071 done 2026-07-03 (integration suite green in CI, PR #21 merged).
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
-> Last updated: 2026-08-03 (**ST-089 and ST-090 filed** — both from running the governance validator to check the ST-084 review's own artifacts, which is how the defect surfaced. `dotnet run --project tools/GovernanceAssetValidator -- validate .`, a command CLAUDE.md documents, **does not run at HEAD**: the tool is absent from `src/AiMemory.sln` and from CI, so the root `Directory.Build.props` analyzers that apply to it have never been enforced against it, and ~25 violations accumulated unobserved — the tool that enforces governance is itself outside the gates (**ST-089**). Not version drift and not an environment problem: analyzers are exactly pinned and the failure reproduces on SDK `8.0.100` and `10.0.110` alike, while `dotnet build src/AiMemory.sln` passes at 0/0. Separately the validator reports seven assets missing required frontmatter, so it exits 1 and cannot be wired in as a gate until they are clean (**ST-090**, blocked by ST-089). Both WIP slots remain free.)
+> Last updated: 2026-08-03 (**ST-089 Done** — `GovernanceAssetValidator` wired into the analyzer gate. All ~25 violations fixed across 8 rule categories; `Program.cs` split into 7 per-type files; `Build`/`Validate` made static; helpers extracted to satisfy MA0051; project added to `src/AiMemory.sln`; `dotnet-build` CI job added. Red control confirmed: SA1503 on a deliberate brace omission → build failed → reverted → clean. `dotnet build src/AiMemory.sln` 0/0, `dotnet test` 1/1 passed, `dotnet run --project tools/GovernanceAssetValidator -- validate .` reaches runtime. **ST-090 is now unblocked.** Both WIP slots remain free.)
 >
 > Previously: 2026-08-03 (**ST-084 Review → Done**, and **ST-088 filed**. The PO's Stage 1 review completed — the story's last outstanding item. All five proposed ADR-016 amendments accepted and applied as revision 1.2; **amendment 3 adopted in its stronger form, as an acceptance *gate***, so Candidate A may not be accepted while §6.1's policy-scope enforcement surface is unpriced. **ADR-016's status is unchanged — still Proposed/Conditional; the gate is recorded against, not discharged.** The review re-derived the findings against the tree rather than reading the document, and **two of the three §6 concerns had moved since the verdict was formed, in opposite directions**: §8's "not wired at boot" caveat is discharged by ST-086 (favours Candidate A), while §6.2's "a bad workflow migration cannot kill the server" is no longer true of a deployed server, since ST-086 chose fail-startup (counts against it). §6.1 re-verified and undiminished — `scope.tags` still enforced in zero retrieval paths. Recorded in findings §12a. ST-084's Stage 2 criteria block was split out as **ST-088** so merged, reviewed Stage 1 work could be marked Done rather than sitting behind three unticked criteria. **Both WIP slots are now free.**)
 >
@@ -18,30 +18,12 @@
 
 ## Backlog
 
-### ST-089: `GovernanceAssetValidator` is outside the analyzer gate it already inherits
-- Type: bug / tooling
-- Source: found 2026-08-03 while validating the ST-084 review's governance assets — the documented command did not run
-- phase: 1
-- Value: 3
-- Blocked by: —
-- Touches: `tools/GovernanceAssetValidator/Program.cs` (~25 violations); `src/AiMemory.sln` or a solution filter; `.editorconfig` (only if exemptions are chosen); `.github/workflows/ci.yml`
-- Why it matters: **`dotnet run --project tools/GovernanceAssetValidator -- validate .` does not run at HEAD.** CLAUDE.md documents it as a standard command. `Directory.Build.props` sits at the repo root, so its four analyzers and `TreatWarningsAsErrors=true` **do** apply to this project — but nothing ever builds it: it is absent from `src/AiMemory.sln` (which holds only `AiMemory.Core`, `AiMemory.Server`, `AiMemory.Tests`) and absent from CI. So its source has never been held to the gate it lives under, and accumulated `SA1402`, `SA1503`, `SA1413`, `IDE0011`, `MA0006`, `MA0051`, `S2325`, `CA1305` and `CA1859` violations unobserved. **The tool that enforces governance is itself outside the gates.**
-- **Not a version-drift artifact, and not an environment problem.** The analyzers are exactly pinned (`NetAnalyzers 9.0.0`, `StyleCop 1.2.0-beta.556`, `SonarAnalyzer.CSharp 10.9.0.115408`, `Meziantou.Analyzer 2.0.187`), and the failure reproduces identically on the pinned SDK `8.0.100` and on SDK `10.0.110`. `dotnet build src/AiMemory.sln` succeeds with **0 warnings, 0 errors** — the solution is healthy; only the unbuilt tool is not.
-- Acceptance criteria:
-  - [ ] `dotnet run --project tools/GovernanceAssetValidator -- validate .` builds and runs with no `-p:` overrides — the command as CLAUDE.md documents it
-  - [ ] Each violation is either **fixed** or **exempted in `.editorconfig` with a documented rationale** — per CLAUDE.md's rule that new analyzer suppressions are documented, not silently applied. A blanket `NoWarn` on the project is not an acceptable resolution: it would re-create the exclusion this story exists to close
-  - [ ] The project is built by something that runs routinely — added to `src/AiMemory.sln` (or a solution filter that CI builds), so the gate cannot silently lapse again
-  - [ ] CI builds it, and a **red control** demonstrates the gate is live: introduce one deliberate violation, observe CI go red, revert
-  - [ ] `dotnet build src/AiMemory.sln` still passes at 0 warnings / 0 errors
-- Plan: (to be created — `docs/plans/`)
-- Notes: The failure is invisible on a machine without a .NET 8 SDK, which is how it was nearly misdiagnosed — the first read blamed an SDK 10 / `global.json` mismatch, and only re-running under the pinned `8.0.100` showed the errors were genuine. **Verify `dotnet --list-sdks` resolves an `8.0.1xx` before concluding anything about this project**; a second SDK install root that the system `dotnet` muxer does not see will otherwise send you after the wrong cause. Scope note: this story fixes the *tool*; the seven asset findings it reports are **ST-090**.
-
 ### ST-090: Clear the seven governance frontmatter gaps so the validator exits 0
 - Type: chore / governance debt
 - Source: `GovernanceAssetValidator` output 2026-08-03 (first run in some time — the tool is in no CI job)
 - phase: 1
 - Value: 2
-- Blocked by: **ST-089** — the validator does not build, so "exits 0" cannot be proven until it runs
+- Blocked by: — (**ST-089 Done** — validator now builds and runs)
 - Touches: `.github/prompts/{plan,plan-new,continue,recover,governance-review}.prompt.md` (missing `owners`); `.github/instructions/{compound-engineering-wsl2,dev-environment}.instructions.md` (missing `name`, `summary`, `owners`)
 - Why it matters: the validator exits **1** on seven assets, so it cannot be wired into CI as a gate until they are clean — ST-089 makes the tool runnable, this makes its verdict green. These accumulated unobserved precisely because nothing runs it.
 - Acceptance criteria:
@@ -566,6 +548,20 @@
 ## Review
 
 ## Done
+
+### ST-089: `GovernanceAssetValidator` is outside the analyzer gate it already inherits
+- Type: bug / tooling
+- Source: found 2026-08-03 while validating the ST-084 review's governance assets
+- phase: 1
+- Value: 3
+- Completed: 2026-08-03
+- Plan: `docs/plans/2026-08-03-002-fix-governance-validator-analyzer-violations-plan.md`
+- Acceptance criteria:
+  - [x] `dotnet run --project tools/GovernanceAssetValidator -- validate .` builds and runs with no `-p:` overrides
+  - [x] Each violation fixed (no `<NoWarn>` or `#pragma warning disable`): SA1402/MA0048 resolved by per-type file split; SA1503/SA1413 fixed in place; MA0051 resolved by helper extraction; S2325/MA0006/CA1305/CA1859 fixed in place
+  - [x] Project added to `src/AiMemory.sln` — built by `dotnet build src/AiMemory.sln` routinely
+  - [x] `dotnet-build` CI job added to `.github/workflows/ci.yml`; red control confirmed: deliberate SA1503 → build failed → reverted → green
+  - [x] `dotnet build src/AiMemory.sln` passes at 0 warnings / 0 errors
 
 ### ST-087: Test the `awcp` CLI — the one untested surface of the ST-086 slice
 - Type: test coverage
