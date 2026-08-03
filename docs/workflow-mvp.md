@@ -110,7 +110,20 @@ the gate like every other caller.
 > reason colours, packet metadata, criteria met/unmet, all three interactions, the
 > completion gate refusing and naming its unmet criteria, and a 401 clearing the stored
 > key. See [Verifying the dashboard in a real browser](#verifying-the-dashboard-in-a-real-browser).
-> Re-run that by hand if you change `dashboard.ts`.
+>
+> **Verified surface:** `server/src/workflow/dashboard.ts` at `0d3af13`. **Any** commit
+> touching that file — anyone's, not just yours — expires this result. Check before
+> relying on it:
+>
+> ```bash
+> git diff 0d3af13..HEAD -- server/src/workflow/dashboard.ts
+> ```
+>
+> Non-empty output means re-run the 28 checks before treating the criterion as verified.
+> `0d3af13` is a pre-squash branch SHA and will not survive the merge into `main`; after
+> that, find this work with `git log --grep="Story: ST-086"` and re-anchor to the commit it
+> names. Why a commit and not just the date:
+> [docs/solutions/workflow-issues/verification-expires-when-the-verified-surface-changes.md](solutions/workflow-issues/verification-expires-when-the-verified-surface-changes.md).
 
 Completion is refused while any *required* criterion lacks evidence, and the refusal
 names the unmet criteria. Add a criterion, try to complete, attach evidence, complete
@@ -137,6 +150,12 @@ apt-get download libnss3 libnspr4
 for d in *.deb; do dpkg-deb -x "$d" root/; done
 export LD_LIBRARY_PATH=$PWD/root/usr/lib/x86_64-linux-gnu
 ```
+
+> Step 2 is a general technique, not a browser one, and this page is about a slice whose
+> code is disposable. It is written up on its own terms in
+> [docs/solutions/developer-experience/run-a-binary-without-root-by-extracting-its-libs.md](solutions/developer-experience/run-a-binary-without-root-by-extracting-its-libs.md)
+> — including how to diagnose which libraries are missing, and when to stop and ask for
+> root instead. Use that when the binary is not Chromium.
 
 Then start a **throwaway** server with a dummy key rather than typing the real
 `MEMORY_API_KEY` into a browser prompt or a terminal transcript:

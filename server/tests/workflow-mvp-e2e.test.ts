@@ -446,10 +446,20 @@ Deno.test({
         //
         // DOM rendering is therefore still unproven *by automation*. It was proven once
         // by hand on 2026-08-02 in a real headless Chromium — 28 checks including the
-        // completion gate refusing and naming its unmet criteria. That is a point-in-time
-        // result, not a standing guarantee: re-run it when dashboard.ts changes. The
-        // procedure is in docs/workflow-mvp.md, "Verifying the dashboard in a real
-        // browser", which also records why automating it here was judged not worth it.
+        // completion gate refusing and naming its unmet criteria.
+        //
+        // That result describes server/src/workflow/dashboard.ts at 0d3af13. ANY commit
+        // touching that file — anyone's, not just yours — expires it:
+        //
+        //     git diff 0d3af13..HEAD -- server/src/workflow/dashboard.ts
+        //
+        // Non-empty output means the 28 checks must be re-run before the criterion counts
+        // as verified. (0d3af13 is a pre-squash branch SHA; after the merge into main,
+        // re-anchor via `git log --grep="Story: ST-086"`.) The procedure is in
+        // docs/workflow-mvp.md, "Verifying the dashboard in a real browser", which also
+        // records why automating it here was judged not worth it; why a commit rather
+        // than a date is in
+        // docs/solutions/workflow-issues/verification-expires-when-the-verified-surface-changes.md.
         for (const section of [
           "Attention",
           "Runs",

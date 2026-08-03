@@ -182,6 +182,8 @@ Squashing does not lose the granular history: GitHub keeps a PR's individual com
 
 **The exception: long-lived integration branches** carrying several stories (e.g. an umbrella branch accumulating a whole ST-0NN series). Squashing many stories into one commit destroys something worth keeping and lands an unreviewable blob — merge those, or land them story by story.
 
+**The verification cost of stacking, which this section otherwise leaves implicit:** [.github/workflows/ci.yml](.github/workflows/ci.yml) triggers only on `main` and PRs targeting `main`, so **a PR into an integration or feature branch runs no CI whatsoever** — and five of the last seven PRs here did exactly that. CI arrives only when the integration branch itself merges to `main`, by which point several stories' worth of change land on the first green-or-red signal. On a stacked PR the local run is the only gate, which makes a recorded verification's freshness load-bearing — see [docs/solutions/workflow-issues/verification-expires-when-the-verified-surface-changes.md](docs/solutions/workflow-issues/verification-expires-when-the-verified-surface-changes.md).
+
 ## High-level architecture (cloud MCP)
 
 The Deno MCP server in [server/](server/) is a thin Hono app over `@modelcontextprotocol/sdk`'s `StreamableHTTPTransport`. All requests to `/mcp` go through `requireApiKey` Bearer auth ([server/src/auth.ts](server/src/auth.ts)); `/health` is unauthenticated for Docker healthchecks.
