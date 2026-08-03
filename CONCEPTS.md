@@ -110,3 +110,8 @@ A boundary check that fails open is worse than none, because its passing result 
 The set of tests currently accepted as failing for known environmental reasons, against which a new run is judged.
 
 A Baseline names *which* tests fail and why — characteristically, credentials that CI supplies and a local machine does not — so a run is read by comparing failure sets rather than totals. A pass count is deliberately not a Baseline: it is invalidated whenever anyone adds a test, so recording one trains a reader either to ignore genuine drift or to chase a number that was never the invariant. Where a total is still wanted, it is stated as a reconciliation identity over its parts, which recomputes as the suite grows instead of going stale.
+
+### Point-in-Time Result
+A verification observed once by hand, valid only for the tree state it ran against.
+
+Unlike a check that re-runs, nobody re-observes a Point-in-Time Result, so it expires silently the moment the surface it covered changes — by any hand, not only its author's. It is therefore recorded with the commit it was taken at and the paths it covered, so a later reader can ask the tree whether it has expired instead of trusting it. A date records only when someone looked; a commit records what they looked at. Expired does not mean wrong — it means unobserved, which is the state a verification record exists to rule out.
