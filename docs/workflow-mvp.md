@@ -279,6 +279,22 @@ that the process starts with no provider credential (the child is spawned with
 `clearEnv`, so the absence is a fact about the child rather than a hope about its
 parent), and that operational state survives a restart.
 
+The CLI has its own suite, and it needs two grants this one does not (ST-087):
+
+```bash
+docker compose --profile test exec -T mcp-test \
+  deno test --frozen --allow-net --allow-env --allow-read \
+  --allow-write=/tmp --allow-run=deno,git \
+  tests/awcp-cli.test.ts
+```
+
+`--allow-run=git` and `--allow-write=/tmp` exist because `awcp` derives a checkpoint's
+repository, branch and commit by running git, and the only honest way to prove that is
+to give it a repository and check what it reported. The test builds a throwaway one in a
+temp directory — this checkout is not mounted into the test container, so reading it was
+never an option, and a hermetic fixture behaves the same in CI anyway. Running the whole
+suite needs the union of both commands' grants; see CLAUDE.md.
+
 A provider sentinel counts outbound calls and the slice makes zero, with a companion
 test booting the same server with the provider **enabled** and requiring the sentinel to
 record the call — so the zero is a discriminating result, not a quiet one. **What that

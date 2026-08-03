@@ -70,11 +70,19 @@ docker compose --profile test up -d
 # Run a single Deno test file inside the mcp-test container
 docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/search-mmr.test.ts
 
-# Run all server tests. --allow-run=deno is required by workflow-mvp-e2e.test.ts
-# (ST-086), which starts and restarts a real server process; without it that file
-# errors. Narrowed to the `deno` binary — server/tests/_helpers/serverProcess.ts spawns
-# only Deno.execPath() — rather than a bare --allow-run.
-docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read --allow-run=deno tests/
+# Run all server tests. Three grants beyond the defaults, each earned by one file:
+#   --allow-run=deno    workflow-mvp-e2e.test.ts (ST-086) starts and restarts a real
+#                       server process; awcp-cli.test.ts (ST-087) spawns the CLI.
+#   --allow-run=git     awcp-cli.test.ts builds a throwaway repository, because
+#                       server/scripts/awcp.ts derives a checkpoint's repo/branch/commit
+#                       by running git and there is no honest way to prove that without
+#                       giving it a repository.
+#   --allow-write=/tmp  that throwaway repository. Scoped to the temp directory rather
+#                       than opened wholesale.
+# Both run grants name their binary rather than using a bare --allow-run, so the suite
+# does not get unrestricted subprocess-spawn permission. Without them the two files
+# above error rather than skip.
+docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read --allow-write=/tmp --allow-run=deno,git tests/
 
 # Workflow Operations only (local MVP — see docs/workflow-mvp.md)
 docker compose -f docker-compose.yml -f docker-compose.workflow.yml up -d --wait

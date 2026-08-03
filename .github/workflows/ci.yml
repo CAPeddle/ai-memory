@@ -56,13 +56,22 @@ jobs:
       # and restarts a REAL server process — the only way to observe that the
       # composition root applies workflow migrations at boot, that the process starts
       # with no provider credential, and that operational state survives a restart.
-      # Narrowed to the `deno` binary (server/tests/_helpers/serverProcess.ts spawns
-      # only `Deno.execPath()`) rather than a bare --allow-run, so this step does not
-      # hand every test file in the suite unrestricted subprocess-spawn permission. The
-      # grant is on this one step rather than an --ignore list of tests that do not
-      # need it, because an exclusion list drifts silently as tests are added.
+      # awcp-cli.test.ts (ST-087) spawns the CLI the same way.
+      #
+      # `git` and `--allow-write=/tmp` are ST-087's. server/scripts/awcp.ts derives a
+      # checkpoint's repository, branch and commit by running git, and the only honest
+      # way to prove it does so is to give it a repository and check what it reported.
+      # The test builds a throwaway one in a temp directory rather than reading this
+      # checkout — which is not mounted into the test container at all — so the write
+      # grant is scoped to /tmp rather than opened wholesale.
+      #
+      # Both run grants are narrowed to named binaries rather than a bare --allow-run,
+      # so this step does not hand every test file unrestricted subprocess-spawn
+      # permission. The grants sit on this one step rather than an --ignore list of
+      # tests that do not need them, because an exclusion list drifts silently as
+      # tests are added.
       - name: Run integration tests
-        run: docker compose --profile test exec -T mcp-test deno test --frozen --allow-net --allow-env --allow-read --allow-run=deno tests/
+        run: docker compose --profile test exec -T mcp-test deno test --frozen --allow-net --allow-env --allow-read --allow-write=/tmp --allow-run=deno,git tests/
 
       - name: Print logs on failure
         if: failure()
