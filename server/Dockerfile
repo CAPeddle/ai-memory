@@ -6,9 +6,11 @@ FROM denoland/deno:2.0.0
 # than reading this checkout, so nothing here depends on the repo being mounted.
 #
 # This image also serves the `mcp` runtime, where the server itself never shells out to
-# git. Splitting a test-only stage would keep it out of production; that was weighed and
-# deferred as build-infrastructure work outside ST-087's scope. Revisit if the runtime
-# image's contents ever become a compliance surface.
+# git. A test-only build stage would keep it out of production, and that was considered.
+# The PO accepted the shared image instead (2026-08-03) — a settled decision, not
+# deferred work, so do not split the stage as a tidy-up. What would reopen it is the
+# runtime image's contents becoming a compliance surface; absent that, one image is the
+# choice.
 RUN apt-get update && apt-get install -y --no-install-recommends curl git && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY server/. .
