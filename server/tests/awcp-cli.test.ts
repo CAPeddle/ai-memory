@@ -1,0 +1,594 @@
+/**
+ * ST-087 — the `awcp` CLI, driven as the shipped artifact.
+ *
+ * `server/scripts/awcp.ts` reached production with zero automated coverage. A code
+ * review found two real defects in it by reading alone — `--help` exited 2 instead of
+ * printing usage, and path ids were interpolated into URLs unencoded — and neither was
+ * caught by anything. This file is the thing that would have caught them.
+ *
+ * **Why a subprocess rather than an import.** The script runs `main()` at module top
+ * level and `die()` calls `Deno.exit(2)`. Importing it would run the CLI; exercising an
+ * error path would kill the test runner. More to the point, the properties worth
+ * asserting here — exit codes, stderr wording, whether git was actually consulted, and
+ * the permission set the script ships with — exist only at the process boundary.
+ *
+ * **Requires `--allow-run=deno,git`, `--allow-write=/tmp` and `--allow-read`.** The
+ * `deno` grant spawns the server and the CLI; the `git` grant builds the throwaway
+ * repository the commit-provenance test needs; the write grant is scoped to the temp
+ * directory that repository lives in. See CLAUDE.md's test commands.
+ *
+ * **One server for the whole file.** Roughly fifteen CLI invocations each paying a full
+ * server boot would dominate the suite's runtime. The cost is that no step may assume an
+ * empty schema — each creates the packet or run it needs, and every assertion locates
+ * its row by an id the CLI itself printed.
+ */
+
+import {
+  assert,
+  assertEquals,
+  assertStringIncludes,
+  assertThrows,
+} from "https://deno.land/std@0.224.0/assert/mod.ts";
+
+import { sql } from "../src/db.ts";
+import { startServerProcess } from "./_helpers/serverProcess.ts";
+import {
+  cliGrants,
+  emitted,
+  makeThrowawayRepo,
+  runAwcp,
+} from "./_helpers/awcpCli.ts";
+
+const DATABASE_URL = Deno.env.get("DATABASE_URL")!;
+const OPERATOR_KEY = Deno.env.get("MEMORY_API_KEY") ?? "test-key";
+/** Distinct from the operator key — the server refuses to start when they match. */
+const AGENT_KEY = `${OPERATOR_KEY}-st087-agent`;
+
+/** High, uncommon port: 3000 is the container's own server, 3142/3143 are ST-086's. */
+const CLI_PORT = 3144;
+
+function serverEnv(): Record<string, string> {
+  return {
+    DATABASE_URL,
+    MEMORY_API_KEY: OPERATOR_KEY,
+    AWCP_AGENT_API_KEY: AGENT_KEY,
+    FEATURE_WORKFLOW: "true",
+    FEATURE_ENTITY_WORKER: "false",
+    FEATURE_CONSOLIDATION_WORKER: "false",
+    FEATURE_EMBEDDING_BACKFILL: "false",
+    MODEL_PROVIDER_ENABLED: "false",
+  };
+}
+
+/** The environment the CLI needs to reach the server under test, as the operator. */
+function cliEnv(extra: Record<string, string> = {}): Record<string, string> {
+  return {
+    AWCP_BASE_URL: `http://127.0.0.1:${CLI_PORT}`,
+    MEMORY_API_KEY: OPERATOR_KEY,
+    ...extra,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Permission grants — no server needed
+// ---------------------------------------------------------------------------
+
+Deno.test("ST-087: the CLI's permission grants are read from the shipped shebang", async (t) => {
+  await t.step("the grants match what the script declares", () => {
+    // Asserted as a set rather than an exact list so reordering the shebang is not a
+    // test failure, while adding or removing a grant is.
+    assertEquals(
+      [...cliGrants()].sort(),
+      [
+        "--allow-env",
+        "--allow-net",
+        "--allow-run=git",
+        "--allow-sys=hostname",
+      ],
+      "the CLI's shebang grants changed — if that was deliberate, update this " +
+        "assertion; if it was not, the script just gained or lost a permission",
+    );
+  });
+
+  await t.step("a file with no shebang throws rather than defaulting", () => {
+    // server/index.ts is a real file with no shebang. Using it rather than a fixture
+    // keeps this test honest about what "no shebang" looks like in this repo.
+    const noShebang = new URL("../index.ts", import.meta.url).pathname;
+    assertThrows(
+      () => cliGrants(noShebang),
+      Error,
+      "does not start with a shebang",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Everything that needs a server
+// ---------------------------------------------------------------------------
+
+Deno.test({
+  sanitizeResources: false,
+  sanitizeOps: false,
+  name: "ST-087: the awcp CLI reports a real session through the HTTP API",
+  fn: async (t) => {
+    const server = await startServerProcess(serverEnv(), CLI_PORT);
+
+    try {
+      await t.step("the CLI prints its usage and exits 0", async () => {
+        const help = await runAwcp(["help"], { env: cliEnv() });
+
+        assertEquals(help.code, 0, `stderr: ${help.stderr}`);
+        assertStringIncludes(help.stdout, "awcp packet");
+        assertStringIncludes(help.stdout, "awcp checkpoint");
+        assertStringIncludes(help.stdout, "AWCP_AGENT_API_KEY");
+      });
+
+      await t.step("a packet created by the CLI exists in the database", async () => {
+        const result = await runAwcp([
+          "packet",
+          "--title",
+          "ST-087 harness smoke",
+          "--objective",
+          "prove the CLI reaches the API and the row lands",
+          "--policy-scope",
+          "personal",
+        ], { env: cliEnv() });
+
+        assertEquals(result.code, 0, `stderr: ${result.stderr}`);
+        const { label, id } = emitted(result.stdout);
+        assertEquals(label, "packet");
+
+        // The independent witness: a direct query, not the API that just wrote the row.
+        const rows = await sql<{ title: string; policy_scope: string }[]>`
+          SELECT title, policy_scope FROM workflow.work_packets WHERE id = ${id}
+        `;
+        assertEquals(rows.length, 1, `no workflow.work_packets row with id ${id}`);
+        assertEquals(rows[0].title, "ST-087 harness smoke");
+        assertEquals(rows[0].policy_scope, "personal");
+      });
+
+      // ------------------------------------------------------------------
+      // U2 — every reporting subcommand, each row located by the id the CLI printed
+      // ------------------------------------------------------------------
+
+      await t.step("every reporting subcommand drives the API and lands its row", async () => {
+        const packet = emitted(
+          (await expectOk(["packet", "--title", "ST-087 full sequence", "--objective", "exercise every subcommand", "--policy-scope", "personal"])).stdout,
+        );
+
+        const run = emitted(
+          (await expectOk(["run", "--packet", packet.id])).stdout,
+        );
+        const [runRow] = await sql<{ packet_id: string; agent_type: string; status: string }[]>`
+          SELECT packet_id, agent_type, status FROM workflow.agent_runs WHERE id = ${run.id}
+        `;
+        assertEquals(runRow.packet_id, packet.id);
+        // `local-cli` is the CLI's own default, not a value this test supplied — the
+        // assertion is about the CLI's behaviour, not about the API echoing input.
+        assertEquals(runRow.agent_type, "local-cli");
+        assertEquals(runRow.status, "running");
+
+        const checkpoint = emitted(
+          (await expectOk([
+            "checkpoint",
+            "--run",
+            run.id,
+            "--completed",
+            "wired the harness",
+            "--state",
+            "green",
+            "--next",
+            "cover the edges",
+            "--no-commit",
+          ])).stdout,
+        );
+        const [checkpointRow] = await sql<
+          { run_id: string; completed_work: string; current_state: string; next_action: string }[]
+        >`
+          SELECT run_id, completed_work, current_state, next_action
+          FROM workflow.checkpoints WHERE id = ${checkpoint.id}
+        `;
+        assertEquals(checkpointRow.run_id, run.id);
+        assertEquals(checkpointRow.completed_work, "wired the harness");
+        assertEquals(checkpointRow.current_state, "green");
+        assertEquals(checkpointRow.next_action, "cover the edges");
+
+        const blocking = emitted(
+          (await expectOk(["decision", "--packet", packet.id, "--question", "ship or hold?", "--rationale", "because", "--run", run.id])).stdout,
+        );
+        const advisory = emitted(
+          (await expectOk(["decision", "--packet", packet.id, "--question", "nice to have?", "--advisory"])).stdout,
+        );
+        const decisionRows = await sql<{ id: string; blocking: boolean; run_id: string | null }[]>`
+          SELECT id, blocking, run_id FROM workflow.operational_decisions
+          WHERE id IN (${blocking.id}, ${advisory.id})
+        `;
+        const byId = new Map(decisionRows.map((r) => [r.id, r]));
+        // Blocking is the default and --advisory is the way to opt out. Asserting both
+        // in one step is what makes the flag's effect visible rather than assumed.
+        assertEquals(byId.get(blocking.id)?.blocking, true);
+        assertEquals(byId.get(blocking.id)?.run_id, run.id);
+        assertEquals(byId.get(advisory.id)?.blocking, false);
+
+        await expectOk(["end-run", "--run", run.id]);
+        const [ended] = await sql<{ status: string; ended_at: string | null }[]>`
+          SELECT status, ended_at FROM workflow.agent_runs WHERE id = ${run.id}
+        `;
+        assertEquals(ended.status, "ended");
+        assert(ended.ended_at !== null, "a run that ended should carry an ended_at");
+      });
+
+      await t.step("--status failed is distinct from the default, and a bad status never reaches the API", async () => {
+        const packet = emitted((await expectOk(["packet", "--title", "ST-087 failed run", "--objective", "end a run as failed", "--policy-scope", "personal"])).stdout);
+        const run = emitted((await expectOk(["run", "--packet", packet.id])).stdout);
+
+        await expectOk(["end-run", "--run", run.id, "--status", "failed"]);
+        const [failed] = await sql<{ status: string }[]>`
+          SELECT status FROM workflow.agent_runs WHERE id = ${run.id}
+        `;
+        assertEquals(failed.status, "failed");
+
+        // Rejected by the CLI's own vocabulary check before any request is built.
+        const bogus = await runAwcp(["end-run", "--run", run.id, "--status", "bogus"], { env: cliEnv() });
+        assertEquals(bogus.code, 2);
+        assertStringIncludes(bogus.stderr, "--status must be ended or failed");
+      });
+
+      await t.step("the agent credential alone drives the reporting subcommands", async () => {
+        // No MEMORY_API_KEY in this environment at all. Combined with clearEnv, the
+        // operator key is absent as a fact about the child rather than a hope.
+        const agentEnv = {
+          AWCP_BASE_URL: `http://127.0.0.1:${CLI_PORT}`,
+          AWCP_AGENT_API_KEY: AGENT_KEY,
+        };
+
+        const packet = await runAwcp([
+          "packet",
+          "--title",
+          "ST-087 agent credential",
+          "--objective",
+          "reporting routes accept the narrower key",
+          "--policy-scope",
+          "personal",
+        ], { env: agentEnv });
+        assertEquals(packet.code, 0, `stderr: ${packet.stderr}`);
+
+        const run = await runAwcp(["run", "--packet", emitted(packet.stdout).id], { env: agentEnv });
+        assertEquals(run.code, 0, `stderr: ${run.stderr}`);
+
+        const checkpoint = await runAwcp([
+          "checkpoint",
+          "--run",
+          emitted(run.stdout).id,
+          "--completed",
+          "reported under the agent key",
+          "--state",
+          "green",
+          "--no-commit",
+        ], { env: agentEnv });
+        assertEquals(checkpoint.code, 0, `stderr: ${checkpoint.stderr}`);
+
+        const [row] = await sql<{ completed_work: string }[]>`
+          SELECT completed_work FROM workflow.checkpoints WHERE id = ${emitted(checkpoint.stdout).id}
+        `;
+        assertEquals(row.completed_work, "reported under the agent key");
+      });
+
+      // ------------------------------------------------------------------
+      // U3 — ST-086's criterion 5, on evidence this time
+      // ------------------------------------------------------------------
+
+      await t.step("a checkpoint's commit is obtained by the CLI, not supplied to it", async () => {
+        const repo = await makeThrowawayRepo();
+        try {
+          const packet = emitted((await expectOk([
+            "packet",
+            "--title",
+            "ST-087 commit provenance",
+            "--objective",
+            "prove the CLI reads git itself",
+            "--policy-scope",
+            "personal",
+          ], repo.dir)).stdout);
+
+          // The packet's repository and branch defaults come from git too.
+          const [packetRow] = await sql<{ repository: string | null; branch: string | null }[]>`
+            SELECT repository, branch FROM workflow.work_packets WHERE id = ${packet.id}
+          `;
+          assertEquals(packetRow.repository, repo.root);
+          assertEquals(packetRow.branch, repo.branch);
+
+          const run = emitted((await expectOk(["run", "--packet", packet.id], repo.dir)).stdout);
+
+          // No --commit anywhere in this argv. That absence is the whole point: it is
+          // what makes the stored value the CLI's work rather than this test's.
+          const argv = [
+            "checkpoint",
+            "--run",
+            run.id,
+            "--completed",
+            "obtained a commit without being told one",
+            "--state",
+            "green",
+          ];
+          assert(
+            !argv.includes("--commit") && !argv.includes("--no-commit"),
+            "this test is only meaningful when the CLI is given no commit",
+          );
+          const checkpoint = emitted((await expectOk(argv, repo.dir)).stdout);
+
+          const [row] = await sql<{ repo_commit: string | null }[]>`
+            SELECT repo_commit FROM workflow.checkpoints WHERE id = ${checkpoint.id}
+          `;
+          assertEquals(
+            row.repo_commit,
+            repo.head,
+            "the checkpoint's commit does not match the repository's HEAD — the CLI " +
+              "did not read git, or read a different repository",
+          );
+        } finally {
+          await repo.cleanup();
+        }
+      });
+
+      await t.step("--commit overrides the git-derived default", async () => {
+        const repo = await makeThrowawayRepo();
+        const explicit = "0123456789abcdef0123456789abcdef01234567";
+        try {
+          const packet = emitted((await expectOk(["packet", "--title", "ST-087 explicit commit", "--objective", "flag beats default", "--policy-scope", "personal"], repo.dir)).stdout);
+          const run = emitted((await expectOk(["run", "--packet", packet.id], repo.dir)).stdout);
+          const checkpoint = emitted((await expectOk([
+            "checkpoint",
+            "--run",
+            run.id,
+            "--completed",
+            "explicit commit",
+            "--state",
+            "green",
+            "--commit",
+            explicit,
+          ], repo.dir)).stdout);
+
+          const [row] = await sql<{ repo_commit: string | null }[]>`
+            SELECT repo_commit FROM workflow.checkpoints WHERE id = ${checkpoint.id}
+          `;
+          assertEquals(row.repo_commit, explicit);
+          assert(
+            row.repo_commit !== repo.head,
+            "the explicit commit happens to equal HEAD, so this test cannot tell the " +
+              "flag from the default — pick a different constant",
+          );
+        } finally {
+          await repo.cleanup();
+        }
+      });
+
+      // ------------------------------------------------------------------
+      // U4 — argument parsing at its edges
+      // ------------------------------------------------------------------
+
+      await t.step("every help path exits 0 and prints usage", async () => {
+        // `--help` and `-h` land in `command`, not `bools`, because the flag loop
+        // starts at argv[1]. That asymmetry is why this regressed once: `--help`
+        // used to fall through to the unknown-subcommand branch and exit 2.
+        for (const argv of [["help"], ["--help"], ["-h"], []]) {
+          const result = await runAwcp(argv, { env: cliEnv() });
+          const shown = argv.length === 0 ? "(no arguments)" : argv.join(" ");
+          assertEquals(result.code, 0, `awcp ${shown} exited ${result.code}: ${result.stderr}`);
+          assertStringIncludes(result.stdout, "awcp — report a local development session");
+        }
+      });
+
+      await t.step("usage errors exit 2 and name what was wrong", async () => {
+        const cases: { argv: string[]; expect: string }[] = [
+          {
+            argv: ["packet", "--objective", "O", "--policy-scope", "personal"],
+            expect: "--title is required",
+          },
+          {
+            argv: ["packet", "--title"],
+            expect: "--title requires a value",
+          },
+          {
+            // policy-scope is a boundary value with no default by design; omitting it
+            // must fail rather than inherit something the operator never chose.
+            argv: ["packet", "--title", "T", "--objective", "O"],
+            expect: "--policy-scope is required",
+          },
+          {
+            argv: ["frobnicate", "--title", "T"],
+            expect: "unknown subcommand",
+          },
+          {
+            argv: ["packet", "positional"],
+            expect: "unexpected argument",
+          },
+        ];
+
+        for (const { argv, expect } of cases) {
+          const result = await runAwcp(argv, { env: cliEnv() });
+          assertEquals(result.code, 2, `awcp ${argv.join(" ")} exited ${result.code}`);
+          assertStringIncludes(result.stderr, expect);
+        }
+      });
+
+      await t.step("a path id is encoded rather than interpolated into the URL", async () => {
+        // The second defect the review found by reading. Without encodeURIComponent an
+        // id like this changes which route is addressed; with it, the id reaches the
+        // server intact and is rejected as a malformed uuid — which is the tell.
+        const result = await runAwcp([
+          "checkpoint",
+          "--run",
+          "../../packets",
+          "--completed",
+          "W",
+          "--state",
+          "S",
+          "--no-commit",
+        ], { env: cliEnv() });
+
+        assertEquals(result.code, 2);
+        assertStringIncludes(result.stderr, "400");
+        assertStringIncludes(
+          result.stderr,
+          "runId must be a uuid",
+          "the traversal-shaped id did not reach the runId parameter — it was " +
+            "interpolated into the path instead of being encoded",
+        );
+      });
+
+      // ------------------------------------------------------------------
+      // U5 — degradation and the two failure messages
+      // ------------------------------------------------------------------
+
+      await t.step("git-derived defaults degrade to null outside a repository", async () => {
+        // Both halves run in the same invocation conditions, differing only in cwd.
+        // Without the positive half this step would pass just as happily if git were
+        // unreachable altogether — proving "null" rather than "null *because* there is
+        // no repository here". A red control confirmed that: removing PATH from the
+        // child's environment leaves a lone negative assertion green.
+        const notARepo = await Deno.makeTempDir({ prefix: "awcp-cli-bare-" });
+        const repo = await makeThrowawayRepo();
+        try {
+          const outside = emitted((await expectOk([
+            "packet",
+            "--title",
+            "ST-087 no repository",
+            "--objective",
+            "degrade rather than fail",
+            "--policy-scope",
+            "personal",
+          ], notARepo)).stdout);
+
+          const inside = emitted((await expectOk([
+            "packet",
+            "--title",
+            "ST-087 inside a repository",
+            "--objective",
+            "the positive control for the line above",
+            "--policy-scope",
+            "personal",
+          ], repo.dir)).stdout);
+
+          const rows = await sql<{ id: string; repository: string | null; branch: string | null }[]>`
+            SELECT id, repository, branch FROM workflow.work_packets
+            WHERE id IN (${outside.id}, ${inside.id})
+          `;
+          const byId = new Map(rows.map((r) => [r.id, r]));
+
+          assertEquals(byId.get(outside.id)?.repository, null);
+          assertEquals(byId.get(outside.id)?.branch, null);
+          assertEquals(byId.get(inside.id)?.repository, repo.root);
+          assertEquals(byId.get(inside.id)?.branch, repo.branch);
+        } finally {
+          await repo.cleanup();
+          await Deno.remove(notARepo, { recursive: true });
+        }
+      });
+
+      await t.step("--no-commit stores a null commit while the rest of the checkpoint lands", async () => {
+        const repo = await makeThrowawayRepo();
+        try {
+          const packet = emitted((await expectOk(["packet", "--title", "ST-087 no commit", "--objective", "opt out explicitly", "--policy-scope", "personal"], repo.dir)).stdout);
+          const run = emitted((await expectOk(["run", "--packet", packet.id], repo.dir)).stdout);
+          const checkpoint = emitted((await expectOk([
+            "checkpoint",
+            "--run",
+            run.id,
+            "--completed",
+            "opted out of the commit",
+            "--state",
+            "green",
+            "--no-commit",
+          ], repo.dir)).stdout);
+
+          const [row] = await sql<{ repo_commit: string | null; completed_work: string }[]>`
+            SELECT repo_commit, completed_work FROM workflow.checkpoints WHERE id = ${checkpoint.id}
+          `;
+          // Run from inside a real repository, so a null here is the flag's doing and
+          // not an absent git — which is what makes --no-commit distinguishable.
+          assertEquals(row.repo_commit, null);
+          assertEquals(row.completed_work, "opted out of the commit");
+        } finally {
+          await repo.cleanup();
+        }
+      });
+
+      await t.step("a timeout and an unreachable server produce different messages", async () => {
+        const stall = new AbortController();
+        let stallPort = 0;
+        const stallReady = new Promise<number>((resolve) => {
+          const server = Deno.serve({
+            port: 0,
+            hostname: "127.0.0.1",
+            signal: stall.signal,
+            onListen: ({ port }) => resolve(port),
+            // Accept the connection and never answer. A server that closed instead
+            // would produce the unreachable message and this test would prove nothing.
+          }, () => new Promise<Response>(() => {}));
+          void server.finished.catch(() => {});
+        });
+        stallPort = await stallReady;
+
+        try {
+          const timedOut = await runAwcp([
+            "packet",
+            "--title",
+            "ST-087 timeout",
+            "--objective",
+            "never answered",
+            "--policy-scope",
+            "personal",
+          ], {
+            env: {
+              AWCP_BASE_URL: `http://127.0.0.1:${stallPort}`,
+              MEMORY_API_KEY: OPERATOR_KEY,
+              AWCP_TIMEOUT_MS: "400",
+            },
+          });
+          assertEquals(timedOut.code, 2);
+          assertStringIncludes(timedOut.stderr, "timed out after 400ms");
+
+          // The discrimination control. Nothing is listening here, so the CLI must say
+          // something different — a test that accepted either message would not be
+          // proving anything about the timeout path.
+          const unreachable = await runAwcp([
+            "packet",
+            "--title",
+            "ST-087 unreachable",
+            "--objective",
+            "nothing listening",
+            "--policy-scope",
+            "personal",
+          ], {
+            env: {
+              AWCP_BASE_URL: "http://127.0.0.1:3199",
+              MEMORY_API_KEY: OPERATOR_KEY,
+            },
+          });
+          assertEquals(unreachable.code, 2);
+          assertStringIncludes(unreachable.stderr, "could not reach");
+          assert(
+            !unreachable.stderr.includes("timed out"),
+            `the unreachable case reported a timeout, so the two are indistinguishable: ${unreachable.stderr}`,
+          );
+        } finally {
+          stall.abort();
+        }
+      });
+    } finally {
+      await server.stop();
+    }
+
+    /** Run the CLI expecting success, failing loudly with the child's own stderr. */
+    async function expectOk(args: string[], cwd?: string) {
+      const result = await runAwcp(args, { env: cliEnv(), cwd });
+      assertEquals(
+        result.code,
+        0,
+        `awcp ${args.join(" ")} exited ${result.code}: ${result.stderr}`,
+      );
+      return result;
+    }
+  },
+});

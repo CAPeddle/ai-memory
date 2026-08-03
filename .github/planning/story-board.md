@@ -12,26 +12,6 @@
 
 ## Backlog
 
-### ST-087: Test the `awcp` CLI — the one untested surface of the ST-086 slice
-- Type: test coverage
-- Source: ST-086 code review 2026-08-02 (testing + correctness reviewers, independently)
-- phase: 1
-- Value: 3
-- Blocked by: —
-- Touches: `server/tests/awcp-cli.test.ts` (new); possibly small testability seams in `server/scripts/awcp.ts`
-- Why it matters: `server/scripts/awcp.ts` is ~290 lines of argument parsing, git wrapping and HTTP client with **zero** automated coverage. The review found two real defects in it by reading alone (`--help` exited 2 instead of printing usage; path ids interpolated unencoded) — both now fixed, neither caught by any test. Board criterion 5 of ST-086 claims "one real local repository/session reported a commit-bearing checkpoint **through the CLI**", but the e2e test posts a hardcoded SHA; nothing proves the CLI produced it.
-- Approach: drive the real CLI as a subprocess against a real spawned server, reusing `startServerProcess` / `startProviderSentinel` from `server/tests/_helpers/serverProcess.ts`. The suite already has `--allow-run=deno` in CI; this needs `--allow-run` widened to include the CLI's own `git` grant, so confirm the narrowed grant still covers it or widen deliberately.
-- Acceptance criteria:
-  - [ ] Each subcommand (`packet`, `run`, `checkpoint`, `decision`, `end-run`) drives the real HTTP API end to end and the resulting row is asserted in the database
-  - [ ] **Criterion 5 of ST-086 is actually proven:** a checkpoint recorded via the CLI carries `repo_commit` equal to this checkout's real `git rev-parse HEAD`, obtained by the CLI rather than passed in
-  - [ ] Argument parsing is covered at its edges: missing required flag, flag with no value, unknown subcommand, `--help` / `-h` / no args (each with its expected exit code — `0` for help, `2` for usage errors)
-  - [ ] Git-derived defaults degrade correctly when git fails or is absent (the `null` path), and `--no-commit` opts out explicitly
-  - [ ] The HTTP timeout path (`AWCP_TIMEOUT_MS`) produces its distinct message, proven against a server that accepts and never responds
-  - [ ] Error surfaces are asserted to be *self-correcting for an agent*: a 400 must name the offending field. **This will fail today** — the API returns a per-field `issues[]` array that `post()` drops on the floor (`awcp.ts` reads only `message` and `unmetCriteria`), so a malformed `--policy-scope` yields a bare "400 request body failed validation". Surfacing `issues[]` is in scope.
-  - [ ] The agent/operator credential split is exercised from the CLI: with `AWCP_AGENT_API_KEY` set, the CLI's reporting subcommands succeed
-  - [ ] At least one **red control**: remove a guard the suite claims to cover and demonstrate the test goes red, per `docs/solutions/conventions/verification-mechanisms-need-adversarial-review.md`
-- Notes: A plan artifact is expected before this starts, per CLAUDE.md's workflow gate — unlike ST-086, this story has real design choices (how far to go on subprocess-level testing vs extracting testable functions from the CLI's single-file shape).
-
 ### ST-085: Investigate local GPU inference as ST-082's compliant model provider
 - Type: spike / investigation
 - Source: `ce-pov` verdict 2026-07-31 (grade: Trial; reversibility tier 3)
@@ -526,6 +506,29 @@
 ## Refined
 
 ## In Progress
+
+### ST-087: Test the `awcp` CLI — the one untested surface of the ST-086 slice
+- Type: test coverage
+- Source: ST-086 code review 2026-08-02 (testing + correctness reviewers, independently)
+- phase: 1
+- Value: 3
+- Blocked by: —
+- Branch: `test/st-087-awcp-cli-coverage` (from `main` at `22fa20c`)
+- Touches: `server/tests/awcp-cli.test.ts` (new); possibly small testability seams in `server/scripts/awcp.ts`
+- Why it matters: `server/scripts/awcp.ts` is ~290 lines of argument parsing, git wrapping and HTTP client with **zero** automated coverage. The review found two real defects in it by reading alone (`--help` exited 2 instead of printing usage; path ids interpolated unencoded) — both now fixed, neither caught by any test. Board criterion 5 of ST-086 claims "one real local repository/session reported a commit-bearing checkpoint **through the CLI**", but the e2e test posts a hardcoded SHA; nothing proves the CLI produced it.
+- Approach: drive the real CLI as a subprocess against a real spawned server, reusing `startServerProcess` / `startProviderSentinel` from `server/tests/_helpers/serverProcess.ts`. The suite already has `--allow-run=deno` in CI; this needs `--allow-run` widened to include the CLI's own `git` grant, so confirm the narrowed grant still covers it or widen deliberately.
+- Acceptance criteria:
+  - [ ] Each subcommand (`packet`, `run`, `checkpoint`, `decision`, `end-run`) drives the real HTTP API end to end and the resulting row is asserted in the database
+  - [ ] **Criterion 5 of ST-086 is actually proven:** a checkpoint recorded via the CLI carries `repo_commit` equal to this checkout's real `git rev-parse HEAD`, obtained by the CLI rather than passed in
+  - [ ] Argument parsing is covered at its edges: missing required flag, flag with no value, unknown subcommand, `--help` / `-h` / no args (each with its expected exit code — `0` for help, `2` for usage errors)
+  - [ ] Git-derived defaults degrade correctly when git fails or is absent (the `null` path), and `--no-commit` opts out explicitly
+  - [ ] The HTTP timeout path (`AWCP_TIMEOUT_MS`) produces its distinct message, proven against a server that accepts and never responds
+  - [ ] Error surfaces are asserted to be *self-correcting for an agent*: a 400 must name the offending field. **This will fail today** — the API returns a per-field `issues[]` array that `post()` drops on the floor (`awcp.ts` reads only `message` and `unmetCriteria`), so a malformed `--policy-scope` yields a bare "400 request body failed validation". Surfacing `issues[]` is in scope.
+  - [ ] The agent/operator credential split is exercised from the CLI: with `AWCP_AGENT_API_KEY` set, the CLI's reporting subcommands succeed
+  - [ ] At least one **red control**: remove a guard the suite claims to cover and demonstrate the test goes red, per `docs/solutions/conventions/verification-mechanisms-need-adversarial-review.md`
+- Plan: [docs/plans/2026-08-03-001-test-awcp-cli-coverage-plan.md](../../docs/plans/2026-08-03-001-test-awcp-cli-coverage-plan.md)
+- **Started 2026-08-03.** The plan's assumption A1 was falsified on first contact, and by something bigger than the permission grant it named: **the `mcp-test` container had no `git` binary and no repository mounted**, so R5 — the whole point of the story — was unachievable as specified. PO decision: install git in the test image and have the test build its own throwaway repository in a temp dir rather than reading this checkout. That is hermetic, behaves identically in CI, and still proves the claim. Consequences: `server/Dockerfile` gains git (which also lands in the runtime image — weighed, and splitting a test-only stage was deferred as out-of-scope build work), and the suite's grants widen to `--allow-write=/tmp --allow-run=deno,git`, both narrowed rather than opened wholesale. A second environment trap surfaced during U1: under `clearEnv` the CLI child has no `PATH`, so `git` does not resolve and every git-derived default takes its degradation branch — assertions about them would pass while testing nothing. Proven by red control.
+- Notes: The plan artifact CLAUDE.md's workflow gate expects now exists, and it settles the design choice this story was filed with: **process-boundary testing only, no import seam** — `awcp.ts` runs `main()` at module top level and `die()` calls `Deno.exit(2)`, so an import seam would restructure the shipped script while still not covering the permission set or the exit codes. The plan also carries one production change (surfacing the API's per-field `issues[]` in the CLI's error output) and one open assumption to settle first (A1: whether the existing `--allow-run=deno` grant covers a CLI child that itself runs `git`) — if A1 is wrong, the CI command and the narrowed-grant security story both change, and that is a stop-and-surface, not a widen-and-continue.
 
 ## Review
 
