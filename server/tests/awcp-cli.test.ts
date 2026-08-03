@@ -514,6 +514,70 @@ Deno.test({
         }
       });
 
+      // ------------------------------------------------------------------
+      // U6 — a validation failure has to tell its caller which field was wrong
+      // ------------------------------------------------------------------
+
+      await t.step("a rejected field is named, not just 'failed validation'", async () => {
+        // The CLI's primary caller is an agent. An agent that cannot see which field it
+        // got wrong cannot correct itself; it can only retry blind. The API already
+        // sends a per-field issues[] array — this asserts the CLI reads it.
+        const result = await runAwcp([
+          "packet",
+          "--title",
+          "ST-087 bad scope",
+          "--objective",
+          "out-of-vocabulary policy scope",
+          "--policy-scope",
+          "everyone",
+        ], { env: cliEnv() });
+
+        assertEquals(result.code, 2);
+        assertStringIncludes(result.stderr, "400");
+        assertStringIncludes(
+          result.stderr,
+          "policyScope",
+          "the CLI reported a 400 without naming the field that caused it",
+        );
+      });
+
+      await t.step("every offending field is named when a request fails on more than one", async () => {
+        const packet = emitted((await expectOk(["packet", "--title", "ST-087 multi-issue", "--objective", "two bad fields at once", "--policy-scope", "personal"])).stdout);
+
+        // Empty strings reach the API (the CLI's `required()` guard covers absent
+        // values, not empty ones for optional flags), where both fail min(1).
+        const result = await runAwcp([
+          "run",
+          "--packet",
+          packet.id,
+          "--agent-type",
+          "",
+          "--host",
+          "",
+        ], { env: cliEnv() });
+
+        assertEquals(result.code, 2);
+        assertStringIncludes(result.stderr, "agentType");
+        assertStringIncludes(result.stderr, "host");
+      });
+
+      await t.step("a 400 that carries no issues array is still readable", async () => {
+        // The malformed-id branch answers with message + received and no issues[].
+        // Reading issues[] must not turn that into an empty or undefined fragment.
+        const result = await runAwcp([
+          "run",
+          "--packet",
+          "not-a-uuid",
+        ], { env: cliEnv() });
+
+        assertEquals(result.code, 2);
+        assertStringIncludes(result.stderr, "packetId must be a uuid");
+        assert(
+          !result.stderr.includes("undefined") && !result.stderr.includes("[]"),
+          `the no-issues branch produced a degraded message: ${result.stderr}`,
+        );
+      });
+
       await t.step("a timeout and an unreachable server produce different messages", async () => {
         const stall = new AbortController();
         let stallPort = 0;

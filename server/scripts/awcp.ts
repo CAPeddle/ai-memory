@@ -200,12 +200,30 @@ async function post(path: string, body: unknown): Promise<unknown> {
 
   if (!res.ok) {
     const detail = parsed as
-      | { message?: string; unmetCriteria?: string[] }
+      | {
+        message?: string;
+        unmetCriteria?: string[];
+        issues?: { path?: string; message?: string }[];
+      }
       | null;
     const unmet = detail?.unmetCriteria?.length
       ? ` [${detail.unmetCriteria.join("; ")}]`
       : "";
-    die(`${res.status} ${detail?.message ?? res.statusText}${unmet}`);
+    // The API answers a schema failure with a per-field `issues[]` array. Dropping it
+    // left the caller with a bare "400 request body failed validation" and no way to
+    // know which field to fix — and this CLI's primary caller is an agent, which can
+    // then only retry blind. One line per issue rather than a folded summary, so the
+    // field name is greppable.
+    //
+    // Not every 400 carries issues: the malformed-path-id branch answers with
+    // `message` + `received` instead, so this stays absent rather than rendering an
+    // empty fragment.
+    const issues = detail?.issues?.length
+      ? detail.issues
+        .map((issue) => `\n  ${issue.path || "(body)"}: ${issue.message ?? "invalid"}`)
+        .join("")
+      : "";
+    die(`${res.status} ${detail?.message ?? res.statusText}${unmet}${issues}`);
   }
   return parsed;
 }
