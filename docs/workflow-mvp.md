@@ -110,7 +110,20 @@ the gate like every other caller.
 > reason colours, packet metadata, criteria met/unmet, all three interactions, the
 > completion gate refusing and naming its unmet criteria, and a 401 clearing the stored
 > key. See [Verifying the dashboard in a real browser](#verifying-the-dashboard-in-a-real-browser).
-> Re-run that by hand if you change `dashboard.ts`.
+>
+> **Verified surface:** `server/src/workflow/dashboard.ts` at `0d3af13`. **Any** commit
+> touching that file — anyone's, not just yours — expires this result. Check before
+> relying on it:
+>
+> ```bash
+> git diff 0d3af13..HEAD -- server/src/workflow/dashboard.ts
+> ```
+>
+> Non-empty output means re-run the 28 checks before treating the criterion as verified.
+> `0d3af13` is a pre-squash branch SHA and will not survive the merge into `main`; after
+> that, find this work with `git log --grep="Story: ST-086"` and re-anchor to the commit it
+> names. Why a commit and not just the date:
+> [docs/solutions/workflow-issues/verification-expires-when-the-verified-surface-changes.md](solutions/workflow-issues/verification-expires-when-the-verified-surface-changes.md).
 
 Completion is refused while any *required* criterion lacks evidence, and the refusal
 names the unmet criteria. Add a criterion, try to complete, attach evidence, complete
