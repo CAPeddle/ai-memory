@@ -699,10 +699,46 @@ That is what makes criteria 2 and 3 pass, and what keeps a later extraction poss
 
 ---
 
+## 12a. Post-Stage-1 drift — what changed under this report after the verdict was formed
+
+**Added 2026-08-03, at the PO's Stage 1 review.** Everything above states what was true
+when the verdict was formed (2026-07-30, re-derived 2026-07-31) and is deliberately left
+as written — a findings doc that silently rewrites itself stops being evidence of what was
+known when the decision was taken. ST-086 and ST-087 landed afterwards and moved three
+of this report's factual claims. Re-derived from the tree on 2026-08-03:
+
+| Claim, as written above | Status now | Direction |
+|---|---|---|
+| §8: "The workflow schema is **TEST-APPLIED, not wired at boot** — `server/index.ts` contains no reference to the workflow module… every 'proven' claim is proven against the module's own entry points, not against a deployed server" | **Discharged.** ST-086 wired it: `server/index.ts:73` calls `bootstrapWorkflow()` in the composition root, before `Deno.serve`, and the migration-at-startup path is proven by dropping the schema and booting a real process | **Favours Candidate A** — the Stage 1 evidence now describes a deployed server, and the caveat that qualified every "proven" claim no longer applies |
+| §6.2: "**This spike no longer pays that risk** — the workflow DDL was moved out of the shared chain, so a bad workflow migration cannot kill the server" | **No longer true of a deployed server.** ST-086 chose fail-startup deliberately: under `FEATURE_WORKFLOW=true`, a workflow migration failure hits `Deno.exit(1)` at `server/index.ts:87`, before the port opens. The design property this paragraph praised does survive — the module still reports an outcome and never exits itself; the composition root decides — but the operational consequence it said had been escaped was reinstated by choice, with its rationale in the comment at `server/index.ts:56-72` | **Counts against Candidate A** — a shared process means a shared blast radius even with a separate schema and a separate migration runner. Now recorded in ADR-016 §3 |
+| §11: "full server suite: 298 passed / 9 failed" | **336 passed / 9 failed** — same documented provider-401 baseline, plus ST-086's and ST-087's tests | Neutral — the baseline's shape is unchanged |
+
+**§6.1 was re-verified and stands undiminished.** `scope.tags` appears in exactly one
+place in the server today — `server/src/parseContext.ts:109`, where it is assigned — and
+in no `WHERE` clause anywhere. Two merged stories later, still zero retrieval enforcement.
+This is the finding that qualifies the recommendation, and nothing has reduced it.
+
+**The general lesson, which is the reason this section exists:** a findings doc is a
+Point-in-Time Result about a codebase, and later stories can change the facts a verdict
+rests on without anyone re-reading the verdict. Two of the three concerns in §6 had moved
+by the time the report was reviewed — in opposite directions — and neither move was
+announced by the story that caused it. Re-derive a spike's load-bearing claims at review
+time; do not review the document alone.
+
+---
+
 ## 13. Proposed ADR-016 amendments — for review, NOT applied
 
-Deliverable 10 of the plan. These are **proposals for the PO**; none has been applied,
-and ADR-016 remains Proposed/Conditional.
+Deliverable 10 of the plan. These were **proposals for the PO**.
+
+> **Disposition, 2026-08-03 — reviewed and applied.** All five were accepted and are now
+> reflected in ADR-016 revision 1.2. Amendments 1, 2 and 4 were applied as record
+> corrections; amendment 5 was a deliberate no-op. **Amendment 3 was adopted in its
+> stronger form — as an acceptance *gate*, not a trade-off**: ADR-016 now states that
+> Candidate A may not be accepted while the policy-scope enforcement surface is unpriced,
+> which binds Stage 2 (ST-088) to produce that estimate before recommending acceptance.
+> **ADR-016's status is unchanged — still Proposed/Conditional.** Applying amendments is
+> not discharging the gate. The text below is retained as the proposal of record.
 
 1. **Keep the status at Proposed / Conditional.** Stage 1 supports the hypothesis but
    does not discharge the gate. Recommend adding a line recording that criteria 1–4
