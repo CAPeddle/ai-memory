@@ -138,6 +138,12 @@ for d in *.deb; do dpkg-deb -x "$d" root/; done
 export LD_LIBRARY_PATH=$PWD/root/usr/lib/x86_64-linux-gnu
 ```
 
+> Step 2 is a general technique, not a browser one, and this page is about a slice whose
+> code is disposable. It is written up on its own terms in
+> [docs/solutions/developer-experience/run-a-binary-without-root-by-extracting-its-libs.md](solutions/developer-experience/run-a-binary-without-root-by-extracting-its-libs.md)
+> — including how to diagnose which libraries are missing, and when to stop and ask for
+> root instead. Use that when the binary is not Chromium.
+
 Then start a **throwaway** server with a dummy key rather than typing the real
 `MEMORY_API_KEY` into a browser prompt or a terminal transcript:
 
