@@ -4,12 +4,14 @@ namespace GovernanceAssetValidator;
 
 internal static class FrontmatterParser
 {
+    private const string YamlBlockDelimiter = "---";
+
     public static IReadOnlyDictionary<string, object> Parse(string content)
     {
         var result = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
         var lines = content.Replace("\r\n", "\n").Split('\n');
 
-        if (lines.Length < 3 || !string.Equals(lines[0].Trim(), "---", StringComparison.Ordinal))
+        if (lines.Length < 3 || !string.Equals(lines[0].Trim(), YamlBlockDelimiter, StringComparison.Ordinal))
         {
             return result;
         }
@@ -19,7 +21,7 @@ internal static class FrontmatterParser
         {
             var line = lines[i];
 
-            if (string.Equals(line.Trim(), "---", StringComparison.Ordinal))
+            if (string.Equals(line.Trim(), YamlBlockDelimiter, StringComparison.Ordinal))
             {
                 break;
             }
@@ -39,7 +41,7 @@ internal static class FrontmatterParser
                     result[activeListKey] = list;
                 }
 
-                list.Add(Unquote(trimmed.Substring(2).Trim()));
+                list.Add(Unquote(trimmed[2..].Trim()));
                 continue;
             }
 

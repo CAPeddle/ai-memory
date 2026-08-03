@@ -2,4 +2,4 @@ using System.Collections.Generic;
 
 namespace GovernanceAssetValidator;
 
-public sealed record CatalogValidationResult(bool IsValid, IReadOnlyList<string> Errors);
+public sealed record CatalogValidationResult(bool IsSuccess, IReadOnlyList<string> Errors);

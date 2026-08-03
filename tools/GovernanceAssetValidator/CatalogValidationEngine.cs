@@ -21,6 +21,13 @@ public sealed class CatalogValidationEngine
         "source_path",
     ];
 
+    private static readonly GovernanceDirectory[] GovernanceDirectories =
+    [
+        new(".github/prompts/", "*.md", SearchOption.TopDirectoryOnly, "prompt"),
+        new(".github/instructions/", "*.instructions.md", SearchOption.TopDirectoryOnly, "instruction"),
+        new(".github/skills/", "SKILL.md", SearchOption.AllDirectories, "skill"),
+    ];
+
     public static CatalogBuildResult Build(string repoRoot)
     {
         var generation = Generate(repoRoot);
@@ -45,18 +52,18 @@ public sealed class CatalogValidationEngine
             return new CatalogValidationResult(false, generation.Errors);
         }
 
-        if (!File.Exists(generation.JsonOutputPath))
+        string existingJson;
+        string existingMarkdown;
+        try
         {
-            return new CatalogValidationResult(false, [$"Missing generated JSON catalog: {generation.JsonOutputPath}"]);
+            existingJson = NormalizeNewLines(File.ReadAllText(generation.JsonOutputPath));
+            existingMarkdown = NormalizeNewLines(File.ReadAllText(generation.MarkdownOutputPath));
+        }
+        catch (FileNotFoundException ex)
+        {
+            return new CatalogValidationResult(false, [$"Missing generated catalog: {ex.FileName}"]);
         }
 
-        if (!File.Exists(generation.MarkdownOutputPath))
-        {
-            return new CatalogValidationResult(false, [$"Missing generated Markdown catalog: {generation.MarkdownOutputPath}"]);
-        }
-
-        var existingJson = NormalizeNewLines(File.ReadAllText(generation.JsonOutputPath));
-        var existingMarkdown = NormalizeNewLines(File.ReadAllText(generation.MarkdownOutputPath));
         var expectedJson = NormalizeNewLines(generation.JsonCatalog);
         var expectedMarkdown = NormalizeNewLines(generation.MarkdownCatalog);
 
@@ -84,12 +91,16 @@ public sealed class CatalogValidationEngine
     {
         var errors = new List<string>();
         var sourcePath = Path.Combine(repoRoot, ".github", "planning", "assets", "asset-catalog-source.json");
-        if (!File.Exists(sourcePath))
+        CatalogSourceFile? source;
+        try
         {
-            return new CatalogGenerationResult(string.Empty, string.Empty, string.Empty, string.Empty, [$"Missing source metadata: {sourcePath}"]);
+            source = JsonSerializer.Deserialize<CatalogSourceFile>(File.ReadAllText(sourcePath), JsonOptions());
+        }
+        catch (FileNotFoundException ex)
+        {
+            return new CatalogGenerationResult(string.Empty, string.Empty, string.Empty, string.Empty, [$"Missing source metadata: {ex.FileName}"]);
         }
 
-        var source = JsonSerializer.Deserialize<CatalogSourceFile>(File.ReadAllText(sourcePath), JsonOptions());
         if (source is null || source.Generation is null)
         {
             return new CatalogGenerationResult(string.Empty, string.Empty, string.Empty, string.Empty, ["Source metadata could not be parsed."]);
@@ -231,36 +242,21 @@ public sealed class CatalogValidationEngine
         List<string> owners,
         string? sourcePathFromMeta)
     {
-        var missing = new List<string>();
-
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            missing.Add("name");
-        }
-
-        if (string.IsNullOrWhiteSpace(summary))
-        {
-            missing.Add("summary");
-        }
-
-        if (string.IsNullOrWhiteSpace(assetType))
-        {
-            missing.Add("asset_type");
-        }
-
-        if (string.IsNullOrWhiteSpace(status))
-        {
-            missing.Add("status");
-        }
-
+        (string? Value, string FieldName)[] checks =
+        [
+            (name, "name"),
+            (summary, "summary"),
+            (assetType, "asset_type"),
+            (status, "status"),
+            (sourcePathFromMeta, "source_path"),
+        ];
+        var missing = checks
+            .Where(f => string.IsNullOrWhiteSpace(f.Value))
+            .Select(f => f.FieldName)
+            .ToList();
         if (owners.Count == 0)
         {
             missing.Add("owners");
-        }
-
-        if (string.IsNullOrWhiteSpace(sourcePathFromMeta))
-        {
-            missing.Add("source_path");
         }
 
         return missing;
@@ -269,23 +265,13 @@ public sealed class CatalogValidationEngine
     private static List<string> DiscoverGovernanceFiles(string repoRoot)
     {
         var files = new List<string>();
-        var promptsPath = Path.Combine(repoRoot, ".github", "prompts");
-        var instructionsPath = Path.Combine(repoRoot, ".github", "instructions");
-        var skillsPath = Path.Combine(repoRoot, ".github", "skills");
-
-        if (Directory.Exists(promptsPath))
+        foreach (var dir in GovernanceDirectories)
         {
-            files.AddRange(Directory.GetFiles(promptsPath, "*.md", SearchOption.TopDirectoryOnly));
-        }
-
-        if (Directory.Exists(instructionsPath))
-        {
-            files.AddRange(Directory.GetFiles(instructionsPath, "*.instructions.md", SearchOption.TopDirectoryOnly));
-        }
-
-        if (Directory.Exists(skillsPath))
-        {
-            files.AddRange(Directory.GetFiles(skillsPath, "SKILL.md", SearchOption.AllDirectories));
+            var fullPath = Path.Combine(repoRoot, ToPlatformPath(dir.RelativeForwardSlashPrefix));
+            if (Directory.Exists(fullPath))
+            {
+                files.AddRange(Directory.GetFiles(fullPath, dir.Pattern, dir.SearchOption));
+            }
         }
 
         return files;
@@ -293,22 +279,9 @@ public sealed class CatalogValidationEngine
 
     private static string? InferAssetType(string relativePath)
     {
-        if (relativePath.StartsWith(".github/prompts/", StringComparison.OrdinalIgnoreCase))
-        {
-            return "prompt";
-        }
-
-        if (relativePath.StartsWith(".github/instructions/", StringComparison.OrdinalIgnoreCase))
-        {
-            return "instruction";
-        }
-
-        if (relativePath.StartsWith(".github/skills/", StringComparison.OrdinalIgnoreCase))
-        {
-            return "skill";
-        }
-
-        return null;
+        return GovernanceDirectories
+            .FirstOrDefault(dir => relativePath.StartsWith(dir.RelativeForwardSlashPrefix, StringComparison.OrdinalIgnoreCase))
+            ?.AssetType;
     }
 
     private static string? ReadString(IReadOnlyDictionary<string, object> map, string key)
@@ -391,6 +364,12 @@ public sealed class CatalogValidationEngine
     {
         return value.Replace("|", "\\|");
     }
+
+    private sealed record GovernanceDirectory(
+        string RelativeForwardSlashPrefix,
+        string Pattern,
+        SearchOption SearchOption,
+        string AssetType);
 
     private sealed record CatalogGenerationResult(
         string JsonCatalog,

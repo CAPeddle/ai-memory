@@ -36,7 +36,7 @@ public static class Program
         if (string.Equals(mode, "validate", StringComparison.OrdinalIgnoreCase))
         {
             var validationResult = CatalogValidationEngine.Validate(repoRoot);
-            if (validationResult.IsValid)
+            if (validationResult.IsSuccess)
             {
                 Console.WriteLine("Validation succeeded.");
                 return 0;
