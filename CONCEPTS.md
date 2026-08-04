@@ -115,3 +115,15 @@ A Baseline names *which* tests fail and why — characteristically, credentials 
 A verification observed once by hand, valid only for the tree state it ran against.
 
 Unlike a check that re-runs, nobody re-observes a Point-in-Time Result, so it expires silently the moment the surface it covered changes — by any hand, not only its author's. It is therefore recorded with the commit it was taken at and the paths it covered, so a later reader can ask the tree whether it has expired instead of trusting it. A date records only when someone looked; a commit records what they looked at. Expired does not mean wrong — it means unobserved, which is the state a verification record exists to rule out.
+
+## Governance
+
+### Governance Asset
+A tracked documentation file — an ADR, instruction file, prompt, or specification — that carries structured YAML frontmatter declaring its title, type, status, owners, and related metadata.
+
+A Governance Asset becomes part of the project's searchable documentation record once its frontmatter is complete and it appears in the Asset Catalog. Assets with `status: retired` are excluded from the catalog and from validation requirements; all others must carry the full required field set. The mandatory field set is enforced by the validation tooling rather than by convention alone.
+
+### Asset Catalog
+The committed, regenerated index of all active Governance Assets: one JSON file and one Markdown file, both checked into the repository.
+
+The catalog is a point-in-time snapshot, not a live query. After any frontmatter change, the catalog must be explicitly rebuilt (`build` command) and the regenerated files committed alongside the frontmatter change. The `validate` command checks for drift between the committed catalog and the current asset set — passing validation means the catalog accurately reflects the active assets; drift means the catalog is stale and needs a rebuild. CI enforces this check, so unreconciled drift fails the build.
