@@ -206,7 +206,13 @@ public sealed class CatalogValidationEngine
         var name = ReadString(frontmatter, "name");
         var summary = ReadString(frontmatter, "summary") ?? ReadString(frontmatter, "description");
         var assetType = ReadString(frontmatter, "asset_type") ?? InferAssetType(relativePath);
-        var status = ReadString(frontmatter, "status") ?? "active";
+        var status = ReadString(frontmatter, "status");
+
+        if (string.Equals(status, "retired", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
         var owners = ReadStringList(frontmatter, "owners");
         var sourcePathFromMeta = ReadString(frontmatter, "source_path") ?? relativePath;
         var assetId = ReadString(frontmatter, "asset_id") ?? $"{assetType}:{sourcePathFromMeta}";
