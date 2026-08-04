@@ -1,4 +1,9 @@
 ---
+name: "Compound Engineering WSL2 Remote"
+summary: "Path-translation rules for ce-* skills running in a WSL2 remote opened from VS Code on Windows"
+status: active
+owners:
+  - ai-memory-maintainers
 applyTo: "**"
 ---
 

@@ -2,6 +2,7 @@
 name: "Governance Review"
 description: "Audit ai-memory governance artifacts for drift, apply safe fixes, escalate risky changes"
 agent: "agent"
+status: retired
 ---
 
 # /governance-review — Governance Audit Mode

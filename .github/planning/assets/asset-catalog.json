@@ -36,6 +36,28 @@
       "source_path": ".github/instructions/coding-standards.instructions.md"
     },
     {
+      "asset_id": "instruction:.github/instructions/compound-engineering-wsl2.instructions.md",
+      "name": "Compound Engineering WSL2 Remote",
+      "summary": "Path-translation rules for ce-* skills running in a WSL2 remote opened from VS Code on Windows",
+      "asset_type": "instruction",
+      "status": "active",
+      "owners": [
+        "ai-memory-maintainers"
+      ],
+      "source_path": ".github/instructions/compound-engineering-wsl2.instructions.md"
+    },
+    {
+      "asset_id": "instruction:.github/instructions/dev-environment.instructions.md",
+      "name": "Dev Environment",
+      "summary": "Native Deno and Docker Compose commands for the ai-memory dev and test stacks",
+      "asset_type": "instruction",
+      "status": "active",
+      "owners": [
+        "ai-memory-maintainers"
+      ],
+      "source_path": ".github/instructions/dev-environment.instructions.md"
+    },
+    {
       "asset_id": "instruction:.github/instructions/session-resilience.instructions.md",
       "name": "Session Resilience",
       "summary": "Session-level execution safety and commit hygiene rules",
@@ -47,59 +69,15 @@
       "source_path": ".github/instructions/session-resilience.instructions.md"
     },
     {
-      "asset_id": "prompt:.github/prompts/continue.prompt.md",
-      "name": "Continue",
-      "summary": "Execute Ready ExecPlans mechanically for ai-memory, with atomic commits and board maintenance",
-      "asset_type": "prompt",
+      "asset_id": "instruction:.github/instructions/ways-of-working.instructions.md",
+      "name": "Ways of Working",
+      "summary": "Operational checklists, linting expectations, and quality gates for ai-memory development",
+      "asset_type": "instruction",
       "status": "active",
       "owners": [
         "ai-memory-maintainers"
       ],
-      "source_path": ".github/prompts/continue.prompt.md"
-    },
-    {
-      "asset_id": "prompt:.github/prompts/governance-review.prompt.md",
-      "name": "Governance Review",
-      "summary": "Audit ai-memory governance artifacts for drift, apply safe fixes, escalate risky changes",
-      "asset_type": "prompt",
-      "status": "active",
-      "owners": [
-        "ai-memory-maintainers"
-      ],
-      "source_path": ".github/prompts/governance-review.prompt.md"
-    },
-    {
-      "asset_id": "prompt:.github/prompts/plan-new.prompt.md",
-      "name": "Plan New",
-      "summary": "Add a new ai-memory story through PO-guided intake, targeted research, and priority scoping",
-      "asset_type": "prompt",
-      "status": "active",
-      "owners": [
-        "ai-memory-maintainers"
-      ],
-      "source_path": ".github/prompts/plan-new.prompt.md"
-    },
-    {
-      "asset_id": "prompt:.github/prompts/plan.prompt.md",
-      "name": "Plan",
-      "summary": "Collaborative planning for ai-memory: scoping, story creation, query packets, and ExecPlan authoring",
-      "asset_type": "prompt",
-      "status": "active",
-      "owners": [
-        "ai-memory-maintainers"
-      ],
-      "source_path": ".github/prompts/plan.prompt.md"
-    },
-    {
-      "asset_id": "prompt:.github/prompts/recover.prompt.md",
-      "name": "Recover",
-      "summary": "Recover ai-memory sessions through forensic analysis, avoidance notes, and ExecPlan annotations",
-      "asset_type": "prompt",
-      "status": "active",
-      "owners": [
-        "ai-memory-maintainers"
-      ],
-      "source_path": ".github/prompts/recover.prompt.md"
+      "source_path": ".github/instructions/ways-of-working.instructions.md"
     },
     {
       "asset_id": "skill:.github/skills/compound-engineering/SKILL.md",
