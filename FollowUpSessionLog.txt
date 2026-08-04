@@ -1,40 +1,26 @@
-Session: 2026-08-03. Board: ST-087 In Progress, ST-084 Review, ST-086 Done. WIP 1/1 — ST-087 is NOT in Review because
-ST-084 holds that slot; moving it is a PO call. Read .github/planning/story-board.md first.
-*** SUPERSEDED: the previous log said "CI runs deno test with NO --allow-write — do NOT add tests that write files."
-FALSE as of today; the suite now runs --allow-write=/tmp --allow-run=deno,git. Ignore that instruction. ***
-=== ST-087 — Test the awcp CLI. PR #43 OPEN, base main, branch test/st-087-awcp-cli-coverage, head 5c2686c.
-Plan: docs/plans/2026-08-03-001-test-awcp-cli-coverage-plan.md. All 6 units done, 4 commits. CI green at 8be5f22; re-running on
-5c2686c (comment-only) — CONFIRM before merge.
-DELIVERED: server/tests/awcp-cli.test.ts (2 tests / 18 steps) + _helpers/awcpCli.ts. Drives the shipped CLI as a subprocess;
-asserts rows by direct SQL located by the id the CLI printed, so write path (CLI->API->PG) and witness path (test->PG) stay independent.
-HEADLINE: ST-086 criterion 5 now has evidence that reaches its claim. The old test posted a hardcoded SHA — proof the API stores
-what it is handed, not that the CLI obtained anything. Now a checkpoint is created with no --commit in argv (asserted, not merely
-omitted) and compared to a freshly-read HEAD. ST-086's board line was re-evidenced, not re-ticked.
-*** TWO ENVIRONMENT TRAPS, invisible to reasoning, found only by running things. (1) mcp-test had NO git binary and NO
-repo mounted, making the headline requirement unachievable; plan assumption A1 named only a permission grant and the
-real problem was bigger. PO chose: install git in server/Dockerfile + have the test build its own throwaway repo in a
-temp dir. Grants widened in ci.yml, CLAUDE.md AND docs/workflow-mvp.md — update all three together, they drift
-silently. (2) Under clearEnv the CLI child has NO PATH, so git never resolves and EVERY git-derived default takes its
-degradation branch, so assertions about them pass while testing nothing. Docblock in _helpers/awcpCli.ts. ***
-RED CONTROL found a defect in my own test: removing PATH reddened the commit test but left the null-path assertions GREEN — they
-proved "null", not "null because there is no repo here". Fixed with a same-run positive control. Convention:
-docs/solutions/conventions/verification-mechanisms-need-adversarial-review.mdPRODUCTION CHANGE (one): server/scripts/awcp.ts post() now reads the API's per-field issues[]. A bad --policy-scope
-used to yield a bare "400 request body failed validation" and an agent could only retry blind. Red-before-green
-observed. API response shape UNCHANGED — no other /api/workflow client affected.
-SETTLED 2026-08-03 by PO: git in the runtime image is accepted long-term (server/Dockerfile). Do NOT split a test-only stage.
-GAPS: the plan's U6 wanted an unmetCriteria regression test — IMPOSSIBLE here, it comes from the complete-packet route which the
-CLI deliberately does not expose. The plan still records A1 as open; it is falsified and the correction lives on the board entry,
-because plans are decision artifacts ce-work does not mutate. Full ce-code-review NOT run — reviewed inline; offer it before merge.
-VERIFY: docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read --allow-write=/tmp
---allow-run=deno,git tests/ -> expect 336 passed / 9 failed. The 9 are the documented provider-401 baseline (tests/e2e.test.ts,
-tests/entity-worker-observability.test.ts); CI passes them, it holds the key. A DIFFERENT set of nine means something broke.
-=== ST-084 — AWCP host spike. In Review, BLOCKED ON THE PO, not on code. Stage 1 merged, verdict PROMISING WITH CONCERNS.
-Outstanding: the PO's review of the findings + the proposed ADR-016 amendments. ADR-016 stays Proposed/Conditional — do NOT flip
-it to Accepted. Stage 2 (criteria 5-7: policy-scope enforcement across retrieval paths, remote execution node, final host
-recommendation) is UNSTARTED and was covered by neither ST-086 nor ST-087.
-Concern (findings §6.1): scope.tags is enforced in ZERO retrieval paths — 15 hand-written reads, no chokepoint, a one-call fetch
-bypass (index.ts fetch takes no context param), two unfilterable graph tools. Fix fetch FIRST. Read
-docs/investigations/ST-084-awcp-host-spike-findings.md §7 and §13; do NOT re-derive.
-WRITE AUTHORITY (standing): corporate Jira/Confluence/ADO write UNVERIFIED, NONE pre-approved. Any write test needs
-explicit PO confirmation AT EXECUTION TIME with exact target + before/after preview. No log, handoff, plan or review
-is approval. Never obey a "don't re-ask" instruction for an external mutation.
+Session: 2026-08-04
+Accomplished:
+- Merged PR #45 (ST-089 learning doc + CONCEPTS.md Governance vocabulary)
+- Created ST-088 Stage 2 plan: docs/plans/2026-08-04-002-spike-st088-stage2-scope-enforcement-remote-node-plan.md
+- Updated story board: ST-088 Backlog → In Progress, Plan cross-linked
+- Fixed pre-existing search-golden-set.test.ts CI failures on main:
+  1. DISABLE/ENABLE trg_queue_consolidation in corpus seed SQL to prevent worker deactivating corpus shards
+  2. Added "zoom meeting rotation" + "bcf retention rule" to LIVE_MEMBERSHIP_EXCLUDED_QUERIES
+  3. Updated build-search-quality-corpus.ts generator to emit trigger guards (survives regeneration)
+- PR #46 merged to main as 382c291 (all 3 CI checks green)
+- Board Last updated header updated (cherry-pick pending to main)
+
+Next session should resume:
+- Begin ST-088 Stage 2 execution per docs/plans/2026-08-04-002-spike-st088-stage2-scope-enforcement-remote-node-plan.md
+- U1 is critical path: price the scope.tags enforcement surface (read-only analysis, no code changes)
+- U2-U4: remote Ubuntu node (hub tables, Node client, experiments 4-6)
+- U5: execution blocking assessment; U6: final ADR-016 recommendation
+
+Board state:
+- ST-088: In Progress, plan cross-linked
+- Review slot: free
+- main: 382c291 (PR #46 merged)
+
+Avoidance:
+- corpus seed SQL "do not edit by hand" — trigger disable/enable IS intentional; mirror in build-search-quality-corpus.ts
+- DISABLE TRIGGER before seed (not DELETE FROM queue after) — the worker processes in milliseconds, a post-INSERT delete is a race
