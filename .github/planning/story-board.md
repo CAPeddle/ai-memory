@@ -4,7 +4,7 @@
 > Next planning target: (TBD after ST-072 completes).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review). ST-070 + ST-071 done 2026-07-03 (integration suite green in CI, PR #21 merged).
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
-> Last updated: 2026-08-03 (**ST-089 Done** — `GovernanceAssetValidator` wired into the analyzer gate. All ~25 violations fixed across 8 rule categories; `Program.cs` split into 7 per-type files; `Build`/`Validate` made static; helpers extracted to satisfy MA0051; project added to `src/AiMemory.sln`; `dotnet-build` CI job added. Red control confirmed: SA1503 on a deliberate brace omission → build failed → reverted → clean. `dotnet build src/AiMemory.sln` 0/0, `dotnet test` 1/1 passed, `dotnet run --project tools/GovernanceAssetValidator -- validate .` reaches runtime. **ST-090 is now unblocked.** Both WIP slots remain free.)
+> Last updated: 2026-08-04 (**ST-090 Done** — Seven governance frontmatter gaps cleared; validator exits 0. Five legacy prompt files marked `status: retired` (consistent with ST-066, no fake `owners`); two live instructions files get real `name`/`summary`/`status`/`owners`. Validator updated: `status: retired` early-return added, dead `?? "active"` default removed (fixes ST-089 code-review finding #5). Catalog regenerated. `Validate governance asset catalog` step wired as final step of `dotnet-build` CI job. Red control confirmed locally: strip `owners` → validator exits 1 → revert → exits 0. Both WIP slots remain free.)
 >
 > Previously: 2026-08-03 (**ST-084 Review → Done**, and **ST-088 filed**. The PO's Stage 1 review completed — the story's last outstanding item. All five proposed ADR-016 amendments accepted and applied as revision 1.2; **amendment 3 adopted in its stronger form, as an acceptance *gate***, so Candidate A may not be accepted while §6.1's policy-scope enforcement surface is unpriced. **ADR-016's status is unchanged — still Proposed/Conditional; the gate is recorded against, not discharged.** The review re-derived the findings against the tree rather than reading the document, and **two of the three §6 concerns had moved since the verdict was formed, in opposite directions**: §8's "not wired at boot" caveat is discharged by ST-086 (favours Candidate A), while §6.2's "a bad workflow migration cannot kill the server" is no longer true of a deployed server, since ST-086 chose fail-startup (counts against it). §6.1 re-verified and undiminished — `scope.tags` still enforced in zero retrieval paths. Recorded in findings §12a. ST-084's Stage 2 criteria block was split out as **ST-088** so merged, reviewed Stage 1 work could be marked Done rather than sitting behind three unticked criteria. **Both WIP slots are now free.**)
 >
@@ -17,22 +17,6 @@
 ---
 
 ## Backlog
-
-### ST-090: Clear the seven governance frontmatter gaps so the validator exits 0
-- Type: chore / governance debt
-- Source: `GovernanceAssetValidator` output 2026-08-03 (first run in some time — the tool is in no CI job)
-- phase: 1
-- Value: 2
-- Blocked by: — (**ST-089 Done** — validator now builds and runs)
-- Touches: `.github/prompts/{plan,plan-new,continue,recover,governance-review}.prompt.md` (missing `owners`); `.github/instructions/{compound-engineering-wsl2,dev-environment}.instructions.md` (missing `name`, `summary`, `owners`); `.github/workflows/ci.yml` (one step added to the existing `dotnet-build` job, so the validator's verdict gates a PR instead of only its compilation)
-- Why it matters: the validator exits **1** on seven assets, so it cannot be wired into CI as a gate until they are clean — ST-089 makes the tool runnable, this makes its verdict green. These accumulated unobserved precisely because nothing runs it.
-- Acceptance criteria:
-  - [ ] The validator reports **zero** findings and exits 0
-  - [ ] Each of the seven is resolved **deliberately**, not by adding filler: either the metadata is real, or the asset is retired/excluded with the reason recorded
-  - [ ] The five `.prompt.md` files get a disposition consistent with **ST-066**, which already tracks migrating the retired ExecPlan-era prompts — do not add `owners` to a file ST-066 intends to delete. Coordinate rather than duplicating the decision
-  - [ ] **CI runs the validator, not merely builds it:** a `dotnet run --project tools/GovernanceAssetValidator -- validate .` step is added to the existing `dotnet-build` job in `.github/workflows/ci.yml`. It lands **last, once the seven are clean** — added ahead of that it fails every build, which is why it is this story's tail. Red control before the box is ticked: strip a required frontmatter field from one asset → the new step turns CI red → revert → green again, per [docs/solutions/conventions/verification-mechanisms-need-adversarial-review.md](../../docs/solutions/conventions/verification-mechanisms-need-adversarial-review.md)
-- Plan: (to be created — `docs/plans/`; likely small enough for the trivial-edit carve-out if ST-066's disposition is already settled)
-- Notes: Two of the seven — `compound-engineering-wsl2` and `dev-environment` — are **live** instructions files that auto-load into Copilot sessions, not retired ones; those want real metadata. The other five are ST-066 territory. Filed 2026-08-03 alongside ST-089; that story fixes the tool, this one fixes what the tool found. The CI run step is this story's tail rather than a story of its own because *enforcing* the validator's verdict is a different gate from *compiling* the validator, and it cannot land ahead of the assets being clean — a separate story would only sit blocked on this one's first criterion.
 
 ### ST-088: ST-084 Stage 2 — criteria 5–7 and the final ADR-016 host recommendation
 - Type: spike / architecture decision (continues ST-084)
@@ -549,6 +533,19 @@
 ## Review
 
 ## Done
+
+### ST-090: Clear the seven governance frontmatter gaps so the validator exits 0
+- Type: chore / governance debt
+- Source: `GovernanceAssetValidator` output 2026-08-03
+- phase: 1
+- Value: 2
+- Completed: 2026-08-04
+- Plan: `docs/plans/2026-08-04-001-chore-clear-governance-frontmatter-gaps-plan.md`
+- Acceptance criteria:
+  - [x] The validator reports **zero** findings and exits 0
+  - [x] Each of the seven is resolved **deliberately**: two live instructions files get real `name`/`summary`/`status`/`owners`; five legacy prompt files get `status: retired` (no fake `owners`)
+  - [x] The five `.prompt.md` files get a disposition consistent with **ST-066** — `status: retired` added, `owners` deliberately absent
+  - [x] **CI runs the validator:** `dotnet run --project tools/GovernanceAssetValidator -- validate .` added as final step of `dotnet-build` job. Red control confirmed: strip `owners` → exits 1 → revert → exits 0
 
 ### ST-089: `GovernanceAssetValidator` is outside the analyzer gate it already inherits
 - Type: bug / tooling
