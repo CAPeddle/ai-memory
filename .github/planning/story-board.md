@@ -24,14 +24,15 @@
 - phase: 1
 - Value: 2
 - Blocked by: — (**ST-089 Done** — validator now builds and runs)
-- Touches: `.github/prompts/{plan,plan-new,continue,recover,governance-review}.prompt.md` (missing `owners`); `.github/instructions/{compound-engineering-wsl2,dev-environment}.instructions.md` (missing `name`, `summary`, `owners`)
+- Touches: `.github/prompts/{plan,plan-new,continue,recover,governance-review}.prompt.md` (missing `owners`); `.github/instructions/{compound-engineering-wsl2,dev-environment}.instructions.md` (missing `name`, `summary`, `owners`); `.github/workflows/ci.yml` (one step added to the existing `dotnet-build` job, so the validator's verdict gates a PR instead of only its compilation)
 - Why it matters: the validator exits **1** on seven assets, so it cannot be wired into CI as a gate until they are clean — ST-089 makes the tool runnable, this makes its verdict green. These accumulated unobserved precisely because nothing runs it.
 - Acceptance criteria:
   - [ ] The validator reports **zero** findings and exits 0
   - [ ] Each of the seven is resolved **deliberately**, not by adding filler: either the metadata is real, or the asset is retired/excluded with the reason recorded
   - [ ] The five `.prompt.md` files get a disposition consistent with **ST-066**, which already tracks migrating the retired ExecPlan-era prompts — do not add `owners` to a file ST-066 intends to delete. Coordinate rather than duplicating the decision
+  - [ ] **CI runs the validator, not merely builds it:** a `dotnet run --project tools/GovernanceAssetValidator -- validate .` step is added to the existing `dotnet-build` job in `.github/workflows/ci.yml`. It lands **last, once the seven are clean** — added ahead of that it fails every build, which is why it is this story's tail. Red control before the box is ticked: strip a required frontmatter field from one asset → the new step turns CI red → revert → green again, per [docs/solutions/conventions/verification-mechanisms-need-adversarial-review.md](../../docs/solutions/conventions/verification-mechanisms-need-adversarial-review.md)
 - Plan: (to be created — `docs/plans/`; likely small enough for the trivial-edit carve-out if ST-066's disposition is already settled)
-- Notes: Two of the seven — `compound-engineering-wsl2` and `dev-environment` — are **live** instructions files that auto-load into Copilot sessions, not retired ones; those want real metadata. The other five are ST-066 territory. Filed 2026-08-03 alongside ST-089; that story fixes the tool, this one fixes what the tool found.
+- Notes: Two of the seven — `compound-engineering-wsl2` and `dev-environment` — are **live** instructions files that auto-load into Copilot sessions, not retired ones; those want real metadata. The other five are ST-066 territory. Filed 2026-08-03 alongside ST-089; that story fixes the tool, this one fixes what the tool found. The CI run step is this story's tail rather than a story of its own because *enforcing* the validator's verdict is a different gate from *compiling* the validator, and it cannot land ahead of the assets being clean — a separate story would only sit blocked on this one's first criterion.
 
 ### ST-088: ST-084 Stage 2 — criteria 5–7 and the final ADR-016 host recommendation
 - Type: spike / architecture decision (continues ST-084)
