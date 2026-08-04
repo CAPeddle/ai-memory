@@ -2,6 +2,7 @@
 name: "Plan New"
 description: "Add a new ai-memory story through PO-guided intake, targeted research, and priority scoping"
 agent: "agent"
+status: retired
 ---
 
 # /plan-new — Lead Engineer (New Story Intake)

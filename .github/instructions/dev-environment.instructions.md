@@ -1,4 +1,9 @@
 ---
+name: "Dev Environment"
+summary: "Native Deno and Docker Compose commands for the ai-memory dev and test stacks"
+status: active
+owners:
+  - ai-memory-maintainers
 applyTo: "**"
 ---
 

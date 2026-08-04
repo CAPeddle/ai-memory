@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AiMemory.Server", "AiMemory
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AiMemory.Tests", "..\tests\AiMemory.Tests\AiMemory.Tests.csproj", "{2FBC27B7-FBD9-4846-B45E-C1678FEED950}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GovernanceAssetValidator", "..\tools\GovernanceAssetValidator\GovernanceAssetValidator.csproj", "{456AAF0F-6DA0-4F8F-B82A-C9CD00452599}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -30,5 +32,9 @@ Global
 		{2FBC27B7-FBD9-4846-B45E-C1678FEED950}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2FBC27B7-FBD9-4846-B45E-C1678FEED950}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2FBC27B7-FBD9-4846-B45E-C1678FEED950}.Release|Any CPU.Build.0 = Release|Any CPU
+		{456AAF0F-6DA0-4F8F-B82A-C9CD00452599}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{456AAF0F-6DA0-4F8F-B82A-C9CD00452599}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{456AAF0F-6DA0-4F8F-B82A-C9CD00452599}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{456AAF0F-6DA0-4F8F-B82A-C9CD00452599}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

@@ -2,6 +2,7 @@
 name: "Recover"
 description: "Recover ai-memory sessions through forensic analysis, avoidance notes, and ExecPlan annotations"
 agent: "agent"
+status: retired
 ---
 
 # /recover — Lead Engineer (Recovery Mode)

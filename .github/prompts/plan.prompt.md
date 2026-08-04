@@ -2,6 +2,7 @@
 name: "Plan"
 description: "Collaborative planning for ai-memory: scoping, story creation, query packets, and ExecPlan authoring"
 agent: "agent"
+status: retired
 ---
 
 # /plan — Lead Engineer (Planning Mode)

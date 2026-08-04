@@ -100,3 +100,30 @@ jobs:
       - name: Run contact-memory tests
         working-directory: contact-memory
         run: deno task test
+
+  dotnet-build:
+    # Builds src/AiMemory.sln (includes GovernanceAssetValidator, AiMemory.Core,
+    # AiMemory.Server, AiMemory.Tests). No secrets needed — independent of Deno jobs.
+    # Prevents analyzer violations in tools/ from accumulating unobserved (ST-089).
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore src/AiMemory.sln
+
+      - name: Build
+        run: dotnet build src/AiMemory.sln --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test src/AiMemory.sln --no-build --configuration Release
+
+      - name: Validate governance asset catalog
+        run: dotnet run --project tools/GovernanceAssetValidator -- validate .

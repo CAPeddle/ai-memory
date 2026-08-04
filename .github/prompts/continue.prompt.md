@@ -2,6 +2,7 @@
 name: "Continue"
 description: "Execute Ready ExecPlans mechanically for ai-memory, with atomic commits and board maintenance"
 agent: "agent"
+status: retired
 ---
 
 # /continue — Lead Engineer (Execution Mode)
