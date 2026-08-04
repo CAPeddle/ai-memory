@@ -124,3 +124,6 @@ jobs:
 
       - name: Test
         run: dotnet test src/AiMemory.sln --no-build --configuration Release
+
+      - name: Validate governance asset catalog
+        run: dotnet run --project tools/GovernanceAssetValidator -- validate .
