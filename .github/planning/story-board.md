@@ -4,7 +4,7 @@
 > Next planning target: (TBD after ST-072 completes).
 > Unblocked: ST-023, ST-019, ST-045, ST-048, ST-049, ST-050, ST-051, ST-053, ST-059, ST-060, ST-061 (ST-042 migration framework complete — ST-045/ST-048 blockers cleared; ST-047 in Review). ST-070 + ST-071 done 2026-07-03 (integration suite green in CI, PR #21 merged).
 > Field convention: New/updated entries use `Plan:` pointing to `docs/plans/*.md`. Older entries retain `ExecPlan:` pointing to `.github/planning/execplans/*.md` as historical record — not retroactively renamed.
-> Last updated: 2026-08-04 (**ST-090 Done** — Seven governance frontmatter gaps cleared; validator exits 0. Five legacy prompt files marked `status: retired` (consistent with ST-066, no fake `owners`); two live instructions files get real `name`/`summary`/`status`/`owners`. Validator updated: `status: retired` early-return added, dead `?? "active"` default removed (fixes ST-089 code-review finding #5). Catalog regenerated. `Validate governance asset catalog` step wired as final step of `dotnet-build` CI job. Red control confirmed locally: strip `owners` → validator exits 1 → revert → exits 0. Both WIP slots remain free.)
+> Last updated: 2026-08-04 (**ST-088 In Progress** — Plan created at `docs/plans/2026-08-04-002-spike-st088-stage2-scope-enforcement-remote-node-plan.md`. Six implementation units: U1 prices the 15-path enforcement surface (ADR-016 gate); U2-U4 implement and exercise the remote Ubuntu execution node (hub tables, Node client, experiments 4–6); U5 assesses actual execution blocking; U6 produces the final ADR-016 recommendation. PR #45 merged (ST-089 learning doc + CONCEPTS.md Governance vocabulary). In Progress slot taken by ST-088; Review slot free.)
 >
 > Previously: 2026-08-03 (**ST-084 Review → Done**, and **ST-088 filed**. The PO's Stage 1 review completed — the story's last outstanding item. All five proposed ADR-016 amendments accepted and applied as revision 1.2; **amendment 3 adopted in its stronger form, as an acceptance *gate***, so Candidate A may not be accepted while §6.1's policy-scope enforcement surface is unpriced. **ADR-016's status is unchanged — still Proposed/Conditional; the gate is recorded against, not discharged.** The review re-derived the findings against the tree rather than reading the document, and **two of the three §6 concerns had moved since the verdict was formed, in opposite directions**: §8's "not wired at boot" caveat is discharged by ST-086 (favours Candidate A), while §6.2's "a bad workflow migration cannot kill the server" is no longer true of a deployed server, since ST-086 chose fail-startup (counts against it). §6.1 re-verified and undiminished — `scope.tags` still enforced in zero retrieval paths. Recorded in findings §12a. ST-084's Stage 2 criteria block was split out as **ST-088** so merged, reviewed Stage 1 work could be marked Done rather than sitting behind three unticked criteria. **Both WIP slots are now free.**)
 >
@@ -17,23 +17,6 @@
 ---
 
 ## Backlog
-
-### ST-088: ST-084 Stage 2 — criteria 5–7 and the final ADR-016 host recommendation
-- Type: spike / architecture decision (continues ST-084)
-- Source: split out of ST-084 on PO decision 2026-08-03, when the Stage 1 review completed. Stage 2 was carried on ST-084 as an unticked second criteria block, which meant merged, reviewed Stage 1 work could never be marked Done
-- phase: 0 (architecture)
-- Value: 4
-- Blocked by: — (ST-084 Stage 1 merged and reviewed; contracts defined)
-- Touches: `server/src/workflow/` (remote-node client, policy-scope enforcement); memory-side retrieval paths (**enumerated**, not yet chosen — findings §6.1); `docs/investigations/ST-084-awcp-host-spike-findings.md` (Stage 2 report); `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` (final disposition — **only** this story may move it off Proposed/Conditional)
-- Acceptance criteria:
-  - [ ] **Criterion 5 — policy-scope enforcement** (controlled field, not descriptive tags; default-deny; every enabled retrieval/graph/context/export/provider path enforces or fails closed)
-  - [ ] **Criterion 6 — remote Ubuntu execution node** (authenticated registration, heartbeat, checkpoint, repo-state; offline spool + idempotent replay; disconnection/duplicate/invalid-auth experiments)
-  - [ ] **Criterion 7 — final extraction viability and the final ADR-016 recommendation**
-  - [ ] **ADR-016's acceptance pre-condition is discharged:** the §6.1 enforcement surface is **priced** — a defended estimate of the cost of enforcing a boundary column across 15 hand-written read paths with no chokepoint, a `fetch` that accepts no context parameter, two structurally unfilterable graph tools, unscoped provider egress, and a fingerprint dedup whose `ON CONFLICT` merges tags. Added to ADR-016 §1 as a **gate** by PO decision 2026-08-03: this story may not recommend accepting Candidate A while that number does not exist
-  - [ ] **Actual execution blocking** is proven or reported UNPROVEN with the same honesty as Stage 1 — `blocking` is still modelled state whose only implemented consequence is the attention item (`server/src/workflow/attention.ts:51`) and a dashboard tag
-- Plan: (to be created — `docs/plans/`; Stage 2 contracts are pre-defined in findings §7, so it does not start from assumptions)
-- Docs: [docs/investigations/ST-084-awcp-host-spike-findings.md](../../docs/investigations/ST-084-awcp-host-spike-findings.md) §7 (contracts), §8 (what is UNPROVEN), §12a (post-Stage-1 drift); `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` §1
-- Notes: **Pricing is this story's job; building is ST-082's.** They must not collide — ST-088 produces the estimate that lets the host decision be taken, ST-082 implements the enforcement once a host is settled. If ST-082 lands first the estimate becomes an actual, which is better evidence, not a conflict. **Burden of proof still sits with the spike, not the preference** — Candidate A remains the hypothesis, and the honest outcome set is still accept / accept-with-changes / recommend Candidate C. Read findings §12a before trusting any Stage 1 claim: two of the three §6 concerns had already moved by the time Stage 1 was reviewed, in opposite directions, and a third story could move them again.
 
 ### ST-085: Investigate local GPU inference as ST-082's compliant model provider
 - Type: spike / investigation
@@ -529,6 +512,24 @@
 ## Refined
 
 ## In Progress
+
+### ST-088: ST-084 Stage 2 — criteria 5–7 and the final ADR-016 host recommendation
+- Type: spike / architecture decision (continues ST-084)
+- Source: split out of ST-084 on PO decision 2026-08-03, when the Stage 1 review completed. Stage 2 was carried on ST-084 as an unticked second criteria block, which meant merged, reviewed Stage 1 work could never be marked Done
+- phase: 0 (architecture)
+- Value: 4
+- Blocked by: — (ST-084 Stage 1 merged and reviewed; contracts defined)
+- Touches: `server/src/workflow/` (remote-node client, policy-scope enforcement); memory-side retrieval paths (**enumerated**, not yet chosen — findings §6.1); `docs/investigations/ST-084-awcp-host-spike-findings.md` (Stage 2 report); `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` (final disposition — **only** this story may move it off Proposed/Conditional)
+- Acceptance criteria:
+  - [ ] **Criterion 5 — policy-scope enforcement** (controlled field, not descriptive tags; default-deny; every enabled retrieval/graph/context/export/provider path enforces or fails closed)
+  - [ ] **Criterion 6 — remote Ubuntu execution node** (authenticated registration, heartbeat, checkpoint, repo-state; offline spool + idempotent replay; disconnection/duplicate/invalid-auth experiments)
+  - [ ] **Criterion 7 — final extraction viability and the final ADR-016 recommendation**
+  - [ ] **ADR-016's acceptance pre-condition is discharged:** the §6.1 enforcement surface is **priced** — a defended estimate of the cost of enforcing a boundary column across 15 hand-written read paths with no chokepoint, a `fetch` that accepts no context parameter, two structurally unfilterable graph tools, unscoped provider egress, and a fingerprint dedup whose `ON CONFLICT` merges tags. Added to ADR-016 §1 as a **gate** by PO decision 2026-08-03: this story may not recommend accepting Candidate A while that number does not exist
+  - [ ] **Actual execution blocking** is proven or reported UNPROVEN with the same honesty as Stage 1 — `blocking` is still modelled state whose only implemented consequence is the attention item (`server/src/workflow/attention.ts:51`) and a dashboard tag
+- Plan: [docs/plans/2026-08-04-002-spike-st088-stage2-scope-enforcement-remote-node-plan.md](../../docs/plans/2026-08-04-002-spike-st088-stage2-scope-enforcement-remote-node-plan.md)
+- Docs: [docs/investigations/ST-084-awcp-host-spike-findings.md](../../docs/investigations/ST-084-awcp-host-spike-findings.md) §7 (contracts), §8 (what is UNPROVEN), §12a (post-Stage-1 drift); `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` §1
+- Notes: **Pricing is this story's job; building is ST-082's.** They must not collide — ST-088 produces the estimate that lets the host decision be taken, ST-082 implements the enforcement once a host is settled. If ST-082 lands first the estimate becomes an actual, which is better evidence, not a conflict. **Burden of proof still sits with the spike, not the preference** — Candidate A remains the hypothesis, and the honest outcome set is still accept / accept-with-changes / recommend Candidate C. Read findings §12a before trusting any Stage 1 claim: two of the three §6 concerns had already moved by the time Stage 1 was reviewed, in opposite directions, and a third story could move them again.
+- **Moved Backlog → In Progress 2026-08-04.** Plan created.
 
 ## Review
 
