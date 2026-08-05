@@ -50,7 +50,9 @@ delivery; `docs/plans/` and the story board remain the canonical delivery record
   2. A registered node can POST events to `/workflow/nodes/:node_id/events` and the hub records them in `workflow.run_events` attributed to that node.
   3. A request with an invalid or missing node bearer is rejected with HTTP 401 and does not affect platform MCP auth or prevent the workflow module from booting.
   4. The `(node_id, client_seq)` unique constraint on `run_events` is enforced — a duplicate insert is silently ignored (`ON CONFLICT DO NOTHING`), not an error.
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 02-01-PLAN.md — Tracer: end-to-end node registration + event ingestion hub (migrations 003/004, store functions, remoteNodeHub.ts, index.ts mount) — NODE-01, NODE-02
+- [ ] 02-02-PLAN.md — Security & regression expansion: auth rejection, credential isolation, cross-node guard, boot isolation, full regression — NODE-03
 **UI hint**: no
 
 ---
@@ -91,7 +93,7 @@ delivery; `docs/plans/` and the story board remain the canonical delivery record
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Policy-Scope Pricing | — | ✅ Complete | 2026-08-05 |
-| 2. Remote Node Identity & Hub | 0/TBD | Not started | - |
+| 2. Remote Node Identity & Hub | 0/2 | Not started | - |
 | 3. Node Client, Reliable Delivery & Regression Safety | 0/TBD | Not started | - |
 | 4. Blocking Evidence & ADR-016 Host Decision | 0/TBD | Not started | - |
 
