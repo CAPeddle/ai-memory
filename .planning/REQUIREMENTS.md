@@ -67,29 +67,27 @@ Deferred beyond the ST-088 host-viability milestone.
 
 ## Traceability
 
-Updated during roadmap creation.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SCOPE-01 | TBD | Complete |
-| SCOPE-02 | TBD | Complete |
-| NODE-01 | TBD | Pending |
-| NODE-02 | TBD | Pending |
-| NODE-03 | TBD | Pending |
-| EVENT-01 | TBD | Pending |
-| EVENT-02 | TBD | Pending |
-| EVENT-03 | TBD | Pending |
-| EVENT-04 | TBD | Pending |
-| BLOCK-01 | TBD | Pending |
-| HOST-01 | TBD | Pending |
-| HOST-02 | TBD | Pending |
-| SAFE-01 | TBD | Pending |
-| SAFE-02 | TBD | Pending |
+| SCOPE-01 | Phase 1 — Policy-Scope Pricing | ✅ Complete (commit `20aac70`, 2026-08-05) |
+| SCOPE-02 | Phase 1 — Policy-Scope Pricing | ✅ Complete (commit `20aac70`, 2026-08-05) |
+| NODE-01 | Phase 2 — Remote Node Identity & Hub | Pending |
+| NODE-02 | Phase 2 — Remote Node Identity & Hub | Pending |
+| NODE-03 | Phase 2 — Remote Node Identity & Hub | Pending |
+| EVENT-01 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Pending |
+| EVENT-02 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Pending |
+| EVENT-03 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Pending |
+| EVENT-04 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Pending |
+| SAFE-01 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Pending |
+| SAFE-02 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Pending |
+| BLOCK-01 | Phase 4 — Blocking Evidence & ADR-016 Host Decision | Pending |
+| HOST-01 | Phase 4 — Blocking Evidence & ADR-016 Host Decision | Pending |
+| HOST-02 | Phase 4 — Blocking Evidence & ADR-016 Host Decision | Pending |
 
 **Coverage:**
 - v1 requirements: 14 total
-- Mapped to phases: 0
-- Unmapped: 14
+- Mapped to phases: 14
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-08-05*
