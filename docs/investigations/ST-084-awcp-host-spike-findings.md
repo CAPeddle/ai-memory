@@ -1033,3 +1033,132 @@ branch) were both caught by the testing and correctness lenses.
    module" a two-file change.
 6. **CLAUDE.md says six MCP tools; `index.ts` registers eleven.** Stale documentation,
    noted in passing.
+
+---
+
+## 13. Stage 2 Unit 1: Policy-Scope Enforcement Pricing (Criterion 5 — ADR-016 Gate Item)
+
+**Purpose:** Defend an estimate for enforcing `scope.tags` across all memory-side retrieval paths. This is the binding gate item from ADR-016 §1 that determines whether Candidate A (ai-memory as AWCP host) can be accepted.
+
+**Methodology:** Each of the 15 enumerated paths from §6.1 is classified by enforcement feasibility and effort. Classifications are:
+- **Straightforward** — add `AND scope = $scope` to existing WHERE clause; no structural change required
+- **Requires new parameter** — tool takes no context parameter; adding enforcement requires new parameter addition and caller-side plumbing
+- **Structurally blocked** — path cannot enforce a WHERE predicate; tool must be gated (deny calls if scope filter active)
+- **Egress path** — not a retrieval operation; enforcement means "do not send to provider if scope boundary is violated"
+
+**Effort scale:**
+- **S** = 1–2 hours (single line change, one test assertion, no cross-module edits)
+- **M** = half-day (parameter plumbing, multiple callsites, medium test coverage, 2–3 files touched)
+- **L** = 1+ day (schema changes, egress policy implementation, multi-module integration, or major product decision required)
+
+---
+
+### 13.1 Pricing Table: 15 Memory-Side Retrieval Paths
+
+| # | Path | Type | Classification | Effort | Notes |
+|---|------|------|---|---|---|
+| 1 | `search_thoughts` BM25 lane | Retrieval | Straightforward | S | Add `AND scope = $scope` at `index.ts:207-215`. Single WHERE clause, context param already present. |
+| 2 | `search_thoughts` vector lane | Retrieval | Straightforward | S | Add `AND scope = $scope` at `index.ts:360-361`. Context param already present. |
+| 3 | `search_thoughts` RRF fusion pass | Retrieval | Straightforward | S | Add `AND scope = $scope` to `SELECT id FROM thoughts` query in `searchQuality.ts`. Context available from caller. |
+| 4 | `search_thoughts` MMR re-rank | Retrieval | Straightforward | S | Add `AND scope = $scope` to re-rank query in `searchQuality.ts`. Context available from function parameter. |
+| 5 | `fetch` (one-call bypass) | Retrieval | **Requires new parameter** | **M** | Tool accepts no context param at all (`index.ts:262`). Must add `context?: string` to input schema, parse/validate it, thread to WHERE clause. Breaks caller contract — reverse incompatible without versioning strategy or optional-param fallback. |
+| 6 | `list_thoughts` | Retrieval | Straightforward | S | Add `AND scope = $scope` to WHERE at `index.ts:632`. Context param already present. |
+| 7 | `thought_stats` count (total) | Retrieval | Straightforward | S | Add `AND scope = $scope` to `WHERE active = true` at `index.ts:665`. Context param already present. |
+| 8 | `thought_stats` by-type | Retrieval | Straightforward | S | Add `AND scope = $scope` to WHERE at `index.ts:666`. Context param already present. |
+| 9 | `thought_stats` by-project | Retrieval | Straightforward | S | Add `AND scope = $scope` to WHERE at `index.ts:667`. Context param already present. |
+| 10 | `capture_thought` read-back | Retrieval | **Requires new parameter** | **M** | Tool accepts context but does not enforce on read-back after INSERT. Inserted row is already scoped via parameterized INSERT; but returned rows must be filtered by scope. Requires implicit scope filtering or new param + validation. |
+| 11 | `graph_traverse` (AGE/openCypher) | Retrieval | **Structurally blocked** | **L** | AGE nodes carry only `(label, name)`. No scope column exists in the graph; cannot join to `thoughts` table within openCypher MATCH. Two options: (a) extract-time tagging (tag every node with scope from source thought) = schema change + worker update, or (b) gate the tool (deny calls if scope filter active). Recommend gating for Stage 2 (reversible), defer tagging to Stage 3. |
+| 12 | `graph_search` (parameterized graph) | Retrieval | **Structurally blocked** | **L** | Same as `graph_traverse` — AGE node structure unchanged, no scope column available. Recommend gating alongside #11. |
+| 13 | Entity-worker egress (OpenRouter) | Egress | **Egress path** | **L** | Worker ships unscoped content to OpenRouter at `entityWorker.ts:186`. Enforcement means "do not invoke LLM if entity extraction would violate scope boundary". Requires: (a) read scope from source thought, (b) gate the LLM call, (c) tag extracted entity with scope, and (d) product-level decision on what scope means for extracted entities (can extracted entities cross scope boundaries?). |
+| 14 | Consolidation LLM egress (OpenRouter) | Egress | **Egress path** | **L** | Worker ships shard consolidations to OpenRouter at `consolidationWorker.ts` / `consolidationLLM.ts`. Similar gating required: do not consolidate across scope boundaries. **Product decision required:** what is the scope of consolidated output (can personal wiki be synthesized from corporate shards)? |
+| 15 | Embedding backfill (OpenRouter) | Egress | **Egress path** | **L** | Backfill at `embeddingBackfill.ts` ships rows with no scope filtering. Enforcement means "do not embed if scope is active and row violates boundary". Simpler than #13–14 (no cross-boundary synthesis), but still requires scope-gating before calling OpenRouter. |
+
+---
+
+### 13.2 Effort Summary
+
+**By classification:**
+- **Straightforward** (paths 1–4, 6–9): 8 paths × S = **8 hours (1 day)**
+- **Requires new parameter** (paths 5, 10): 2 paths × M = **16 hours (2 days)**
+- **Structurally blocked** (paths 11–12): 2 paths × L = **16+ hours (2+ days)**
+- **Egress paths** (paths 13–15): 3 paths × L = **24+ hours (3+ days)**
+
+**Total defended estimate: 64+ hours (8+ working days)** to enforce scope across all paths.
+
+**Breakdown by effort tier:**
+- Low effort (S): 8 paths, 1 day total
+- Medium effort (M): 2 paths, 2 days total
+- High effort (L): 7 paths (structurally blocked + egress), 5+ days total
+
+**Critical path:** Paths 1–4, 6–9 must be implemented and tested first (1 day), as a sanity check on the model. If this subsurface proves harder than estimated, the L-effort paths will be harder too.
+
+---
+
+### 13.3 Key Findings
+
+1. **The "straightforward" paths are genuinely straightforward** — 8 of 15 (53%) are single-line WHERE additions already, achievable in ~1 day. This closes most of the search surface quickly and serves as a proof-of-concept for the enforcement model.
+
+2. **`fetch` is a critical chokepoint** — path #5 (one-call bypass) requires schema change and breaks the caller contract. This is M-effort but high risk (every existing client of the tool must upgrade). Versioning strategy is mandatory before implementation.
+
+3. **Graph tools cannot be filtered at query level** — paths 11–12 are L-effort because AGE node structure has no scope column and openCypher cannot reach back to the `thoughts` table. Gating (deny calls if scope filter active) is the Stage 2 recommendation; tagging nodes at extract-time is deferred to Stage 3 to avoid a schema commitment now.
+
+4. **Egress paths require product-level policy decisions** — paths 13–15 (entity-worker, consolidation, embedding) are each L-effort because they require answering: "What does scope mean for synthesized content?" These decisions must be made before implementation starts.
+
+5. **No single chokepoint exists** — the 15 paths are distributed across 8+ source files with no query builder, no row-level security layer, and no shared data-access pattern. A single mistake in any path silently opens the boundary. Test coverage is therefore **critical** (see Risks, below).
+
+---
+
+### 13.4 Risks and Mitigations
+
+| Risk | Severity | Mitigation |
+|---|---|---|
+| `fetch` breaks caller contract | High | Implement versioning strategy before modifying `fetch` schema. Option A: new optional `context` param, ignore if absent (forward-compatible). Option B: new versioned tool `fetch_v2` alongside `fetch` (backward-compatible but doubles maintenance). Decide before ST-082 implementation. |
+| Graph tagging schema commitment | High | Defer to Stage 3; gate the tools in Stage 2. Gating is reversible (remove the gate later). Tagging is a schema commitment (cannot undo without a migration). |
+| Egress policy ambiguity | High | PO decision required before Stage 2 execution unit 2 (egress enforcement). Questions: (a) Can extracted entities cross scope boundaries? (b) Can consolidated output span scopes? (c) Can embeddings be generated for cross-scope shards? Document answers in ADR-016 before implementation. |
+| Silent coverage gap (critical) | Critical | Every path must have two test assertions: red control (enforcement removed → breach passes, should fail) and green control (enforcement present → allow passes). 15 paths × 2 assertions = 30 test cases minimum. A single path with zero test coverage is a latent breach. Use integration tests that exercise the full MCP call stack, not just isolated SQL queries. |
+| Scope column leakage via existing patterns | High | `parseContext`'s fail-open idioms (`projects?.[0]`, `IS NULL OR`) must not be copied to boundary enforcement. Add a shared validation function that requires explicit deny-on-null, never allow-on-null, for scope columns. |
+
+---
+
+### 13.5 Comparison to Candidate C (Clean Umbrella Application)
+
+Candidate C (separate operational application, no memory co-tenancy):
+
+- **No legacy retrieval paths:** Operational queries are keyed lookups (e.g., "fetch run #1234") and status filters (e.g., "list my running packets"), not semantic search. Scope enforcement would be 2–3 WHERE clauses, not 15 paths.
+- **No unfilterable graph tool:** Workflow state is transactional; no knowledge graph needed. No AGE surface = no structurally-blocked paths.
+- **Scope enforcement via single application layer:** Application-level parameter binding (via prepared statements or an ORM layer) enforces scope once, for all queries. No 15 hand-written queries to mistake.
+- **No fingerprint-dedup interaction:** No tag-merging logic to reason about. Content is not deduplicated across scopes.
+- **No egress ambiguity:** Workflow produces no extracted entities and no consolidated output. Embeddings are not required. Egress paths are zero.
+
+**Net savings for Candidate C: 4–5 days** in implementation complexity and ongoing maintenance. Offset by 3–4 days of greenfield setup (schema design, application skeleton, test infrastructure). **Candidate C breaks even on effort, but wins on simplicity and maintainability.**
+
+---
+
+### 13.6 Recommendation for ADR-016 Acceptance
+
+**Candidate A (ai-memory as AWCP host) is viable IF:**
+
+1. **Paths 1–4, 6–9 (straightforward, 1 day) are implemented and tested as a sanity check** — before committing to the full 8+ day estimate. If this subsurface is harder than estimated, stop and escalate to PO.
+
+2. **Path 5 (`fetch` parameter addition) is scoped clearly:** Decide on versioning strategy (optional-param fallback vs. `fetch_v2` vs. major version bump) and document in ST-082 acceptance criteria.
+
+3. **Paths 11–12 (graph tools) are gated, not schema-changed** — tools return error if scope filter is active. This is reversible; schema tagging is deferred to Stage 3 or later.
+
+4. **Paths 13–15 (egress) are scoped separately; PO decision required** on entity/consolidation/embedding scope rules before ST-082 implementation. These decisions belong in ADR-016 updates, not in implementation tickets.
+
+5. **ADR-016 §1 is updated with this pricing table and per-path classification** — so the boundary-enforcement cost is visible to operators, reviewers, and future maintenance planners. The gate is not "can we do this?" but "do we know what it costs?"
+
+**Candidate C (clean umbrella) remains less expensive in implementation effort** (by 4–5 days), but does not eliminate the greenfield setup cost (3–4 days). The decision between them should be made on product/operational grounds (shared vs. separate persistence, operational coupling, future extensibility) rather than on implementation effort alone.
+
+---
+
+### 13.7 Verification Checklist
+
+- [x] Pricing table covers all 15 enumerated paths (§6.1)
+- [x] Each path is classified in one of four categories (Straightforward / Requires param / Structurally blocked / Egress)
+- [x] Effort estimates are defended by file:line references or architectural reasoning
+- [x] Total effort is summed and stated (64+ hours / 8+ days)
+- [x] Risk mitigations are documented and actionable
+- [x] Comparison to Candidate C is honest (Candidate C is not "free", but "different effort profile")
+- [x] Recommendation is conditional (IF the conditions are met, Candidate A is viable)
+- [x] This section is intended as appendix to findings doc (§13) and as input to ADR-016 update
