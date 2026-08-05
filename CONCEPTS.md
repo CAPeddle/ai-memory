@@ -116,6 +116,28 @@ A verification observed once by hand, valid only for the tree state it ran again
 
 Unlike a check that re-runs, nobody re-observes a Point-in-Time Result, so it expires silently the moment the surface it covered changes — by any hand, not only its author's. It is therefore recorded with the commit it was taken at and the paths it covered, so a later reader can ask the tree whether it has expired instead of trusting it. A date records only when someone looked; a commit records what they looked at. Expired does not mean wrong — it means unobserved, which is the state a verification record exists to rule out.
 
+## Search Quality & Testing
+
+### Corpus
+A seeded dataset of known thoughts used to establish search-quality baselines and golden-set membership expectations.
+
+The corpus is bulk-inserted into the database as seed data before tests run, with synthetic embeddings of known topic structure. It serves as the ground truth for validating search results, incident baselines, and hybrid query behavior. Corpus rows are marked with explicit `memory_type = 'shard'` and are distinct from ad-hoc test data.
+
+### Consolidation Queue
+An auto-populated work queue that enqueues shard thoughts for async consolidation processing.
+
+The queue is populated by the `trg_queue_consolidation` database trigger, which fires AFTER INSERT on any shard thought. Each queued shard is claimed and processed by the Consolidation Worker, which consolidates it into a wiki entry and marks the source shard `active = false`. Test fixtures that seed corpus data must disable this trigger during seeding to prevent background processing from interfering with baseline assertions.
+
+### Consolidation Worker
+A background service that claims and processes entries from the Consolidation Queue.
+
+The worker reads queued shards, synthesizes them into consolidated wiki entries via an LLM, and updates the source shards to `active = false`. It runs asynchronously and independently of foreground tests, so test isolation is critical: tests that seed corpus must either disable the trigger (preventing queue entries) or empty the queue before making assertions about shard counts or active status.
+
+### Golden-Set
+A predetermined membership baseline for search queries, used to validate that hybrid BM25 + vector search returns expected results.
+
+A golden-set query has a known list of exact result UUIDs expected to appear in the top-10. The test asserts that all expected UUIDs are present in the actual result. Hybrid queries with vector-embedding components are not deterministic in shared CI environments where real embeddings from other tests contaminate the vector lane, so only BM25-only queries are included in the deterministic baseline; hybrid queries that depend on embedding stability are excluded or marked as non-deterministic.
+
 ## Governance
 
 ### Governance Asset
