@@ -1,10 +1,17 @@
 ---
-gsd_state_version: '1.0'
-status: in_progress
+gsd_state_version: 1.0
+milestone: v1.0
+milestone_name: milestone
+current_phase: 2
+current_phase_name: Remote Node Identity & Hub
+status: executing
+last_updated: "2026-08-05T11:22:55.895Z"
+last_activity: 2026-08-05
+last_activity_desc: "Phase 2 planned as two verified waves: end-to-end hub tracer, then security and regression hardening."
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 0
+  total_plans: 2
   completed_plans: 0
   percent: 25
 ---
@@ -21,15 +28,16 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 ## Current Position
 
 Phase: 2 of 4 (Remote Node Identity & Hub)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-08-05 — Phase 1 complete. U1 policy-scope pricing committed as `20aac70`. §13 appended to `docs/investigations/ST-084-awcp-host-spike-findings.md` with 15-path classification matrix and defended enforcement estimate (64+ hours). Roadmap and STATE initialized.
+Plan: 0 of 2 in current phase
+Status: Ready to execute
+Last activity: 2026-08-05 — Phase 2 planned as two verified waves: end-to-end hub tracer, then security and regression hardening.
 
 Progress: [██░░░░░░░░] 25%
 
 ## Performance Metrics
 
 **Velocity:**
+
 - Total plans completed: 0 (GSD tracking started 2026-08-05; Phase 1 completed pre-GSD)
 - Average duration: —
 - Total execution time: —
@@ -41,6 +49,7 @@ Progress: [██░░░░░░░░] 25%
 | 1. Policy-Scope Pricing | pre-GSD | — | — |
 
 **Recent Trend:**
+
 - Last 5 plans: —
 - Trend: —
 
