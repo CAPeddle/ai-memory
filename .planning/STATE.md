@@ -47,7 +47,7 @@ Progress: [█████░░░░░] 50%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1. Policy-Scope Pricing | pre-GSD | — | — |
-| 2. Remote Node Identity & Hub | 2 | ~75min | ~38min |
+| 2. Remote Node Identity & Hub | 2 | not measured | not measured |
 
 **Recent Trend:**
 

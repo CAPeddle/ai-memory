@@ -27,6 +27,7 @@ key-files:
     - server/db/workflow/004_run_events.sql
     - server/src/workflow/remoteNodeHub.ts
     - server/tests/workflow-remote-node-hub.test.ts
+    - server/tests/workflow-node-hub-e2e.test.ts
   modified:
     - server/src/workflow/store.ts
     - server/index.ts
@@ -84,15 +85,18 @@ coverage:
         status: pass
     human_judgment: false
   - id: D5
-    description: "Routes mount inside the workflow feature block without disturbing platform auth or boot"
+    description: "Routes are actually mounted at /workflow/nodes by the composition root and reachable over HTTP, without disturbing platform auth or boot"
     requirement: "NODE-02"
     verification:
       - kind: e2e
-        ref: "tests/workflow-mvp-e2e.test.ts + tests/workflow-agent-key-e2e.test.ts (real server process)"
+        ref: "tests/workflow-node-hub-e2e.test.ts#ST-088: /workflow/nodes is mounted and bearer-guarded by the composition root"
+        status: pass
+      - kind: e2e
+        ref: "tests/workflow-mvp-e2e.test.ts + tests/workflow-agent-key-e2e.test.ts (boot and platform auth unaffected)"
         status: pass
     human_judgment: false
 
-duration: ~50min
+duration: not measured
 completed: 2026-08-06
 status: complete
 ---
@@ -142,7 +146,23 @@ Three, all because the plan's named approach could not work as written:
 tests/workflow-boundary.test.ts + workflow-remote-node-hub.test.ts
   + workflow-migrations.test.ts + workflow-store.test.ts   →  57 passed / 0 failed
 tests/workflow-mvp-e2e.test.ts + workflow-agent-key-e2e.test.ts →  3 passed (12 steps) / 0 failed
+tests/workflow-node-hub-e2e.test.ts                        →  1 passed (4 steps) / 0 failed
 ```
+
+**Gap found and closed after the fact.** Every NODE-01/02/03 assertion drives
+`createRemoteNodeHubRoutes()` in-process via `app.fetch`, which proves the route factory
+and proves nothing about `index.ts` — delete the mount and all fifteen stay green. The
+two e2e suites cited here boot real servers but never touch `/workflow/nodes/*`, so they
+would pass identically with no mount at all; `deno check` proves it compiles, not that it
+routes. Since B2 (the wrong mount anchor) was one of the three pre-execution blockers,
+leaving the mount itself untested would have been the weakest point in the phase.
+`tests/workflow-node-hub-e2e.test.ts` now drives the real HTTP boundary, and was verified
+to go red with `app.route("/workflow/nodes", ...)` removed.
+
+Its docblock records one thing it does **not** prove: both handlers call
+`validateNodeBearer` themselves, so deleting the composition-root middleware changes no
+observable behaviour and the 401 steps keep passing. The middleware is defence in depth
+for future routes, not the load-bearing check.
 
 Run inside `mcp-test`, bind mount confirmed as `/home/cpeddle/projects/ai-memory/server -> /app`. No `--parallel`.
 

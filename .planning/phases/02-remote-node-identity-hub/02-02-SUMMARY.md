@@ -85,7 +85,7 @@ coverage:
     human_judgment: true
     rationale: "The 9 failures need a human to confirm they remain the accepted provider-401 baseline rather than new breakage; the evidence is recorded below but the accept/reject call is the PO's."
 
-duration: ~25min
+duration: not measured
 completed: 2026-08-06
 status: complete
 ---
