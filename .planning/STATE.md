@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 2
-current_phase_name: Remote Node Identity & Hub
-status: executing
-last_updated: "2026-08-05T11:22:55.895Z"
-last_activity: 2026-08-05
-last_activity_desc: "Phase 2 planned as two verified waves: end-to-end hub tracer, then security and regression hardening."
+current_phase: 3
+current_phase_name: Node Client, Reliable Delivery & Regression Safety
+status: ready
+last_updated: "2026-08-06T12:40:00.000Z"
+last_activity: 2026-08-06
+last_activity_desc: "Phase 2 executed end to end: hub tracer green, then cross-node/isolation/payload guards proven red-then-green. NODE-01..03 discharged."
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 2
-  completed_plans: 0
-  percent: 25
+  completed_plans: 2
+  percent: 50
 ---
 
 # Project State
@@ -23,22 +23,22 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-05)
 
 **Core value:** Knowledge worth retaining must remain accurately recallable across tools, sessions, projects, and time without leaking across policy boundaries.
-**Current focus:** Phase 2 — Remote Node Identity & Hub (U2)
+**Current focus:** Phase 3 — Node Client, Reliable Delivery & Regression Safety (U3+U4)
 
 ## Current Position
 
-Phase: 2 of 4 (Remote Node Identity & Hub)
-Plan: 0 of 2 in current phase
-Status: Ready to execute
-Last activity: 2026-08-05 — Phase 2 planned as two verified waves: end-to-end hub tracer, then security and regression hardening.
+Phase: 3 of 4 (Node Client, Reliable Delivery & Regression Safety)
+Plan: 0 of TBD in current phase
+Status: Ready to plan
+Last activity: 2026-08-06 — Phase 2 complete; NODE-01, NODE-02, NODE-03 discharged and all four ROADMAP success criteria met.
 
-Progress: [██░░░░░░░░] 25%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 0 (GSD tracking started 2026-08-05; Phase 1 completed pre-GSD)
+- Total plans completed: 2 (GSD tracking started 2026-08-05; Phase 1 completed pre-GSD)
 - Average duration: —
 - Total execution time: —
 
@@ -47,6 +47,7 @@ Progress: [██░░░░░░░░] 25%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1. Policy-Scope Pricing | pre-GSD | — | — |
+| 2. Remote Node Identity & Hub | 2 | ~75min | ~38min |
 
 **Recent Trend:**
 
@@ -102,10 +103,10 @@ None yet.
 | Stage 1+2 findings | `docs/investigations/ST-084-awcp-host-spike-findings.md` |
 | ADR-016 | `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` |
 | Story board | `.github/planning/story-board.md` |
-| Hub remote-node source | `server/src/workflow/remoteNodeHub.ts` (to be created, Phase 2) |
+| Hub remote-node source | `server/src/workflow/remoteNodeHub.ts` (created, Phase 2) |
 | Node client | `server/scripts/awcp-node-client.js` (to be created, Phase 3) |
 
 ---
 
 *State initialized: 2026-08-05*
-*Next action: `/gsd-plan-phase 2` — plan Phase 2 (Remote Node Identity & Hub, U2)*
+*Next action: `/gsd-plan-phase 3` — plan Phase 3 (Node Client, Reliable Delivery & Regression Safety, U3+U4). Verify z2 reachability FIRST; if unreachable, record UNPROVEN for criterion 6 with Stage 1's honesty.*

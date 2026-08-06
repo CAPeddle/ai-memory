@@ -19,7 +19,7 @@ delivery; `docs/plans/` and the story board remain the canonical delivery record
 ## Phases
 
 - [x] **Phase 1: Policy-Scope Pricing** - Classify and price all 15 retrieval/egress paths; discharge the ADR-016 gate (U1)
-- [ ] **Phase 2: Remote Node Identity & Hub** - Add hub-side tables, node registration, and event ingestion endpoint (U2)
+- [x] **Phase 2: Remote Node Identity & Hub** - Add hub-side tables, node registration, and event ingestion endpoint (U2)
 - [ ] **Phase 3: Node Client, Reliable Delivery & Regression Safety** - Implement the node client with spool/replay and run disconnection, duplicate, and invalid-auth experiments (U3+U4)
 - [ ] **Phase 4: Blocking Evidence & ADR-016 Host Decision** - Prove or report UNPROVEN execution blocking; write the final ADR-016 recommendation (U5+U6)
 
@@ -56,14 +56,15 @@ delivery; `docs/plans/` and the story board remain the canonical delivery record
   3. A request with an invalid or missing node bearer is rejected with HTTP 401 and does not affect platform MCP auth or prevent the workflow module from booting.
   4. The `(node_id, client_seq)` unique constraint on `run_events` is enforced — a duplicate insert is silently ignored (`ON CONFLICT DO NOTHING`), not an error.
 
+**Status**: ✅ Complete — commits `587b0cd`, `08fe889`, `ebc7732`, `4f5abdf` (2026-08-06)
 **Plans**: 2 plans
 **Wave 1**
 
-- [ ] 02-01-PLAN.md — Tracer: end-to-end node registration + event ingestion hub (migrations 003/004, store functions, remoteNodeHub.ts, index.ts mount) — NODE-01, NODE-02
+- [x] 02-01-PLAN.md — Tracer: end-to-end node registration + event ingestion hub (migrations 003/004, store functions, remoteNodeHub.ts, index.ts mount) — NODE-01, NODE-02
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 02-02-PLAN.md — Security & regression expansion: auth rejection, credential isolation, cross-node guard, boot isolation, full regression — NODE-03
+- [x] 02-02-PLAN.md — Security & regression expansion: auth rejection, credential isolation, cross-node guard, boot isolation, full regression — NODE-03
 
 **UI hint**: no
 
@@ -111,7 +112,7 @@ delivery; `docs/plans/` and the story board remain the canonical delivery record
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Policy-Scope Pricing | — | ✅ Complete | 2026-08-05 |
-| 2. Remote Node Identity & Hub | 0/2 | Not started | - |
+| 2. Remote Node Identity & Hub | 2/2 | ✅ Complete | 2026-08-06 |
 | 3. Node Client, Reliable Delivery & Regression Safety | 0/TBD | Not started | - |
 | 4. Blocking Evidence & ADR-016 Host Decision | 0/TBD | Not started | - |
 
@@ -123,9 +124,9 @@ delivery; `docs/plans/` and the story board remain the canonical delivery record
 |-------------|-------|--------|
 | SCOPE-01 | Phase 1 | Complete |
 | SCOPE-02 | Phase 1 | Complete |
-| NODE-01 | Phase 2 | Pending |
-| NODE-02 | Phase 2 | Pending |
-| NODE-03 | Phase 2 | Pending |
+| NODE-01 | Phase 2 | Complete |
+| NODE-02 | Phase 2 | Complete |
+| NODE-03 | Phase 2 | Complete |
 | EVENT-01 | Phase 3 | Pending |
 | EVENT-02 | Phase 3 | Pending |
 | EVENT-03 | Phase 3 | Pending |
