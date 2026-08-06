@@ -268,3 +268,51 @@ Deno.test("startup validation: AWCP_AGENT_API_KEY unset starts cleanly (discrimi
   assertEquals(fatalCalled, false);
   assertEquals(exitCalled, false);
 });
+
+// ---------------------------------------------------------------------------
+// ST-088 NODE-03 — the node credential must never gate startup.
+// ---------------------------------------------------------------------------
+
+Deno.test("startup validation: no node credential is consulted at startup (ST-088 NODE-03)", () => {
+  // WHAT MAKES THIS NON-VACUOUS. The obvious form of this test — "assert the node
+  // bearer's env var name never appears in the missing set" — asserts about a subject
+  // that does not exist: this design introduces NO hub-side node-bearer env var at all.
+  // The bearer arrives in the Authorization header and is validated per request; the
+  // env var lives on the Phase-3 node, not here. Such a test passes because there is
+  // nothing to find, which is exactly the failure class the docblocks in
+  // workflow-migrations.test.ts and workflow-boundary.test.ts were written about.
+  //
+  // So this is a PAIR, and the positive control is the load-bearing half.
+
+  // Negative: a fully-configured deployment reports nothing missing, and in particular
+  // nothing node-shaped. Note findMissingRequiredEnv reads ONLY through the injected
+  // reader, so an unexpected credential lookup would have to come through here.
+  const consulted: string[] = [];
+  const missing = findMissingRequiredEnv((name) => {
+    consulted.push(name);
+    return "present";
+  });
+  assertEquals(missing, []);
+
+  // The stronger statement, and the one that actually fails if someone wires a node
+  // credential into startup: enumerate every variable startup asked about and assert
+  // none of them is node-related. A name-probe cannot do this; it can only confirm the
+  // absence of one name someone thought to guess.
+  const nodeShaped = consulted.filter((name) => /NODE|EXECUTION_NODE|NODE_BEARER/i.test(name));
+  assertEquals(
+    nodeShaped,
+    [],
+    `startup consulted a node credential: ${JSON.stringify(nodeShaped)}. An optional ` +
+      `module must never be able to prevent boot — validate the node bearer in the ` +
+      `hub handler, not in startupValidation.ts.`,
+  );
+
+  // Positive control: the same function DOES report a genuinely missing variable. Without
+  // this, the empty result above would be equally consistent with findMissingRequiredEnv
+  // being broken and returning [] for everything.
+  assertEquals(
+    findMissingRequiredEnv((name) => (name === "MEMORY_API_KEY" ? undefined : "present")),
+    ["MEMORY_API_KEY"],
+    "positive control failed: findMissingRequiredEnv does not report missing variables",
+  );
+});
