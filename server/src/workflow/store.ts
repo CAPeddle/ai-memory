@@ -616,6 +616,153 @@ export async function probeWorkflowSchemaLive(): Promise<boolean> {
 }
 
 // --------------------------------------------------------------------------
+// Remote execution nodes (ST-088 U2 — NODE-01, NODE-02)
+// --------------------------------------------------------------------------
+//
+// These live here rather than in remoteNodeHub.ts because this is the only workflow
+// file permitted to hold the database handle — workflow-boundary.test.ts asserts it by
+// scanning the module's source. The route factory calls these; it never imports ../db.ts.
+
+export interface UpsertExecutionNodeInput {
+  /** sha256Hex of the presented bearer. The raw bearer never reaches this layer. */
+  bearerTokenHash: string;
+  hostname?: string | null;
+  platform?: string | null;
+}
+
+/**
+ * Resolve a bearer digest to a node identity, creating one only if it is new.
+ *
+ * UPDATE-then-INSERT rather than the obvious `INSERT ... ON CONFLICT DO UPDATE SET`,
+ * for a reason that is not stylistic: workflow-boundary.test.ts scans this file with
+ * `/\b(?:FROM|INTO|UPDATE|JOIN)\s+([A-Za-z_][\w.]*)/gi` and asserts every captured
+ * identifier is `workflow.`-qualified. On `DO UPDATE SET last_seen_at` that regex
+ * captures the token after UPDATE — `SET` — and fails the build. The shape below is
+ * equivalent and does not trip it.
+ *
+ * Three statements, because a concurrent pair of registrations has three possible
+ * outcomes and all of them must resolve to ONE identity:
+ *   1. UPDATE hits    — the node already existed; refresh liveness, return it.
+ *   2. INSERT hits    — genuinely new; UNIQUE(bearer_token_hash) makes this safe.
+ *   3. INSERT no-ops  — we lost the race between 1 and 2. DO NOTHING returns no row,
+ *                       so read back the identity the winner created.
+ * Without step 3 the loser of a race would return no node_id at all, which is the
+ * failure the NODE-01 concurrency probe exists to catch.
+ */
+export async function upsertExecutionNode(
+  input: UpsertExecutionNodeInput,
+): Promise<{ node_id: string }> {
+  const { bearerTokenHash, hostname = null, platform = null } = input;
+
+  return await sql.begin(async (tx: SqlExecutor) => {
+    const updated = await tx<{ node_id: string }[]>`
+      UPDATE workflow.execution_nodes
+      SET last_seen_at = now(), status = 'active'
+      WHERE bearer_token_hash = ${bearerTokenHash}
+      RETURNING node_id
+    `;
+    if (updated[0] !== undefined) return updated[0];
+
+    const inserted = await tx<{ node_id: string }[]>`
+      INSERT INTO workflow.execution_nodes (bearer_token_hash, hostname, platform)
+      VALUES (${bearerTokenHash}, ${hostname}, ${platform})
+      ON CONFLICT (bearer_token_hash) DO NOTHING
+      RETURNING node_id
+    `;
+    if (inserted[0] !== undefined) return inserted[0];
+
+    const existing = await tx<{ node_id: string }[]>`
+      SELECT node_id FROM workflow.execution_nodes
+      WHERE bearer_token_hash = ${bearerTokenHash}
+    `;
+    return existing[0];
+  });
+}
+
+/** Look up a node by id alone. Used to tell "unknown node" (404) from "not yours" (401). */
+export async function findExecutionNode(
+  nodeId: string,
+): Promise<{ node_id: string } | null> {
+  const rows = await sql<{ node_id: string }[]>`
+    SELECT node_id FROM workflow.execution_nodes WHERE node_id = ${nodeId}
+  `;
+  return rows[0] ?? null;
+}
+
+/**
+ * Does this bearer digest own this node?
+ *
+ * The comparison is a parameterised SQL predicate, deliberately, rather than fetching
+ * the stored digest and comparing it in JS. Ownership is the cross-node injection
+ * guard, and a JS compare would be one `===` away from a subtle bug (a non-constant
+ * compare, a null-vs-undefined slip, a row that was never found being treated as a
+ * match). Letting the database answer the question means there is no intermediate
+ * value to get wrong.
+ */
+export async function nodeOwnsBearer(
+  nodeId: string,
+  bearerTokenHash: string,
+): Promise<boolean> {
+  const rows = await sql<{ node_id: string }[]>`
+    SELECT node_id FROM workflow.execution_nodes
+    WHERE node_id = ${nodeId} AND bearer_token_hash = ${bearerTokenHash}
+  `;
+  return rows.length === 1;
+}
+
+export interface RunEventInput {
+  client_seq: number;
+  event_type: string;
+  payload?: unknown;
+}
+
+/**
+ * Persist a batch, ignoring anything already stored.
+ *
+ * `ON CONFLICT (node_id, client_seq) DO NOTHING` is what makes a node's retry safe:
+ * the node re-sends whatever it did not see acknowledged, and a replayed batch must
+ * neither duplicate state nor error. One transaction so a batch is all-or-nothing.
+ */
+export async function ingestRunEvents(
+  nodeId: string,
+  events: RunEventInput[],
+): Promise<void> {
+  await sql.begin(async (tx: SqlExecutor) => {
+    for (const event of events) {
+      await tx`
+        INSERT INTO workflow.run_events (node_id, client_seq, event_type, payload)
+        VALUES (
+          ${nodeId},
+          ${event.client_seq},
+          ${event.event_type},
+          ${event.payload === undefined ? null : JSON.stringify(event.payload)}::jsonb
+        )
+        ON CONFLICT (node_id, client_seq) DO NOTHING
+      `;
+    }
+  });
+}
+
+/**
+ * Build the acknowledgement by READING BACK, not from the INSERT's output.
+ *
+ * This is the load-bearing half of idempotent delivery. A duplicate insert returns no
+ * row, so an ack derived from INSERT results would omit precisely the events the node
+ * is retrying — and the node, seeing them unacknowledged again, would retry forever.
+ * Selecting the stored rows covers freshly-inserted and already-present alike.
+ */
+export async function acknowledgeSeqs(
+  nodeId: string,
+  seqs: number[],
+): Promise<{ client_seq: string; event_id: string }[]> {
+  return await sql<{ client_seq: string; event_id: string }[]>`
+    SELECT event_id, client_seq FROM workflow.run_events
+    WHERE node_id = ${nodeId} AND client_seq = ANY(${seqs}::bigint[])
+    ORDER BY client_seq
+  `;
+}
+
+// --------------------------------------------------------------------------
 // Teardown (spike disposability)
 // --------------------------------------------------------------------------
 
