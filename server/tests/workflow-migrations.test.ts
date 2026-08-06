@@ -429,15 +429,21 @@ Deno.test({
 
 Deno.test({
   ...T,
-  name: "migrations: the REAL workflow directory discovers 001 and 002 in order",
+  name: "migrations: the REAL workflow directory discovers 001 through 004 in order",
   fn: async () => {
     // Discovery against the actual tree — the half the hermetic tests deliberately
     // do not cover. Enumeration is directory-driven, so a new NNN_*.sql file is
     // picked up without editing any code.
+    //
+    // The expected list is EXACT and ordered on purpose. A subset or length check
+    // would let a future migration land undiscovered, which is the one failure this
+    // test exists to catch. ST-088 added 003/004; extend the list, never relax it.
     const found = await discoverMigrations();
-    assertEquals(found.map((m) => m.version), [1, 2], "versions in ascending order");
+    assertEquals(found.map((m) => m.version), [1, 2, 3, 4], "versions in ascending order");
     assertEquals(found[0].filename, "001_workflow_schema.sql");
     assertEquals(found[1].filename, "002_decision_run_packet_integrity.sql");
+    assertEquals(found[2].filename, "003_execution_nodes.sql");
+    assertEquals(found[3].filename, "004_run_events.sql");
     for (const m of found) {
       assert(m.checksum.length === 64, "SHA-256 hex");
       assert(m.statements.length > 0, `${m.filename} is empty`);
@@ -454,13 +460,130 @@ Deno.test({
     await runWorkflowMigrations();
     const report = await runWorkflowMigrations();
     assertEquals(report.applied, [], "a second run must apply nothing");
-    assertEquals(report.skipped.map((s) => s.version), [1, 2]);
+    assertEquals(report.skipped.map((s) => s.version), [1, 2, 3, 4]);
 
     const ledger = await ledgerRows("workflow.schema_migrations");
-    assertEquals(ledger.map((r) => r.version), [1, 2]);
+    assertEquals(ledger.map((r) => r.version), [1, 2, 3, 4]);
     assertEquals(ledger.map((r) => r.filename), [
       "001_workflow_schema.sql",
       "002_decision_run_packet_integrity.sql",
+      "003_execution_nodes.sql",
+      "004_run_events.sql",
     ]);
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "migrations: 003/004 create the remote-node tables with their documented constraints",
+  fn: async () => {
+    // ST-088 NODE-01/NODE-02. This asserts SHAPE against the real `workflow` schema,
+    // deliberately NOT by applying 003/004 "into a scratch schema".
+    //
+    // That shortcut does not work and is worth naming so nobody reintroduces it:
+    // `applyMigrations`' `schemaName` option governs only the `CREATE SCHEMA` and the
+    // ledger table — the migration statements are applied verbatim, and every object in
+    // 003/004 is hardcoded `workflow.`-qualified (which it must be; see 001's header on
+    // AGE search_path pollution). So "apply into test_hub_042" writes to the SHARED
+    // `workflow` schema, the scratch drop cleans up nothing, and — since 003/004
+    // deliberately carry no IF NOT EXISTS — the second run of this suite would die on
+    // "relation already exists" against a db-test that is wiped only when its container
+    // stops. `withScratchSchema` is for SYNTHETIC migrations; the real files are proven
+    // by discovery (above) plus shape (here).
+    await runWorkflowMigrations();
+
+    const columns = await sql<{ table_name: string; column_name: string; is_nullable: string }[]>`
+      SELECT table_name, column_name, is_nullable
+      FROM information_schema.columns
+      WHERE table_schema = 'workflow'
+        AND table_name IN ('execution_nodes', 'run_events')
+      ORDER BY table_name, column_name
+    `;
+    const nodeCols = columns.filter((c) => c.table_name === "execution_nodes");
+    const eventCols = columns.filter((c) => c.table_name === "run_events");
+
+    assertEquals(nodeCols.map((c) => c.column_name), [
+      "bearer_token_hash",
+      "hostname",
+      "last_seen_at",
+      "node_id",
+      "platform",
+      "registered_at",
+      "status",
+    ]);
+    assertEquals(eventCols.map((c) => c.column_name), [
+      "client_seq",
+      "event_id",
+      "event_type",
+      "node_id",
+      "payload",
+      "received_at",
+    ]);
+
+    // bearer_token_hash must be NOT NULL — a nullable credential column would let a
+    // row exist that no bearer can ever authenticate to, and the UNIQUE below would
+    // then permit many such rows (NULLs do not conflict).
+    assertEquals(
+      nodeCols.find((c) => c.column_name === "bearer_token_hash")?.is_nullable,
+      "NO",
+    );
+
+    // The two uniqueness guarantees the whole design rests on: one identity per
+    // bearer, and one event per (node, client_seq). Asserted by their effect on
+    // pg_index rather than by name, so a rename does not silently pass.
+    const uniques = await sql<{ table_name: string; cols: string[] }[]>`
+      SELECT c.relname AS table_name,
+             array_agg(a.attname ORDER BY a.attname) AS cols
+      FROM pg_index i
+      JOIN pg_class c ON c.oid = i.indrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = ANY (i.indkey)
+      WHERE n.nspname = 'workflow'
+        AND c.relname IN ('execution_nodes', 'run_events')
+        AND i.indisunique
+      GROUP BY c.relname, i.indexrelid
+    `;
+    const uniqueSets = uniques.map((u) => `${u.table_name}:${u.cols.join(",")}`);
+    assert(
+      uniqueSets.includes("execution_nodes:bearer_token_hash"),
+      `expected UNIQUE(bearer_token_hash); found ${JSON.stringify(uniqueSets)}`,
+    );
+    assert(
+      uniqueSets.includes("run_events:client_seq,node_id"),
+      `expected UNIQUE(node_id, client_seq); found ${JSON.stringify(uniqueSets)}`,
+    );
+
+    // Red control for the duplicate-replay assertion in workflow-remote-node-hub.test.ts:
+    // that test proves "a replayed (node_id, client_seq) inserts no second row", which
+    // is only meaningful BECAUSE this constraint exists. Dropping the constraint is not
+    // an option here (it is the production schema), so the control is the presence
+    // assertion above plus this statement of what it buys.
+    const statusCheck = await sql<{ def: string }[]>`
+      SELECT pg_get_constraintdef(con.oid) AS def
+      FROM pg_constraint con
+      JOIN pg_class c ON c.oid = con.conrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'workflow' AND c.relname = 'execution_nodes' AND con.contype = 'c'
+    `;
+    assert(
+      statusCheck.some((r) =>
+        r.def.includes("active") && r.def.includes("paused") && r.def.includes("offline")
+      ),
+      `expected a status CHECK over active/paused/offline; found ${JSON.stringify(statusCheck)}`,
+    );
+
+    // run_events.node_id cascades, so teardown stays the single DROP SCHEMA with no
+    // orphan bookkeeping.
+    const fk = await sql<{ def: string }[]>`
+      SELECT pg_get_constraintdef(con.oid) AS def
+      FROM pg_constraint con
+      JOIN pg_class c ON c.oid = con.conrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'workflow' AND c.relname = 'run_events' AND con.contype = 'f'
+    `;
+    assert(
+      fk.some((r) => r.def.includes("execution_nodes") && r.def.includes("ON DELETE CASCADE")),
+      `expected run_events.node_id FK ON DELETE CASCADE; found ${JSON.stringify(fk)}`,
+    );
   },
 });

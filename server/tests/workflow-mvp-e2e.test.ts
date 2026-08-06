@@ -119,15 +119,17 @@ Deno.test({
           "the workflow schema does not exist after boot — startup did not apply the migrations",
         );
 
-        // The ledger is the module's own record of what it applied. Both migrations,
+        // The ledger is the module's own record of what it applied. Every migration,
         // in order, from nothing.
         const ledger = await sql<{ version: number; filename: string }[]>`
           SELECT version, filename FROM workflow.schema_migrations ORDER BY version
         `;
-        assertEquals(ledger.map((r) => r.version), [1, 2]);
+        assertEquals(ledger.map((r) => r.version), [1, 2, 3, 4]);
         assertEquals(ledger.map((r) => r.filename), [
           "001_workflow_schema.sql",
           "002_decision_run_packet_integrity.sql",
+          "003_execution_nodes.sql",
+          "004_run_events.sql",
         ]);
 
         // ...and the composition root said so, from inside the process.
@@ -141,6 +143,8 @@ Deno.test({
         assertEquals(ready.body.checks.workflow.applied, [
           "001_workflow_schema.sql",
           "002_decision_run_packet_integrity.sql",
+          "003_execution_nodes.sql",
+          "004_run_events.sql",
         ]);
       });
 
@@ -563,6 +567,8 @@ Deno.test({
         assertEquals(ready.body.checks.workflow.skipped, [
           "001_workflow_schema.sql",
           "002_decision_run_packet_integrity.sql",
+          "003_execution_nodes.sql",
+          "004_run_events.sql",
         ]);
 
         const view = await apiCall(server.baseUrl, API_KEY, `/api/workflow/packets/${packetId}`);
