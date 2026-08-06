@@ -403,6 +403,171 @@ Deno.test({
   },
 });
 
+// ---------------------------------------------------------------------------
+// NODE-03 — rejection, isolation, and ownership (Plan 02)
+// ---------------------------------------------------------------------------
+
+Deno.test({
+  ...T,
+  name: "NODE-03: a missing or malformed Authorization header is refused on both endpoints",
+  fn: async () => {
+    // REGRESSION, not a red control. Plan 01's validateNodeBearer already answers 401
+    // for an absent or malformed header; these assertions were green before Plan 02's
+    // production change and are here to keep them that way, not to prove a new guard.
+    const app = hubApp();
+    const headerCases: (HeadersInit | undefined)[] = [
+      undefined, // no Authorization at all
+      { "Authorization": "" },
+      { "Authorization": "Bearer" }, // no token
+      { "Authorization": "Bearer " }, // empty token
+      { "Authorization": mintBearer() }, // token without the Bearer scheme
+      { "Authorization": `Basic ${mintBearer()}` }, // wrong scheme
+    ];
+
+    for (const headers of headerCases) {
+      for (
+        const url of [
+          "http://hub.test/workflow/nodes/register",
+          "http://hub.test/workflow/nodes/00000000-0000-4000-8000-000000000000/events",
+        ]
+      ) {
+        const res = await app.fetch(
+          new Request(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...(headers ?? {}) },
+            body: JSON.stringify({ events: [{ client_seq: 1, event_type: "x" }] }),
+          }),
+        );
+        assertEquals(res.status, 401, `${url} accepted ${JSON.stringify(headers)}`);
+      }
+    }
+
+    // Nothing was written by any of the above.
+    const rows = await sql<{ n: string }[]>`
+      SELECT count(*) AS n FROM workflow.run_events
+      WHERE node_id = '00000000-0000-4000-8000-000000000000'
+    `;
+    assertEquals(Number(rows[0].n), 0);
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "NODE-03: the platform operator key cannot authenticate the node surface",
+  fn: async () => {
+    // GENUINE red control — this guard is new in Plan 02.
+    //
+    // The platform key is set to a 64-LOWERCASE-HEX value on purpose. The format gate
+    // runs first, so a platform key of any other shape would be rejected as malformed
+    // and this test would pass without the isolation check existing at all — green for
+    // the wrong reason. Making the key structurally valid forces the request past the
+    // format gate so only bearerIsPlatformKey can refuse it.
+    const app = hubApp();
+    const platformKey = mintBearer();
+    const original = Deno.env.get("MEMORY_API_KEY");
+    Deno.env.set("MEMORY_API_KEY", platformKey);
+
+    const control = mintBearer();
+    try {
+      const res = await register(app, platformKey);
+      assertEquals(res.status, 401, "MEMORY_API_KEY authenticated a node surface");
+      assertEquals(
+        (await nodeRows(platformKey)).length,
+        0,
+        "the platform key minted a node identity",
+      );
+
+      // Positive control: an equally well-formed bearer that is NOT the platform key
+      // registers normally. Without this, the 401 above could be the format gate.
+      const ok = await register(app, control);
+      assertEquals(ok.status, 201, "a non-platform bearer of the same shape must register");
+    } finally {
+      await dropNode(control);
+      await dropNode(platformKey);
+      if (original === undefined) Deno.env.delete("MEMORY_API_KEY");
+      else Deno.env.set("MEMORY_API_KEY", original);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "NODE-03: node A's bearer cannot write events attributed to node B",
+  fn: async () => {
+    // GENUINE red control — the cross-node injection guard, the high blocker Plan 01
+    // deliberately deferred. Holding a valid bearer proves you are *a* node, not *this*
+    // node; before this guard, any authenticated node could forge another machine's
+    // execution history.
+    const bearerA = mintBearer();
+    const bearerB = mintBearer();
+    const app = hubApp();
+    try {
+      const a = await (await register(app, bearerA)).json();
+      const b = await (await register(app, bearerB)).json();
+
+      const res = await postEvents(app, bearerA, b.node_id, [
+        { client_seq: 99, event_type: "forged" },
+      ]);
+      assertEquals(res.status, 401, "node A wrote to node B's stream");
+
+      const rows = await sql<{ n: string }[]>`
+        SELECT count(*) AS n FROM workflow.run_events WHERE node_id = ${b.node_id}
+      `;
+      assertEquals(Number(rows[0].n), 0, "a forged event reached node B");
+
+      // Positive control: A writing to its OWN node_id still works, so the 401 above is
+      // the ownership guard and not a route that stopped accepting events.
+      const own = await postEvents(app, bearerA, a.node_id, [
+        { client_seq: 99, event_type: "legitimate" },
+      ]);
+      assertEquals(own.status, 200, "the ownership guard also blocked the rightful node");
+    } finally {
+      await dropNode(bearerA);
+      await dropNode(bearerB);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "NODE-03: over-limit batches and oversized payloads are refused with no partial write",
+  fn: async () => {
+    const bearer = mintBearer();
+    const app = hubApp();
+    try {
+      const { node_id } = await (await register(app, bearer)).json();
+
+      // Batch count ceiling — REGRESSION, Plan 01's Zod .max(500) already enforced it.
+      const tooMany = Array.from({ length: 501 }, (_, i) => ({
+        client_seq: i + 1,
+        event_type: "flood",
+      }));
+      assertEquals((await postEvents(app, bearer, node_id, tooMany)).status, 400);
+
+      // Payload byte ceiling — GENUINE red control, new in Plan 02. A 500-event batch
+      // bounds how many events arrive, not how big each is; without this a valid-looking
+      // request can cost the hub hundreds of megabytes.
+      const huge = { client_seq: 1, event_type: "fat", payload: { blob: "x".repeat(20_000) } };
+      const res = await postEvents(app, bearer, node_id, [huge]);
+      assertEquals(res.status, 400, "an oversized payload was accepted");
+
+      const rows = await sql<{ n: string }[]>`
+        SELECT count(*) AS n FROM workflow.run_events WHERE node_id = ${node_id}
+      `;
+      assertEquals(Number(rows[0].n), 0, "a rejected batch left a partial write");
+
+      // Positive control: a payload just under the ceiling is accepted, so the 400s
+      // above are the ceilings firing rather than the route refusing all payloads.
+      const ok = await postEvents(app, bearer, node_id, [
+        { client_seq: 1, event_type: "ok", payload: { blob: "x".repeat(1_000) } },
+      ]);
+      assertEquals(ok.status, 200);
+    } finally {
+      await dropNode(bearer);
+    }
+  },
+});
+
 Deno.test({
   ...T,
   name: "NODE-02: events for a node_id that does not exist are refused, not orphaned",
