@@ -54,16 +54,26 @@ created: 2026-08-05
 
 ## Red Controls
 
-1. Registration with a wrong bearer must fail before registration auth is implemented.
-2. A valid bearer paired with another node's `node_id` must fail before ownership binding is implemented.
-3. Replaying an identical `(node_id, client_seq)` batch must fail before conflict handling is implemented.
-4. Booting Workflow Operations without node credentials must remain green, proving optional-module isolation.
+Genuine red controls (must fail before the guard exists, pass after):
+
+1. Registration with a wrong-format bearer must fail before registration auth is implemented (Plan 01).
+2. A valid bearer paired with another node's `node_id` must fail before ownership binding is implemented (Plan 02).
+3. Replaying an identical `(node_id, client_seq)` batch must fail before conflict handling is implemented (Plan 01).
 5. Removing the unique constraint must make the duplicate-row assertion fail.
+6. A bearer equal to `MEMORY_API_KEY` must be rejected by the **isolation comparison**, not by the format gate — drive it with a 64-lowercase-hex platform key and pair it with a positive control (Plan 02).
+7. An event whose JSON payload exceeds the documented byte ceiling must fail before the ceiling exists (Plan 02).
+
+Not red controls — carried forward as regression assertions:
+
+4. ~~Booting Workflow Operations without node credentials must remain green~~ — this design introduces **no hub-side node credential**, so the naive form asserts about a subject that does not exist. Replaced by a paired assertion: `findMissingRequiredEnv` returns `[]` with the two real required vars present, AND returns `["MEMORY_API_KEY"]` when that one is absent (positive control).
+8. Missing / malformed `Authorization` → 401 and batch `>500` → 400 are implemented in Plan 01 and are therefore already green when Plan 02 runs. Assert them as regressions; do not claim intended-reason red status.
 
 ## Wave 0 Requirements
 
 - [ ] `server/tests/workflow-remote-node-hub.test.ts` — scratch-schema integration tests for NODE-01 through NODE-03.
-- [ ] Test helpers apply `003_execution_nodes.sql` and `004_run_events.sql` into a unique `test_hub_*` schema and drop it in `finally`.
+- [ ] `003_execution_nodes.sql` and `004_run_events.sql` are verified by **discovery + shape**, not by applying the real files into a scratch schema — `applyMigrations`' `schemaName` option governs only the `CREATE SCHEMA` and the ledger table, while the migration statements are hardcoded `workflow.`-qualified, so "apply into `test_hub_*`" silently writes to the shared `workflow` schema and (with no `IF NOT EXISTS`) fails on the second run. Assert `discoverMigrations()` → `[1,2,3,4]` with checksums, then assert table/constraint shape from `information_schema`. See `02-01-PLAN.md` Task 2.
+- [ ] `withScratchSchema` is reserved for **synthetic** in-memory migrations needing an isolated ledger, and drops its schema in `finally`.
+- [ ] The migration-set fan-out is absorbed: `workflow-migrations.test.ts` and `workflow-mvp-e2e.test.ts` updated from `[1,2]` to `[1,2,3,4]` with no assertion shape weakened.
 - [ ] Tests establish both positive controls and red controls for auth isolation, ownership binding, and duplicate acknowledgements.
 - [ ] Existing infrastructure covers Deno, Zod, PostgreSQL, Hono request driving, and process-level workflow boot checks; no new test framework is needed.
 
