@@ -274,25 +274,47 @@ Deno.test("startup validation: AWCP_AGENT_API_KEY unset starts cleanly (discrimi
 // ---------------------------------------------------------------------------
 
 Deno.test("startup validation: no node credential is consulted at startup (ST-088 NODE-03)", () => {
-  // WHAT MAKES THIS NON-VACUOUS. The obvious form of this test — "assert the node
-  // bearer's env var name never appears in the missing set" — asserts about a subject
-  // that does not exist: this design introduces NO hub-side node-bearer env var at all.
-  // The bearer arrives in the Authorization header and is validated per request; the
-  // env var lives on the Phase-3 node, not here. Such a test passes because there is
-  // nothing to find, which is exactly the failure class the docblocks in
-  // workflow-migrations.test.ts and workflow-boundary.test.ts were written about.
+  // WHAT MAKES THIS NON-VACUOUS — and it is a different answer than it used to be.
   //
-  // So this is a PAIR, and the positive control is the load-bearing half.
-
-  // Negative: a fully-configured deployment reports nothing missing, and in particular
-  // nothing node-shaped. Note findMissingRequiredEnv reads ONLY through the injected
-  // reader, so an unexpected credential lookup would have to come through here.
+  // This test was originally written when the design had NO hub-side node credential at
+  // all: the bearer arrived in a header and the only node env var lived on the Phase-3
+  // node. A test that "the node credential is not consulted at startup" was therefore
+  // asserting about a subject that did not exist, and passed for that reason.
+  //
+  // The enrolment gate introduced one: AWCP_NODE_ENROLMENT_SECRET, read by
+  // remoteNodeHub.ts. That makes the claim real — and makes it matter, because putting
+  // that name into the required set would stop a server running no nodes at all from
+  // booting, which is an ordinary deployment.
+  //
+  // Instrumented through ensureRequiredEnv, NOT findMissingRequiredEnv. Boot calls
+  // ensureRequiredEnv (index.ts), and that runs findCapabilityConflicts and
+  // agentKeyCollidesWithOperatorKey as well — so a reader wired only into
+  // findMissingRequiredEnv observes one of the three code paths and would stay green if
+  // a node credential were consulted by either of the other two.
   const consulted: string[] = [];
-  const missing = findMissingRequiredEnv((name) => {
-    consulted.push(name);
-    return "present";
+  let exitCode: number | null = null;
+  ensureRequiredEnv({
+    readEnv: (name) => {
+      consulted.push(name);
+      // Answer for the enrolment secret too, so this is the case where boot COULD
+      // notice it. A reader that returned undefined for it would prove less.
+      return name === "AWCP_AGENT_API_KEY" ? undefined : "present";
+    },
+    logFatal: () => {},
+    exit: (code) => {
+      exitCode = code;
+      throw new Error("EXIT_CALLED");
+    },
   });
-  assertEquals(missing, []);
+  assertEquals(exitCode, null, "a deployment with no node configured must still boot");
+
+  // The recorder has to be wired to something: an empty `consulted` would satisfy the
+  // node-shaped filter below exactly as well as a correct boot path does.
+  assertEquals(
+    consulted.includes("MEMORY_API_KEY"),
+    true,
+    "the recording reader observed nothing — this test cannot detect anything",
+  );
 
   // The stronger statement, and the one that actually fails if someone wires a node
   // credential into startup: enumerate every variable startup asked about and assert

@@ -70,9 +70,16 @@ docker compose --profile test up -d
 # Run a single Deno test file inside the mcp-test container
 docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/search-mmr.test.ts
 
-# Run all server tests. Three grants beyond the defaults, each earned by one file:
-#   --allow-run=deno    workflow-mvp-e2e.test.ts (ST-086) starts and restarts a real
-#                       server process; awcp-cli.test.ts (ST-087) spawns the CLI.
+# Run all server tests. Three grants beyond the defaults, each earned by named files.
+# Keep this list current — it is an inventory, and a stale one reads as "these are the
+# only files that spawn anything", which is exactly how it stopped being true:
+#   --allow-run=deno    every file that boots a real server process. Currently
+#                       workflow-mvp-e2e.test.ts (ST-086, starts and restarts one),
+#                       provider-egress.test.ts, workflow-agent-key-e2e.test.ts,
+#                       workflow-node-hub-e2e.test.ts (each proves over real HTTP
+#                       something no in-process test can: a mount, or what a boot does
+#                       and does not reach). awcp-cli.test.ts (ST-087) spawns the CLI.
+#                       Find them with: grep -l startServerProcess tests/*.ts
 #   --allow-run=git     awcp-cli.test.ts builds a throwaway repository, because
 #                       server/scripts/awcp.ts derives a checkpoint's repo/branch/commit
 #                       by running git and there is no honest way to prove that without

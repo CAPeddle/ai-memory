@@ -41,12 +41,27 @@ import { type ServerProcess, startServerProcess } from "./_helpers/serverProcess
 import { sql } from "../src/db.ts";
 
 const DATABASE_URL = Deno.env.get("DATABASE_URL")!;
-const OPERATOR_KEY = "operator-key-for-node-hub-mount-test";
+
+/**
+ * 64 lowercase hex characters, and that shape is load-bearing rather than incidental.
+ *
+ * The node surface's format gate runs BEFORE the platform-key isolation check, so an
+ * operator key of any other shape is refused as malformed and `bearerIsPlatformKey` is
+ * never reached — the isolation step below would then pass with the isolation check
+ * deleted entirely. (This file previously used a readable non-hex string and did
+ * exactly that; the in-process suite avoided the trap and this one walked into it.)
+ * Deterministic rather than random so a failure here is reproducible.
+ */
+const OPERATOR_KEY = "0f".repeat(32);
+
+/** Operator-chosen, no format rule — deliberately not bearer-shaped. */
+const ENROLMENT_SECRET = "enrolment-secret-for-node-hub-mount-test";
 const PORT = 3145;
 
 const NODE_HUB_ENV: Record<string, string> = {
   DATABASE_URL,
   MEMORY_API_KEY: OPERATOR_KEY,
+  AWCP_NODE_ENROLMENT_SECRET: ENROLMENT_SECRET,
   FEATURE_WORKFLOW: "true",
   FEATURE_ENTITY_WORKER: "false",
   FEATURE_CONSOLIDATION_WORKER: "false",
@@ -112,6 +127,7 @@ Deno.test({
           method: "POST",
           headers: {
             "Authorization": `Bearer ${bearer}`,
+            "X-Node-Enrolment-Secret": ENROLMENT_SECRET,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ hostname: "z2", platform: "ubuntu-24.04" }),
@@ -135,7 +151,9 @@ Deno.test({
         });
         const ack = await events.json();
         assertEquals(events.status, 200, JSON.stringify(ack));
-        assertEquals(ack.acknowledged.map((a: { client_seq: number }) => Number(a.client_seq)), [1]);
+        // No Number() coercion: the wire type is part of the delivery contract, and a
+        // node comparing its spool with === would never match a string.
+        assertEquals(ack.acknowledged.map((a: { client_seq: number }) => a.client_seq), [1]);
       });
 
       await t.step("the platform surface is unaffected by the node mount", async () => {

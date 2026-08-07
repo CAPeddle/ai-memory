@@ -64,14 +64,38 @@ function hubApp(): Hono {
   return app;
 }
 
-function register(app: Hono, bearer: string, body: Record<string, unknown> = {}) {
+/**
+ * The hub-side enrolment secret for this suite, installed by the setup test below.
+ *
+ * Not a bearer and deliberately not 64-hex: the enrolment secret is operator-chosen and
+ * has no format rule, so a value that would *also* pass BEARER_FORMAT could let a test
+ * pass for the wrong reason.
+ */
+const ENROLMENT_SECRET = "test-enrolment-secret-4f2c9ab1";
+
+/**
+ * Register, presenting the enrolment secret by default.
+ *
+ * Default rather than opt-in, because nearly every test in this file needs a node to
+ * exist and is not itself about enrolment — making it explicit everywhere would bury
+ * the two tests that actually vary it. Pass `null` to omit the header entirely, or a
+ * string to present the wrong secret.
+ */
+function register(
+  app: Hono,
+  bearer: string,
+  body: Record<string, unknown> = {},
+  enrolment: string | null = ENROLMENT_SECRET,
+) {
+  const headers: Record<string, string> = {
+    "Authorization": `Bearer ${bearer}`,
+    "Content-Type": "application/json",
+  };
+  if (enrolment !== null) headers["X-Node-Enrolment-Secret"] = enrolment;
   return app.fetch(
     new Request("http://hub.test/workflow/nodes/register", {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${bearer}`,
-        "Content-Type": "application/json",
-      },
+      headers,
       body: JSON.stringify(body),
     }),
   );
@@ -113,6 +137,7 @@ Deno.test({
   ...T,
   name: "setup: workflow schema applied before the hub suite runs",
   fn: async () => {
+    Deno.env.set("AWCP_NODE_ENROLMENT_SECRET", ENROLMENT_SECRET);
     await ensureWorkflowSchema();
   },
 });
@@ -325,11 +350,16 @@ Deno.test({
       `;
       assertEquals(Number(rows[0].n), 1, "the replay inserted a second row");
 
+      // No Number() coercion, deliberately. The acknowledgement is the ONLY thing a
+      // node's spool compares against, and a client doing `sent === acked` never
+      // matches a string. Coercing here would make this assertion pass whether the hub
+      // answered 7 or "7" — i.e. it would not test the property the delivery contract
+      // depends on. Assert the wire type as strictly as the client must consume it.
       for (const body of [firstBody, secondBody]) {
         assertEquals(
-          body.acknowledged.map((a: { client_seq: number }) => Number(a.client_seq)),
+          body.acknowledged.map((a: { client_seq: number }) => a.client_seq),
           [7],
-          "both responses must acknowledge client_seq 7",
+          "both responses must acknowledge client_seq 7 as a NUMBER",
         );
       }
       assertEquals(
@@ -362,7 +392,7 @@ Deno.test({
       assertEquals(res.status, 200, JSON.stringify(body));
 
       const acked = body.acknowledged
-        .map((a: { client_seq: number }) => Number(a.client_seq))
+        .map((a: { client_seq: number }) => a.client_seq)
         .sort((a: number, b: number) => a - b);
       assertEquals(acked, events.map((e) => e.client_seq), "an event went unacknowledged");
     } finally {
@@ -399,6 +429,99 @@ Deno.test({
     } finally {
       await dropNode(bearerA);
       await dropNode(bearerB);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "NODE-02: a client_seq repeated WITHIN one batch is acknowledged once, first payload wins",
+  fn: async () => {
+    // The acknowledgement contract, pinned. client_seq is the per-node idempotency key,
+    // which is already what UNIQUE(node_id, client_seq) means for replays ACROSS
+    // requests; a batch cannot mean something different. So: one ack per distinct
+    // submitted seq, and the first occurrence is the one stored.
+    //
+    // This is a real loss of the later payload, which is why it is asserted rather than
+    // left implicit — the contract on a node is "never reuse a client_seq for different
+    // content", and a node that breaks it must not be able to mistake the single ack for
+    // confirmation that both entries landed.
+    const bearer = mintBearer();
+    const app = hubApp();
+    try {
+      const { node_id } = await (await register(app, bearer)).json();
+
+      const res = await postEvents(app, bearer, node_id, [
+        { client_seq: 5, event_type: "first", payload: { which: "first" } },
+        { client_seq: 5, event_type: "second", payload: { which: "second" } },
+        { client_seq: 6, event_type: "distinct", payload: { which: "distinct" } },
+      ]);
+      const body = await res.json();
+      assertEquals(res.status, 200, JSON.stringify(body));
+
+      assertEquals(
+        body.acknowledged.map((a: { client_seq: number }) => a.client_seq),
+        [5, 6],
+        "the batch must be acknowledged once per DISTINCT client_seq",
+      );
+
+      const rows = await sql<{ client_seq: string; event_type: string }[]>`
+        SELECT client_seq, event_type FROM workflow.run_events
+        WHERE node_id = ${node_id} ORDER BY client_seq
+      `;
+      assertEquals(rows.length, 2, "a duplicated client_seq stored a second row");
+      assertEquals(rows[0].event_type, "first", "the LATER duplicate overwrote the first");
+      assertEquals(rows[1].event_type, "distinct");
+    } finally {
+      await dropNode(bearer);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "NODE-02: a payload containing a NUL character is stored, not turned into a 500",
+  fn: async () => {
+    // Postgres rejects U+0000 inside jsonb (22P05) though JSON permits it, and
+    // toHttpError does not map that code — so one NUL was a 500. The batch is a single
+    // statement, so that 500 also blocked acknowledgement of every event beside it, and
+    // the read-back ack contract turned the whole batch into a permanent retry loop.
+    // Captured command output is precisely where a stray NUL comes from.
+    const bearer = mintBearer();
+    const app = hubApp();
+    try {
+      const { node_id } = await (await register(app, bearer)).json();
+
+      const res = await postEvents(app, bearer, node_id, [
+        { client_seq: 1, event_type: "stdout", payload: { line: "before\u0000after" } },
+        // A key carrying one too — sanitising values alone would still 500 here.
+        { client_seq: 2, event_type: "stdout", payload: { "k\u0000ey": "v" } },
+        // And the literal characters \u0000 in ordinary text, which must survive intact:
+        // the encoded form of THIS is \\u0000, and a naive string-level deletion of the
+        // escape would leave a dangling backslash and 500 by a longer route.
+        { client_seq: 3, event_type: "stdout", payload: { line: "literal \\u0000 text" } },
+      ]);
+      const body = await res.json();
+      assertEquals(res.status, 200, JSON.stringify(body));
+      assertEquals(
+        body.acknowledged.map((a: { client_seq: number }) => a.client_seq),
+        [1, 2, 3],
+        "a NUL anywhere in the batch cost the whole batch its acknowledgement",
+      );
+
+      const rows = await sql<{ payload: Record<string, string> }[]>`
+        SELECT payload FROM workflow.run_events
+        WHERE node_id = ${node_id} ORDER BY client_seq
+      `;
+      assertEquals(rows[0].payload.line, "beforeafter", "the NUL was not stripped");
+      assertEquals(Object.keys(rows[1].payload), ["key"], "the NUL key was not stripped");
+      assertEquals(
+        rows[2].payload.line,
+        "literal \\u0000 text",
+        "legitimate backslash-u text was corrupted by the NUL sanitiser",
+      );
+    } finally {
+      await dropNode(bearer);
     }
   },
 });
@@ -453,39 +576,138 @@ Deno.test({
 
 Deno.test({
   ...T,
-  name: "NODE-03: the platform operator key cannot authenticate the node surface",
+  name: "NODE-03: no platform credential can authenticate the node surface",
   fn: async () => {
     // GENUINE red control — this guard is new in Plan 02.
     //
-    // The platform key is set to a 64-LOWERCASE-HEX value on purpose. The format gate
+    // Each platform key is set to a 64-LOWERCASE-HEX value on purpose. The format gate
     // runs first, so a platform key of any other shape would be rejected as malformed
     // and this test would pass without the isolation check existing at all — green for
     // the wrong reason. Making the key structurally valid forces the request past the
     // format gate so only bearerIsPlatformKey can refuse it.
+    //
+    // BOTH keys, not just the operator's: index.ts accepts AWCP_AGENT_API_KEY on
+    // /api/workflow too, so an isolation check covering only MEMORY_API_KEY would leave
+    // a genuine platform credential able to enrol itself as a node.
     const app = hubApp();
-    const platformKey = mintBearer();
-    const original = Deno.env.get("MEMORY_API_KEY");
-    Deno.env.set("MEMORY_API_KEY", platformKey);
+    for (const envVar of ["MEMORY_API_KEY", "AWCP_AGENT_API_KEY"]) {
+      const platformKey = mintBearer();
+      const original = Deno.env.get(envVar);
+      Deno.env.set(envVar, platformKey);
 
-    const control = mintBearer();
+      const control = mintBearer();
+      try {
+        const res = await register(app, platformKey);
+        assertEquals(res.status, 401, `${envVar} authenticated a node surface`);
+        assertEquals(
+          (await nodeRows(platformKey)).length,
+          0,
+          `${envVar} minted a node identity`,
+        );
+
+        // Positive control: an equally well-formed bearer that is NOT the platform key
+        // registers normally. Without this, the 401 above could be the format gate.
+        const ok = await register(app, control);
+        assertEquals(ok.status, 201, "a non-platform bearer of the same shape must register");
+      } finally {
+        await dropNode(control);
+        await dropNode(platformKey);
+        if (original === undefined) Deno.env.delete(envVar);
+        else Deno.env.set(envVar, original);
+      }
+    }
+  },
+});
+
+// ---------------------------------------------------------------------------
+// NODE-01 enrolment — a well-formed bearer is not an authorised one
+// ---------------------------------------------------------------------------
+
+Deno.test({
+  ...T,
+  name: "NODE-01 enrolment: an unknown bearer without the enrolment secret is refused and stored nowhere",
+  fn: async () => {
+    // THE HOLE THIS CLOSES. Before the enrolment gate, `openssl rand -hex 32` piped at
+    // this endpoint returned 201 and a real node_id — "pre-provisioned bearer" was
+    // asserted in a docblock and enforced by nothing. Every downstream guarantee
+    // (ownership, attribution, the cross-node guard) was scoped to a principal anyone
+    // could create.
+    //
+    // Assert the ABSENCE of a row, not just the status. A 401 that still enrolled the
+    // node would be the same bug wearing a different response code.
+    const app = hubApp();
+    const noHeader = mintBearer();
+    const wrongSecret = mintBearer();
     try {
-      const res = await register(app, platformKey);
-      assertEquals(res.status, 401, "MEMORY_API_KEY authenticated a node surface");
-      assertEquals(
-        (await nodeRows(platformKey)).length,
-        0,
-        "the platform key minted a node identity",
-      );
+      const missing = await register(app, noHeader, {}, null);
+      assertEquals(missing.status, 401, "an unknown bearer enrolled with no secret at all");
+      assertEquals((await nodeRows(noHeader)).length, 0, "a refused bearer was persisted");
 
-      // Positive control: an equally well-formed bearer that is NOT the platform key
-      // registers normally. Without this, the 401 above could be the format gate.
-      const ok = await register(app, control);
-      assertEquals(ok.status, 201, "a non-platform bearer of the same shape must register");
+      const wrong = await register(app, wrongSecret, {}, "not-the-enrolment-secret");
+      assertEquals(wrong.status, 401, "an unknown bearer enrolled with the wrong secret");
+      assertEquals((await nodeRows(wrongSecret)).length, 0, "a refused bearer was persisted");
+
+      // Positive control: the same request with the RIGHT secret enrols. Without this,
+      // both 401s above would pass against a route that refused every registration.
+      const ok = mintBearer();
+      try {
+        assertEquals((await register(app, ok)).status, 201, "a correct secret must enrol");
+      } finally {
+        await dropNode(ok);
+      }
     } finally {
-      await dropNode(control);
-      await dropNode(platformKey);
-      if (original === undefined) Deno.env.delete("MEMORY_API_KEY");
-      else Deno.env.set("MEMORY_API_KEY", original);
+      await dropNode(noHeader);
+      await dropNode(wrongSecret);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "NODE-01 enrolment: an already-enrolled bearer re-registers without the secret",
+  fn: async () => {
+    // The ssh-key half of the model, and the reason the gate sits on the INSERT branch
+    // alone. A node keeps its bearer and nothing else; it must be able to re-register on
+    // every boot forever without the operator's enrolment secret ever touching its disk.
+    // Gating the whole endpoint instead would have been simpler and wrong.
+    const bearer = mintBearer();
+    const app = hubApp();
+    try {
+      const first = await register(app, bearer, { hostname: "z2" });
+      const firstBody = await first.json();
+      assertEquals(first.status, 201, JSON.stringify(firstBody));
+
+      const reboot = await register(app, bearer, {}, null);
+      const rebootBody = await reboot.json();
+      assertEquals(reboot.status, 201, "a known node was refused its own re-registration");
+      assertEquals(rebootBody.node_id, firstBody.node_id, "re-registration forked the identity");
+      assertEquals((await nodeRows(bearer)).length, 1);
+    } finally {
+      await dropNode(bearer);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "NODE-01 enrolment: with no secret configured, enrolment is CLOSED",
+  fn: async () => {
+    // The default matters more than the mechanism. A hub that has not been told to
+    // enrol anyone must enrol no one — the opposite default (unset means open) is
+    // exactly the original hole, reachable by forgetting to set a variable.
+    const app = hubApp();
+    const bearer = mintBearer();
+    const original = Deno.env.get("AWCP_NODE_ENROLMENT_SECRET");
+    Deno.env.delete("AWCP_NODE_ENROLMENT_SECRET");
+    try {
+      // Presenting a secret cannot help: there is nothing configured for it to match.
+      const res = await register(app, bearer, {}, ENROLMENT_SECRET);
+      assertEquals(res.status, 401, "enrolment succeeded with no secret configured");
+      assertEquals((await nodeRows(bearer)).length, 0, "a node enrolled against no secret");
+    } finally {
+      await dropNode(bearer);
+      if (original === undefined) Deno.env.delete("AWCP_NODE_ENROLMENT_SECRET");
+      else Deno.env.set("AWCP_NODE_ENROLMENT_SECRET", original);
     }
   },
 });
@@ -579,10 +801,13 @@ Deno.test({
       const res = await postEvents(app, bearer, absent, [
         { client_seq: 1, event_type: "run_started" },
       ]);
-      assert(
-        res.status === 404 || res.status === 401,
-        `expected a refusal for an unknown node_id, got ${res.status}`,
-      );
+      // Exactly 404, not "404 or 401". The handler resolves this deterministically:
+      // findExecutionNode runs BEFORE the ownership check, which the source docblock
+      // calls a deliberate decision (an unknown node_id is an ordinary client error,
+      // worth distinguishing from a permission failure). An assertion that accepts
+      // either would keep passing if that ordering silently reversed — which would
+      // change what the endpoint discloses.
+      assertEquals(res.status, 404, "an unknown node_id must answer 404");
 
       const rows = await sql<{ n: string }[]>`
         SELECT count(*) AS n FROM workflow.run_events WHERE node_id = ${absent}

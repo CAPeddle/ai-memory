@@ -628,6 +628,15 @@ export interface UpsertExecutionNodeInput {
   bearerTokenHash: string;
   hostname?: string | null;
   platform?: string | null;
+  /**
+   * May an UNKNOWN bearer become a node here?
+   *
+   * There is no default, deliberately. A caller that forgets this field fails to
+   * compile rather than silently re-opening enrolment to anyone — which is precisely
+   * how the original hole got in. The hub grants it only for a request that carried
+   * the operator's enrolment secret; see remoteNodeHub.ts.
+   */
+  allowEnrolment: boolean;
 }
 
 /**
@@ -648,20 +657,63 @@ export interface UpsertExecutionNodeInput {
  *                       so read back the identity the winner created.
  * Without step 3 the loser of a race would return no node_id at all, which is the
  * failure the NODE-01 concurrency probe exists to catch.
+ *
+ * ---------------------------------------------------------------------------
+ * THE ENROLMENT GATE — the line between "known node" and "anyone".
+ * ---------------------------------------------------------------------------
+ * Only step 2 is gated. That split is the whole design:
+ *
+ *   - step 1 (UPDATE) is a bearer we have ALREADY enrolled proving it again. It needs
+ *     no secret, which is what lets a node re-register on every boot forever with
+ *     nothing on disk but its own bearer — the ssh-key half of the analogy.
+ *   - step 2 (INSERT) is a bearer we have never seen asking to BECOME a node. That is
+ *     the trust decision, and it requires the operator's enrolment secret — the
+ *     ssh-copy-id half, presented once and then never again.
+ *
+ * Returns null when an unknown bearer arrives without that authorisation. Null is "no
+ * identity", not an error: the route answers the same 401 as any other unrecognised
+ * credential, so a prober learns nothing beyond what it already knew.
+ *
+ * A shared static secret has no per-node revocation, and `status` has no `revoked`
+ * value — deleting a node's row lets the same secret re-enrol it. Adequate for a
+ * single operator-provisioned node; Phase 3 must not assume otherwise.
  */
 export async function upsertExecutionNode(
   input: UpsertExecutionNodeInput,
-): Promise<{ node_id: string }> {
-  const { bearerTokenHash, hostname = null, platform = null } = input;
+): Promise<{ node_id: string } | null> {
+  const { bearerTokenHash, hostname = null, platform = null, allowEnrolment } = input;
 
   return await sql.begin(async (tx: SqlExecutor) => {
+    // Serialise concurrent registrations OF THE SAME BEARER before reading anything.
+    //
+    // Step 3 alone is not sufficient without this. `ON CONFLICT DO NOTHING` explicitly
+    // does NOT wait on a concurrent *uncommitted* conflicting insert, so under READ
+    // COMMITTED the loser's read-back takes a fresh snapshot that still cannot see the
+    // winner's row — and step 3 returns nothing, which is the exact race it was written
+    // to close. The lock removes the interleaving rather than coping with it.
+    //
+    // Scoped to this digest, so it costs nothing in practice: contention is per node,
+    // and a node registers once per boot.
+    await tx`SELECT pg_advisory_xact_lock(hashtextextended(${bearerTokenHash}, 0))`;
+
+    // COALESCE so a re-registering node refreshes hostname/platform (it may have been
+    // renamed or upgraded) while a payload that omits them keeps what was recorded,
+    // rather than nulling it. Note for anyone editing: `ON CONFLICT ... DO UPDATE SET`
+    // is NOT available here — the boundary scan captures the token after UPDATE and
+    // reads `SET` as an unqualified identifier.
     const updated = await tx<{ node_id: string }[]>`
       UPDATE workflow.execution_nodes
-      SET last_seen_at = now(), status = 'active'
+      SET last_seen_at = now(),
+          status = 'active',
+          hostname = COALESCE(${hostname}::text, hostname),
+          platform = COALESCE(${platform}::text, platform)
       WHERE bearer_token_hash = ${bearerTokenHash}
       RETURNING node_id
     `;
     if (updated[0] !== undefined) return updated[0];
+
+    // Unknown bearer. Everything past here is enrolment, and enrolment is gated.
+    if (!allowEnrolment) return null;
 
     const inserted = await tx<{ node_id: string }[]>`
       INSERT INTO workflow.execution_nodes (bearer_token_hash, hostname, platform)
@@ -675,6 +727,15 @@ export async function upsertExecutionNode(
       SELECT node_id FROM workflow.execution_nodes
       WHERE bearer_token_hash = ${bearerTokenHash}
     `;
+    if (existing[0] === undefined) {
+      // Unreachable while the advisory lock holds: nothing else can have inserted and
+      // then removed this digest inside our lock window. Asserted rather than assumed,
+      // because the alternative is returning undefined through a signature that
+      // promises a node_id and failing later as an opaque 500 in the route.
+      throw new Error(
+        "upsertExecutionNode: bearer conflicted on INSERT but no row was readable",
+      );
+    }
     return existing[0];
   });
 }
@@ -713,7 +774,20 @@ export async function nodeOwnsBearer(
 export interface RunEventInput {
   client_seq: number;
   event_type: string;
-  payload?: unknown;
+  /**
+   * The payload VALUE, already screened by the edge, or null when absent.
+   *
+   * A value and not pre-encoded JSON text, deliberately: postgres.js serialises for a
+   * `jsonb` column itself, so handing it a string stores that string AS a JSON string —
+   * `"{\"line\":\"x\"}"` rather than an object — and the double encoding is invisible
+   * until something reads the column back.
+   *
+   * "Already screened" means the edge has enforced the byte ceiling and removed the
+   * characters Postgres rejects inside jsonb. That work lives there because the edge
+   * must encode each payload to measure it anyway; doing it twice invited the two
+   * copies to disagree.
+   */
+  payload: unknown;
 }
 
 /**
@@ -721,26 +795,37 @@ export interface RunEventInput {
  *
  * `ON CONFLICT (node_id, client_seq) DO NOTHING` is what makes a node's retry safe:
  * the node re-sends whatever it did not see acknowledged, and a replayed batch must
- * neither duplicate state nor error. One transaction so a batch is all-or-nothing.
+ * neither duplicate state nor error.
+ *
+ * ONE multi-row statement, not one INSERT per event. The loop this replaced awaited up
+ * to 500 sequential round trips while holding a connection from a pool of 10 that is
+ * shared with search, capture, and every background worker — so a single authorised
+ * node sending maximum batches could starve the memory API that is this process's
+ * actual job. A single statement is also atomic on its own, which is why the explicit
+ * transaction is gone rather than merely shortened: it was buying nothing.
  */
 export async function ingestRunEvents(
   nodeId: string,
   events: RunEventInput[],
 ): Promise<void> {
-  await sql.begin(async (tx: SqlExecutor) => {
-    for (const event of events) {
-      await tx`
-        INSERT INTO workflow.run_events (node_id, client_seq, event_type, payload)
-        VALUES (
-          ${nodeId},
-          ${event.client_seq},
-          ${event.event_type},
-          ${event.payload === undefined ? null : JSON.stringify(event.payload)}::jsonb
-        )
-        ON CONFLICT (node_id, client_seq) DO NOTHING
-      `;
-    }
-  });
+  if (events.length === 0) return;
+
+  const rows = events.map((event) => ({
+    node_id: nodeId,
+    client_seq: event.client_seq,
+    event_type: event.event_type,
+    // sql.json() rather than the bare value: it marks the parameter as JSON explicitly,
+    // which is both what the multi-row helper's types accept and what keeps an object
+    // from being handed to the generic serialiser.
+    payload: sql.json(event.payload as never),
+  }));
+
+  await sql`
+    INSERT INTO workflow.run_events ${
+    sql(rows, "node_id", "client_seq", "event_type", "payload")
+  }
+    ON CONFLICT (node_id, client_seq) DO NOTHING
+  `;
 }
 
 /**
@@ -750,16 +835,25 @@ export async function ingestRunEvents(
  * row, so an ack derived from INSERT results would omit precisely the events the node
  * is retrying — and the node, seeing them unacknowledged again, would retry forever.
  * Selecting the stored rows covers freshly-inserted and already-present alike.
+ *
+ * `client_seq` is returned as a NUMBER, and the coercion is load-bearing rather than
+ * cosmetic. `client_seq` is `bigint`, and postgres.js hands bigint back as a string to
+ * avoid silently truncating values above 2^53; db.ts sets no `types` override. So the
+ * hub was acknowledging `"7"` for an event submitted as `7`, and a node comparing its
+ * spool with `===` would never clear an entry — retrying acknowledged events forever,
+ * defeating the delivery contract this function exists to provide. Lossless here
+ * because the edge schema bounds client_seq well below Number.MAX_SAFE_INTEGER.
  */
 export async function acknowledgeSeqs(
   nodeId: string,
   seqs: number[],
-): Promise<{ client_seq: string; event_id: string }[]> {
-  return await sql<{ client_seq: string; event_id: string }[]>`
+): Promise<{ client_seq: number; event_id: string }[]> {
+  const rows = await sql<{ client_seq: string; event_id: string }[]>`
     SELECT event_id, client_seq FROM workflow.run_events
     WHERE node_id = ${nodeId} AND client_seq = ANY(${seqs}::bigint[])
     ORDER BY client_seq
   `;
+  return rows.map((r) => ({ event_id: r.event_id, client_seq: Number(r.client_seq) }));
 }
 
 // --------------------------------------------------------------------------

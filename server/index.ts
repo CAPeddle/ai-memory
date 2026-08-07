@@ -1250,8 +1250,8 @@ if (workflowFeatureEnabled()) {
   // `validateNodeBearer` answers 401 rather than throwing on an absent header: no node
   // configured is an ordinary deployment, not a misconfigured server.
   app.use("/workflow/nodes/*", async (c, next) => {
-    const denied = await validateNodeBearer(c.req.raw);
-    if (denied) return denied;
+    const check = await validateNodeBearer(c.req.raw);
+    if (!check.ok) return check.response;
     await next();
   });
   app.route("/workflow/nodes", createRemoteNodeHubRoutes());
