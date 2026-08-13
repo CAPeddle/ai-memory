@@ -3,7 +3,7 @@ module: server
 date: 2026-08-11
 problem_type: convention
 component: authentication
-severity: high
+severity: critical
 title: "A credential format gate is not an authorization gate — name where the provisioned set lives"
 tags:
   - security

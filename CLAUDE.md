@@ -149,6 +149,21 @@ dotnet run --project tools/GovernanceAssetValidator -- build .
 dotnet run --project tools/GovernanceAssetValidator -- validate .
 ```
 
+**On WSL2, use `~/.dotnet/dotnet` for all of the above.** `global.json` pins the SDK
+to `8.0.100` with `rollForward: latestPatch`, which accepts only the `8.0.1xx` feature
+band — not `8.0.4xx`, and certainly not 10.x. The system `dotnet` on PATH
+(`/usr/bin/dotnet` → `/usr/lib/dotnet`) is 10.0.110, so a bare `dotnet` command fails
+with *"A compatible .NET SDK was not found"* and names `global.json`. The matching SDK
+is installed under `~/.dotnet`; that muxer resolves it:
+
+```bash
+~/.dotnet/dotnet run --project tools/GovernanceAssetValidator -- validate .
+```
+
+Don't prepend `~/.dotnet` to PATH globally — it holds 8.0.100 only, so it would shadow
+the system 10.0.110 for every other project on the machine. [ST-091](.github/planning/story-board.md)
+retargets the stack to `net10.0` and removes this split; .NET 8 LTS ends 10 Nov 2026.
+
 ## Repo-wide conventions and gotchas
 
 ### Line endings — non-trivial
