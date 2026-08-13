@@ -162,7 +162,8 @@ is installed under `~/.dotnet`; that muxer resolves it:
 
 Don't prepend `~/.dotnet` to PATH globally — it holds 8.0.100 only, so it would shadow
 the system 10.0.110 for every other project on the machine. [ST-091](.github/planning/story-board.md)
-retargets the stack to `net10.0` and removes this split; .NET 8 LTS ends 10 Nov 2026.
+moves the stack to the latest feasible SDK and removes this split; .NET 8 LTS ends
+10 Nov 2026.
 
 ## Repo-wide conventions and gotchas
 
