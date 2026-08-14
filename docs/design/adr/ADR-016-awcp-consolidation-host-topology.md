@@ -70,6 +70,31 @@ One central deployment owns all authoritative state and is where the operator re
 
 The alternative (two authoritative work/personal deployments) was considered and rejected for now: it would require an explicit invariant (single codebase + versioned event/API contracts + one release train) to avoid re-opening the three-systems problem via version drift (carried forward from the rev-1.4 candidate (a)). The hub-and-client split gets remote coverage without that risk, because clients are stateless-by-design apart from their spool. Revisit only if a genuine authoritative work/personal split becomes necessary.
 
+**Node admission and its known limits (ST-088 Phase 2 — recorded here 2026-08-11 so the topology decision carries its own security constraints rather than leaving them in a module docblock):**
+
+Because a client holds no authoritative state, the hub's `workflow.execution_nodes` table is the *only* record anywhere of which machines are legitimate. There is no peer copy to reconcile against, so that table's write path is the entire admission boundary — a sharper consequence of "not a second authoritative deployment" than it first appears, and worth stating where the topology is decided.
+
+The credential is split so that no secret is ever held twice:
+
+| Party | Holds | Kind |
+|---|---|---|
+| Client (Z2) | its own bearer, generated locally (`openssl rand -hex 32`) | the secret |
+| Hub | `AWCP_NODE_ENROLMENT_SECRET` | the authority to admit |
+| Hub | `execution_nodes.bearer_token_hash` | a verifier — SHA-256 only |
+
+A client's **first** registration must also present the enrolment secret; every later one needs only the bearer, so a rebooting client keeps its own credential and nothing else. This is the ssh-key split, and it is also why the hub must never mint or return a bearer: doing so would put the secret on the wire and in two places at once.
+
+**What this model does NOT provide, and what would need to change before it should be relied on at more than one node:**
+
+- **Enrolment is a capability, not an allowlist.** Anyone holding the enrolment secret may enrol any number of clients under any hostname. The hub does not decide *which* machines may join; it admits whoever presents the secret. Per-machine admission needs a separate operator-seeded set of authorised digests — a design deliberately not built at one node.
+- **The enrolment secret does not expire.** Comparable systems (GitHub Actions self-hosted runners) issue short-lived registration tokens. This one is static until an operator rotates it.
+- **There is no revocation.** The secret is shared and static, and `execution_nodes.status` has no `revoked` value; deleting a client's row lets the same secret re-enrol it. Decommissioning a machine therefore means rotating the secret for every machine.
+- **Unset means closed.** An absent `AWCP_NODE_ENROLMENT_SECRET` refuses all enrolment. The secret is read per request and never at startup, so an optional module can never prevent the host from booting — but the failure is quiet: a hub missing the variable answers 401 to every registration, indistinguishable from a wrong bearer. It must therefore be declared in `.env.example` and named explicitly in `docker-compose.yml`, which enumerates the container's environment.
+
+These limits are proportionate to one client and become material at several, or as soon as a machine must be decommissioned and *stay* out. Revisit alongside any change that raises client count — the same trigger that would make a message broker worth its operational cost, and for the same reason: both are fan-out properties, not one-node properties.
+
+**Gate relevance, stated conservatively.** ST-088 Phase 2 delivers the hub half of criterion 6 (§1) — authenticated remote event ingestion, with idempotent at-least-once delivery keyed on `UNIQUE(node_id, client_seq)` and acknowledgement re-derived by read-back so a replayed batch is absorbed and still fully acknowledged. **Criterion 6 is not discharged**: it also requires spooled replay from a real client, which is Phase 3. Nothing here moves this ADR's status.
+
 ### 3. Storage layout: open — a module-design decision, not a host decision
 
 Whether AWCP's operational tables (packets, runs, checkpoints, approvals) live in the same schema as ai-memory's memory tables, or a logically separate schema/tables in the same Postgres instance, is **explicitly deferred** to whoever designs the operational-state schema and module boundaries (evaluation doc §9 step 3, items 2–3). This is not an oversight: it is waiting on a concrete design pass, not a further PO decision round. A future reader should not read this silence as "undecided by omission" — it is decided to be decided later, at module-design time.
@@ -101,6 +126,7 @@ The AWCP host will provide Confluence/Jira/ADO source-lineage tracking — ident
 
 | Version | Date | Summary |
 |---------|------|---------|
+| 1.3 | 2026-08-11 | ST-088 Phase 2 (hub half of the remote-node surface). **Status unchanged — still Proposed/Conditional.** §2 gains the node-admission model and its limits: the credential split (client holds the bearer, hub holds only a digest plus the enrolment secret), and the four constraints that follow — enrolment is a capability rather than an allowlist, the secret does not expire, there is no revocation, and unset means closed with a quiet failure mode. Recorded in §2 rather than left in a module docblock because "clients hold no authoritative state" makes `execution_nodes` the sole record of legitimacy, which is a topology consequence. Criterion 6 explicitly **not** discharged — the hub half exists; spooled replay from a real client is Phase 3. §1, §3, §4 unchanged |
 | 1.0 | 2026-07-29 | Initial — recorded host (Candidate A), topology (single deployment), storage (deferred), source-lineage placement as decided; status Accepted |
 | 1.2 | 2026-08-03 | ST-084 Stage 1 review (PO). **Status unchanged — still Proposed/Conditional; the gate is not discharged.** §1 records gate progress (criteria 1–4 met, 5–7 outstanding, verdict PROMISING WITH CONCERNS) and gains an **acceptance pre-condition**: the policy-scope enforcement surface must be priced before Candidate A may be accepted, because it is a cost Candidate A carries and Candidate C does not (findings §6.1 — `scope.tags` enforced in zero retrieval paths). §1's Candidate A code-maturity row narrowed to the *infrastructural* reuse the spike actually observed; the memory-engine reuse it previously claimed was found unnecessary and went unused. §3 gains the shared-runtime trade-offs (schema ≠ access control; shared blast radius, restored deliberately by ST-086's fail-startup wiring; MCP registration cost). §2 and §4 unchanged — Stage 1 produced no evidence bearing on either |
 | 1.1 | 2026-07-29 | Governance round (PR #31): status corrected to Proposed/Conditional — host is a preferred hypothesis gated on the ST-084 spike; topology restated as hub-and-client (central hub + lightweight remote collector, no second authoritative deployment); sandboxed-write "approved" claim removed (execution-time approval required, nothing pre-approved); §4 revised — extract/wrap Prism mechanisms before rebuild, hash-only lineage honest-scoped to change detection unless excerpts or historical retrieval are added |

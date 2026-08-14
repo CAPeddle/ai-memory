@@ -342,7 +342,12 @@ Deno.test({
         "agent_runs",
         "checkpoints",
         "evidence_items",
+        // ST-088 U2: the remote execution node identity and its event log. Both live
+        // in the workflow schema for the same reason as everything else here — one
+        // DROP SCHEMA is the whole teardown.
+        "execution_nodes",
         "operational_decisions",
+        "run_events",
         // The module's OWN migration ledger. It lives inside the workflow schema
         // deliberately — writing to the memory domain's public.schema_migrations
         // would reintroduce the shared mutable state this separation exists to
@@ -500,7 +505,9 @@ Deno.test({
       "agent_runs",
       "checkpoints",
       "evidence_items",
+      "execution_nodes", // ST-088 U2
       "operational_decisions",
+      "run_events", // ST-088 U2
       "schema_migrations",
       "verification_criteria",
       "work_packets",

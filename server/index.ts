@@ -34,6 +34,10 @@ import {
   workflowFeatureEnabled,
 } from "./src/workflow/bootstrap.ts";
 import { createWorkflowApi } from "./src/workflow/api.ts";
+import {
+  createRemoteNodeHubRoutes,
+  validateNodeBearer,
+} from "./src/workflow/remoteNodeHub.ts";
 import { DASHBOARD_HTML } from "./src/workflow/dashboard.ts";
 import { requiresOperator } from "./src/workflow/policy.ts";
 import {
@@ -1231,6 +1235,26 @@ if (workflowFeatureEnabled()) {
     await next();
   });
   app.route("/api/workflow", createWorkflowApi());
+
+  // ST-088 U2 — the remote execution node surface.
+  //
+  // Mounted at /workflow/nodes, deliberately OUTSIDE /api/workflow/*, so the
+  // operator/agent middleware above does not apply to it. That middleware authenticates
+  // MEMORY_API_KEY and AWCP_AGENT_API_KEY; a node holds neither. It carries its own
+  // per-node bearer, and the two credential systems must not be able to authenticate
+  // each other's surfaces — a platform key that could register a node would collapse
+  // the distinction the node identity exists to draw.
+  //
+  // Auth is applied HERE by the composition root, matching how /api/workflow is wired
+  // and keeping remoteNodeHub.ts free of any opinion about deployment credentials.
+  // `validateNodeBearer` answers 401 rather than throwing on an absent header: no node
+  // configured is an ordinary deployment, not a misconfigured server.
+  app.use("/workflow/nodes/*", async (c, next) => {
+    const check = await validateNodeBearer(c.req.raw);
+    if (!check.ok) return check.response;
+    await next();
+  });
+  app.route("/workflow/nodes", createRemoteNodeHubRoutes());
 
   // The dashboard SHELL is unauthenticated; it contains no operational data and
   // obtains the operator's key in the browser. Every byte of content it renders

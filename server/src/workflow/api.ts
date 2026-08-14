@@ -219,15 +219,102 @@ export function toHttpError(err: unknown): HttpError {
 
 type Json = Record<string, unknown>;
 
-/** Parse a JSON body, treating an absent or unparseable body as an empty object. */
-async function readJson(req: Request): Promise<unknown> {
+/**
+ * Ceiling on a request body, in bytes.
+ *
+ * Sized by the largest batch the node hub declares legal — 500 events x 16 KiB of
+ * payload is ~8 MiB — plus headroom for the JSON envelope around them. Any surface
+ * needing a tighter bound passes its own; none may exceed this one.
+ */
+export const MAX_REQUEST_BYTES = 9 * 1024 * 1024;
+
+/** {@link readJson} could not parse the body. */
+export const BODY_UNPARSEABLE = Symbol.for("workflow.body.unparseable");
+
+/** {@link readJson} stopped reading: the body exceeded the byte ceiling. */
+export const BODY_TOO_LARGE = Symbol.for("workflow.body.too-large");
+
+/**
+ * Reduce Zod issues to `{path, message}` — the validation-error shape every workflow
+ * route answers with.
+ *
+ * Worth doing rather than passing `error.issues` through: a raw issue carries
+ * validator internals (codes, expected/received types, and for some checks the value
+ * that failed), so echoing it both varies the response shape by which check fired and
+ * risks reflecting submitted content back to the caller.
+ */
+export function normalizeZodIssues(
+  issues: readonly { path: PropertyKey[]; message: string }[],
+): { path: string; message: string }[] {
+  return issues.map((i) => ({ path: i.path.join("."), message: i.message }));
+}
+
+/**
+ * Parse a JSON body, treating an absent body as an empty object; returns BODY_UNPARSEABLE / BODY_TOO_LARGE on failure.
+ *
+ * Exported for remoteNodeHub.ts. The node hub had a byte-identical private copy; two
+ * copies of the "what counts as an unparseable body" rule is two places for the answer
+ * to drift, and nothing in the module boundary ever required the duplication.
+ */
+export async function readJson(
+  req: Request,
+  maxBytes: number = MAX_REQUEST_BYTES,
+): Promise<unknown> {
+  // Content-Length first, because rejecting before reading is free when the client is
+  // honest. It is only a hint: the header is attacker-supplied and chunked uploads omit
+  // it entirely, so it can never be the actual bound — hence the capped read below.
+  const declared = Number(req.headers.get("Content-Length"));
+  if (Number.isFinite(declared) && declared > maxBytes) return BODY_TOO_LARGE;
+
+  let text: string | null;
   try {
-    const text = await req.text();
-    if (text.trim() === "") return {};
+    text = await readTextCapped(req, maxBytes);
+  } catch {
+    return BODY_UNPARSEABLE;
+  }
+  if (text === null) return BODY_TOO_LARGE;
+  if (text.trim() === "") return {};
+  try {
     return JSON.parse(text);
   } catch {
-    return Symbol.for("unparseable");
+    return BODY_UNPARSEABLE;
   }
+}
+
+/**
+ * Read a request body to text, abandoning it the moment it exceeds `maxBytes`.
+ * Returns null when it did.
+ *
+ * `req.text()` cannot do this: it buffers whatever arrives and only then hands it over,
+ * so any ceiling applied to its result is enforced after the memory has already been
+ * committed. Counting while reading is the difference between a bound and a report.
+ */
+async function readTextCapped(req: Request, maxBytes: number): Promise<string | null> {
+  const body = req.body;
+  if (body === null) return "";
+
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value === undefined) continue;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(merged);
 }
 
 /**
@@ -237,7 +324,7 @@ async function readJson(req: Request): Promise<unknown> {
  * through this, which is what makes "every route maps errors the same way" true
  * rather than merely asserted in a docblock.
  */
-function withErrorMapping(
+export function withErrorMapping(
   handler: (c: Context) => Promise<Response>,
 ): (c: Context) => Promise<Response> {
   return async (c: Context) => {
@@ -285,10 +372,15 @@ export function createWorkflowApi(): Hono {
 
       const raw = await readJson(c.req.raw);
       if (typeof raw === "symbol") {
-        return c.json({
-          error: "BadRequest",
-          message: "body is not valid JSON",
-        }, 400);
+        return raw === BODY_TOO_LARGE
+          ? c.json({
+            error: "PayloadTooLarge",
+            message: `request body exceeds ${MAX_REQUEST_BYTES} bytes`,
+          }, 413)
+          : c.json({
+            error: "BadRequest",
+            message: "body is not valid JSON",
+          }, 400);
       }
       const body = schema.safeParse(raw);
       if (!body.success) {
@@ -296,10 +388,7 @@ export function createWorkflowApi(): Hono {
           {
             error: "BadRequest",
             message: "request body failed validation",
-            issues: body.error.issues.map((i) => ({
-              path: i.path.join("."),
-              message: i.message,
-            })),
+            issues: normalizeZodIssues(body.error.issues),
           },
           400,
         );

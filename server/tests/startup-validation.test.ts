@@ -268,3 +268,73 @@ Deno.test("startup validation: AWCP_AGENT_API_KEY unset starts cleanly (discrimi
   assertEquals(fatalCalled, false);
   assertEquals(exitCalled, false);
 });
+
+// ---------------------------------------------------------------------------
+// ST-088 NODE-03 — the node credential must never gate startup.
+// ---------------------------------------------------------------------------
+
+Deno.test("startup validation: no node credential is consulted at startup (ST-088 NODE-03)", () => {
+  // WHAT MAKES THIS NON-VACUOUS — and it is a different answer than it used to be.
+  //
+  // This test was originally written when the design had NO hub-side node credential at
+  // all: the bearer arrived in a header and the only node env var lived on the Phase-3
+  // node. A test that "the node credential is not consulted at startup" was therefore
+  // asserting about a subject that did not exist, and passed for that reason.
+  //
+  // The enrolment gate introduced one: AWCP_NODE_ENROLMENT_SECRET, read by
+  // remoteNodeHub.ts. That makes the claim real — and makes it matter, because putting
+  // that name into the required set would stop a server running no nodes at all from
+  // booting, which is an ordinary deployment.
+  //
+  // Instrumented through ensureRequiredEnv, NOT findMissingRequiredEnv. Boot calls
+  // ensureRequiredEnv (index.ts), and that runs findCapabilityConflicts and
+  // agentKeyCollidesWithOperatorKey as well — so a reader wired only into
+  // findMissingRequiredEnv observes one of the three code paths and would stay green if
+  // a node credential were consulted by either of the other two.
+  const consulted: string[] = [];
+  let exitCode: number | null = null;
+  ensureRequiredEnv({
+    readEnv: (name) => {
+      consulted.push(name);
+      // Answer for the enrolment secret too, so this is the case where boot COULD
+      // notice it. A reader that returned undefined for it would prove less.
+      return name === "AWCP_AGENT_API_KEY" ? undefined : "present";
+    },
+    logFatal: () => {},
+    exit: (code) => {
+      exitCode = code;
+      throw new Error("EXIT_CALLED");
+    },
+  });
+  assertEquals(exitCode, null, "a deployment with no node configured must still boot");
+
+  // The recorder has to be wired to something: an empty `consulted` would satisfy the
+  // node-shaped filter below exactly as well as a correct boot path does.
+  assertEquals(
+    consulted.includes("MEMORY_API_KEY"),
+    true,
+    "the recording reader observed nothing — this test cannot detect anything",
+  );
+
+  // The stronger statement, and the one that actually fails if someone wires a node
+  // credential into startup: enumerate every variable startup asked about and assert
+  // none of them is node-related. A name-probe cannot do this; it can only confirm the
+  // absence of one name someone thought to guess.
+  const nodeShaped = consulted.filter((name) => /NODE|EXECUTION_NODE|NODE_BEARER/i.test(name));
+  assertEquals(
+    nodeShaped,
+    [],
+    `startup consulted a node credential: ${JSON.stringify(nodeShaped)}. An optional ` +
+      `module must never be able to prevent boot — validate the node bearer in the ` +
+      `hub handler, not in startupValidation.ts.`,
+  );
+
+  // Positive control: the same function DOES report a genuinely missing variable. Without
+  // this, the empty result above would be equally consistent with findMissingRequiredEnv
+  // being broken and returning [] for everything.
+  assertEquals(
+    findMissingRequiredEnv((name) => (name === "MEMORY_API_KEY" ? undefined : "present")),
+    ["MEMORY_API_KEY"],
+    "positive control failed: findMissingRequiredEnv does not report missing variables",
+  );
+});

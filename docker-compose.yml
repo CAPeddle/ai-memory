@@ -36,6 +36,13 @@ services:
       # key configured" (both the middleware and the collision guard test it for
       # truthiness), so leaving it out of .env keeps today's single-key behaviour.
       AWCP_AGENT_API_KEY: ${AWCP_AGENT_API_KEY:-}
+      # Operator secret a remote execution node presents on its FIRST registration
+      # (ST-088). Same explicit-enumeration reason as the line above — and the failure
+      # mode here is quieter: unset means enrolment is CLOSED, so a hub missing this
+      # answers 401 to every registration, which is indistinguishable from a wrong
+      # bearer. `:-` keeps it optional, because a deployment running no nodes is
+      # ordinary and must still boot. Generate with `openssl rand -hex 32`.
+      AWCP_NODE_ENROLMENT_SECRET: ${AWCP_NODE_ENROLMENT_SECRET:-}
     # Dev bind mount: host ./server is the source of truth at runtime so that
     # /continue can write new files (tests, src) and `docker compose exec mcp deno ...`
     # sees them immediately without rebuilding the image. Production deployment
