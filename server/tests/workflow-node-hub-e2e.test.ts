@@ -94,7 +94,7 @@ Deno.test({
     const bearer = mintBearer();
 
     try {
-      await t.step("an unauthenticated request is refused by the mounted middleware", async () => {
+      await t.step("an unauthenticated request is refused with 401 at the mounted /workflow/nodes prefix", async () => {
         // No Authorization at all. If this 404s instead of 401ing, the routes are not
         // mounted at this prefix and every other assertion here is meaningless — so
         // assert the status precisely rather than "not 2xx".
