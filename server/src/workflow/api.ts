@@ -250,7 +250,7 @@ export function normalizeZodIssues(
 }
 
 /**
- * Parse a JSON body, treating an absent or unparseable body as an empty object.
+ * Parse a JSON body, treating an absent body as an empty object; returns BODY_UNPARSEABLE / BODY_TOO_LARGE on failure.
  *
  * Exported for remoteNodeHub.ts. The node hub had a byte-identical private copy; two
  * copies of the "what counts as an unparseable body" rule is two places for the answer
