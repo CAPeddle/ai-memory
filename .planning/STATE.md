@@ -117,4 +117,4 @@ None yet.
 ---
 
 *State initialized: 2026-08-05*
-*Next action: `/gsd-plan-phase 3`. Read `03-CONTEXT.md` first — its thirteen decisions are locked and must not be re-litigated. Reachability is verified; do not re-probe it. Note `ROADMAP.md`'s Phase 3 **Delivery artifacts** line still names `awcp-node-client.js` and needs correcting to `.mjs` per D-04.*
+*Next action: `/gsd-plan-phase 3`. Read `03-CONTEXT.md` first — its thirteen decisions are locked and must not be re-litigated. Reachability is verified; do not re-probe it. `ROADMAP.md`'s **Delivery artifacts** line is already corrected to `.mjs`; the ST-088 spike plan's U3 still names `.js` and is deliberately left as-is — it is Tier-1 authority and `03-CONTEXT.md` flags the supersession rather than editing it.*

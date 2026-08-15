@@ -75,7 +75,7 @@ delivery; `docs/plans/` and the story board remain the canonical delivery record
 **Goal**: A minimal Node.js client running on the Ubuntu execution node spools, replays, and delivers events reliably across disconnection, duplicate delivery, and authentication failure scenarios — while existing MCP tools remain fully operational.
 **Depends on**: Phase 2
 **Requirements**: EVENT-01, EVENT-02, EVENT-03, EVENT-04, SAFE-01, SAFE-02
-**Delivery artifacts**: `server/scripts/awcp-node-client.js`, experiment results in `docs/investigations/ST-084-awcp-host-spike-findings.md` §13
+**Delivery artifacts**: `server/scripts/awcp-node-client.mjs` (`.mjs`, not `.js` — the repo has no `package.json` at any level, so Node resolves a bare `.js` as CommonJS and an ESM client would not parse; see `03-CONTEXT.md` D-04), experiment results in `docs/investigations/ST-084-awcp-host-spike-findings.md` §13
 **Success Criteria** (what must be TRUE):
 
   1. Replaying the same `(node_id, client_seq)` event a second time produces no duplicate hub state and the client receives the same ack both times.

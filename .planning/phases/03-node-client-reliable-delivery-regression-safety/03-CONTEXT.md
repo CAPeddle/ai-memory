@@ -48,9 +48,11 @@ Requirements covered: EVENT-01, EVENT-02, EVENT-03, EVENT-04, SAFE-01, SAFE-02.
   `.js`. The repo contains **no `package.json` at any level**, so Node resolves a bare `.js` as
   CommonJS and the ESM client named in the plan would be a `SyntaxError` on z2. `.mjs` is
   unambiguous ESM regardless of any `package.json` added later, and costs no new files.
-  — **Reversibility:** costly — `ROADMAP.md`'s Phase 3 **Delivery artifacts** line and the U3
-  section of `docs/plans/2026-08-04-002-...-plan.md` both name `awcp-node-client.js`; both need a
-  one-line correction, and any later doc that has copied the name needs the same.
+  — **Reversibility:** costly — the name is copied across documents. `ROADMAP.md`'s Phase 3
+  **Delivery artifacts** line **has been corrected** to `.mjs`. The U3 section of
+  `docs/plans/2026-08-04-002-...-plan.md` still names `.js` and is **deliberately left unedited**:
+  it is Tier-1 decision authority, and this document's supersession note is the correction. Any
+  later doc that copies the name needs the same treatment.
 
 - **D-05:** **Rejected: adding `server/scripts/package.json`.** It would preserve the `.js` name
   but introduces the repo's first `package.json`, changing what Node and npm tooling infer about
@@ -174,10 +176,11 @@ the decisions above and by the hub contract:
 ### Established Patterns
 
 - **Module boundary enforcement** (`workflow-boundary.test.ts`): only `store.ts` and `schema.ts`
-  may import `../db.ts`. The boundary test **enumerates its directory**, so any new file under
-  `server/src/workflow/` is auto-covered the moment it is created. A client under
-  `server/scripts/` is outside that directory — confirm whether the boundary test's scope reaches
-  it before assuming either way.
+  may import `../db.ts`. The boundary test **enumerates `server/src/workflow/`**, so any new file
+  there is auto-covered the moment it is created. **The client is not covered** — it lives in
+  `server/scripts/`, outside that directory. This is checked, not assumed: do not expect the
+  boundary test to constrain the client, and do not add it to that test's scope, since the client
+  has no database access to constrain in the first place.
 - **Test naming** is `descriptive-name.test.ts` in `server/tests/`; helpers are camelCase under
   `server/tests/_helpers/`.
 - **Module-level constants** are `UPPER_SNAKE_CASE`; exported functions `camelCase`; no `Async`
