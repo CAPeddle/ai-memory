@@ -5,9 +5,10 @@ milestone_name: milestone
 current_phase: 3
 current_phase_name: Node Client, Reliable Delivery & Regression Safety
 status: ready
-last_updated: "2026-08-15T00:00:00.000Z"
+stopped_at: Phase 3 context gathered
+last_updated: "2026-08-15T15:07:29.813Z"
 last_activity: 2026-08-15
-last_activity_desc: "Phase 2 merged to main (PR #47 -> 47284cc, CI green). Phase 3 preflight done: z2 reachable both directions, so criterion 6 is provable; three constraints recorded for discuss-phase to settle."
+last_activity_desc: "Phase 2 merged to `main` (PR #47 → `47284cc`, all three CI jobs green, including `server-integration-tests`, red since 2026-08-04 and cleared by this merge). Phase 3 preflight resolved the reachability blocker and three constraints below."
 progress:
   total_phases: 4
   completed_phases: 2
@@ -29,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 
 Phase: 3 of 4 (Node Client, Reliable Delivery & Regression Safety)
 Plan: 0 of TBD in current phase
-Status: Ready to discuss — `/gsd-plan-phase 3` was run 2026-08-15 and stopped at its CONTEXT.md gate by choice; discuss-phase is the next gate, then re-run plan-phase.
+Status: Ready to plan — `/gsd-discuss-phase 3` completed 2026-08-15; `03-CONTEXT.md` holds thirteen locked decisions. Next gate is `/gsd-plan-phase 3`.
 Last activity: 2026-08-15 — Phase 2 merged to `main` (PR #47 → `47284cc`, all three CI jobs green, including `server-integration-tests`, red since 2026-08-04 and cleared by this merge). Phase 3 preflight resolved the reachability blocker and three constraints below.
 
 Progress: [█████░░░░░] 50%
@@ -76,9 +77,8 @@ None yet.
 ### Blockers/Concerns
 
 - ~~**z2 reachability**~~ — **RESOLVED 2026-08-15, both directions.** Inbound: `ssh personal-server` (the `~/.ssh/config` alias for Tailscale `100.65.192.115`). A bare `ssh z2` fails publickey because it matches no alias and offers no key — that near-miss is what made the node look unreachable, so use the alias. Node is Ubuntu `6.8.0-136`, **Node v18.19.1, no Deno**, matching the plan's §7.1 assumption. Outbound: `curl http://100.106.232.78:3000/health` **from z2** returns `{"status":"healthy"}`. Criterion 6 is therefore **provable — do not record UNPROVEN on reachability grounds.** Spooled replay from a real client is what still has to discharge it.
-- **Only the dev `mcp` service is reachable from z2, and it is backed by the persistent dev database.** `docker-compose.yml:54` publishes `3000:3000` on all interfaces; `mcp-test` is `127.0.0.1:3001:3000` — loopback-only. So a real node POSTing `run_events` over the tailnet writes to `db`, not `db-test`. CLAUDE.md's "tests never touch the dev database" guarantee covers the Deno suite, not an external node, so it does not protect this path. Three options, each with a cost: pollute dev data, republish `mcp-test` off loopback, or stand up a third stack. **SAFE-01/02 ("existing tests pass unmodified") is what dev-state drift threatens**, so this is a decision with consequences, not a preference.
-- **`server/scripts/awcp-node-client.js` + ESM is a `SyntaxError` as specified.** The repo contains **no `package.json` at any level**, so Node resolves a bare `.js` as CommonJS. Pick `.mjs`, a scoped `package.json` with `"type":"module"`, or CJS — at plan time, not mid-execution. Node 18 also emits an ExperimentalWarning on global `fetch`, which will land in any captured stderr.
-- **`AWCP_NODE_ENROLMENT_SECRET` is unset/empty in both `mcp` and `mcp-test`**, so enrolment is closed and the client's first registration gets the quiet 401 by design until an operator sets it. Prior verification covered the variable's *spelling* across three files, not that it holds a *value*.
+- ~~**Loopback-only `mcp-test`**~~, ~~**`.js` vs ESM**~~, ~~**unset enrolment secret**~~ — **all three SETTLED 2026-08-15 in `03-CONTEXT.md` (D-01..D-04, D-11).** Do not re-raise them as open questions. In short: the real-node leg points at the dev hub on `:3000` as-is and its rows stay as criterion-6 evidence; the client is **`awcp-node-client.mjs`**, because the repo has no `package.json` at any level and a bare `.js` would resolve as CommonJS; enrolment is opened by setting `AWCP_NODE_ENROLMENT_SECRET`, used for one registration, then closed again. **The SAFE-01/02 worry behind the first is narrower than it first looked** — `execution_nodes` and `run_events` are new Phase 2 tables that no pre-existing test reads, so a real node writing to the dev database does not endanger the existing suite.
+- **Node 18 emits an ExperimentalWarning on global `fetch`.** Settled as D-06: use `fetch` and suppress the warning, because captured stderr is evidence in this phase and the notice would otherwise open every transcript.
 - **ST-082 collision watch:** If ST-082 lands before Phase 4, U1 pricing becomes an actual — update the pricing table to reflect actual rather than estimated cost before writing the ADR-016 recommendation.
 
 ## Deferred Items
@@ -88,6 +88,10 @@ None yet.
 - SYNTH-01 (Obsidian companion) — ST-019 dependent, v2
 
 ## Session Continuity
+
+**Last session:** 2026-08-15T15:07:29.795Z
+**Stopped at:** Phase 3 context gathered
+**Resume file:** .planning/phases/03-node-client-reliable-delivery-regression-safety/03-CONTEXT.md
 
 ### If resuming mid-phase
 
@@ -107,9 +111,10 @@ None yet.
 | ADR-016 | `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` |
 | Story board | `.github/planning/story-board.md` |
 | Hub remote-node source | `server/src/workflow/remoteNodeHub.ts` (created, Phase 2) |
-| Node client | `server/scripts/awcp-node-client.js` (to be created, Phase 3) |
+| Node client | `server/scripts/awcp-node-client.mjs` (to be created, Phase 3 — `.mjs`, not `.js`, per D-04) |
+| Phase 3 decisions | `.planning/phases/03-node-client-reliable-delivery-regression-safety/03-CONTEXT.md` |
 
 ---
 
 *State initialized: 2026-08-05*
-*Next action: `/gsd-discuss-phase 3`, then `/gsd-plan-phase 3`. Reachability is already verified (see Blockers/Concerns) — do not re-probe it. Discuss-phase should settle the three constraints recorded there: where the real-node leg points given `mcp-test` is loopback-only, the `.mjs`/scoped-`package.json`/CJS choice, and who sets `AWCP_NODE_ENROLMENT_SECRET`.*
+*Next action: `/gsd-plan-phase 3`. Read `03-CONTEXT.md` first — its thirteen decisions are locked and must not be re-litigated. Reachability is verified; do not re-probe it. Note `ROADMAP.md`'s Phase 3 **Delivery artifacts** line still names `awcp-node-client.js` and needs correcting to `.mjs` per D-04.*
