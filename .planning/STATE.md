@@ -5,14 +5,14 @@ milestone_name: milestone
 current_phase: 3
 current_phase_name: Node Client, Reliable Delivery & Regression Safety
 status: ready
-stopped_at: Phase 3 context gathered
-last_updated: "2026-08-15T15:07:29.813Z"
+stopped_at: Phase 3 planned — 6 plans, 6 sequential waves, ready to execute
+last_updated: "2026-08-15T17:48:45.957Z"
 last_activity: 2026-08-15
-last_activity_desc: "Phase 2 merged to `main` (PR #47 → `47284cc`, all three CI jobs green, including `server-integration-tests`, red since 2026-08-04 and cleared by this merge). Phase 3 preflight resolved the reachability blocker and three constraints below."
+last_activity_desc: "Phase 3 planned: 6 plans / 15 tasks / 6 strictly sequential waves, checker passed, requirements 6/6 and decisions 18/18 covered. A doc-review pass first corrected a P0 — the dev hub returns 404 for node registration until FEATURE_WORKFLOW is enabled on the base mcp service."
 progress:
   total_phases: 4
   completed_phases: 2
-  total_plans: 2
+  total_plans: 8
   completed_plans: 2
   percent: 50
 ---
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 ## Current Position
 
 Phase: 3 of 4 (Node Client, Reliable Delivery & Regression Safety)
-Plan: 0 of TBD in current phase
-Status: Ready to plan — `/gsd-discuss-phase 3` completed 2026-08-15; `03-CONTEXT.md` holds thirteen locked decisions. Next gate is `/gsd-plan-phase 3`.
-Last activity: 2026-08-15 — Phase 2 merged to `main` (PR #47 → `47284cc`, all three CI jobs green, including `server-integration-tests`, red since 2026-08-04 and cleared by this merge). Phase 3 preflight resolved the reachability blocker and three constraints below.
+Plan: 0 of 6 in current phase
+Status: **Ready to execute** — `03-CONTEXT.md` holds 18 locked decisions (all 18 covered by plans); `03-01..03-06-PLAN.md` define 15 tasks in 6 **strictly sequential** waves. Next gate is `/gsd-execute-phase 3`.
+Last activity: 2026-08-15 — Phase 3 planned end to end (discuss → doc-review → research → pattern-map → plan → check). Checker passed with no blockers; requirements 6/6 and decisions 18/18 covered.
 
 Progress: [█████░░░░░] 50%
 
@@ -68,7 +68,7 @@ Recent decisions affecting current work:
 - **ST-088 constraint:** No node credential may enter the set `findMissingRequiredEnv` checks in `startupValidation.ts` (L127-141 — inline checks over `OPENROUTER_API_KEY` and `MEMORY_API_KEY`; there is no `REQUIRED_ENV` constant, despite earlier plan drafts naming one). Adding one would prevent boot when no node is configured. Validate in the hub endpoint, not at startup.
 - **Graph tools are structurally blocked** (not merely unfixed): AGE nodes carry no scope column. Enforcement requires extraction-time tagging or call gating. ST-082 owns the build; this milestone priced it.
 - **Node client must be plain Node.js ESM, zero npm deps:** z2 (Ubuntu 24.04.4) has no Deno. Prefer Node for spool JSONL logic over POSIX shell+curl.
-- **Stage 2 findings append-only:** New sections (§13+) are appended to `docs/investigations/ST-084-awcp-host-spike-findings.md`. Stage 1 text stands as written.
+- **Stage 2 findings append-only:** New sections are appended to `docs/investigations/ST-084-awcp-host-spike-findings.md`; Stage 1 text stands as written. **Phase 3 writes `## 16.`, not §13** — that document already carries two sections numbered `## 13.` (`:730` and `:1039`), so a third would make the number useless as a reference. ROADMAP's delivery-artifact line records the supersession.
 
 ### Pending Todos
 
@@ -80,7 +80,7 @@ None yet.
 - ~~**Loopback-only `mcp-test`**~~, ~~**`.js` vs ESM**~~, ~~**unset enrolment secret**~~ — **all three SETTLED 2026-08-15 in `03-CONTEXT.md` (D-01..D-04, D-11).** Do not re-raise them as open questions. In short: the real-node leg points at the dev hub on `:3000` and its rows stay as criterion-6 evidence; the client is **`awcp-node-client.mjs`**, because the repo has no `package.json` at any level and a bare `.js` would resolve as CommonJS; enrolment is opened by setting `AWCP_NODE_ENROLMENT_SECRET`, used for one registration, then closed again.
 - **CORRECTION 2026-08-15 (`ce-doc-review` P0): the dev hub does not expose the node surface at all.** `POST /workflow/nodes/register` returns **404**, not the "quiet 401" recorded earlier — the routes mount only inside `if (workflowFeatureEnabled())`, and `FEATURE_WORKFLOW` is set solely by `docker-compose.workflow.yml`. **The earlier claim was inferred from source, not observed**; the preflight probed `/health`, which answers identically either way. `FEATURE_WORKFLOW` must be enabled on the **base `mcp` service** (not via the overlay, which also disables the entity/consolidation/backfill workers and the model provider) before any real-node leg runs. See `03-CONTEXT.md` D-01.
 - **CORRECTION 2026-08-15: D-02's original reason was false.** `workflow-remote-node-hub.test.ts` **does** read `execution_nodes` and `run_events` throughout; what makes a foreign node's rows harmless is that every read is **scoped** by `node_id` or `bearer_token_hash`. The conclusion stands, the reason does not — and every new Phase 3 assertion over those tables must carry the same scoping.
-- **The existing suite destroys the criterion-6 evidence.** `workflow-mvp-e2e.test.ts:104` and `:601` both run an unconditional `DROP SCHEMA IF EXISTS workflow CASCADE`, which also deletes z2's registration and de-enrols it behind the opaque 401. Capture evidence into findings §13 at experiment time.
+- **The existing suite destroys the criterion-6 evidence.** `workflow-mvp-e2e.test.ts:104` and `:601` both run an unconditional `DROP SCHEMA IF EXISTS workflow CASCADE`, which also deletes z2's registration and de-enrols it behind the opaque 401. Capture evidence into findings `## 16.` at experiment time. **The plan sequences around this**: the last destructive full-suite run is wave 5 (`03-05`), enrolment is wave 6 (`03-06`) — do not run the full suite after enrolment.
 - **Node 18 emits an ExperimentalWarning on global `fetch`.** Settled as D-06: use `fetch` and suppress the warning, because captured stderr is evidence in this phase and the notice would otherwise open every transcript.
 - **ST-082 collision watch:** If ST-082 lands before Phase 4, U1 pricing becomes an actual — update the pricing table to reflect actual rather than estimated cost before writing the ADR-016 recommendation.
 
