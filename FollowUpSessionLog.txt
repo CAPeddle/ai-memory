@@ -1,26 +1,42 @@
-Session: 2026-08-04
-Accomplished:
-- Merged PR #45 (ST-089 learning doc + CONCEPTS.md Governance vocabulary)
-- Created ST-088 Stage 2 plan: docs/plans/2026-08-04-002-spike-st088-stage2-scope-enforcement-remote-node-plan.md
-- Updated story board: ST-088 Backlog → In Progress, Plan cross-linked
-- Fixed pre-existing search-golden-set.test.ts CI failures on main:
-  1. DISABLE/ENABLE trg_queue_consolidation in corpus seed SQL to prevent worker deactivating corpus shards
-  2. Added "zoom meeting rotation" + "bcf retention rule" to LIVE_MEMBERSHIP_EXCLUDED_QUERIES
-  3. Updated build-search-quality-corpus.ts generator to emit trigger guards (survives regeneration)
-- PR #46 merged to main as 382c291 (all 3 CI checks green)
-- Board Last updated header updated (cherry-pick pending to main)
+ST-088 Phase 3 — 5 of 6 plans executed. 03-06 NOT RUN (needs explicit authorization).
 
-Next session should resume:
-- Begin ST-088 Stage 2 execution per docs/plans/2026-08-04-002-spike-st088-stage2-scope-enforcement-remote-node-plan.md
-- U1 is critical path: price the scope.tags enforcement surface (read-only analysis, no code changes)
-- U2-U4: remote Ubuntu node (hub tables, Node client, experiments 4-6)
-- U5: execution blocking assessment; U6: final ADR-016 recommendation
+BRANCH feat/st-088-phase-3-node-client  HEAD c8e439f  (21 commits since f3837e4, all carry "Story: ST-088")
+PHASE DIR .planning/phases/03-node-client-reliable-delivery-regression-safety/
 
-Board state:
-- ST-088: In Progress, plan cross-linked
-- Review slot: free
-- main: 382c291 (PR #46 merged)
+DONE (SUMMARY.md exists for each):
+  03-01 FEATURE_WORKFLOW:"true" hardcoded on base mcp service; regression baseline captured (400 testcases)
+  03-02 server/scripts/awcp-node-client.mjs tracer + workflow-node-client-hub-e2e.test.ts (EVENT-01)
+  03-03 bounded crash-safe spool, oldest-first eviction, ack-gated flush; 14 tests (EVENT-02/03/04, D-14)
+  03-04 terminal auth (exit 77) / deferred transport (exit 75), bounded backoff, heartbeat+checkpoint,
+        D-13 leak gate. Found+fixed 2 real bugs: infinite flush loop on a no-progress 200; res.json()
+        called before res.status so a plain-text 401 was misclassified "unreachable", defeating D-17.
+  03-05 SAFE-01 empty filtered diff (391 ok / 9 FAILED / 400 total, identical to baseline — independently
+        re-verified from the artifacts); SAFE-02 corpus 33/33 unchanged; CLAUDE.md grant inventory updated.
 
-Avoidance:
-- corpus seed SQL "do not edit by hand" — trigger disable/enable IS intentional; mirror in build-search-quality-corpus.ts
-- DISABLE TRIGGER before seed (not DELETE FROM queue after) — the worker processes in milliseconds, a post-INSERT delete is a race
+NOT RUN: 03-06 (wave 6). Real-node leg for ADR-016 criterion 6. It generates two live credentials with
+openssl, ssh's to `personal-server` (z2), writes files on that host, appends AWCP_NODE_ENROLMENT_SECRET
+to .env, recreates the mcp container twice, and commits transcripts into git permanently. Its own threat
+model rates credential-leak-into-history CRITICAL (T-03-06-01) and it carries a <human-check> that is
+unautomatable. Needs the operator present. Resume with: /gsd-execute-phase 03 --wave 6
+
+PHASE NOT COMPLETE. Do NOT run phase.complete or gsd-verifier yet — a verifier would report gaps_found
+against an unrun plan and misrepresent a deliberate stop as a defect.
+
+HAZARD (created by this phase, outlives it): once 03-06 enrols z2, any suite run against the DEV
+DATABASE_URL — including the native ./dev.sh loop — issues DROP SCHEMA IF EXISTS workflow CASCADE and
+de-enrols the node behind an opaque 401, destroying evidence. 03-05's run was the last permitted
+full-suite run before enrolment. Use the test stack (mcp-test/db-test) only.
+
+OPEN DECISIONS FOR THE PO:
+  1. FEATURE_WORKFLOW is now hardcoded "true" on base mcp, so an unauthenticated /workflow dashboard
+     shell is reachable on 0.0.0.0:3000 on every `docker compose up -d`. Logged open as T-03-01-02.
+  2. STATE.md progress metadata regressed when state.begin-phase recomputed it from .planning/phases/
+     (total_phases 4->2, completed_phases 2->1, percent dropped). Cosmetic now; phase.complete would
+     build on it. Worth correcting before completion.
+  3. Repo learning candidate: `gsd-tools query commit` emits a message WITHOUT the mandatory
+     "Story: ST-NNN" trailer. Caught in wave 3, amended, and warned about in every later dispatch;
+     all 21 commits verified compliant. Proposing per CLAUDE.md "Session review" — not created.
+
+VERIFICATION FRESHNESS: no code changed after 03-05's suite run (0e2fab3..HEAD touches planning docs
+only), so the SAFE-01/SAFE-02 result still describes the current tree. server/src and server/index.ts
+are untouched across the whole phase — the client is purely additive.
