@@ -28,6 +28,7 @@
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 
 import {
+  allocateSeq,
   appendEvent,
   flush,
   main,
@@ -389,5 +390,110 @@ Deno.test({
     assertEquals(recorded[1].length, 100, "the second request must carry exactly 100 events");
     assertEquals(result.outcome, "acked");
     assertEquals(readSpool(config).length, 0, "the spool must be fully drained");
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Task 3 (D-14): the client_seq counter is independent of the spool.
+//
+// This is the discriminating test for the phase (03-03-PLAN.md Task 3): without it,
+// ROADMAP criterion 1 ("replay produces no duplicate hub state and the client
+// receives the same ack both times") can pass green while a client that derives
+// client_seq from the spool's last line silently loses every event after its first
+// full drain — the hub's ON CONFLICT (node_id, client_seq) DO NOTHING absorbs the
+// collision, the read-back ack names the OLD row, and the client believes delivery
+// succeeded. Do not delete these as redundant with the EVENT-01 hub-interaction test;
+// EVENT-01 proves duplicate submission is safe, these prove the counter that decides
+// what gets submitted never resets.
+// ---------------------------------------------------------------------------
+
+Deno.test({
+  ...T,
+  name:
+    "D-14: after a full drain, a config rebuilt over the same home allocates strictly above the highest delivered seq",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config1 = withNodeId(resolveConfig({ home }));
+    for (let i = 0; i < 5; i++) {
+      appendEvent(config1, { event_type: "e", payload: { i } });
+    }
+    // deno-lint-ignore no-explicit-any
+    const recorded: any[][] = [];
+    const ackingConfig = { ...config1, fetchImpl: ackingFetch(recorded) };
+    const result = await flush(ackingConfig);
+    assertEquals(result.outcome, "acked");
+    assertEquals(readSpool(config1).length, 0, "the spool must be fully drained");
+
+    // Simulate a restart honestly: a SECOND config object built the normal way, not
+    // the first one reused in memory.
+    const config2 = resolveConfig({ home });
+    const next = allocateSeq(config2);
+    assertEquals(next, 6, "the next seq must exceed the highest delivered seq (5)");
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "D-14: restart with the spool file deleted still allocates strictly above the highest delivered seq",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config1 = withNodeId(resolveConfig({ home }));
+    for (let i = 0; i < 5; i++) {
+      appendEvent(config1, { event_type: "e", payload: { i } });
+    }
+    // deno-lint-ignore no-explicit-any
+    const recorded: any[][] = [];
+    const ackingConfig = { ...config1, fetchImpl: ackingFetch(recorded) };
+    await flush(ackingConfig);
+
+    await Deno.remove(config1.spoolPath as string);
+    assertEquals(
+      await Deno.stat(config1.spoolPath as string).then(() => true).catch(() => false),
+      false,
+      "the spool file must actually be gone",
+    );
+
+    const config2 = resolveConfig({ home });
+    const next = allocateSeq(config2);
+    assertEquals(
+      next,
+      6,
+      "the counter must not consult the spool even when the spool is gone entirely",
+    );
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "D-14: 50 allocations across 50 configs rebuilt over the same home are strictly increasing and all distinct",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const seen: number[] = [];
+    for (let i = 0; i < 50; i++) {
+      const config = resolveConfig({ home });
+      seen.push(allocateSeq(config));
+    }
+    for (let i = 1; i < 50; i++) {
+      assert(seen[i] > seen[i - 1], `allocation ${i} (${seen[i]}) did not exceed ${seen[i - 1]}`);
+    }
+    assertEquals(new Set(seen).size, 50, "all 50 allocated values must be distinct");
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "D-14: the persisted client_seq counter file is mode 0600 and contains only digits",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = resolveConfig({ home });
+    allocateSeq(config);
+
+    const mode = (await Deno.stat(config.seqPath)).mode! & 0o777;
+    assertEquals(mode, 0o600, "client_seq must be 0600");
+
+    const contents = (await Deno.readTextFile(config.seqPath)).trim();
+    assert(/^\d+$/.test(contents), `client_seq must contain only digits, got: ${contents}`);
   },
 });
