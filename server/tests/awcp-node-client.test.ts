@@ -25,13 +25,19 @@
  * than succeeding quietly (T-03-03-05).
  */
 
-import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+  assert,
+  assertEquals,
+} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import process from "node:process";
 
 import {
   allocateSeq,
   appendEvent,
   flush,
+  flushOnce,
   main,
+  MAX_FLUSH_ATTEMPTS,
   readSpool,
   readState,
   resolveConfig,
@@ -65,7 +71,10 @@ function ackingFetch(recorded: any[][]) {
     const body = JSON.parse(init.body);
     recorded.push(body.events);
     const acknowledged = body.events.map(
-      (e: { client_seq: number }) => ({ client_seq: e.client_seq, event_id: crypto.randomUUID() }),
+      (e: { client_seq: number }) => ({
+        client_seq: e.client_seq,
+        event_id: crypto.randomUUID(),
+      }),
     );
     return Promise.resolve({
       status: 200,
@@ -84,7 +93,10 @@ function partialAckFetch(targetSeq: number, recorded?: any[][]) {
       status: 200,
       json: () =>
         Promise.resolve({
-          acknowledged: [{ client_seq: targetSeq, event_id: crypto.randomUUID() }],
+          acknowledged: [{
+            client_seq: targetSeq,
+            event_id: crypto.randomUUID(),
+          }],
         }),
     });
   };
@@ -98,6 +110,106 @@ function throwsAfterRecordingFetch(recorded: any[][]) {
     recorded.push(body.events);
     throw new Error("connection reset after send (test double)");
   };
+}
+
+// ---------------------------------------------------------------------------
+// 03-04 Task 1 fetch doubles — one per `flushOnce` outcome branch. Response shapes
+// mirror the REAL hub as closely as a test double can: a 401 has no JSON body
+// (`remoteNodeHub.ts:110` — plain text `Response("Unauthorized", {status:401})`), so
+// its `.json()` rejects exactly as the real one would if the client mis-ordered its
+// status-then-body check. A double whose `.json()` quietly resolved would let that
+// exact regression pass.
+// ---------------------------------------------------------------------------
+
+/** A 400 naming specific `client_seq` values — the oversized-single-payload shape. */
+// deno-lint-ignore no-explicit-any
+function rejectingFetch(rejectedSeqs: number[], recorded?: any[][]) {
+  return (_url: string, init: { body: string }) => {
+    const body = JSON.parse(init.body);
+    recorded?.push(body.events);
+    return Promise.resolve({
+      status: 400,
+      json: () =>
+        Promise.resolve({
+          error: "BadRequest",
+          message: "event payload exceeds 16384 bytes",
+          issues: rejectedSeqs.map((client_seq) => ({
+            client_seq,
+            bytes: 20_000,
+          })),
+        }),
+    });
+  };
+}
+
+/** A 400 in the OTHER shape: zod issues with no `client_seq` field (batch-size violation). */
+function malformedFetch() {
+  return (_url: string, _init: { body: string }) =>
+    Promise.resolve({
+      status: 400,
+      json: () =>
+        Promise.resolve({
+          error: "BadRequest",
+          message: "request body failed validation",
+          issues: [{
+            path: ["events"],
+            message: "Array must contain at most 500 element(s)",
+          }],
+        }),
+    });
+}
+
+/** Matches the REAL hub exactly: 401 has no JSON body at all (plain text). */
+function unauthorizedFetch() {
+  return (_url: string, _init: { body: string }) =>
+    Promise.resolve({
+      status: 401,
+      text: () => Promise.resolve("Unauthorized"),
+      json: () =>
+        Promise.reject(
+          new SyntaxError("Unexpected token U in JSON at position 0"),
+        ),
+    });
+}
+
+/** Unknown node_id. */
+function notFoundFetch() {
+  return (_url: string, _init: { body: string }) =>
+    Promise.resolve({
+      status: 404,
+      json: () =>
+        Promise.resolve({
+          error: "WorkflowNotFoundError",
+          message: "unknown node",
+          id: "x",
+        }),
+    });
+}
+
+/** Request body too large for the server to even parse into events (413, pre-parse). */
+function tooLargeFetch() {
+  return (_url: string, _init: { body: string }) =>
+    Promise.resolve({
+      status: 413,
+      json: () =>
+        Promise.resolve({
+          error: "PayloadTooLarge",
+          message: "request body exceeds N bytes",
+        }),
+    });
+}
+
+/** A transient server failure — retryable, distinct from a transport-level throw. */
+function serverErrorFetch() {
+  return (_url: string, _init: { body: string }) =>
+    Promise.resolve({
+      status: 503,
+      json: () =>
+        Promise.resolve({
+          error: "InternalError",
+          message: "database unavailable",
+        }),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -140,7 +252,11 @@ Deno.test({
     // A NEW config object, not the one held above — proves the value came from disk.
     const freshConfig = resolveConfig({ home, spoolMaxEntries: 3 });
     const state = readState(freshConfig);
-    assertEquals(state.dropped_events, 2, "two of five appends must have been evicted");
+    assertEquals(
+      state.dropped_events,
+      2,
+      "two of five appends must have been evicted",
+    );
   },
 });
 
@@ -176,7 +292,7 @@ Deno.test({
 
 Deno.test({
   ...T,
-  name: 'EVENT-04: `status` prints dropped_events and spooled_events to stdout',
+  name: "EVENT-04: `status` prints dropped_events and spooled_events to stdout",
   fn: async () => {
     const home = await Deno.makeTempDir();
     const config = resolveConfig({ home, spoolMaxEntries: 3 });
@@ -203,8 +319,14 @@ Deno.test({
       else Deno.env.set("AWCP_SPOOL_MAX_ENTRIES", originalMax);
     }
 
-    assert(logs.some((l) => /^dropped_events=2$/.test(l)), `logs: ${JSON.stringify(logs)}`);
-    assert(logs.some((l) => /^spooled_events=3$/.test(l)), `logs: ${JSON.stringify(logs)}`);
+    assert(
+      logs.some((l) => /^dropped_events=2$/.test(l)),
+      `logs: ${JSON.stringify(logs)}`,
+    );
+    assert(
+      logs.some((l) => /^spooled_events=3$/.test(l)),
+      `logs: ${JSON.stringify(logs)}`,
+    );
   },
 });
 
@@ -246,13 +368,24 @@ Deno.test({
     } catch {
       threw = true;
     }
-    assert(threw, "writeSpool must propagate the injected failure, not swallow it");
+    assert(
+      threw,
+      "writeSpool must propagate the injected failure, not swallow it",
+    );
 
     const after = await Deno.readTextFile(config.spoolPath);
-    assertEquals(after, before, "the original spool.jsonl must be unchanged byte-for-byte");
+    assertEquals(
+      after,
+      before,
+      "the original spool.jsonl must be unchanged byte-for-byte",
+    );
 
     const lines = after.split("\n").filter((l) => l.trim() !== "");
-    assertEquals(lines.length, 2, "both original entries must still be present");
+    assertEquals(
+      lines.length,
+      2,
+      "both original entries must still be present",
+    );
     for (const line of lines) {
       JSON.parse(line); // must not throw — still parseable line-by-line JSON
     }
@@ -276,12 +409,24 @@ Deno.test({
     }
 
     const before = await Deno.readTextFile(config.spoolPath as string);
-    const unreachableConfig = { ...config, fetchImpl: unreachableFetch() };
+    // 03-04: an unreachable fetchImpl retries (bounded, D-17) rather than surfacing
+    // "unreachable" as flush()'s own outcome — "unreachable" is still returned by
+    // flushOnce PER ATTEMPT, but flush() exhausts MAX_FLUSH_ATTEMPTS and reports
+    // "deferred" instead. sleepImpl is injected so this does not sleep in real time.
+    const unreachableConfig = {
+      ...config,
+      fetchImpl: unreachableFetch(),
+      sleepImpl: () => Promise.resolve(),
+    };
     const result1 = await flush(unreachableConfig);
-    assertEquals(result1.outcome, "unreachable");
+    assertEquals(result1.outcome, "deferred");
 
     const after = await Deno.readTextFile(config.spoolPath as string);
-    assertEquals(after, before, "spool.jsonl must be byte-identical after an unreachable attempt");
+    assertEquals(
+      after,
+      before,
+      "spool.jsonl must be byte-identical after an unreachable attempt",
+    );
     assertEquals(
       readSpool(config).map((e: { client_seq: number }) => e.client_seq),
       seqs,
@@ -298,7 +443,11 @@ Deno.test({
       seqs,
       "the request body sent over the wire must be in ascending client_seq order",
     );
-    assertEquals(readSpool(config).length, 0, "the spool must be empty after the ack");
+    assertEquals(
+      readSpool(config).length,
+      0,
+      "the spool must be empty after the ack",
+    );
   },
 });
 
@@ -317,7 +466,11 @@ Deno.test({
     const spool = readSpool(config);
     assertEquals(spool.length, 3);
     const spoolSeqs = spool.map((e: { client_seq: number }) => e.client_seq);
-    assertEquals(spoolSeqs, seqs.slice(-3), "the surviving entries must be the newest 3");
+    assertEquals(
+      spoolSeqs,
+      seqs.slice(-3),
+      "the surviving entries must be the newest 3",
+    );
     assertEquals(
       spoolSeqs,
       [...spoolSeqs].sort((a, b) => a - b),
@@ -339,9 +492,34 @@ Deno.test({
     const s3 = appendEvent(config, { event_type: "c", payload: { n: 3 } });
     const beforeEntries = readSpool(config);
 
+    // Driven at the flushOnce level, deliberately, rather than through flush(): a
+    // double that ALWAYS acks only s2 regardless of what is actually in the batch
+    // sent is not a hub any real flush() call would keep encountering — the real
+    // hub's read-back ack always covers every event it just accepted (store.ts:
+    // 807-857), so a genuine partial ack is a single-round-trip event, not a steady
+    // state to converge against over repeated calls. flushOnce is the unit that
+    // interprets one ack response; the removal semantics this proves ("only the
+    // acknowledged middle seq must be removed") are exactly what flush() applies for
+    // ONE batch, reproduced inline here.
     const partialConfig = { ...config, fetchImpl: partialAckFetch(s2) };
-    const result = await flush(partialConfig);
-    assertEquals(result.outcome, "acked");
+    const spooledBefore = readSpool(config);
+    const batch = spooledBefore.map((e: { client_seq: number }) => ({
+      client_seq: e.client_seq,
+    }));
+    const onceResult = await flushOnce(partialConfig, batch);
+    assertEquals(onceResult.outcome, "acked");
+    assertEquals(
+      onceResult.acked,
+      [s2],
+      "only client_seq 2 must be acknowledged",
+    );
+    const ackedSeqs = new Set(onceResult.acked);
+    writeSpool(
+      config,
+      spooledBefore.filter((e: { client_seq: number }) =>
+        !ackedSeqs.has(e.client_seq)
+      ),
+    );
 
     const afterEntries = readSpool(config);
     assertEquals(
@@ -350,18 +528,41 @@ Deno.test({
       "only the acknowledged middle seq must be removed",
     );
     for (const seq of [s1, s3]) {
-      const beforeEntry = beforeEntries.find((e: { client_seq: number }) => e.client_seq === seq);
-      const afterEntry = afterEntries.find((e: { client_seq: number }) => e.client_seq === seq);
-      assertEquals(afterEntry.queued_at, beforeEntry.queued_at, "queued_at must be unchanged");
-      assertEquals(afterEntry.payload, beforeEntry.payload, "payload must be unchanged");
+      const beforeEntry = beforeEntries.find((e: { client_seq: number }) =>
+        e.client_seq === seq
+      );
+      const afterEntry = afterEntries.find((e: { client_seq: number }) =>
+        e.client_seq === seq
+      );
+      assertEquals(
+        afterEntry.queued_at,
+        beforeEntry.queued_at,
+        "queued_at must be unchanged",
+      );
+      assertEquals(
+        afterEntry.payload,
+        beforeEntry.payload,
+        "payload must be unchanged",
+      );
     }
 
     // deno-lint-ignore no-explicit-any
     const recorded: any[][] = [];
-    const throwingConfig = { ...config, fetchImpl: throwsAfterRecordingFetch(recorded) };
+    // 03-04: a fetchImpl that always throws is retried up to MAX_FLUSH_ATTEMPTS times
+    // (D-17's bounded backoff) before flush() gives up and reports "deferred" — no
+    // real sleep, via the injected sleepImpl.
+    const throwingConfig = {
+      ...config,
+      fetchImpl: throwsAfterRecordingFetch(recorded),
+      sleepImpl: () => Promise.resolve(),
+    };
     const result2 = await flush(throwingConfig);
-    assertEquals(result2.outcome, "unreachable");
-    assertEquals(recorded.length, 1, "the batch must actually have been sent");
+    assertEquals(result2.outcome, "deferred");
+    assertEquals(
+      recorded.length,
+      6,
+      "the batch must be retried MAX_FLUSH_ATTEMPTS (6) times before deferring",
+    );
     assertEquals(
       readSpool(config).map((e: { client_seq: number }) => e.client_seq),
       [s1, s3],
@@ -372,7 +573,8 @@ Deno.test({
 
 Deno.test({
   ...T,
-  name: "EVENT-03: a 600-event spool flushes as a 500-event batch then a 100-event batch",
+  name:
+    "EVENT-03: a 600-event spool flushes as a 500-event batch then a 100-event batch",
   fn: async () => {
     const home = await Deno.makeTempDir();
     const config = withNodeId(resolveConfig({ home }));
@@ -385,11 +587,27 @@ Deno.test({
     const ackingConfig = { ...config, fetchImpl: ackingFetch(recorded) };
     const result = await flush(ackingConfig);
 
-    assertEquals(recorded.length, 2, "600 events must be sent as exactly two requests");
-    assertEquals(recorded[0].length, 500, "the first request must carry exactly 500 events");
-    assertEquals(recorded[1].length, 100, "the second request must carry exactly 100 events");
+    assertEquals(
+      recorded.length,
+      2,
+      "600 events must be sent as exactly two requests",
+    );
+    assertEquals(
+      recorded[0].length,
+      500,
+      "the first request must carry exactly 500 events",
+    );
+    assertEquals(
+      recorded[1].length,
+      100,
+      "the second request must carry exactly 100 events",
+    );
     assertEquals(result.outcome, "acked");
-    assertEquals(readSpool(config).length, 0, "the spool must be fully drained");
+    assertEquals(
+      readSpool(config).length,
+      0,
+      "the spool must be fully drained",
+    );
   },
 });
 
@@ -422,13 +640,21 @@ Deno.test({
     const ackingConfig = { ...config1, fetchImpl: ackingFetch(recorded) };
     const result = await flush(ackingConfig);
     assertEquals(result.outcome, "acked");
-    assertEquals(readSpool(config1).length, 0, "the spool must be fully drained");
+    assertEquals(
+      readSpool(config1).length,
+      0,
+      "the spool must be fully drained",
+    );
 
     // Simulate a restart honestly: a SECOND config object built the normal way, not
     // the first one reused in memory.
     const config2 = resolveConfig({ home });
     const next = allocateSeq(config2);
-    assertEquals(next, 6, "the next seq must exceed the highest delivered seq (5)");
+    assertEquals(
+      next,
+      6,
+      "the next seq must exceed the highest delivered seq (5)",
+    );
   },
 });
 
@@ -449,7 +675,9 @@ Deno.test({
 
     await Deno.remove(config1.spoolPath as string);
     assertEquals(
-      await Deno.stat(config1.spoolPath as string).then(() => true).catch(() => false),
+      await Deno.stat(config1.spoolPath as string).then(() => true).catch(() =>
+        false
+      ),
       false,
       "the spool file must actually be gone",
     );
@@ -476,15 +704,23 @@ Deno.test({
       seen.push(allocateSeq(config));
     }
     for (let i = 1; i < 50; i++) {
-      assert(seen[i] > seen[i - 1], `allocation ${i} (${seen[i]}) did not exceed ${seen[i - 1]}`);
+      assert(
+        seen[i] > seen[i - 1],
+        `allocation ${i} (${seen[i]}) did not exceed ${seen[i - 1]}`,
+      );
     }
-    assertEquals(new Set(seen).size, 50, "all 50 allocated values must be distinct");
+    assertEquals(
+      new Set(seen).size,
+      50,
+      "all 50 allocated values must be distinct",
+    );
   },
 });
 
 Deno.test({
   ...T,
-  name: "D-14: the persisted client_seq counter file is mode 0600 and contains only digits",
+  name:
+    "D-14: the persisted client_seq counter file is mode 0600 and contains only digits",
   fn: async () => {
     const home = await Deno.makeTempDir();
     const config = resolveConfig({ home });
@@ -494,6 +730,315 @@ Deno.test({
     assertEquals(mode, 0o600, "client_seq must be 0600");
 
     const contents = (await Deno.readTextFile(config.seqPath)).trim();
-    assert(/^\d+$/.test(contents), `client_seq must contain only digits, got: ${contents}`);
+    assert(
+      /^\d+$/.test(contents),
+      `client_seq must contain only digits, got: ${contents}`,
+    );
+  },
+});
+
+// ---------------------------------------------------------------------------
+// 03-04 Task 1 (D-15, D-17): flushOnce's outcome union and flush()'s terminal states
+// and bounded backoff. Every non-200 the hub can return maps to a stated outcome, and
+// none of them retry forever.
+// ---------------------------------------------------------------------------
+
+Deno.test({
+  ...T,
+  name:
+    "D-15: a permanent rejection (400 naming client_seq) drops exactly those entries and the flush makes progress on the remainder",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = withNodeId(resolveConfig({ home }));
+    const seqs: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      seqs.push(appendEvent(config, { event_type: "e", payload: { i } }));
+    }
+    const rejectedSeq = seqs[2]; // the middle (3rd) event
+
+    const lines: string[] = [];
+    let call = 0;
+    // deno-lint-ignore no-explicit-any
+    const recorded: any[][] = [];
+    const fetchImpl = (url: string, init: { body: string }) => {
+      call += 1;
+      if (call === 1) return rejectingFetch([rejectedSeq], recorded)(url, init);
+      return ackingFetch(recorded)(url, init);
+    };
+
+    const result = await flush({
+      ...config,
+      fetchImpl,
+      stderrWrite: (l: string) => lines.push(l),
+    });
+
+    assertEquals(readSpool(config).length, 0, "the spool must end empty");
+    assertEquals(
+      readState(config).dropped_events,
+      1,
+      "exactly one drop must be recorded",
+    );
+    assert(
+      lines.some((l) =>
+        new RegExp(`client_seq=${rejectedSeq} reason=permanent_rejection`).test(
+          l,
+        )
+      ),
+      `expected a permanent_rejection line naming client_seq=${rejectedSeq}, got: ${
+        JSON.stringify(lines)
+      }`,
+    );
+    assertEquals(
+      result.outcome,
+      "acked",
+      "the flush must still complete after the drop",
+    );
+    assertEquals(
+      call,
+      2,
+      "the reject then the successful retry of the remainder",
+    );
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "D-15: a malformed 400 (zod-issue shape, no client_seq) drops nothing and returns a distinct outcome",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = withNodeId(resolveConfig({ home }));
+    appendEvent(config, { event_type: "e", payload: { i: 1 } });
+    const before = await Deno.readTextFile(config.spoolPath as string);
+
+    const result = await flush({ ...config, fetchImpl: malformedFetch() });
+
+    assertEquals(result.outcome, "malformed");
+    assertEquals(
+      readState(config).dropped_events,
+      0,
+      "dropped_events must be unchanged",
+    );
+    const after = await Deno.readTextFile(config.spoolPath as string);
+    assertEquals(after, before, "the spool must be byte-identical");
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "D-17: a 401 stops after exactly one request, leaves the spool byte-identical, and writes one terminal line",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = withNodeId(resolveConfig({ home }));
+    appendEvent(config, { event_type: "e", payload: { i: 1 } });
+    const before = await Deno.readTextFile(config.spoolPath as string);
+
+    let calls = 0;
+    const countingUnauthorized = (url: string, init: { body: string }) => {
+      calls += 1;
+      return unauthorizedFetch()(url, init);
+    };
+    const lines: string[] = [];
+    const result = await flush({
+      ...config,
+      fetchImpl: countingUnauthorized,
+      stderrWrite: (l: string) => lines.push(l),
+    });
+
+    assertEquals(result.outcome, "terminal_auth");
+    assertEquals(calls, 1, "no retry may follow a 401");
+    const after = await Deno.readTextFile(config.spoolPath as string);
+    assertEquals(
+      after,
+      before,
+      "the spool must be byte-identical after a terminal auth failure",
+    );
+    assert(
+      lines.some((l) => /terminal reason=auth_failed/.test(l)),
+      `expected a terminal reason=auth_failed line, got: ${
+        JSON.stringify(lines)
+      }`,
+    );
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "a 404 (unknown node) stops after exactly one request and leaves the spool intact",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = withNodeId(resolveConfig({ home }));
+    appendEvent(config, { event_type: "e", payload: { i: 1 } });
+
+    let calls = 0;
+    const countingNotFound = (url: string, init: { body: string }) => {
+      calls += 1;
+      return notFoundFetch()(url, init);
+    };
+    const result = await flush({ ...config, fetchImpl: countingNotFound });
+
+    assertEquals(result.outcome, "unknown_node");
+    assertEquals(calls, 1);
+    assertEquals(readSpool(config).length, 1, "the spool must be untouched");
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "a 413 (payload too large) stops after exactly one request and leaves the spool intact",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = withNodeId(resolveConfig({ home }));
+    appendEvent(config, { event_type: "e", payload: { i: 1 } });
+
+    let calls = 0;
+    const countingTooLarge = (url: string, init: { body: string }) => {
+      calls += 1;
+      return tooLargeFetch()(url, init);
+    };
+    const result = await flush({ ...config, fetchImpl: countingTooLarge });
+
+    assertEquals(result.outcome, "too_large");
+    assertEquals(calls, 1);
+    assertEquals(readSpool(config).length, 1, "the spool must be untouched");
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "D-17: a retryable/unreachable failure backs off with growing, non-decreasing, capped delays and defers after MAX_FLUSH_ATTEMPTS",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = withNodeId(resolveConfig({ home }));
+    appendEvent(config, { event_type: "e", payload: { i: 1 } });
+    const before = await Deno.readTextFile(config.spoolPath as string);
+
+    const delays: number[] = [];
+    const sleepImpl = (ms: number) => {
+      delays.push(ms);
+      return Promise.resolve();
+    };
+    // A fixed midpoint jitter source: deterministic, and jitterFactor === 1 exactly,
+    // so the recorded delays land precisely on BACKOFF_BASE_MS * 2**(attempt-1).
+    const randomImpl = () => 0.5;
+
+    const result = await flush({
+      ...config,
+      fetchImpl: unreachableFetch(),
+      sleepImpl,
+      randomImpl,
+    });
+
+    assertEquals(result.outcome, "deferred");
+    assertEquals(
+      delays.length,
+      MAX_FLUSH_ATTEMPTS - 1,
+      "six attempts means five waits between them",
+    );
+    assertEquals(delays, [1000, 2000, 4000, 8000, 16000]);
+    for (let i = 1; i < delays.length; i++) {
+      assert(
+        delays[i] >= delays[i - 1],
+        `delay sequence must be non-decreasing: ${delays}`,
+      );
+    }
+    assert(
+      delays[0] >= 800 && delays[0] <= 1200,
+      `first delay must be within +/-20% of 1000, got ${delays[0]}`,
+    );
+    for (const d of delays) {
+      assert(
+        d <= 30_000,
+        `no delay may exceed BACKOFF_CAP_MS (30000), got ${d}`,
+      );
+    }
+
+    const after = await Deno.readTextFile(config.spoolPath as string);
+    assertEquals(
+      after,
+      before,
+      "the spool must be byte-identical after deferring",
+    );
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "a retryable 5xx is distinct from a transport throw but follows the same backoff-then-defer policy",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = withNodeId(resolveConfig({ home }));
+    appendEvent(config, { event_type: "e", payload: { i: 1 } });
+
+    const result = await flush({
+      ...config,
+      fetchImpl: serverErrorFetch(),
+      sleepImpl: () => Promise.resolve(),
+    });
+
+    assertEquals(result.outcome, "deferred");
+    assertEquals(
+      readSpool(config).length,
+      1,
+      "the spool must be untouched after deferring",
+    );
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    'main(["flush"]) sets process.exitCode to 0 on success, 77 on terminal auth, 75 on exhausted retry',
+  fn: async () => {
+    const originalExitCode = process.exitCode;
+    try {
+      const successHome = await Deno.makeTempDir();
+      appendEvent(withNodeId(resolveConfig({ home: successHome })), {
+        event_type: "e",
+        payload: null,
+      });
+      // deno-lint-ignore no-explicit-any
+      const recorded: any[][] = [];
+      await main(["flush"], {
+        home: successHome,
+        fetchImpl: ackingFetch(recorded),
+      });
+      assertEquals(process.exitCode, 0, "success must set exit code 0");
+
+      const authHome = await Deno.makeTempDir();
+      appendEvent(withNodeId(resolveConfig({ home: authHome })), {
+        event_type: "e",
+        payload: null,
+      });
+      await main(["flush"], { home: authHome, fetchImpl: unauthorizedFetch() });
+      assertEquals(
+        process.exitCode,
+        77,
+        "a terminal auth failure must set exit code 77",
+      );
+
+      const deferredHome = await Deno.makeTempDir();
+      appendEvent(withNodeId(resolveConfig({ home: deferredHome })), {
+        event_type: "e",
+        payload: null,
+      });
+      await main(["flush"], {
+        home: deferredHome,
+        fetchImpl: unreachableFetch(),
+        sleepImpl: () => Promise.resolve(),
+      });
+      assertEquals(
+        process.exitCode,
+        75,
+        "exhausted retries must set exit code 75",
+      );
+    } finally {
+      process.exitCode = originalExitCode;
+    }
   },
 });
