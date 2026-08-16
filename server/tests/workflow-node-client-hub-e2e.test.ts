@@ -34,6 +34,7 @@ import { sql } from "../src/db.ts";
 import {
   appendEvent,
   flush,
+  flushOnce,
   readSpool,
   registerNode,
   resolveConfig,
@@ -175,5 +176,109 @@ Deno.test({
       existedBefore,
       "importing the module must not create ~/.awcp under the real HOME",
     );
+  },
+});
+
+// ---------------------------------------------------------------------------
+// EVENT-01 — replaying the same (node_id, client_seq) over real HTTP
+// ---------------------------------------------------------------------------
+//
+// Added on RESEARCH.md's recommendation (03-CONTEXT.md's Open Question #2, ce-
+// doc-review scope-guardian P1 finding), not on an explicit user decision: hub-side
+// duplicate suppression is a server property, and workflow-node-client-hub-e2e.test.ts's
+// own tracer test above drives the client's spool logic in-process only up to the
+// network boundary — it cannot observe whether the HUB's `ON CONFLICT (node_id,
+// client_seq) DO NOTHING` + read-back ack actually suppresses a duplicate. This test
+// closes that structural gap the same way workflow-node-hub-e2e.test.ts closes the
+// mount-vs-route-factory gap: over a real process boundary.
+//
+// Drives flushOnce(config, batch) directly with the IDENTICAL batch twice, rather than
+// appendEvent twice (which would allocate client_seq 1 then 2) — the property under
+// test is what happens when the SAME client_seq is submitted twice, and only
+// flushOnce's batch argument lets the test hold that seq fixed.
+
+Deno.test({
+  ...T,
+  name:
+    "ST-088 EVENT-01: replaying the same (node_id, client_seq) over real HTTP creates no duplicate hub state",
+  fn: async () => {
+    const server: ServerProcess = await startServerProcess(NODE_HUB_ENV, PORT);
+    const bearer = mintBearer();
+    const home = await Deno.makeTempDir({ prefix: "awcp-node-client-event01-" });
+    const config = resolveConfig({
+      home,
+      hubUrl: server.baseUrl,
+      bearer,
+      enrolmentSecret: ENROLMENT_SECRET,
+    });
+
+    try {
+      const nodeId = await registerNode(config);
+      const originalPayload = { step: "build" };
+      const batch = [{ client_seq: 1, event_type: "checkpoint", payload: originalPayload }];
+
+      const first = await flushOnce(config, batch);
+      const second = await flushOnce(config, batch);
+
+      assertEquals(first.outcome, "acked");
+      assertEquals(second.outcome, "acked");
+
+      // event_id included: the read-back ack means the SECOND call must report the
+      // exact row the FIRST call created, which is what "the client receives the same
+      // ack both times" actually means — not merely "both acks name client_seq 1".
+      assertEquals(
+        first.acknowledged,
+        second.acknowledged,
+        "both flushOnce responses' acknowledged arrays must be identical, event_id included",
+      );
+
+      // No Number() coercion at the assertion site, deliberately (same discipline as
+      // workflow-remote-node-hub.test.ts:353-364) — an ack whose client_seq arrived as
+      // a string would fail this assertion instead of silently passing.
+      assertEquals(
+        first.acknowledged.map((entry: { client_seq: number }) => entry.client_seq),
+        [1],
+        "client_seq must be acknowledged as [1]",
+      );
+      assertEquals(
+        typeof first.acknowledged[0].client_seq,
+        "number",
+        "client_seq must arrive as a JS number, not a string",
+      );
+
+      // Scoped per D-02: unscoped counting is nondeterministic here the moment a live
+      // node streams into the same database (which by 03-06 one will be).
+      const rows = await sql<{ n: string }[]>`
+        SELECT count(*) AS n FROM workflow.run_events WHERE node_id = ${nodeId}
+      `;
+      assertEquals(
+        Number(rows[0].n),
+        1,
+        "the replay must not insert a second row",
+      );
+
+      // The payload half of normalizeBatch's docblock contract: never reuse a
+      // client_seq for different content — a third submission with DIFFERENT payload
+      // content must leave the ORIGINAL payload stored, not overwrite it.
+      const third = await flushOnce(config, [
+        { client_seq: 1, event_type: "checkpoint", payload: { step: "different-content" } },
+      ]);
+      assertEquals(third.outcome, "acked");
+
+      const stored = await sql<{ payload: unknown }[]>`
+        SELECT payload FROM workflow.run_events WHERE node_id = ${nodeId} AND client_seq = 1
+      `;
+      assertEquals(
+        stored[0].payload,
+        originalPayload,
+        "the stored payload must remain the FIRST submission's payload",
+      );
+    } finally {
+      await server.stop();
+      await sql`
+        DELETE FROM workflow.execution_nodes WHERE bearer_token_hash = ${await sha256Hex(bearer)}
+      `;
+      await Deno.remove(home, { recursive: true }).catch(() => {});
+    }
   },
 });
