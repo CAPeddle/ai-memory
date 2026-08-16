@@ -86,7 +86,7 @@ status: complete
 
 # Phase 3 Plan 5: SAFE-01/SAFE-02 Regression Gate & Grant Inventory Summary
 
-**Discharged criterion 5 with an empty name-for-name diff (400/400 pre-Phase-3 tests identical in identity and outcome, 389 ok / 9 FAILED matching the baseline exactly) plus a measured corpus-integrity check (33/33 total/active rows unchanged before and after), and brought CLAUDE.md's test-permission-grant inventory current for the two files this phase added.**
+**Discharged criterion 5 with an empty name-for-name diff (400/400 pre-Phase-3 tests identical in identity and outcome, 391 ok / 9 FAILED matching the baseline exactly) plus a measured corpus-integrity check (33/33 total/active rows unchanged before and after), and brought CLAUDE.md's test-permission-grant inventory current for the two files this phase added.**
 
 ## Performance
 
