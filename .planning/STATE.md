@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 03
 current_phase_name: node-client-reliable-delivery-regression-safety
 status: executing
-stopped_at: Completed 03-02-PLAN.md
-last_updated: "2026-08-16T06:28:18.827Z"
+stopped_at: Completed 03-03-PLAN.md
+last_updated: "2026-08-16T06:43:15.047Z"
 last_activity: 2026-08-16
 last_activity_desc: Phase 03 execution started
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 8
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 ## Current Position
 
 Phase: 03 (node-client-reliable-delivery-regression-safety) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Last activity: 2026-08-16 — Phase 03 execution started
 
-Progress: [█████░░░░░] 50%
+Progress: [██████░░░░] 63%
 
 ## Performance Metrics
 
@@ -61,6 +61,7 @@ Progress: [█████░░░░░] 50%
 |------|----------|-------|-------|
 | Phase 03 P01 | 25m | 2 tasks | 2 files |
 | Phase 03 P02 | 45m | 2 tasks | 2 files |
+| Phase 03 P03 | 35m | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -78,6 +79,9 @@ Recent decisions affecting current work:
 - [Phase ?]: SAFE-01/SAFE-02 deliberately left Pending after 03-01 — 03-05-PLAN.md owns the actual full-suite identity-diff discharge against this plan's baseline.
 - [Phase ?]: 03-02: flushOnce returns {outcome, acked, acknowledged} — the acknowledged field is additive beyond the plan's literal spec, needed so EVENT-01's test can assert event_id-inclusive deep-equality without a second raw HTTP call
 - [Phase ?]: 03-02: node:os hostname() requires --allow-sys=hostname under Deno's node: compat layer (empirically confirmed) but not under real Node — registerNode wraps it in try/catch and falls back to omitting the optional field; process.platform used instead of os.platform() since it needs no syscall permission
+- [Phase ?]: 03-03: flush() return shape gained delivered/remaining fields additively — acked kept for 03-02 tracer-test compatibility rather than being replaced
+- [Phase ?]: 03-03: transport-level throws (fetchImpl itself throwing) are distinguished from AwcpHttpError inside flush()'s catch — only genuine transport failures become outcome=unreachable; 400/401 still propagate unchanged, preserving 03-04's scope
+- [Phase ?]: 03-03: D-14 restart proof added — client_seq counter confirmed independent of spool contents even after full drain or spool deletion, closing ROADMAP criterion 1's vacuous-pass mode
 
 ### Pending Todos
 
@@ -101,8 +105,8 @@ None yet.
 
 ## Session Continuity
 
-**Last session:** 2026-08-16T06:28:18.813Z
-**Stopped at:** Completed 03-02-PLAN.md
+**Last session:** 2026-08-16T06:43:15.032Z
+**Stopped at:** Completed 03-03-PLAN.md
 **Resume file:** None
 
 ### If resuming mid-phase
