@@ -1,50 +1,45 @@
 ST-088 Phase 3 — 5 of 6 plans executed. 03-06 NOT RUN (stopped at its <human-check> gate).
 
-BRANCH feat/st-088-phase-3-node-client  HEAD c8e439f  (21 commits since f3837e4, all carry "Story: ST-088")
+BRANCH feat/st-088-phase-3-node-client  HEAD 31548af  (23 commits since f3837e4, all "Story: ST-088")
 PHASE DIR .planning/phases/03-node-client-reliable-delivery-regression-safety/
 
 DONE (SUMMARY.md exists for each):
-  03-01 FEATURE_WORKFLOW:"true" hardcoded on base mcp service; regression baseline captured (400 testcases)
+  03-01 FEATURE_WORKFLOW:"true" hardcoded on base mcp; regression baseline captured (400 testcases)
   03-02 server/scripts/awcp-node-client.mjs tracer + workflow-node-client-hub-e2e.test.ts (EVENT-01)
   03-03 bounded crash-safe spool, oldest-first eviction, ack-gated flush; 14 tests (EVENT-02/03/04, D-14)
-  03-04 terminal auth (exit 77) / deferred transport (exit 75), bounded backoff, heartbeat+checkpoint,
-        D-13 leak gate. Found+fixed 2 real bugs: infinite flush loop on a no-progress 200; res.json()
-        called before res.status so a plain-text 401 was misclassified "unreachable", defeating D-17.
-  03-05 SAFE-01 empty filtered diff (391 ok / 9 FAILED / 400 total, identical to baseline — independently
-        re-verified from the artifacts); SAFE-02 corpus 33/33 unchanged; CLAUDE.md grant inventory updated.
+  03-04 terminal auth (77) / deferred transport (75), backoff, heartbeat+checkpoint, D-13 leak gate.
+        Fixed 2 real bugs: infinite flush loop on a no-progress 200; res.json() before res.status, so a
+        plain-text 401 was misclassified "unreachable", defeating D-17.
+  03-05 SAFE-01 empty filtered diff (391 ok / 9 FAILED / 400, identical to baseline — independently
+        re-verified from the artifacts); SAFE-02 corpus 33/33; CLAUDE.md grant inventory updated.
 
-NOT RUN: 03-06 (wave 6). Real-node leg for ADR-016 criterion 6.
-The operator WAS asked and DID authorize autonomous execution — do not re-ask that question, the answer
-was yes. The stop is for a different reason, found only after reading the plan: 03-06 carries a
-<human-check> on its OUTPUT — "Read the ## 16. section end to end before it is pushed" — because the
-mechanical credential gate cannot judge whether a quoted line reveals something else worth withholding,
-or whether the criterion-6 disposition is honest rather than favourable. Authorizing the inputs does not
-discharge a gate on the output.
-Shape of the work: Task 1 enrols z2 (REVERSIBLE — scoped DELETE FROM workflow.execution_nodes WHERE
-node_id = ... undoes it, per the plan's own reversibility rating). Task 2 runs experiments 4-6 and
-captures transcripts to /tmp (reversible). Task 3 is the irreversible one — it commits redacted
-transcripts into git history permanently; threat T-03-06-01 rates that leak risk CRITICAL.
-Viable split: run Tasks 1-2, stop before Task 3's commit for the human read.
-Resume with: /gsd-execute-phase 03 --wave 6
+NOT RUN: 03-06 (wave 6) — real-node leg for ADR-016 criterion 6.
+  The operator WAS asked and DID authorize autonomous execution. Do not re-ask; the answer was yes.
+  The stop is a different gate, found only after reading the plan: 03-06's <human-check> is on its
+  OUTPUT — "Read the ## 16. section end to end before it is pushed" — because the mechanical credential
+  gate cannot judge whether a quoted line reveals something else worth withholding, or whether the
+  criterion-6 disposition is honest rather than favourable. Authorizing inputs ≠ discharging that gate.
+  Task 1 enrols z2 (REVERSIBLE: scoped DELETE FROM workflow.execution_nodes WHERE node_id = ...).
+  Task 2 runs experiments 4-6, captures transcripts to /tmp (reversible).
+  Task 3 commits transcripts into git permanently — irreversible; T-03-06-01 rates that leak CRITICAL.
+  Viable split: run Tasks 1-2, stop before Task 3's commit for the human read.
+  Resume: /gsd-execute-phase 03 --wave 6
 
 PHASE NOT COMPLETE. Do NOT run phase.complete or gsd-verifier yet — a verifier would report gaps_found
 against an unrun plan and misrepresent a deliberate stop as a defect.
 
-HAZARD (created by this phase, outlives it): once 03-06 enrols z2, any suite run against the DEV
-DATABASE_URL — including the native ./dev.sh loop — issues DROP SCHEMA IF EXISTS workflow CASCADE and
-de-enrols the node behind an opaque 401, destroying evidence. 03-05's run was the last permitted
-full-suite run before enrolment. Use the test stack (mcp-test/db-test) only.
+HAZARD (outlives this phase): once 03-06 enrols z2, any suite run against the DEV DATABASE_URL —
+including the native ./dev.sh loop — issues DROP SCHEMA IF EXISTS workflow CASCADE and de-enrols the
+node behind an opaque 401, destroying evidence. 03-05's run was the last permitted full-suite run
+before enrolment. Use the test stack (mcp-test/db-test) only.
 
-OPEN DECISIONS FOR THE PO:
-  1. FEATURE_WORKFLOW is now hardcoded "true" on base mcp, so an unauthenticated /workflow dashboard
-     shell is reachable on 0.0.0.0:3000 on every `docker compose up -d`. Logged open as T-03-01-02.
+OPEN FOR THE PO:
+  1. FEATURE_WORKFLOW hardcoded "true" on base mcp leaves an unauthenticated /workflow dashboard shell
+     on 0.0.0.0:3000 for every `docker compose up -d`. Logged open as T-03-01-02.
   2. STATE.md progress metadata regressed when state.begin-phase recomputed it from .planning/phases/
-     (total_phases 4->2, completed_phases 2->1, percent dropped). Cosmetic now; phase.complete would
-     build on it. Worth correcting before completion.
-  3. Repo learning candidate: `gsd-tools query commit` emits a message WITHOUT the mandatory
-     "Story: ST-NNN" trailer. Caught in wave 3, amended, and warned about in every later dispatch;
-     all 21 commits verified compliant. Proposing per CLAUDE.md "Session review" — not created.
+     (total_phases 4->2, completed_phases 2->1, percent dropped). phase.complete would build on it.
+  3. Learning candidate: `gsd-tools query commit` omits the mandatory "Story: ST-NNN" trailer. Caught in
+     wave 3, amended, warned in later dispatches; all 23 commits verified compliant. Proposed, not created.
 
-VERIFICATION FRESHNESS: no code changed after 03-05's suite run (0e2fab3..HEAD touches planning docs
-only), so the SAFE-01/SAFE-02 result still describes the current tree. server/src and server/index.ts
-are untouched across the whole phase — the client is purely additive.
+FRESHNESS: no code changed after 03-05's suite run (0e2fab3..HEAD is planning docs only), so SAFE-01/02
+still describe the current tree. server/src and server/index.ts untouched all phase — client is additive.
