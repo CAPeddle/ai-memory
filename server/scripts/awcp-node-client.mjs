@@ -461,28 +461,62 @@ export async function flushOnce(config, batch) {
 }
 
 /**
- * Read the spool oldest-first, take at most `FLUSH_MAX_EVENTS`, flush once, and — on
- * an `acked` outcome — rewrite the spool to exactly the entries whose `client_seq` is
- * NOT in `acked`. Removal happens ONLY here, ONLY after a 200 that named the seq;
- * nothing removes an entry on send or on retry attempt (EVENT-03).
+ * Read the spool oldest-first and flush it in batches of at most `FLUSH_MAX_EVENTS`,
+ * removing ONLY the entries a 200 actually acknowledged — never on send, never on
+ * retry attempt (EVENT-03). Never derives progress from the spool re-shrinking under
+ * it; the number of batches attempted is fixed from the spool's size AT THE START of
+ * this call, so a batch that comes back with a partial (or empty) `acknowledged` array
+ * is not retried within the same `flush()` invocation — that is the caller's job on
+ * its next scheduled call, not this function's.
+ *
+ * A transport failure — `fetchImpl` itself throwing, as opposed to a non-2xx response
+ * — stops the loop immediately with outcome `"unreachable"` and rewrites nothing; the
+ * spool after an unreachable attempt is byte-identical to before it (EVENT-02). An
+ * `AwcpHttpError` (400/401) is NOT swallowed here — 03-04 owns those branches — so it
+ * propagates to the caller unchanged, exactly as it did in the 03-02 tracer.
+ *
+ * Returns `{outcome, acked, delivered, remaining}`. `acked` and `delivered` are the
+ * same array (the cumulative client_seqs removed across every batch this call
+ * completed) — `acked` is kept for 03-02 tracer-test compatibility, `delivered` is the
+ * name this plan's action text specifies. `remaining` is the spool's length after this
+ * call returns.
  */
 export async function flush(config) {
-  const entries = readSpool(config);
-  if (entries.length === 0) return { outcome: "acked", acked: [], acknowledged: [] };
+  const initialCount = readSpool(config).length;
+  const numBatches = Math.ceil(initialCount / FLUSH_MAX_EVENTS);
+  const delivered = [];
+  let outcome = "acked";
 
-  const batch = entries.slice(0, FLUSH_MAX_EVENTS).map((entry) => ({
-    client_seq: entry.client_seq,
-    event_type: entry.event_type,
-    payload: entry.payload,
-  }));
+  for (let i = 0; i < numBatches; i++) {
+    const entries = readSpool(config);
+    if (entries.length === 0) break;
+    const batchEntries = entries.slice(0, FLUSH_MAX_EVENTS);
+    const batch = batchEntries.map((entry) => ({
+      client_seq: entry.client_seq,
+      event_type: entry.event_type,
+      payload: entry.payload,
+    }));
 
-  const result = await flushOnce(config, batch);
-  if (result.outcome === "acked") {
-    const ackedSeqs = new Set(result.acked);
-    const remaining = entries.filter((entry) => !ackedSeqs.has(entry.client_seq));
-    writeSpool(config, remaining);
+    let result;
+    try {
+      result = await flushOnce(config, batch);
+    } catch (err) {
+      if (err instanceof AwcpHttpError) throw err;
+      outcome = "unreachable";
+      break;
+    }
+
+    outcome = result.outcome;
+    if (result.outcome === "acked") {
+      const ackedSeqs = new Set(result.acked);
+      const remaining = entries.filter((entry) => !ackedSeqs.has(entry.client_seq));
+      writeSpool(config, remaining);
+      delivered.push(...result.acked);
+    }
   }
-  return result;
+
+  const remaining = readSpool(config).length;
+  return { outcome, acked: delivered, delivered, remaining };
 }
 
 /** Minimal CLI surface for the tracer: `register` and `flush`. Grows in 03-04. */

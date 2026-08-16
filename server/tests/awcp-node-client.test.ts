@@ -29,6 +29,7 @@ import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.t
 
 import {
   appendEvent,
+  flush,
   main,
   readSpool,
   readState,
@@ -37,6 +38,66 @@ import {
 } from "../scripts/awcp-node-client.mjs";
 
 const T = { sanitizeResources: false, sanitizeOps: false };
+
+/** A fixed, non-random node_id — these tests never talk to a real hub. */
+const FAKE_NODE_ID = "00000000-0000-4000-8000-000000000000";
+
+/** Fake registration: write the node_id file directly, no HTTP round trip needed. */
+function withNodeId(config: Record<string, unknown>, nodeId = FAKE_NODE_ID) {
+  Deno.mkdirSync(config.home as string, { recursive: true, mode: 0o700 });
+  Deno.writeTextFileSync(config.nodeIdPath as string, nodeId);
+  Deno.chmodSync(config.nodeIdPath as string, 0o600);
+  return config;
+}
+
+/** Simulates a disconnected transport: fetchImpl throws before any response exists. */
+function unreachableFetch() {
+  return () => {
+    throw new TypeError("fetch failed: network unreachable (test double)");
+  };
+}
+
+/** Acks every event in the submitted batch, recording each request's events array. */
+// deno-lint-ignore no-explicit-any
+function ackingFetch(recorded: any[][]) {
+  return (_url: string, init: { body: string }) => {
+    const body = JSON.parse(init.body);
+    recorded.push(body.events);
+    const acknowledged = body.events.map(
+      (e: { client_seq: number }) => ({ client_seq: e.client_seq, event_id: crypto.randomUUID() }),
+    );
+    return Promise.resolve({
+      status: 200,
+      json: () => Promise.resolve({ acknowledged }),
+    });
+  };
+}
+
+/** Acks ONLY `targetSeq` from whatever batch is submitted — a partial read-back ack. */
+// deno-lint-ignore no-explicit-any
+function partialAckFetch(targetSeq: number, recorded?: any[][]) {
+  return (_url: string, init: { body: string }) => {
+    const body = JSON.parse(init.body);
+    recorded?.push(body.events);
+    return Promise.resolve({
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          acknowledged: [{ client_seq: targetSeq, event_id: crypto.randomUUID() }],
+        }),
+    });
+  };
+}
+
+/** Records the outbound request, THEN throws — proving the batch really was sent. */
+// deno-lint-ignore no-explicit-any
+function throwsAfterRecordingFetch(recorded: any[][]) {
+  return (_url: string, init: { body: string }) => {
+    const body = JSON.parse(init.body);
+    recorded.push(body.events);
+    throw new Error("connection reset after send (test double)");
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Task 1 (EVENT-04): bound the spool, evict oldest-first, visible drop counter
@@ -194,5 +255,139 @@ Deno.test({
     for (const line of lines) {
       JSON.parse(line); // must not throw — still parseable line-by-line JSON
     }
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Task 2 (EVENT-02/EVENT-03): retention through disconnection, ack-gated removal
+// ---------------------------------------------------------------------------
+
+Deno.test({
+  ...T,
+  name:
+    "EVENT-02: an unreachable flush leaves the spool byte-identical and ascending; a reconnected flush replays oldest-first over the wire",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = withNodeId(resolveConfig({ home }));
+    const seqs: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      seqs.push(appendEvent(config, { event_type: "e", payload: { i } }));
+    }
+
+    const before = await Deno.readTextFile(config.spoolPath as string);
+    const unreachableConfig = { ...config, fetchImpl: unreachableFetch() };
+    const result1 = await flush(unreachableConfig);
+    assertEquals(result1.outcome, "unreachable");
+
+    const after = await Deno.readTextFile(config.spoolPath as string);
+    assertEquals(after, before, "spool.jsonl must be byte-identical after an unreachable attempt");
+    assertEquals(
+      readSpool(config).map((e: { client_seq: number }) => e.client_seq),
+      seqs,
+      "all 5 client_seq values must remain, in ascending order",
+    );
+
+    // deno-lint-ignore no-explicit-any
+    const recorded: any[][] = [];
+    const ackingConfig = { ...config, fetchImpl: ackingFetch(recorded) };
+    const result2 = await flush(ackingConfig);
+    assertEquals(result2.outcome, "acked");
+    assertEquals(
+      recorded[0].map((e: { client_seq: number }) => e.client_seq),
+      seqs,
+      "the request body sent over the wire must be in ascending client_seq order",
+    );
+    assertEquals(readSpool(config).length, 0, "the spool must be empty after the ack");
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "EVENT-02: bounded retention during an outage keeps the newest N ascending and counts the drops",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = resolveConfig({ home, spoolMaxEntries: 3 });
+    const seqs: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      seqs.push(appendEvent(config, { event_type: "e", payload: { i } }));
+    }
+
+    const spool = readSpool(config);
+    assertEquals(spool.length, 3);
+    const spoolSeqs = spool.map((e: { client_seq: number }) => e.client_seq);
+    assertEquals(spoolSeqs, seqs.slice(-3), "the surviving entries must be the newest 3");
+    assertEquals(
+      spoolSeqs,
+      [...spoolSeqs].sort((a, b) => a - b),
+      "the surviving entries must still be ascending",
+    );
+    assertEquals(readState(config).dropped_events, 2);
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "EVENT-03: a partial acknowledgement removes only the acknowledged entry; a post-send throw removes nothing",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = withNodeId(resolveConfig({ home }));
+    const s1 = appendEvent(config, { event_type: "a", payload: { n: 1 } });
+    const s2 = appendEvent(config, { event_type: "b", payload: { n: 2 } });
+    const s3 = appendEvent(config, { event_type: "c", payload: { n: 3 } });
+    const beforeEntries = readSpool(config);
+
+    const partialConfig = { ...config, fetchImpl: partialAckFetch(s2) };
+    const result = await flush(partialConfig);
+    assertEquals(result.outcome, "acked");
+
+    const afterEntries = readSpool(config);
+    assertEquals(
+      afterEntries.map((e: { client_seq: number }) => e.client_seq),
+      [s1, s3],
+      "only the acknowledged middle seq must be removed",
+    );
+    for (const seq of [s1, s3]) {
+      const beforeEntry = beforeEntries.find((e: { client_seq: number }) => e.client_seq === seq);
+      const afterEntry = afterEntries.find((e: { client_seq: number }) => e.client_seq === seq);
+      assertEquals(afterEntry.queued_at, beforeEntry.queued_at, "queued_at must be unchanged");
+      assertEquals(afterEntry.payload, beforeEntry.payload, "payload must be unchanged");
+    }
+
+    // deno-lint-ignore no-explicit-any
+    const recorded: any[][] = [];
+    const throwingConfig = { ...config, fetchImpl: throwsAfterRecordingFetch(recorded) };
+    const result2 = await flush(throwingConfig);
+    assertEquals(result2.outcome, "unreachable");
+    assertEquals(recorded.length, 1, "the batch must actually have been sent");
+    assertEquals(
+      readSpool(config).map((e: { client_seq: number }) => e.client_seq),
+      [s1, s3],
+      "nothing may be removed when the response never arrived",
+    );
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "EVENT-03: a 600-event spool flushes as a 500-event batch then a 100-event batch",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = withNodeId(resolveConfig({ home }));
+    for (let i = 0; i < 600; i++) {
+      appendEvent(config, { event_type: "e", payload: { i } });
+    }
+
+    // deno-lint-ignore no-explicit-any
+    const recorded: any[][] = [];
+    const ackingConfig = { ...config, fetchImpl: ackingFetch(recorded) };
+    const result = await flush(ackingConfig);
+
+    assertEquals(recorded.length, 2, "600 events must be sent as exactly two requests");
+    assertEquals(recorded[0].length, 500, "the first request must carry exactly 500 events");
+    assertEquals(recorded[1].length, 100, "the second request must carry exactly 100 events");
+    assertEquals(result.outcome, "acked");
+    assertEquals(readSpool(config).length, 0, "the spool must be fully drained");
   },
 });
