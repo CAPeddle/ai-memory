@@ -731,8 +731,130 @@ export async function flush(config) {
 }
 
 /**
- * CLI surface: `register`, `flush`, `status`. Grows `emit`/`checkpoint`/`run` in
- * 03-04 Task 2.
+ * Read `config.nodeIdPath` if it exists, else `null` (never `undefined` —
+ * `JSON.stringify` drops `undefined`-valued keys, and the checkpoint payload's
+ * `node_id` key must always be present per the plan's acceptance criteria).
+ */
+function readNodeIdOrNull(config) {
+  try {
+    if (!existsSync(config.nodeIdPath)) return null;
+    return readFileSync(config.nodeIdPath, "utf8").trim();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Append one `event_type: "heartbeat"` event with `{spooled_events, dropped_events,
+ * uptime_ms}`. Not a new endpoint — an ordinary spooled event riding the same
+ * durability and ack-gating guarantees as everything else (there is no heartbeat
+ * route on the hub; `remoteNodeHub.ts:8-12`). Returns the allocated `client_seq`.
+ */
+export function emitHeartbeat(config, startedAtMs) {
+  const spooled = readSpool(config).length;
+  const state = readState(config);
+  return appendEvent(config, {
+    event_type: "heartbeat",
+    payload: {
+      spooled_events: spooled,
+      dropped_events: state.dropped_events,
+      uptime_ms: Date.now() - startedAtMs,
+    },
+  });
+}
+
+/**
+ * Append one `event_type: "checkpoint"` event whose payload merges the caller's JSON
+ * with `{node_id, hostname, spooled_events, dropped_events}` — the fixed fields last,
+ * so they are never shadowed by a caller-supplied key of the same name. Same
+ * ordinary-event mechanism as `emitHeartbeat`; no control channel, no new hub route.
+ * Returns the allocated `client_seq`.
+ *
+ * Payloads are deliberately synthetic: counters, a timestamp, hostname, node_id —
+ * nothing derived from the machine's working directory or repository contents.
+ * `03-CONTEXT.md` flags payload content as an unresolved FYI given D-03's permanent
+ * retention; this keeps the answer trivially safe until that is decided. Unlike
+ * `server/scripts/awcp.ts`'s checkpoint (which shells out to `git` for repo/branch/
+ * commit), this client does not import `node:child_process` or invoke `git` at all —
+ * doing so would both widen that content question and force a new `--allow-run`
+ * grant onto the in-process test file (D-09).
+ */
+export function emitCheckpoint(config, payload = {}) {
+  const spooled = readSpool(config).length;
+  const state = readState(config);
+  return appendEvent(config, {
+    event_type: "checkpoint",
+    payload: {
+      ...payload,
+      node_id: readNodeIdOrNull(config),
+      hostname: detectHostname() ?? "unknown",
+      spooled_events: spooled,
+      dropped_events: state.dropped_events,
+    },
+  });
+}
+
+/**
+ * The long-running loop: emit a start checkpoint, flush; then on every tick emit a
+ * heartbeat and flush again; on a stop signal, emit a stop checkpoint, flush once
+ * more, and finish. Exits immediately — no further tick, no stop checkpoint — if any
+ * flush returns `"terminal_auth"`, propagating exit code 77 (D-17: the client must
+ * not keep ticking against a hub that has already refused it).
+ *
+ * Returns `{stop, done}`. `stop()` is a synchronous, idempotent signal — set a flag
+ * checked between ticks — NOT a real `SIGINT`/`SIGTERM` handler: registering a live
+ * signal handler here would hijack the host process's Ctrl-C and accumulate listeners
+ * across repeated calls (every call to `runAgent`, e.g. once per test, would add
+ * another). `main`'s `"run"` command is the one real (non-test) caller that wires an
+ * OS signal to `stop()` — see its definition below. `done` resolves to
+ * `{exitCode, terminal}` once the loop (or the terminal exit) completes.
+ *
+ * The tick source is `config.sleepImpl` (D-13/D-17's existing seam, reused rather
+ * than inventing a second one) — production ticks on a real timer via `defaultSleep`;
+ * a test drives ticks deterministically by controlling when each `sleepImpl` call
+ * resolves, with no real waiting.
+ */
+export function runAgent(config) {
+  const sleepImpl = config.sleepImpl ?? defaultSleep;
+  const interval = config.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
+  const startedAtMs = Date.now();
+  let stopped = false;
+
+  async function loop() {
+    emitCheckpoint(config, { phase: "start" });
+    let flushResult = await flush(config);
+    if (flushResult.outcome === "terminal_auth") {
+      return { exitCode: 77, terminal: true };
+    }
+
+    while (!stopped) {
+      await sleepImpl(interval);
+      if (stopped) break;
+      emitHeartbeat(config, startedAtMs);
+      flushResult = await flush(config);
+      if (flushResult.outcome === "terminal_auth") {
+        return { exitCode: 77, terminal: true };
+      }
+    }
+
+    emitCheckpoint(config, { phase: "stop" });
+    flushResult = await flush(config);
+    return {
+      exitCode: flushResult.outcome === "terminal_auth" ? 77 : 0,
+      terminal: flushResult.outcome === "terminal_auth",
+    };
+  }
+
+  return {
+    stop: () => {
+      stopped = true;
+    },
+    done: loop(),
+  };
+}
+
+/**
+ * CLI surface: `register`, `flush`, `status`, `emit`, `checkpoint`, `run`.
  *
  * `overrides` is passed straight to `resolveConfig` — additive over the 03-02/03-03
  * signature (`main(argv)` still works; the real entry point below never passes a
@@ -774,10 +896,43 @@ export async function main(argv, overrides = {}) {
     console.log(`spooled_events=${spooledEvents}`);
     return;
   }
+  if (command === "emit") {
+    const eventType = argv[1];
+    if (!eventType) {
+      throw new Error(
+        'emit requires an event_type argument: "emit <event_type> [json]"',
+      );
+    }
+    const payload = argv[2] !== undefined ? JSON.parse(argv[2]) : null;
+    const seq = appendEvent(config, { event_type: eventType, payload });
+    console.log(JSON.stringify({ client_seq: seq }));
+    return;
+  }
+  if (command === "checkpoint") {
+    const payload = argv[1] !== undefined ? JSON.parse(argv[1]) : {};
+    const seq = emitCheckpoint(config, payload);
+    console.log(JSON.stringify({ client_seq: seq }));
+    return;
+  }
+  if (command === "run") {
+    const controller = runAgent(config);
+    // The only real (non-test) registration of a live signal handler — runAgent
+    // itself never does this (see its docblock: a live SIGINT handler inside a test
+    // process is a runtime hazard, not merely a testability seam).
+    const onSignal = () => controller.stop();
+    process.on("SIGINT", onSignal);
+    process.on("SIGTERM", onSignal);
+    const result = await controller.done;
+    process.off("SIGINT", onSignal);
+    process.off("SIGTERM", onSignal);
+    process.exitCode = result.exitCode;
+    return;
+  }
   throw new Error(
     `unknown command: ${
       command ?? "(none)"
-    } — expected "register", "flush", or "status"`,
+    } — expected "register", "flush", "status", ` +
+      `"emit", "checkpoint", or "run"`,
   );
 }
 

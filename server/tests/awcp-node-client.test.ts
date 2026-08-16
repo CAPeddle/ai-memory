@@ -34,13 +34,17 @@ import process from "node:process";
 import {
   allocateSeq,
   appendEvent,
+  emitCheckpoint,
+  emitHeartbeat,
   flush,
   flushOnce,
   main,
   MAX_FLUSH_ATTEMPTS,
+  MAX_PAYLOAD_BYTES,
   readSpool,
   readState,
   resolveConfig,
+  runAgent,
   writeSpool,
 } from "../scripts/awcp-node-client.mjs";
 
@@ -1040,5 +1044,230 @@ Deno.test({
     } finally {
       process.exitCode = originalExitCode;
     }
+  },
+});
+
+// ---------------------------------------------------------------------------
+// 03-04 Task 2: heartbeat and checkpoint reporting through the events endpoint,
+// and the run loop that drives them. Not new endpoints — ordinary spooled events
+// (event_type "heartbeat" / "checkpoint") riding the same durability and
+// ack-gating guarantees as everything else.
+// ---------------------------------------------------------------------------
+
+Deno.test({
+  ...T,
+  name:
+    'main(["emit", ...]) appends one spool line with the given event_type and payload',
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    await main(["emit", "build.started", '{"ok":true}'], { home });
+    const config = resolveConfig({ home });
+    const spool = readSpool(config);
+    assertEquals(spool.length, 1);
+    assertEquals(spool[0].event_type, "build.started");
+    assertEquals(spool[0].payload, { ok: true });
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    'main(["checkpoint", ...]) appends one checkpoint event whose payload carries phase, node_id, hostname, spooled_events, dropped_events',
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    withNodeId(resolveConfig({ home }));
+    await main(["checkpoint", '{"phase":"manual"}'], { home });
+    const config = resolveConfig({ home });
+    const spool = readSpool(config);
+    assertEquals(spool.length, 1);
+    assertEquals(spool[0].event_type, "checkpoint");
+    const payload = spool[0].payload as Record<string, unknown>;
+    for (
+      const key of [
+        "phase",
+        "node_id",
+        "hostname",
+        "spooled_events",
+        "dropped_events",
+      ]
+    ) {
+      assert(key in payload, `checkpoint payload missing key: ${key}`);
+    }
+    assertEquals(payload.phase, "manual");
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "heartbeat and checkpoint payload builders stay within event_type and payload size limits",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = withNodeId(resolveConfig({ home }));
+    emitHeartbeat(config, Date.now() - 5000);
+    emitCheckpoint(config, { phase: "manual" });
+
+    const spool = readSpool(config);
+    assertEquals(spool.length, 2);
+    for (const entry of spool as { event_type: string; payload: unknown }[]) {
+      assert(
+        entry.event_type.length <= 128,
+        `event_type too long: ${entry.event_type}`,
+      );
+      const encodedBytes =
+        new TextEncoder().encode(JSON.stringify(entry.payload)).length;
+      assert(
+        encodedBytes <= MAX_PAYLOAD_BYTES,
+        `${entry.event_type} payload exceeds MAX_PAYLOAD_BYTES: ${encodedBytes}`,
+      );
+    }
+
+    const heartbeatPayload = spool[0].payload as {
+      spooled_events: number;
+      dropped_events: number;
+      uptime_ms: number;
+    };
+    assertEquals(typeof heartbeatPayload.spooled_events, "number");
+    assertEquals(typeof heartbeatPayload.dropped_events, "number");
+    assertEquals(typeof heartbeatPayload.uptime_ms, "number");
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "runAgent: three ticks emit one start checkpoint and three heartbeats; the stop signal appends one stop checkpoint, flushes once more, and drains the spool",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = withNodeId(resolveConfig({ home }));
+    // deno-lint-ignore no-explicit-any
+    const recorded: any[][] = [];
+
+    // Boxed rather than a bare `let`: `sleepImpl` closes over `box.controller` before
+    // `runAgent` (below) has assigned it, but only ever CALLS `.stop()` from inside a
+    // later tick — by which point the assignment has long since happened.
+    // deno-lint-ignore no-explicit-any
+    const box: { controller?: { stop: () => void; done: Promise<any> } } = {};
+    let calls = 0;
+    // deno-lint-ignore no-explicit-any
+    let snapshotAtThreeTicks: any[] = [];
+    const sleepImpl = (_ms: number) => {
+      calls += 1;
+      if (calls === 4) {
+        snapshotAtThreeTicks = recorded.flat();
+        box.controller!.stop();
+      }
+      return Promise.resolve();
+    };
+
+    box.controller = runAgent({
+      ...config,
+      fetchImpl: ackingFetch(recorded),
+      sleepImpl,
+    });
+    const result = await box.controller.done;
+
+    const threeTickCheckpoints = snapshotAtThreeTicks.filter((e) =>
+      e.event_type === "checkpoint"
+    );
+    const threeTickHeartbeats = snapshotAtThreeTicks.filter((e) =>
+      e.event_type === "heartbeat"
+    );
+    assertEquals(
+      threeTickCheckpoints.length,
+      1,
+      "exactly one checkpoint (the start checkpoint) after three ticks",
+    );
+    assertEquals(threeTickCheckpoints[0].payload.phase, "start");
+    assertEquals(
+      threeTickHeartbeats.length,
+      3,
+      "exactly three heartbeats after three ticks",
+    );
+    assertEquals(
+      threeTickHeartbeats.map((e) => e.client_seq),
+      [...threeTickHeartbeats.map((e) => e.client_seq)].sort((a, b) => a - b),
+      "heartbeats must be in client_seq order",
+    );
+
+    const finalEvents = recorded.flat();
+    const finalCheckpoints = finalEvents.filter((e) =>
+      e.event_type === "checkpoint"
+    );
+    const finalHeartbeats = finalEvents.filter((e) =>
+      e.event_type === "heartbeat"
+    );
+    assertEquals(
+      finalCheckpoints.length,
+      2,
+      "start checkpoint plus stop checkpoint",
+    );
+    assertEquals(finalCheckpoints[1].payload.phase, "stop");
+    assertEquals(
+      finalHeartbeats.length,
+      3,
+      "the stop signal must not add a fourth heartbeat",
+    );
+    assertEquals(readSpool(config).length, 0, "the spool must end empty");
+    assertEquals(result.exitCode, 0);
+    assertEquals(result.terminal, false);
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "runAgent: a 401 on the first flush stops after exactly one request and appends no heartbeat",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = withNodeId(resolveConfig({ home }));
+    let fetchCalls = 0;
+    const countingUnauthorized = (url: string, init: { body: string }) => {
+      fetchCalls += 1;
+      return unauthorizedFetch()(url, init);
+    };
+    const sleepImpl = (_ms: number) => {
+      throw new Error(
+        "must not be reached: runAgent must stop before waiting for a tick",
+      );
+    };
+
+    const controller = runAgent({
+      ...config,
+      fetchImpl: countingUnauthorized,
+      sleepImpl,
+    });
+    const result = await controller.done;
+
+    assertEquals(
+      fetchCalls,
+      1,
+      "no retry may follow the terminal-auth start flush",
+    );
+    assertEquals(result.exitCode, 77);
+    assertEquals(result.terminal, true);
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "awcp-node-client.mjs contains no child_process import and no git invocation",
+  fn: async () => {
+    const source = await Deno.readTextFile(
+      new URL("../scripts/awcp-node-client.mjs", import.meta.url),
+    );
+    // Match actual import/require SYNTAX, not any mention of "child_process" as a
+    // word — the file's own docblock explains, in prose, why it does NOT import
+    // child_process, and a bare substring match would flag that explanation itself.
+    assert(
+      !/(?:from\s+["'](?:node:)?child_process["']|require\(\s*["'](?:node:)?child_process["']\s*\))/
+        .test(source),
+      "must not import child_process",
+    );
+    assert(
+      !/Deno\.Command\(/.test(source),
+      "must not shell out via Deno.Command",
+    );
   },
 });
