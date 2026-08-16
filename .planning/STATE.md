@@ -2,19 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 3
-current_phase_name: Node Client, Reliable Delivery & Regression Safety
-status: ready
-stopped_at: Phase 3 planned — 6 plans, 6 sequential waves, ready to execute
-last_updated: "2026-08-15T17:48:45.957Z"
-last_activity: 2026-08-15
-last_activity_desc: "Phase 3 planned: 6 plans / 15 tasks / 6 strictly sequential waves, checker passed, requirements 6/6 and decisions 18/18 covered. A doc-review pass first corrected a P0 — the dev hub returns 404 for node registration until FEATURE_WORKFLOW is enabled on the base mcp service."
+current_phase: 03
+current_phase_name: node-client-reliable-delivery-regression-safety
+status: executing
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-08-16T06:19:40.613Z"
+last_activity: 2026-08-16
+last_activity_desc: Phase 03 execution started
 progress:
-  total_phases: 4
-  completed_phases: 2
+  total_phases: 2
+  completed_phases: 1
   total_plans: 8
-  completed_plans: 2
-  percent: 50
+  completed_plans: 3
 ---
 
 # Project State
@@ -24,16 +23,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-05)
 
 **Core value:** Knowledge worth retaining must remain accurately recallable across tools, sessions, projects, and time without leaking across policy boundaries.
-**Current focus:** Phase 3 — Node Client, Reliable Delivery & Regression Safety (U3+U4)
+**Current focus:** Phase 03 — node-client-reliable-delivery-regression-safety
 
 ## Current Position
 
-Phase: 3 of 4 (Node Client, Reliable Delivery & Regression Safety)
-Plan: 0 of 6 in current phase
-Status: **Ready to execute** — `03-CONTEXT.md` holds 18 locked decisions (all 18 covered by plans); `03-01..03-06-PLAN.md` define 15 tasks in 6 **strictly sequential** waves. Next gate is `/gsd-execute-phase 3`.
-Last activity: 2026-08-15 — Phase 3 planned end to end (discuss → doc-review → research → pattern-map → plan → check). Checker passed with no blockers; requirements 6/6 and decisions 18/18 covered.
+Phase: 03 (node-client-reliable-delivery-regression-safety) — EXECUTING
+Plan: 2 of 6
+Status: Ready to execute
+Last activity: 2026-08-16 — Phase 03 execution started
 
-Progress: [█████░░░░░] 50%
+Progress: [████░░░░░░] 38%
 
 ## Performance Metrics
 
@@ -56,6 +55,11 @@ Progress: [█████░░░░░] 50%
 - Trend: —
 
 *Updated after each plan completion*
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 03 P01 | 25m | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -69,6 +73,8 @@ Recent decisions affecting current work:
 - **Graph tools are structurally blocked** (not merely unfixed): AGE nodes carry no scope column. Enforcement requires extraction-time tagging or call gating. ST-082 owns the build; this milestone priced it.
 - **Node client must be plain Node.js ESM, zero npm deps:** z2 (Ubuntu 24.04.4) has no Deno. Prefer Node for spool JSONL logic over POSIX shell+curl.
 - **Stage 2 findings append-only:** New sections are appended to `docs/investigations/ST-084-awcp-host-spike-findings.md`; Stage 1 text stands as written. **Phase 3 writes `## 16.`, not §13** — that document already carries two sections numbered `## 13.` (`:730` and `:1039`), so a third would make the number useless as a reference. ROADMAP's delivery-artifact line records the supersession.
+- [Phase ?]: D-10 baseline captured pre-Phase-3 (400 testcases: 391 ok / 9 FAILED, matches expected count exactly, no delta) and FEATURE_WORKFLOW enabled on base mcp service per D-01 — dev hub node surface now mounts (401 instead of 404).
+- [Phase ?]: SAFE-01/SAFE-02 deliberately left Pending after 03-01 — 03-05-PLAN.md owns the actual full-suite identity-diff discharge against this plan's baseline.
 
 ### Pending Todos
 
@@ -92,9 +98,9 @@ None yet.
 
 ## Session Continuity
 
-**Last session:** 2026-08-15T15:07:29.795Z
-**Stopped at:** Phase 3 context gathered
-**Resume file:** .planning/phases/03-node-client-reliable-delivery-regression-safety/03-CONTEXT.md
+**Last session:** 2026-08-16T06:19:40.599Z
+**Stopped at:** Completed 03-01-PLAN.md
+**Resume file:** None
 
 ### If resuming mid-phase
 
