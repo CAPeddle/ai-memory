@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 03
 current_phase_name: node-client-reliable-delivery-regression-safety
 status: executing
-stopped_at: Completed 03-01-PLAN.md
-last_updated: "2026-08-16T06:19:40.613Z"
+stopped_at: Completed 03-02-PLAN.md
+last_updated: "2026-08-16T06:28:18.827Z"
 last_activity: 2026-08-16
 last_activity_desc: Phase 03 execution started
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 8
-  completed_plans: 3
+  completed_plans: 4
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 ## Current Position
 
 Phase: 03 (node-client-reliable-delivery-regression-safety) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 Last activity: 2026-08-16 — Phase 03 execution started
 
-Progress: [████░░░░░░] 38%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -60,6 +60,7 @@ Progress: [████░░░░░░] 38%
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 03 P01 | 25m | 2 tasks | 2 files |
+| Phase 03 P02 | 45m | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -75,6 +76,8 @@ Recent decisions affecting current work:
 - **Stage 2 findings append-only:** New sections are appended to `docs/investigations/ST-084-awcp-host-spike-findings.md`; Stage 1 text stands as written. **Phase 3 writes `## 16.`, not §13** — that document already carries two sections numbered `## 13.` (`:730` and `:1039`), so a third would make the number useless as a reference. ROADMAP's delivery-artifact line records the supersession.
 - [Phase ?]: D-10 baseline captured pre-Phase-3 (400 testcases: 391 ok / 9 FAILED, matches expected count exactly, no delta) and FEATURE_WORKFLOW enabled on base mcp service per D-01 — dev hub node surface now mounts (401 instead of 404).
 - [Phase ?]: SAFE-01/SAFE-02 deliberately left Pending after 03-01 — 03-05-PLAN.md owns the actual full-suite identity-diff discharge against this plan's baseline.
+- [Phase ?]: 03-02: flushOnce returns {outcome, acked, acknowledged} — the acknowledged field is additive beyond the plan's literal spec, needed so EVENT-01's test can assert event_id-inclusive deep-equality without a second raw HTTP call
+- [Phase ?]: 03-02: node:os hostname() requires --allow-sys=hostname under Deno's node: compat layer (empirically confirmed) but not under real Node — registerNode wraps it in try/catch and falls back to omitting the optional field; process.platform used instead of os.platform() since it needs no syscall permission
 
 ### Pending Todos
 
@@ -98,8 +101,8 @@ None yet.
 
 ## Session Continuity
 
-**Last session:** 2026-08-16T06:19:40.599Z
-**Stopped at:** Completed 03-01-PLAN.md
+**Last session:** 2026-08-16T06:28:18.813Z
+**Stopped at:** Completed 03-02-PLAN.md
 **Resume file:** None
 
 ### If resuming mid-phase

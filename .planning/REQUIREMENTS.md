@@ -20,9 +20,9 @@ Requirements for the current ST-088 milestone. Each maps to exactly one roadmap 
 
 ### Reliable Event Delivery
 
-- [ ] **EVENT-01**: Replaying the same `(node_id, client_seq)` event does not create duplicate hub state.
+- [x] **EVENT-01**: Replaying the same `(node_id, client_seq)` event does not create duplicate hub state.
 - [ ] **EVENT-02**: A node disconnected from the hub retains bounded local events and replays them oldest-first after connectivity returns.
-- [ ] **EVENT-03**: A node removes a spooled event only after receiving the hub acknowledgement for that event.
+- [x] **EVENT-03**: A node removes a spooled event only after receiving the hub acknowledgement for that event.
 - [ ] **EVENT-04**: Spool overflow drops the oldest event and records a visible dropped-event counter rather than silently filling disk.
 
 ### Workflow Enforcement Evidence
@@ -74,9 +74,9 @@ Deferred beyond the ST-088 host-viability milestone.
 | NODE-01 | Phase 2 — Remote Node Identity & Hub | Pending |
 | NODE-02 | Phase 2 — Remote Node Identity & Hub | Pending |
 | NODE-03 | Phase 2 — Remote Node Identity & Hub | Pending |
-| EVENT-01 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Pending |
+| EVENT-01 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Complete |
 | EVENT-02 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Pending |
-| EVENT-03 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Pending |
+| EVENT-03 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Complete |
 | EVENT-04 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Pending |
 | SAFE-01 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Pending |
 | SAFE-02 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Pending |
@@ -85,6 +85,7 @@ Deferred beyond the ST-088 host-viability milestone.
 | HOST-02 | Phase 4 — Blocking Evidence & ADR-016 Host Decision | Pending |
 
 **Coverage:**
+
 - v1 requirements: 14 total
 - Mapped to phases: 14
 - Unmapped: 0 ✓

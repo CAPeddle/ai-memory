@@ -84,7 +84,7 @@ delivery; `docs/plans/` and the story board remain the canonical delivery record
   4. When spool capacity is exceeded the oldest event is dropped and a visible counter increments rather than silently filling disk.
   5. Authenticated MCP memory tools and workflow operations pass their existing tests unmodified after all node changes are applied.
 
-**Plans**: 1/6 plans executed
+**Plans**: 2/6 plans executed
 
 **Wave 1**
 
@@ -92,7 +92,7 @@ delivery; `docs/plans/` and the story board remain the canonical delivery record
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 03-02-PLAN.md — Tracer: one event end to end (client → real hub process → ack → spool cleared), plus the EVENT-01 duplicate-replay proof — EVENT-01, EVENT-03
+- [x] 03-02-PLAN.md — Tracer: one event end to end (client → real hub process → ack → spool cleared), plus the EVENT-01 duplicate-replay proof — EVENT-01, EVENT-03
 
 **Wave 3** *(blocked on Wave 2)*
 
@@ -142,7 +142,7 @@ supporting reason, not the primary one.
 |-------|----------------|--------|-----------|
 | 1. Policy-Scope Pricing | — | ✅ Complete | 2026-08-05 |
 | 2. Remote Node Identity & Hub | 2/2 | ✅ Complete | 2026-08-06 |
-| 3. Node Client, Reliable Delivery & Regression Safety | 1/6 | In Progress|  |
+| 3. Node Client, Reliable Delivery & Regression Safety | 2/6 | In Progress|  |
 | 4. Blocking Evidence & ADR-016 Host Decision | 0/TBD | Not started | - |
 
 ---
