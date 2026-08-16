@@ -43,6 +43,7 @@ import {
   MAX_PAYLOAD_BYTES,
   readSpool,
   readState,
+  registerNode,
   resolveConfig,
   runAgent,
   writeSpool,
@@ -1268,6 +1269,176 @@ Deno.test({
     assert(
       !/Deno\.Command\(/.test(source),
       "must not shell out via Deno.Command",
+    );
+  },
+});
+
+// ---------------------------------------------------------------------------
+// 03-04 Task 3 (D-13): the credential-leak gate over a register -> flush -> retry
+// cycle. Without this test, D-13 is the only decision in 03-CONTEXT.md that is
+// asserted and unchecked (03-CONTEXT.md D-13) — this is what checks it.
+// ---------------------------------------------------------------------------
+
+/**
+ * Patches ALL SIX output surfaces D-13 requires — console.log/error/warn/info AND
+ * process.stdout.write/process.stderr.write — appending every argument's string form
+ * to one collector, and restores every one of them in a `finally`. Watching only the
+ * injectable `config.stderrWrite` sink would prove nothing about the UNINTENDED path
+ * (a stray `console.error(err)`, a transport library's own error text) — the sink is
+ * the client's intended output path, and the whole point of this gate is the path
+ * nobody wrote deliberately.
+ */
+function capture(): { collected: string[]; restore: () => void } {
+  const collected: string[] = [];
+  // deno-lint-ignore no-explicit-any
+  const stringify = (v: any) => typeof v === "string" ? v : Deno.inspect(v);
+  const originals = {
+    log: console.log,
+    error: console.error,
+    warn: console.warn,
+    info: console.info,
+    stdoutWrite: process.stdout.write.bind(process.stdout),
+    stderrWrite: process.stderr.write.bind(process.stderr),
+  };
+  // deno-lint-ignore no-explicit-any
+  const record = (...args: any[]) => {
+    collected.push(args.map(stringify).join(" "));
+  };
+  console.log = record;
+  console.error = record;
+  console.warn = record;
+  console.info = record;
+  // deno-lint-ignore no-explicit-any
+  process.stdout.write = ((chunk: any) => {
+    collected.push(stringify(chunk));
+    return true;
+    // deno-lint-ignore no-explicit-any
+  }) as any;
+  // deno-lint-ignore no-explicit-any
+  process.stderr.write = ((chunk: any) => {
+    collected.push(stringify(chunk));
+    return true;
+    // deno-lint-ignore no-explicit-any
+  }) as any;
+
+  return {
+    collected,
+    restore: () => {
+      console.log = originals.log;
+      console.error = originals.error;
+      console.warn = originals.warn;
+      console.info = originals.info;
+      // deno-lint-ignore no-explicit-any
+      process.stdout.write = originals.stdoutWrite as any;
+      // deno-lint-ignore no-explicit-any
+      process.stderr.write = originals.stderrWrite as any;
+    },
+  };
+}
+
+/** Recursively concatenate the contents of every file under `dir`. */
+async function readAllFilesUnder(dir: string): Promise<string> {
+  let out = "";
+  for await (const entry of Deno.readDir(dir)) {
+    const path = `${dir}/${entry.name}`;
+    if (entry.isDirectory) {
+      out += await readAllFilesUnder(path);
+    } else {
+      out += await Deno.readTextFile(path).catch(() => "");
+    }
+  }
+  return out;
+}
+
+Deno.test({
+  ...T,
+  name:
+    "D-13: neither the node bearer nor the enrolment secret appears in captured output or on-disk state across a register-flush-retry cycle",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    // A distinctive 64-lowercase-hex bearer (BEARER_FORMAT) and a distinctive,
+    // nowhere-else-used enrolment secret, so a substring match is unambiguous.
+    const bearer = "d13" + "e".repeat(61);
+    const enrolmentSecret = "D13-ENROLMENT-SECRET-MUST-NEVER-LEAK-9f3q7z";
+    const config = resolveConfig({ home, bearer, enrolmentSecret });
+
+    const { collected, restore } = capture();
+    try {
+      // Step 1: registerNode — the ONE invocation that carries
+      // X-Node-Enrolment-Secret, and therefore the single registration most worth
+      // capturing and the most dangerous to quote.
+      const registerFetch = () =>
+        Promise.resolve({
+          status: 201,
+          json: () => Promise.resolve({ node_id: FAKE_NODE_ID }),
+          text: () => Promise.resolve(""),
+        });
+      await registerNode({ ...config, fetchImpl: registerFetch });
+
+      // Step 2: appendEvent + a flush that succeeds.
+      appendEvent(config, { event_type: "e", payload: { n: 1 } });
+      // deno-lint-ignore no-explicit-any
+      const recorded: any[][] = [];
+      await flush({ ...config, fetchImpl: ackingFetch(recorded) });
+
+      // Step 3: a flush whose fetchImpl returns 401 — the terminal-auth path and its
+      // structured line (the positive control: proves the collector is watching).
+      appendEvent(config, { event_type: "e", payload: { n: 2 } });
+      await flush({ ...config, fetchImpl: unauthorizedFetch() });
+
+      // Step 4: a flush whose fetchImpl throws an error whose OWN MESSAGE embeds the
+      // bearer — simulating a transport library that put the Authorization header
+      // into its error text. This is the realistic leak (a stray `console.error(err)`
+      // anyone would catch in review is not what this gate needs to prove).
+      const leakyError = new Error(
+        `connection reset: Authorization: Bearer ${bearer}`,
+      );
+      assert(
+        leakyError.message.includes(bearer),
+        "sanity: the injected error must actually carry the bearer",
+      );
+      appendEvent(config, { event_type: "e", payload: { n: 3 } });
+      await flush({
+        ...config,
+        fetchImpl: () => {
+          throw leakyError;
+        },
+        sleepImpl: () => Promise.resolve(),
+      });
+    } finally {
+      restore();
+    }
+
+    const output = collected.join("\n");
+    // Positive control FIRST: an absence assertion that could pass on an empty
+    // collector is a check that cannot fail. This proves the collector was watching.
+    assert(output.length > 0, "the collector must not be empty");
+    assert(
+      /terminal reason=auth_failed/.test(output),
+      `expected the D-17 terminal line in captured output, got: ${
+        JSON.stringify(output)
+      }`,
+    );
+    assert(
+      !output.includes(bearer),
+      "the bearer must never appear in captured output",
+    );
+    assert(
+      !output.includes(enrolmentSecret),
+      "the enrolment secret must never appear in captured output",
+    );
+
+    // D-12 requires the enrolment secret to exist for one process and nowhere
+    // afterward — a ~/.awcp/ file holding either credential would make the hub-side
+    // closure (D-11) one-sided.
+    const diskContents = await readAllFilesUnder(home);
+    assert(
+      !diskContents.includes(bearer),
+      "no on-disk file may contain the bearer",
+    );
+    assert(
+      !diskContents.includes(enrolmentSecret),
+      "no on-disk file may contain the enrolment secret",
     );
   },
 });
