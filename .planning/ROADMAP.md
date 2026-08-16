@@ -84,7 +84,7 @@ delivery; `docs/plans/` and the story board remain the canonical delivery record
   4. When spool capacity is exceeded the oldest event is dropped and a visible counter increments rather than silently filling disk.
   5. Authenticated MCP memory tools and workflow operations pass their existing tests unmodified after all node changes are applied.
 
-**Plans**: 4/6 plans executed
+**Plans**: 5/6 plans executed
 
 **Wave 1**
 
@@ -104,7 +104,7 @@ delivery; `docs/plans/` and the story board remain the canonical delivery record
 
 **Wave 5** *(blocked on Wave 4)*
 
-- [ ] 03-05-PLAN.md — Regression safety: empty-diff identity comparison against the baseline, measured corpus integrity, and CLAUDE.md's grant inventory — SAFE-01, SAFE-02
+- [x] 03-05-PLAN.md — Regression safety: empty-diff identity comparison against the baseline, measured corpus integrity, and CLAUDE.md's grant inventory — SAFE-01, SAFE-02
 
 **Wave 6** *(blocked on Wave 5 — the last destructive full-suite run must precede enrolment)*
 
@@ -142,7 +142,7 @@ supporting reason, not the primary one.
 |-------|----------------|--------|-----------|
 | 1. Policy-Scope Pricing | — | ✅ Complete | 2026-08-05 |
 | 2. Remote Node Identity & Hub | 2/2 | ✅ Complete | 2026-08-06 |
-| 3. Node Client, Reliable Delivery & Regression Safety | 4/6 | In Progress|  |
+| 3. Node Client, Reliable Delivery & Regression Safety | 5/6 | In Progress|  |
 | 4. Blocking Evidence & ADR-016 Host Decision | 0/TBD | Not started | - |
 
 ---

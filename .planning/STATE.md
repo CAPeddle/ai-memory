@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 03
 current_phase_name: node-client-reliable-delivery-regression-safety
 status: executing
-stopped_at: Completed 03-04-PLAN.md
-last_updated: "2026-08-16T07:16:39.645Z"
+stopped_at: Completed 03-05-PLAN.md
+last_updated: "2026-08-16T07:28:54.481Z"
 last_activity: 2026-08-16
 last_activity_desc: Phase 03 execution started
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 8
-  completed_plans: 6
+  completed_plans: 7
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 ## Current Position
 
 Phase: 03 (node-client-reliable-delivery-regression-safety) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Last activity: 2026-08-16 — Phase 03 execution started
 
-Progress: [████████░░] 75%
+Progress: [█████████░] 88%
 
 ## Performance Metrics
 
@@ -63,6 +63,7 @@ Progress: [████████░░] 75%
 | Phase 03 P02 | 45m | 2 tasks | 2 files |
 | Phase 03 P03 | 35m | 3 tasks | 2 files |
 | Phase 03 P04 | 60m | 3 tasks | 2 files |
+| Phase 03 P05 | 40m | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -86,6 +87,10 @@ Recent decisions affecting current work:
 - [Phase ?]: 03-04: flush() loop restructured to dynamic (re-reads spool each iteration) so a single call can both drop a D-15 rejection and deliver the remainder — required by the plan's own Task 1 acceptance criteria, not a deviation
 - [Phase ?]: 03-04: found and fixed a real infinite-loop bug during testing — a 200 whose acknowledged array does not intersect the batch sent made zero progress but reset the retry counter every time; bounded it with the same MAX_FLUSH_ATTEMPTS backoff policy used for retryable/unreachable
 - [Phase ?]: 03-04: flushOnce now checks res.status before parsing the body — a real 401 is plain text, not JSON, and the old unconditional res.json() call would have misclassified it as unreachable, defeating D-17
+- [Phase ?]: 03-05: SAFE-01/SAFE-02 discharged by empty name-for-name diff (400/400 identical, same 9 known failures) and measured corpus counts (33/33 total/active unchanged before/after full suite run)
+- [Phase ?]: 03-05: Plan's Task 2 verify grep anchors lacked the './' prefix that every baseline/JUnit classname carries — corrected when running the gate (Rule 3), not by changing 03-REGRESSION-FINAL.txt's format
+- [Phase ?]: 03-05: CLAUDE.md grant inventory now names workflow-node-client-hub-e2e.test.ts (--allow-run=deno) and awcp-node-client.test.ts + workflow-node-client-hub-e2e.test.ts (--allow-write=/tmp); docker compose command line itself unchanged
+- [Phase ?]: 03-05: this was the last permitted full-suite run for the phase — 03-06 enrols a real node next; workflow-mvp-e2e.test.ts's DROP SCHEMA must not run again until after the real-node leg completes
 
 ### Pending Todos
 
@@ -109,8 +114,8 @@ None yet.
 
 ## Session Continuity
 
-**Last session:** 2026-08-16T07:16:39.631Z
-**Stopped at:** Completed 03-04-PLAN.md
+**Last session:** 2026-08-16T07:28:54.467Z
+**Stopped at:** Completed 03-05-PLAN.md
 **Resume file:** None
 
 ### If resuming mid-phase
