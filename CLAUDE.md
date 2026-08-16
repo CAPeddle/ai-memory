@@ -79,15 +79,25 @@ docker compose --profile test exec mcp-test deno test --frozen --allow-net --all
 #                       workflow-node-hub-e2e.test.ts (each proves over real HTTP
 #                       something no in-process test can: a mount, or what a boot does
 #                       and does not reach). awcp-cli.test.ts (ST-087) spawns the CLI.
+#                       workflow-node-client-hub-e2e.test.ts (ST-088, Phase 3) also
+#                       spawns one, to prove the real node client's spool clears
+#                       against a real hub process and that the hub's own duplicate
+#                       suppression (EVENT-01) survives a replay — neither is
+#                       observable from an in-process test.
 #                       Find them with: grep -l startServerProcess tests/*.ts
 #   --allow-run=git     awcp-cli.test.ts builds a throwaway repository, because
 #                       server/scripts/awcp.ts derives a checkpoint's repo/branch/commit
 #                       by running git and there is no honest way to prove that without
 #                       giving it a repository.
-#   --allow-write=/tmp  that throwaway repository. Scoped to the temp directory rather
-#                       than opened wholesale.
-# Both run grants name their binary rather than using a bare --allow-run, so the suite
-# does not get unrestricted subprocess-spawn permission. Without them the two files
+#   --allow-write=/tmp  that throwaway repository, plus (ST-088, Phase 3)
+#                       awcp-node-client.test.ts and workflow-node-client-hub-e2e.test.ts:
+#                       the node client's every persisted path (spool, state, node_id)
+#                       is injectable specifically so its tests point at a
+#                       Deno.makeTempDir() under /tmp instead of the runner's real
+#                       ~/.awcp/ — which is what keeps this grant narrow rather than
+#                       widening it to $HOME.
+# All run grants name their binary rather than using a bare --allow-run, so the suite
+# does not get unrestricted subprocess-spawn permission. Without them the files
 # above error rather than skip.
 docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read --allow-write=/tmp --allow-run=deno,git tests/
 
