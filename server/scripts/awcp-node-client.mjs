@@ -10,15 +10,16 @@
  * `/workflow/nodes/:node_id/events`) can do, so there is no privileged back channel
  * with its own rules.
  *
- * **Tracer scope** (ST-088 Phase 3, `03-02-PLAN.md` Task 1). This file implements
- * exactly the one path proven end to end by `workflow-node-client-hub-e2e.test.ts`:
- * allocate a `client_seq`, spool it with `fsync`, POST it to a real hub, read the
- * acknowledgement, remove exactly the acknowledged entry. Deliberately incomplete —
- * not stubbed — on purpose: a single-attempt flush with no backoff, no spool bounding
- * or eviction, no heartbeat loop, and no dedicated 400/401 branches beyond a typed
- * throw. Those seams are filled by 03-03 (bounding, D-14 restart proof) and 03-04
- * (backoff, 400/401 handling, heartbeat/checkpoint, `status` subcommand) without an
- * architectural change to what is here.
+ * **Tracer scope** (ST-088 Phase 3, `03-02-PLAN.md` Task 1) plus **03-03's expansion**
+ * (bounding, eviction, visible drop counter, multi-batch flush, D-14 restart proof).
+ * The client now spools durably, bounds the spool at a configured entry count
+ * (`config.spoolMaxEntries`, default `DEFAULT_SPOOL_MAX_ENTRIES`), evicts oldest-first
+ * on overflow with a persisted+stderr-logged drop counter, and flushes in batches of
+ * at most `FLUSH_MAX_EVENTS`, removing an entry only after a 200 names its
+ * `client_seq` — never on send, never on retry attempt. Still deliberately incomplete:
+ * no backoff, no dedicated 400/401 branches beyond a typed throw, no heartbeat loop.
+ * Those seams are filled by 03-04 (backoff, 400/401 handling, heartbeat/checkpoint)
+ * without an architectural change to what is here.
  *
  * **Credentials — what is read, how long it lives, what a leak costs.**
  *   - `AWCP_NODE_BEARER` — this node's own 64-lowercase-hex credential
@@ -73,6 +74,14 @@ export const MAX_PAYLOAD_BYTES = 16_384;
 
 /** Matches `remoteNodeHub.ts`'s `BEARER_FORMAT`: 32 random bytes as 64 lowercase hex. */
 export const BEARER_FORMAT = /^[0-9a-f]{64}$/;
+
+/**
+ * Entry-count bound for the spool (criterion 4, EVENT-04, 03-03). An entry count
+ * rather than a byte count: at 1000 entries of at most MAX_PAYLOAD_BYTES (16384) each,
+ * the worst case is ~16 MiB — bounded, small, and trivially assertable without a
+ * second byte-accounting pass. Overridable via `AWCP_SPOOL_MAX_ENTRIES`.
+ */
+export const DEFAULT_SPOOL_MAX_ENTRIES = 1000;
 
 /** A non-2xx response from the hub, carrying the status for the caller to branch on. */
 export class AwcpHttpError extends Error {
@@ -144,6 +153,11 @@ export function resolveConfig(overrides = {}) {
   const hubUrl = (
     overrides.hubUrl ?? process.env.AWCP_HUB_URL ?? "http://127.0.0.1:3000"
   ).replace(/\/+$/, "");
+  const rawSpoolMax = process.env.AWCP_SPOOL_MAX_ENTRIES;
+  const parsedSpoolMax = rawSpoolMax ? Number.parseInt(rawSpoolMax, 10) : NaN;
+  const envSpoolMax = Number.isFinite(parsedSpoolMax) && parsedSpoolMax > 0
+    ? parsedSpoolMax
+    : DEFAULT_SPOOL_MAX_ENTRIES;
   return {
     home,
     spoolPath: overrides.spoolPath ?? join(home, "spool.jsonl"),
@@ -154,6 +168,14 @@ export function resolveConfig(overrides = {}) {
     bearer: overrides.bearer ?? process.env.AWCP_NODE_BEARER ?? "",
     enrolmentSecret: overrides.enrolmentSecret ?? process.env.AWCP_NODE_ENROLMENT_SECRET ?? "",
     fetchImpl: overrides.fetchImpl ?? globalThis.fetch,
+    // Criterion 4 (EVENT-04, 03-03): bound expressed as an entry count, injectable so
+    // tests can exercise eviction with a small cap without waiting on 1000 appends.
+    spoolMaxEntries: overrides.spoolMaxEntries ?? envSpoolMax,
+    // Every structured "visible drop" line (recordDrops) is routed through this one
+    // seam rather than a bare `process.stderr.write` call, so a test can inject a
+    // collector instead of eyeballing captured output. Defaulted, never widened by a
+    // test that forgets to override it — production behavior is unchanged.
+    stderrWrite: overrides.stderrWrite ?? ((line) => process.stderr.write(line)),
   };
 }
 
@@ -202,6 +224,16 @@ export function appendEvent(config, event) {
     queued_at: new Date().toISOString(),
   }) + "\n";
   appendLineFsync(config.spoolPath, line, 0o600);
+
+  // Criterion 4 (EVENT-04): evict AFTER appending, never before, so the newest event
+  // is never the one dropped — "drop the oldest" is the stated contract, and evicting
+  // pre-append would risk dropping an event that never even entered the spool.
+  const cap = config.spoolMaxEntries ?? DEFAULT_SPOOL_MAX_ENTRIES;
+  const currentLength = readSpool(config).length;
+  if (currentLength > cap) {
+    evictOldest(config, currentLength - cap);
+  }
+
   return seq;
 }
 
@@ -239,7 +271,104 @@ export function writeSpool(config, entries) {
   } finally {
     closeSync(fd);
   }
+  // Test-only seam (03-03): a config carrying `beforeRename` can simulate a crash
+  // between the durable temp-file write above and the atomic rename below — the temp
+  // file already exists and is fsync'd, so throwing here proves the ORIGINAL
+  // spool.jsonl survives byte-identical. Never set in production; resolveConfig does
+  // not default this field, so a config built the normal way never carries it.
+  if (typeof config.beforeRename === "function") {
+    config.beforeRename(tmpPath);
+  }
   renameSync(tmpPath, config.spoolPath);
+}
+
+/**
+ * Read `<home>/state.json`. A missing file reads as the zeroed default — the drop
+ * counter has never fired yet, which is exactly what "no file" should mean.
+ */
+const DEFAULT_DROP_STATE = Object.freeze({
+  dropped_events: 0,
+  last_drop_at: null,
+  last_dropped_client_seq: null,
+  last_drop_reason: null,
+});
+
+export function readState(config) {
+  if (!existsSync(config.statePath)) return { ...DEFAULT_DROP_STATE };
+  const raw = readFileSync(config.statePath, "utf8");
+  try {
+    return { ...DEFAULT_DROP_STATE, ...JSON.parse(raw) };
+  } catch {
+    return { ...DEFAULT_DROP_STATE };
+  }
+}
+
+/**
+ * Rewrite-and-rename `<home>/state.json`, mode 0600 — a torn counter file is as bad as
+ * a torn spool (T-03-03-02): the same primitive `writeSpool` uses for its two
+ * shrink operations, applied here because this file's write is also a full-content
+ * replace, never an append.
+ */
+export function writeState(config, state) {
+  ensureStateDir(config);
+  const tmpPath = join(
+    dirname(config.statePath),
+    `.state.${process.pid}.${randomBytes(4).toString("hex")}.tmp`,
+  );
+  const fd = openSync(tmpPath, "w", 0o600);
+  try {
+    writeSync(fd, JSON.stringify(state));
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+  renameSync(tmpPath, config.statePath);
+}
+
+/**
+ * The third leg of "visible" (criterion 4): increments `dropped_events` by
+ * `seqs.length`, updates the `last_*` fields, persists to `state.json`, and writes one
+ * structured line per dropped seq to STDERR — never stdout, because captured stderr is
+ * evidence in this phase and a drop that never appears in the transcript is exactly
+ * the silent failure criterion 4 forbids. Shared by overflow eviction (03-03) and
+ * D-15's permanent-rejection drops (03-04) — one counter, two causes, distinguished by
+ * `reason`.
+ */
+export function recordDrops(config, seqs, reason) {
+  if (!seqs || seqs.length === 0) return readState(config);
+  let state = readState(config);
+  const write = config.stderrWrite ?? ((line) => process.stderr.write(line));
+  for (const seq of seqs) {
+    state = {
+      dropped_events: state.dropped_events + 1,
+      last_drop_at: new Date().toISOString(),
+      last_dropped_client_seq: seq,
+      last_drop_reason: reason,
+    };
+    write(
+      `awcp-node-client: dropped client_seq=${seq} reason=${reason} ` +
+        `dropped_events_total=${state.dropped_events}\n`,
+    );
+  }
+  writeState(config, state);
+  return state;
+}
+
+/**
+ * Removes the `count` lowest-`client_seq` entries from the spool via `writeSpool`
+ * (the same rewrite-and-rename primitive that shrinks it on ack) and records the drop.
+ * Returns the dropped seqs.
+ */
+export function evictOldest(config, count) {
+  if (!count || count <= 0) return [];
+  const entries = readSpool(config);
+  const toEvict = entries.slice(0, count);
+  if (toEvict.length === 0) return [];
+  const remaining = entries.slice(toEvict.length);
+  writeSpool(config, remaining);
+  const seqs = toEvict.map((entry) => entry.client_seq);
+  recordDrops(config, seqs, "spool_overflow");
+  return seqs;
 }
 
 /**
@@ -370,7 +499,19 @@ export async function main(argv) {
     console.log(JSON.stringify(result));
     return;
   }
-  throw new Error(`unknown command: ${command ?? "(none)"} — expected "register" or "flush"`);
+  if (command === "status") {
+    // The third leg of "visible" (criterion 4): a counter no operator can read is not
+    // visible. One key=value per line to stdout — this is the surface the z2
+    // transcript in 03-06 will quote.
+    const state = readState(config);
+    const spooledEvents = readSpool(config).length;
+    console.log(`dropped_events=${state.dropped_events}`);
+    console.log(`spooled_events=${spooledEvents}`);
+    return;
+  }
+  throw new Error(
+    `unknown command: ${command ?? "(none)"} — expected "register", "flush", or "status"`,
+  );
 }
 
 /**
