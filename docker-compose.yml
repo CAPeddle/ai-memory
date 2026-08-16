@@ -43,6 +43,19 @@ services:
       # bearer. `:-` keeps it optional, because a deployment running no nodes is
       # ordinary and must still boot. Generate with `openssl rand -hex 32`.
       AWCP_NODE_ENROLMENT_SECRET: ${AWCP_NODE_ENROLMENT_SECRET:-}
+      # Mounts the workflow module's node-client surface for Phase 3 of ST-088
+      # (`server/index.ts` mounts `/workflow/nodes/*` only inside
+      # `if (workflowFeatureEnabled())`, and that predicate is exactly
+      # `FEATURE_WORKFLOW === "true"`). Without this line, `POST
+      # /workflow/nodes/register` answers 404 — the route is not mounted at
+      # all — while `GET /health` still reports healthy either way, so a
+      # health check cannot tell you whether this flag is on. Once mounted,
+      # the same endpoint answers 401 for a missing/wrong bearer: **404 means
+      # the routes are not mounted; 401 means they are mounted and refused
+      # auth.** Hardcoded `"true"` (not `${FEATURE_WORKFLOW:-}`) because the
+      # base `mcp` service is meant to have this always on for the remainder
+      # of ST-088, unlike the optional credentials above.
+      FEATURE_WORKFLOW: "true"
     # Dev bind mount: host ./server is the source of truth at runtime so that
     # /continue can write new files (tests, src) and `docker compose exec mcp deno ...`
     # sees them immediately without rebuilding the image. Production deployment
