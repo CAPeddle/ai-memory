@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 03
 current_phase_name: node-client-reliable-delivery-regression-safety
 status: executing
-stopped_at: Completed 03-03-PLAN.md
-last_updated: "2026-08-16T06:43:15.047Z"
+stopped_at: Completed 03-04-PLAN.md
+last_updated: "2026-08-16T07:16:39.645Z"
 last_activity: 2026-08-16
 last_activity_desc: Phase 03 execution started
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 8
-  completed_plans: 5
+  completed_plans: 6
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 ## Current Position
 
 Phase: 03 (node-client-reliable-delivery-regression-safety) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
 Last activity: 2026-08-16 — Phase 03 execution started
 
-Progress: [██████░░░░] 63%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Progress: [██████░░░░] 63%
 | Phase 03 P01 | 25m | 2 tasks | 2 files |
 | Phase 03 P02 | 45m | 2 tasks | 2 files |
 | Phase 03 P03 | 35m | 3 tasks | 2 files |
+| Phase 03 P04 | 60m | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,9 @@ Recent decisions affecting current work:
 - [Phase ?]: 03-03: flush() return shape gained delivered/remaining fields additively — acked kept for 03-02 tracer-test compatibility rather than being replaced
 - [Phase ?]: 03-03: transport-level throws (fetchImpl itself throwing) are distinguished from AwcpHttpError inside flush()'s catch — only genuine transport failures become outcome=unreachable; 400/401 still propagate unchanged, preserving 03-04's scope
 - [Phase ?]: 03-03: D-14 restart proof added — client_seq counter confirmed independent of spool contents even after full drain or spool deletion, closing ROADMAP criterion 1's vacuous-pass mode
+- [Phase ?]: 03-04: flush() loop restructured to dynamic (re-reads spool each iteration) so a single call can both drop a D-15 rejection and deliver the remainder — required by the plan's own Task 1 acceptance criteria, not a deviation
+- [Phase ?]: 03-04: found and fixed a real infinite-loop bug during testing — a 200 whose acknowledged array does not intersect the batch sent made zero progress but reset the retry counter every time; bounded it with the same MAX_FLUSH_ATTEMPTS backoff policy used for retryable/unreachable
+- [Phase ?]: 03-04: flushOnce now checks res.status before parsing the body — a real 401 is plain text, not JSON, and the old unconditional res.json() call would have misclassified it as unreachable, defeating D-17
 
 ### Pending Todos
 
@@ -105,8 +109,8 @@ None yet.
 
 ## Session Continuity
 
-**Last session:** 2026-08-16T06:43:15.032Z
-**Stopped at:** Completed 03-03-PLAN.md
+**Last session:** 2026-08-16T07:16:39.631Z
+**Stopped at:** Completed 03-04-PLAN.md
 **Resume file:** None
 
 ### If resuming mid-phase

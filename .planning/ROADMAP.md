@@ -84,7 +84,7 @@ delivery; `docs/plans/` and the story board remain the canonical delivery record
   4. When spool capacity is exceeded the oldest event is dropped and a visible counter increments rather than silently filling disk.
   5. Authenticated MCP memory tools and workflow operations pass their existing tests unmodified after all node changes are applied.
 
-**Plans**: 3/6 plans executed
+**Plans**: 4/6 plans executed
 
 **Wave 1**
 
@@ -100,7 +100,7 @@ delivery; `docs/plans/` and the story board remain the canonical delivery record
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [ ] 03-04-PLAN.md — Failure semantics: D-15 permanent rejection, D-17 terminal auth state with bounded backoff, heartbeat/checkpoint reporting, and the D-13 credential-leak gate — EVENT-03, EVENT-04
+- [x] 03-04-PLAN.md — Failure semantics: D-15 permanent rejection, D-17 terminal auth state with bounded backoff, heartbeat/checkpoint reporting, and the D-13 credential-leak gate — EVENT-03, EVENT-04
 
 **Wave 5** *(blocked on Wave 4)*
 
@@ -142,7 +142,7 @@ supporting reason, not the primary one.
 |-------|----------------|--------|-----------|
 | 1. Policy-Scope Pricing | — | ✅ Complete | 2026-08-05 |
 | 2. Remote Node Identity & Hub | 2/2 | ✅ Complete | 2026-08-06 |
-| 3. Node Client, Reliable Delivery & Regression Safety | 3/6 | In Progress|  |
+| 3. Node Client, Reliable Delivery & Regression Safety | 4/6 | In Progress|  |
 | 4. Blocking Evidence & ADR-016 Host Decision | 0/TBD | Not started | - |
 
 ---
