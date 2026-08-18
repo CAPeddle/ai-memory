@@ -67,6 +67,8 @@ The tracked unit of deliverable work, identified by a stable label that appears 
 
 Stories move across a continuous-flow board — backlog, in progress, in review, done — under strict limits on how many may occupy the working states at once, rather than through sprint boundaries. Implementation is gated: a Story needs a board entry and a written Plan before work on it begins.
 
+The commit trailer is load-bearing rather than decorative. Because a Plan records no progress, the trailer is the only thing that makes a Story's shipped work retrievable from history — so a commit that omits it still ships code, but becomes invisible to the Story that owns it.
+
 ### Plan
 The written decision artifact for a Story, carrying its product contract, requirements, and implementation units.
 *Avoid:* ExecPlan — the retired predecessor format, kept only as historical record.

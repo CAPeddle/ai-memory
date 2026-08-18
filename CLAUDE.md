@@ -217,7 +217,11 @@ Story: ST-005
 
 **Squash-merge PRs into `main`.** This is the established convention (every merge on `main` to date) and it fits because PRs here are *story-scoped*: one PR ≈ one `ST-NNN` ≈ one reviewable unit, so a merge commit would group a group of one.
 
-**The load-bearing part is the squash message, not the squash.** It must carry the `Story: ST-NNN` trailer, because that trailer is the only thing that keeps "execution progress is derived from git history" true above — `git log --grep="Story: ST-084"` is how a story's shipped work is found. GitHub's default squash message (PR title + bulleted commit list) **drops the trailer**; write the message deliberately.
+**The load-bearing part is the squash message, not the squash.** It must carry the `Story: ST-NNN` trailer, because that trailer is the only thing that keeps "execution progress is derived from git history" true above — `git log --grep="Story: ST-084"` is how a story's shipped work is found.
+
+**This repo sets squash title to `PR_TITLE` and squash message to `PR_BODY`, so the PR description becomes the commit message verbatim.** That makes the squash message an authored artifact rather than a machine-concatenated one — but it moves the burden to the PR body: **end every PR description with the trailer as its own final paragraph.** Git parses trailers only from the last block, so anything placed after it — an attribution footer, a "Related: #NN" line — silently pushes the trailer out of scope. Verify with `git log -1 --format='%(trailers:key=Story,valueonly)'`, which returns empty when the block is wrong; `--grep` alone will not tell you.
+
+*Historical note, because it changes how you read old commits:* before this setting, GitHub's `COMMIT_MESSAGES` default concatenated the branch's full commit messages into the body. The `Story:` text therefore **did** survive, and `git log --grep` still resolves those commits — it is only the structured `%(trailers)` parser that returns empty for them. `382c291` (PR #46) is a worked example, and it also shows the sharper hazard of that era: it carries both `Story: ST-089` and `Story: ST-088`, so a grep for either resolves the same commit. A multi-story squash blurs attribution no matter which setting is in force.
 
 Squashing does not lose the granular history: GitHub keeps a PR's individual commits browsable even after the branch is deleted, and the durable "how this evolved" knowledge belongs in [docs/solutions/](docs/solutions/) and investigation findings rather than in `main`'s log.
 
