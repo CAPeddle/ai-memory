@@ -79,15 +79,25 @@ docker compose --profile test exec mcp-test deno test --frozen --allow-net --all
 #                       workflow-node-hub-e2e.test.ts (each proves over real HTTP
 #                       something no in-process test can: a mount, or what a boot does
 #                       and does not reach). awcp-cli.test.ts (ST-087) spawns the CLI.
+#                       workflow-node-client-hub-e2e.test.ts (ST-088, Phase 3) also
+#                       spawns one, to prove the real node client's spool clears
+#                       against a real hub process and that the hub's own duplicate
+#                       suppression (EVENT-01) survives a replay — neither is
+#                       observable from an in-process test.
 #                       Find them with: grep -l startServerProcess tests/*.ts
 #   --allow-run=git     awcp-cli.test.ts builds a throwaway repository, because
 #                       server/scripts/awcp.ts derives a checkpoint's repo/branch/commit
 #                       by running git and there is no honest way to prove that without
 #                       giving it a repository.
-#   --allow-write=/tmp  that throwaway repository. Scoped to the temp directory rather
-#                       than opened wholesale.
-# Both run grants name their binary rather than using a bare --allow-run, so the suite
-# does not get unrestricted subprocess-spawn permission. Without them the two files
+#   --allow-write=/tmp  that throwaway repository, plus (ST-088, Phase 3)
+#                       awcp-node-client.test.ts and workflow-node-client-hub-e2e.test.ts:
+#                       the node client's every persisted path (spool, state, node_id)
+#                       is injectable specifically so its tests point at a
+#                       Deno.makeTempDir() under /tmp instead of the runner's real
+#                       ~/.awcp/ — which is what keeps this grant narrow rather than
+#                       widening it to $HOME.
+# All run grants name their binary rather than using a bare --allow-run, so the suite
+# does not get unrestricted subprocess-spawn permission. Without them the files
 # above error rather than skip.
 docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read --allow-write=/tmp --allow-run=deno,git tests/
 
@@ -209,7 +219,13 @@ Story: ST-005
 
 **The load-bearing part is the squash message, not the squash.** It must carry the `Story: ST-NNN` trailer, because that trailer is the only thing that keeps "execution progress is derived from git history" true above — `git log --grep="Story: ST-084"` is how a story's shipped work is found.
 
-**This repo sets squash title to `PR_TITLE` and squash message to `PR_BODY`, so the PR description becomes the commit message verbatim.** That makes the squash message an authored artifact rather than a machine-concatenated one — but it moves the burden to the PR body: **end every PR description with the trailer as its own final paragraph.** Git parses trailers only from the last block, so anything placed after it — an attribution footer, a "Related: #NN" line — silently pushes the trailer out of scope. Verify with `git log -1 --format='%(trailers:key=Story,valueonly)'`, which returns empty when the block is wrong; `--grep` alone will not tell you.
+**This repo sets squash title to `PR_TITLE` and squash message to `PR_BODY`, so the PR description becomes the commit message verbatim.** That makes the squash message an authored artifact rather than a machine-concatenated one — but it imposes two rules, and missing either one silently produces a commit whose trailer does not parse.
+
+**Rule 1 — the trailer must be the last block of the PR body.** Git reads trailers only from the final paragraph, so anything after it (an attribution footer, a "Related: #NN" line) pushes the trailer out of scope. Keep every trailer line contiguous: a blank line between `Story:` and the lines under it splits them into two blocks, and only the last one is read.
+
+**Rule 2 — no commit on the branch may carry a `Co-authored-by:` trailer.** GitHub harvests co-authors from the commits being squashed and appends its own `---------` separator plus a deduped `Co-authored-by:` block **after** your body. That appended block becomes the final paragraph, so `Story:` falls outside it no matter how carefully the body was written. This is not theoretical: every squash on `main` with a co-author (`f19fa47`, `382c291`, `094b141`) has an unparseable `Story` trailer, and every squash without one (`1e15d94`, `5fc4bdf`, `75a40ea`, `d16ed06`, `89648d3`) parses correctly.
+
+Verify with `git log -1 --format='%(trailers:key=Story,valueonly)'` on the merged commit — it returns empty when either rule was broken, and `--grep` alone will not tell you, because the trailer *text* survives in the body either way.
 
 *Historical note, because it changes how you read old commits:* before this setting, GitHub's `COMMIT_MESSAGES` default concatenated the branch's full commit messages into the body. The `Story:` text therefore **did** survive, and `git log --grep` still resolves those commits — it is only the structured `%(trailers)` parser that returns empty for them. `382c291` (PR #46) is a worked example, and it also shows the sharper hazard of that era: it carries both `Story: ST-089` and `Story: ST-088`, so a grep for either resolves the same commit. A multi-story squash blurs attribution no matter which setting is in force.
 

@@ -63,3 +63,6 @@ docs/investigations/whatsapp/*.txt
 
 # Compound Engineering — machine-local config (keep the committed *.example.yaml tracked)
 .compound-engineering/*.local.yaml
+
+# GSD run-scoped dispatch sentinel (ephemeral, per-run)
+.gsd/

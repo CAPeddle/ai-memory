@@ -20,10 +20,10 @@ Requirements for the current ST-088 milestone. Each maps to exactly one roadmap 
 
 ### Reliable Event Delivery
 
-- [ ] **EVENT-01**: Replaying the same `(node_id, client_seq)` event does not create duplicate hub state.
-- [ ] **EVENT-02**: A node disconnected from the hub retains bounded local events and replays them oldest-first after connectivity returns.
-- [ ] **EVENT-03**: A node removes a spooled event only after receiving the hub acknowledgement for that event.
-- [ ] **EVENT-04**: Spool overflow drops the oldest event and records a visible dropped-event counter rather than silently filling disk.
+- [x] **EVENT-01**: Replaying the same `(node_id, client_seq)` event does not create duplicate hub state.
+- [x] **EVENT-02**: A node disconnected from the hub retains bounded local events and replays them oldest-first after connectivity returns.
+- [x] **EVENT-03**: A node removes a spooled event only after receiving the hub acknowledgement for that event.
+- [x] **EVENT-04**: Spool overflow drops the oldest event and records a visible dropped-event counter rather than silently filling disk.
 
 ### Workflow Enforcement Evidence
 
@@ -36,8 +36,8 @@ Requirements for the current ST-088 milestone. Each maps to exactly one roadmap 
 
 ### Regression Safety
 
-- [ ] **SAFE-01**: The existing authenticated MCP memory tools and workflow operations remain functional after remote-node changes.
-- [ ] **SAFE-02**: Tests for the milestone are repeatable against the shared test stack and do not mutate or deactivate seeded search-corpus rows.
+- [x] **SAFE-01**: The existing authenticated MCP memory tools and workflow operations remain functional after remote-node changes.
+- [x] **SAFE-02**: Tests for the milestone are repeatable against the shared test stack and do not mutate or deactivate seeded search-corpus rows.
 
 ## v2 Requirements
 
@@ -74,17 +74,18 @@ Deferred beyond the ST-088 host-viability milestone.
 | NODE-01 | Phase 2 — Remote Node Identity & Hub | Pending |
 | NODE-02 | Phase 2 — Remote Node Identity & Hub | Pending |
 | NODE-03 | Phase 2 — Remote Node Identity & Hub | Pending |
-| EVENT-01 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Pending |
-| EVENT-02 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Pending |
-| EVENT-03 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Pending |
-| EVENT-04 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Pending |
-| SAFE-01 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Pending |
-| SAFE-02 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Pending |
+| EVENT-01 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Complete |
+| EVENT-02 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Complete |
+| EVENT-03 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Complete |
+| EVENT-04 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Complete |
+| SAFE-01 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Complete |
+| SAFE-02 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Complete |
 | BLOCK-01 | Phase 4 — Blocking Evidence & ADR-016 Host Decision | Pending |
 | HOST-01 | Phase 4 — Blocking Evidence & ADR-016 Host Decision | Pending |
 | HOST-02 | Phase 4 — Blocking Evidence & ADR-016 Host Decision | Pending |
 
 **Coverage:**
+
 - v1 requirements: 14 total
 - Mapped to phases: 14
 - Unmapped: 0 ✓

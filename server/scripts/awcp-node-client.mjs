@@ -1,0 +1,958 @@
+#!/usr/bin/env node
+/**
+ * ST-088 — `awcp-node-client`, the remote execution node's local event producer.
+ *
+ * One job: spool execution events durably on disk on the node (z2), then deliver them
+ * to the already-shipped hub (`server/src/workflow/remoteNodeHub.ts`) exactly once,
+ * surviving disconnection and process restarts. It deliberately does NOT open a
+ * control channel, hold a database credential, or expose an MCP surface — everything
+ * this client can do, the hub's two HTTP endpoints (`/workflow/nodes/register`,
+ * `/workflow/nodes/:node_id/events`) can do, so there is no privileged back channel
+ * with its own rules.
+ *
+ * **Tracer scope** (ST-088 Phase 3, `03-02-PLAN.md` Task 1) plus **03-03's expansion**
+ * (bounding, eviction, visible drop counter, multi-batch flush, D-14 restart proof)
+ * plus **03-04's terminal states** (D-15 permanent-rejection dropping, D-17 auth
+ * termination, bounded backoff, heartbeat/checkpoint reporting, the run loop).
+ * The client now spools durably, bounds the spool at a configured entry count
+ * (`config.spoolMaxEntries`, default `DEFAULT_SPOOL_MAX_ENTRIES`), evicts oldest-first
+ * on overflow with a persisted+stderr-logged drop counter, and flushes in batches of
+ * at most `FLUSH_MAX_EVENTS`, removing an entry only after a 200 names its
+ * `client_seq` — never on send, never on retry attempt. Every non-200 the hub can
+ * return now maps to a stated outcome (`flushOnce`'s outcome union); `flush()` retries
+ * only the retryable ones, with bounded backoff, and reaches a terminal state on every
+ * other failure — never retrying forever. Heartbeat and checkpoint are ordinary spooled
+ * events (`event_type: "heartbeat"` / `"checkpoint"`) riding the same durability and
+ * ack-gating guarantees as everything else — there is no second delivery mechanism.
+ *
+ * **Credentials — what is read, how long it lives, what a leak costs.**
+ *   - `AWCP_NODE_BEARER` — this node's own 64-lowercase-hex credential
+ *     (`openssl rand -hex 32`, matching `remoteNodeHub.ts`'s `BEARER_FORMAT`). Read
+ *     once per process from the environment, held only in memory, sent on every
+ *     request as `Authorization: Bearer <...>`. A leak lets an attacker impersonate
+ *     this node — write forged events attributed to it — until the operator rotates
+ *     the credential hub-side (there is no per-node revocation today; see
+ *     `03-CONTEXT.md`).
+ *   - `AWCP_NODE_ENROLMENT_SECRET` — the operator's one-time enrolment secret. Read
+ *     once from the environment, sent ONLY on the first registration of a node whose
+ *     `node_id` this client has not yet persisted (`X-Node-Enrolment-Secret`), and
+ *     never written to disk. A leak lets an attacker enrol an arbitrary bearer as a
+ *     trusted node for as long as the hub's enrolment window stays open.
+ *   - Neither value is ever persisted under `~/.awcp/` or printed. Only the returned
+ *     `node_id` — an unguessable v4 uuid with no standalone authority — is written to
+ *     disk, at mode 0600 inside a 0700 directory (D-16).
+ *
+ * Env vars read: `AWCP_HOME`, `AWCP_HUB_URL`, `AWCP_NODE_BEARER`,
+ * `AWCP_NODE_ENROLMENT_SECRET`.
+ */
+
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  writeSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
+import { homedir, hostname as osHostname } from "node:os";
+import { pathToFileURL } from "node:url";
+import { randomBytes } from "node:crypto";
+
+/**
+ * Client-side per-flush cap. Matches the hub's `eventsBody.max(500)`
+ * (`remoteNodeHub.ts`), so a self-imposed cap here makes that bound unreachable by
+ * construction — the client never needs to parse the `.max(500)` 400 shape at all.
+ */
+export const FLUSH_MAX_EVENTS = 500;
+
+/**
+ * Matches `remoteNodeHub.ts`'s `MAX_PAYLOAD_BYTES`. Fast-fail-only in this tracer —
+ * the hub remains the authority; client-side enforcement of this bound arrives in
+ * 03-04 alongside the 400 `issues[].client_seq` drop-and-count handling (D-15).
+ */
+export const MAX_PAYLOAD_BYTES = 16_384;
+
+/** Matches `remoteNodeHub.ts`'s `BEARER_FORMAT`: 32 random bytes as 64 lowercase hex. */
+export const BEARER_FORMAT = /^[0-9a-f]{64}$/;
+
+/**
+ * Entry-count bound for the spool (criterion 4, EVENT-04, 03-03). An entry count
+ * rather than a byte count: at 1000 entries of at most MAX_PAYLOAD_BYTES (16384) each,
+ * the worst case is ~16 MiB — bounded, small, and trivially assertable without a
+ * second byte-accounting pass. Overridable via `AWCP_SPOOL_MAX_ENTRIES`.
+ */
+export const DEFAULT_SPOOL_MAX_ENTRIES = 1000;
+
+/**
+ * Retry ceiling for `flush()`'s `retryable`/`unreachable` outcomes (D-17). Six attempts
+ * — the initial try plus five retries — bounded so a hub that is down does not retry
+ * forever against a host published on all interfaces (T-03-04-02).
+ */
+export const MAX_FLUSH_ATTEMPTS = 6;
+
+/** Base delay, milliseconds, for `flush()`'s exponential backoff (Claude's Discretion). */
+export const BACKOFF_BASE_MS = 1000;
+
+/** Ceiling, milliseconds, on any single backoff delay — applied AFTER jitter, so the
+ * ceiling is a true ceiling on the value actually waited, not on the pre-jitter base. */
+export const BACKOFF_CAP_MS = 30_000;
+
+/**
+ * Liveness cadence for `runAgent`'s heartbeat tick (Claude's Discretion — inclusion is
+ * settled by the Phase Boundary, only cadence is open). One minute is frequent enough
+ * to be a useful liveness signal and cheap enough that a day of continuous running is
+ * under 1500 events against a 1000-entry spool that drains continuously. Overridable
+ * via `AWCP_HEARTBEAT_INTERVAL_MS`.
+ */
+export const DEFAULT_HEARTBEAT_INTERVAL_MS = 60_000;
+
+/** Default tick source for `flush()`'s backoff and `runAgent`'s heartbeat interval. */
+function defaultSleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** A non-2xx response from the hub, carrying the status for the caller to branch on. */
+export class AwcpHttpError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.name = "AwcpHttpError";
+    this.status = status;
+  }
+}
+
+/**
+ * Suppress only the Node 18 `ExperimentalWarning: The Fetch API is an experimental
+ * feature` notice (D-06). Every other warning — including other experimental ones —
+ * passes through unchanged, because captured stderr is evidence in this phase and a
+ * blanket `--no-warnings` would silence genuine runtime warnings inside that same
+ * evidence.
+ */
+const originalEmitWarning = process.emitWarning.bind(process);
+process.emitWarning = (warning, ...rest) => {
+  const nameArg = rest[0];
+  const name = typeof nameArg === "string" ? nameArg : nameArg?.type;
+  const message = typeof warning === "string"
+    ? warning
+    : warning?.message ?? "";
+  if (name === "ExperimentalWarning" && /Fetch API/i.test(message)) return;
+  return originalEmitWarning(warning, ...rest);
+};
+
+/** `hostname()` under Deno's `node:os` shim may be permission-gated; degrade quietly. */
+function detectHostname() {
+  try {
+    return osHostname();
+  } catch {
+    return undefined;
+  }
+}
+
+function writeFileFsync(path, content, mode) {
+  const fd = openSync(path, "w", mode);
+  try {
+    writeSync(fd, content);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+  // openSync's mode argument only applies at creation; chmod unconditionally so an
+  // existing file with a stale mode still ends up at the mode this client requires.
+  chmodSync(path, mode);
+}
+
+function appendLineFsync(path, line, mode) {
+  const fd = openSync(path, "a", mode);
+  try {
+    writeSync(fd, line);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+  chmodSync(path, mode);
+}
+
+/**
+ * Every persisted path and every dependency is a parameter with a production default
+ * applied only when an override is absent (RESEARCH.md Pattern 3) — so a test can
+ * point this at `/tmp` and stay inside CLAUDE.md's existing `--allow-write=/tmp`
+ * grant, and 03-03/03-04 can inject `fetchImpl` to exercise failure branches with no
+ * server at all.
+ */
+export function resolveConfig(overrides = {}) {
+  const home = overrides.home ?? process.env.AWCP_HOME ??
+    join(homedir(), ".awcp");
+  const hubUrl = (
+    overrides.hubUrl ?? process.env.AWCP_HUB_URL ?? "http://127.0.0.1:3000"
+  ).replace(/\/+$/, "");
+  const rawSpoolMax = process.env.AWCP_SPOOL_MAX_ENTRIES;
+  const parsedSpoolMax = rawSpoolMax ? Number.parseInt(rawSpoolMax, 10) : NaN;
+  const envSpoolMax = Number.isFinite(parsedSpoolMax) && parsedSpoolMax > 0
+    ? parsedSpoolMax
+    : DEFAULT_SPOOL_MAX_ENTRIES;
+  const rawHeartbeatMs = process.env.AWCP_HEARTBEAT_INTERVAL_MS;
+  const parsedHeartbeatMs = rawHeartbeatMs
+    ? Number.parseInt(rawHeartbeatMs, 10)
+    : NaN;
+  const envHeartbeatMs =
+    Number.isFinite(parsedHeartbeatMs) && parsedHeartbeatMs > 0
+      ? parsedHeartbeatMs
+      : DEFAULT_HEARTBEAT_INTERVAL_MS;
+  return {
+    home,
+    spoolPath: overrides.spoolPath ?? join(home, "spool.jsonl"),
+    seqPath: overrides.seqPath ?? join(home, "client_seq"),
+    nodeIdPath: overrides.nodeIdPath ?? join(home, "node_id"),
+    statePath: overrides.statePath ?? join(home, "state.json"),
+    hubUrl,
+    bearer: overrides.bearer ?? process.env.AWCP_NODE_BEARER ?? "",
+    enrolmentSecret: overrides.enrolmentSecret ??
+      process.env.AWCP_NODE_ENROLMENT_SECRET ?? "",
+    fetchImpl: overrides.fetchImpl ?? globalThis.fetch,
+    // Criterion 4 (EVENT-04, 03-03): bound expressed as an entry count, injectable so
+    // tests can exercise eviction with a small cap without waiting on 1000 appends.
+    spoolMaxEntries: overrides.spoolMaxEntries ?? envSpoolMax,
+    // Every structured "visible drop" line (recordDrops) is routed through this one
+    // seam rather than a bare `process.stderr.write` call, so a test can inject a
+    // collector instead of eyeballing captured output. Defaulted, never widened by a
+    // test that forgets to override it — production behavior is unchanged.
+    stderrWrite: overrides.stderrWrite ??
+      ((line) => process.stderr.write(line)),
+    // 03-04: heartbeat cadence, and the two seams that let `flush()`'s backoff and
+    // `runAgent`'s heartbeat tick be driven by a test without ever sleeping in real
+    // time (D-13's gate and every retry/backoff test rely on these being injectable).
+    heartbeatIntervalMs: overrides.heartbeatIntervalMs ?? envHeartbeatMs,
+    sleepImpl: overrides.sleepImpl ?? defaultSleep,
+    randomImpl: overrides.randomImpl ?? Math.random,
+  };
+}
+
+/** Create `config.home` at mode 0700. Idempotent — safe to call before every write. */
+export function ensureStateDir(config) {
+  mkdirSync(config.home, { recursive: true, mode: 0o700 });
+  // mkdirSync's mode only applies at creation; chmod unconditionally for the same
+  // reason writeFileFsync does — an existing dir must still end up at 0700.
+  chmodSync(config.home, 0o700);
+  return config;
+}
+
+/**
+ * Read-increment-write `config.seqPath`, fsync before returning. NEVER reads
+ * `spoolPath` (D-14) — deriving the next seq from the spool's last line resets to 0
+ * every time the spool drains, which is the steady state after every successful
+ * flush, not an edge case; the hub's `ON CONFLICT (node_id, client_seq) DO NOTHING`
+ * would then silently discard the next event's new content. A missing counter file
+ * starts at 1.
+ */
+export function allocateSeq(config) {
+  ensureStateDir(config);
+  let current = 0;
+  if (existsSync(config.seqPath)) {
+    const raw = readFileSync(config.seqPath, "utf8").trim();
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isFinite(parsed) && parsed >= 0) current = parsed;
+  }
+  const next = current + 1;
+  writeFileFsync(config.seqPath, String(next), 0o600);
+  return next;
+}
+
+/**
+ * Allocate a seq and append one JSON line to the spool, fsync'd before returning.
+ * A plain append does not need the rewrite-and-rename dance — only shrinking the
+ * spool (post-ack removal, future overflow eviction) does.
+ */
+export function appendEvent(config, event) {
+  ensureStateDir(config);
+  const seq = allocateSeq(config);
+  const line = JSON.stringify({
+    client_seq: seq,
+    event_type: event.event_type,
+    payload: event.payload === undefined ? null : event.payload,
+    queued_at: new Date().toISOString(),
+  }) + "\n";
+  appendLineFsync(config.spoolPath, line, 0o600);
+
+  // Criterion 4 (EVENT-04): evict AFTER appending, never before, so the newest event
+  // is never the one dropped — "drop the oldest" is the stated contract, and evicting
+  // pre-append would risk dropping an event that never even entered the spool.
+  const cap = config.spoolMaxEntries ?? DEFAULT_SPOOL_MAX_ENTRIES;
+  const currentLength = readSpool(config).length;
+  if (currentLength > cap) {
+    evictOldest(config, currentLength - cap);
+  }
+
+  return seq;
+}
+
+/** Read the spool oldest-first. Missing file reads as an empty spool. */
+export function readSpool(config) {
+  if (!existsSync(config.spoolPath)) return [];
+  const raw = readFileSync(config.spoolPath, "utf8");
+  return raw
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .map((line) => JSON.parse(line));
+}
+
+/**
+ * Rewrite-and-rename (RESEARCH.md Pattern 1): write the full new line set to a temp
+ * file in the same directory, `fsyncSync` it, then `renameSync` over the target.
+ * `rename()` is atomic on the same POSIX filesystem, so a crash mid-write leaves
+ * either the old complete spool or the new one — never a truncated one. A plain
+ * `writeSync` without `fsyncSync` is not sufficient: a synchronous Node write blocks
+ * the event loop but does not force the OS page cache to disk.
+ */
+export function writeSpool(config, entries) {
+  ensureStateDir(config);
+  const tmpPath = join(
+    dirname(config.spoolPath),
+    `.spool.${process.pid}.${randomBytes(4).toString("hex")}.tmp`,
+  );
+  const content = entries.length === 0
+    ? ""
+    : entries.map((entry) => JSON.stringify(entry)).join("\n") + "\n";
+  const fd = openSync(tmpPath, "w", 0o600);
+  try {
+    writeSync(fd, content);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+  // Test-only seam (03-03): a config carrying `beforeRename` can simulate a crash
+  // between the durable temp-file write above and the atomic rename below — the temp
+  // file already exists and is fsync'd, so throwing here proves the ORIGINAL
+  // spool.jsonl survives byte-identical. Never set in production; resolveConfig does
+  // not default this field, so a config built the normal way never carries it.
+  if (typeof config.beforeRename === "function") {
+    config.beforeRename(tmpPath);
+  }
+  renameSync(tmpPath, config.spoolPath);
+}
+
+/**
+ * Read `<home>/state.json`. A missing file reads as the zeroed default — the drop
+ * counter has never fired yet, which is exactly what "no file" should mean.
+ */
+const DEFAULT_DROP_STATE = Object.freeze({
+  dropped_events: 0,
+  last_drop_at: null,
+  last_dropped_client_seq: null,
+  last_drop_reason: null,
+});
+
+export function readState(config) {
+  if (!existsSync(config.statePath)) return { ...DEFAULT_DROP_STATE };
+  const raw = readFileSync(config.statePath, "utf8");
+  try {
+    return { ...DEFAULT_DROP_STATE, ...JSON.parse(raw) };
+  } catch {
+    return { ...DEFAULT_DROP_STATE };
+  }
+}
+
+/**
+ * Rewrite-and-rename `<home>/state.json`, mode 0600 — a torn counter file is as bad as
+ * a torn spool (T-03-03-02): the same primitive `writeSpool` uses for its two
+ * shrink operations, applied here because this file's write is also a full-content
+ * replace, never an append.
+ */
+export function writeState(config, state) {
+  ensureStateDir(config);
+  const tmpPath = join(
+    dirname(config.statePath),
+    `.state.${process.pid}.${randomBytes(4).toString("hex")}.tmp`,
+  );
+  const fd = openSync(tmpPath, "w", 0o600);
+  try {
+    writeSync(fd, JSON.stringify(state));
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+  renameSync(tmpPath, config.statePath);
+}
+
+/**
+ * The third leg of "visible" (criterion 4): increments `dropped_events` by
+ * `seqs.length`, updates the `last_*` fields, persists to `state.json`, and writes one
+ * structured line per dropped seq to STDERR — never stdout, because captured stderr is
+ * evidence in this phase and a drop that never appears in the transcript is exactly
+ * the silent failure criterion 4 forbids. Shared by overflow eviction (03-03) and
+ * D-15's permanent-rejection drops (03-04) — one counter, two causes, distinguished by
+ * `reason`.
+ */
+export function recordDrops(config, seqs, reason) {
+  if (!seqs || seqs.length === 0) return readState(config);
+  let state = readState(config);
+  const write = config.stderrWrite ?? ((line) => process.stderr.write(line));
+  for (const seq of seqs) {
+    state = {
+      dropped_events: state.dropped_events + 1,
+      last_drop_at: new Date().toISOString(),
+      last_dropped_client_seq: seq,
+      last_drop_reason: reason,
+    };
+    write(
+      `awcp-node-client: dropped client_seq=${seq} reason=${reason} ` +
+        `dropped_events_total=${state.dropped_events}\n`,
+    );
+  }
+  writeState(config, state);
+  return state;
+}
+
+/**
+ * Removes the `count` lowest-`client_seq` entries from the spool via `writeSpool`
+ * (the same rewrite-and-rename primitive that shrinks it on ack) and records the drop.
+ * Returns the dropped seqs.
+ */
+export function evictOldest(config, count) {
+  if (!count || count <= 0) return [];
+  const entries = readSpool(config);
+  const toEvict = entries.slice(0, count);
+  if (toEvict.length === 0) return [];
+  const remaining = entries.slice(toEvict.length);
+  writeSpool(config, remaining);
+  const seqs = toEvict.map((entry) => entry.client_seq);
+  recordDrops(config, seqs, "spool_overflow");
+  return seqs;
+}
+
+/**
+ * Register this node with the hub. On a bearer the hub has never seen, this is the
+ * one-time enrolment handshake (D-11/D-12); on a bearer the hub already knows, it is
+ * an ordinary re-register-on-boot. Persists ONLY the returned `node_id` — never the
+ * bearer, never the enrolment secret (D-12, D-13).
+ *
+ * Fails fast on a malformed bearer before spending a round trip; the hub remains the
+ * authority on whether the bearer is actually enrolled.
+ */
+export async function registerNode(config) {
+  ensureStateDir(config);
+  if (!BEARER_FORMAT.test(config.bearer ?? "")) {
+    throw new Error(
+      "AWCP_NODE_BEARER is not a well-formed 64-lowercase-hex bearer (^[0-9a-f]{64}$)",
+    );
+  }
+
+  const hasPersistedNodeId = existsSync(config.nodeIdPath);
+  const headers = {
+    "Authorization": `Bearer ${config.bearer}`,
+    "Content-Type": "application/json",
+  };
+  // Only on a node this client has never registered before, and only when the
+  // enrolment secret is actually present — every later registration authenticates
+  // with nothing but its own bearer (D-11's ssh-copy-id model).
+  if (!hasPersistedNodeId && config.enrolmentSecret) {
+    headers["X-Node-Enrolment-Secret"] = config.enrolmentSecret;
+  }
+
+  const res = await config.fetchImpl(
+    `${config.hubUrl}/workflow/nodes/register`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        hostname: detectHostname(),
+        platform: process.platform,
+      }),
+    },
+  );
+
+  if (res.status !== 201) {
+    const text = await res.text().catch(() => "");
+    throw new AwcpHttpError(
+      res.status,
+      `registerNode failed: ${res.status} ${text}`,
+    );
+  }
+
+  const body = await res.json();
+  writeFileFsync(config.nodeIdPath, body.node_id, 0o600);
+  return body.node_id;
+}
+
+/**
+ * POST one batch to `<hubUrl>/workflow/nodes/<node_id>/events` and classify the
+ * response into a stated outcome. NEVER throws on a non-2xx response (03-04) — every
+ * status the hub can return maps to an outcome the caller branches on explicitly,
+ * which is what makes "no failure retries forever" checkable rather than argued.
+ *
+ * Outcomes: `{outcome:"acked", acked, acknowledged}` · `{outcome:"rejected", rejected}`
+ * (a 400 whose `issues` elements carry a numeric `client_seq` — D-15's oversized-single-
+ * -payload path) · `{outcome:"malformed", detail}` (a 400 with any other body shape —
+ * unreachable in normal operation because `FLUSH_MAX_EVENTS` already caps every batch
+ * at the hub's `.max(500)`, so a zod-issue-shaped 400 means something is actually
+ * wrong and must be loud rather than silently absorbed as a mystery drop) ·
+ * `{outcome:"terminal_auth"}` (401 — D-17) · `{outcome:"unknown_node"}` (404) ·
+ * `{outcome:"too_large"}` (413) · `{outcome:"retryable", status}` (5xx, or any other
+ * unrecognised non-2xx — treated as retryable rather than silently dropped, since an
+ * unrecognised status is not evidence the batch was ever processed) ·
+ * `{outcome:"unreachable", error}` (`fetchImpl` itself threw — no response exists).
+ *
+ * STATUS BEFORE BODY, always. A real 401 is `new Response("Unauthorized", {status:401})`
+ * — plain text, not JSON (`remoteNodeHub.ts:110`). Calling `res.json()` before checking
+ * `res.status` throws a `SyntaxError` on that response, which the old (03-02/03-03)
+ * unconditional `await res.json()` did — misclassifying a real 401 as `"unreachable"`,
+ * the exact failure D-17 exists to prevent. Only the statuses that actually return a
+ * JSON body (400) are parsed here.
+ *
+ * `acked` is `body.acknowledged.map((a) => a.client_seq)`, read as whatever JS type
+ * `JSON.parse` produced for the wire value — no `Number()` coercion is applied here.
+ * The hub's `store.acknowledgeSeqs` already coerces `client_seq` to a JS number
+ * server-side (`store.ts:840-857`); comparing spool entries (also JS numbers, from
+ * `JSON.parse`d spool JSONL) against an uncoerced ack value is what makes a hub-side
+ * regression on that coercion visible here instead of silently retrying forever.
+ */
+export async function flushOnce(config, batch) {
+  const nodeId = readFileSync(config.nodeIdPath, "utf8").trim();
+  let res;
+  try {
+    res = await config.fetchImpl(
+      `${config.hubUrl}/workflow/nodes/${nodeId}/events`,
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${config.bearer}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ events: batch }),
+      },
+    );
+  } catch (error) {
+    return { outcome: "unreachable", error };
+  }
+
+  if (res.status === 401) return { outcome: "terminal_auth" };
+  if (res.status === 404) return { outcome: "unknown_node" };
+  if (res.status === 413) return { outcome: "too_large" };
+  if (res.status === 400) {
+    const body = await res.json();
+    const issues = body.issues;
+    // D-15/RESEARCH.md Pitfall 2: the two 400 shapes differ by whether each issue
+    // carries a numeric client_seq — detect BY THAT, not by the mere presence of
+    // `issues`, which both shapes have.
+    const isPerEventRejection = Array.isArray(issues) && issues.length > 0 &&
+      issues.every((issue) => typeof issue?.client_seq === "number");
+    if (isPerEventRejection) {
+      return {
+        outcome: "rejected",
+        rejected: issues.map((issue) => issue.client_seq),
+      };
+    }
+    return { outcome: "malformed", detail: body };
+  }
+  if (res.status !== 200) {
+    // 5xx, and any other non-2xx the hub is not documented to return: retryable.
+    // Unrecognised is not evidence the batch was processed, so it must not be
+    // silently dropped — only D-15's named-client_seq rejection may drop anything.
+    return { outcome: "retryable", status: res.status };
+  }
+
+  const body = await res.json();
+  const acknowledged = body.acknowledged;
+  const acked = acknowledged.map((entry) => entry.client_seq);
+  return { outcome: "acked", acked, acknowledged };
+}
+
+/**
+ * Read the spool oldest-first and flush it, removing ONLY the entries a 200 actually
+ * acknowledged — never on send, never on retry attempt (EVENT-03) — and mapping every
+ * outcome `flushOnce` can return onto a terminal state or a bounded retry (D-15/D-17):
+ *
+ *   - `acked`      → remove the acknowledged entries, loop again (more batches may
+ *                    remain — this is what lets a single `flush()` call both drop a
+ *                    D-15 rejection AND then deliver the remainder in the same call).
+ *   - `rejected`    → remove exactly the named `client_seq` values via `writeSpool`,
+ *                    `recordDrops(..., "permanent_rejection")`, loop again. Retrying a
+ *                    permanent rejection is the livelock D-15 exists to prevent: the
+ *                    hub rejected the whole batch before storing or acking anything,
+ *                    ack-before-drop forbids removal, and every entry queued behind the
+ *                    offender would be blocked with it. Guarded: if the rejected seqs
+ *                    do not intersect the batch actually sent, dropping would remove
+ *                    nothing and loop forever — that condition is treated as
+ *                    `malformed` and stops instead of spinning.
+ *   - `terminal_auth`, `unknown_node`, `too_large`, `malformed` → stop immediately,
+ *                    spool untouched, one structured stderr line naming the reason.
+ *                    None of these improve by being repeated (D-17).
+ *   - `retryable`, `unreachable` → back off (`config.sleepImpl`, jitter from
+ *                    `config.randomImpl`) and retry the SAME batch, up to
+ *                    `MAX_FLUSH_ATTEMPTS` attempts total. On exhaustion, return
+ *                    `"deferred"` with the spool intact — the caller's next scheduled
+ *                    call retries from scratch. `flushOnce`'s `"unreachable"` outcome
+ *                    is real and still returned per-attempt; at this function's return
+ *                    value it is superseded by `"deferred"` once attempts are exhausted,
+ *                    which is why `flush()` never itself returns `"unreachable"`.
+ *
+ * The attempt counter resets to zero on any batch that makes progress (`acked` or
+ * `rejected`) — `MAX_FLUSH_ATTEMPTS` bounds CONSECUTIVE non-progress attempts, not the
+ * total number of HTTP calls in a long flush.
+ *
+ * Returns `{outcome, acked, delivered, remaining}`. `acked` and `delivered` are the
+ * same array (the cumulative client_seqs removed across every batch this call
+ * completed) — `acked` is kept for 03-02 tracer-test compatibility, `delivered` is the
+ * name this plan's action text specifies. `remaining` is the spool's length after this
+ * call returns.
+ */
+export async function flush(config) {
+  const sleepImpl = config.sleepImpl ?? defaultSleep;
+  const randomImpl = config.randomImpl ?? Math.random;
+  const write = config.stderrWrite ?? ((line) => process.stderr.write(line));
+  const delivered = [];
+  let attempt = 0;
+
+  // `outcome` is the value callers branch on (main()'s exit-code switch, every
+  // acceptance test) — the enum member flushOnce returned. `lineReason` is ONLY the
+  // word in the stderr line and may differ (terminal_auth's line says
+  // "reason=auth_failed", matching the plan's literal wording, while its outcome
+  // stays "terminal_auth"). Conflating the two previously made `result.outcome` read
+  // "auth_failed", which nothing branching on `"terminal_auth"` recognised.
+  const stopTerminal = (outcome, lineReason = outcome) => {
+    const spooled = readSpool(config).length;
+    write(
+      `awcp-node-client: terminal reason=${lineReason} spooled_events=${spooled}\n`,
+    );
+    return { outcome, acked: delivered, delivered, remaining: spooled };
+  };
+
+  // Shared by the retryable/unreachable branch AND the zero-progress-"acked" guard
+  // below: increments the attempt counter, backs off (or returns null once
+  // MAX_FLUSH_ATTEMPTS is exhausted, telling the caller to stop and defer). One place
+  // for "how many times, how long between" so the two callers cannot drift apart.
+  const backoffOrDefer = async () => {
+    attempt += 1;
+    if (attempt >= MAX_FLUSH_ATTEMPTS) {
+      return null;
+    }
+    const raw = BACKOFF_BASE_MS * 2 ** (attempt - 1);
+    const jitterFactor = 1 + (randomImpl() * 0.4 - 0.2); // +/-20%
+    const delay = Math.min(BACKOFF_CAP_MS, Math.round(raw * jitterFactor));
+    await sleepImpl(delay);
+    return delay;
+  };
+  const deferred = () => {
+    const spooled = readSpool(config).length;
+    return {
+      outcome: "deferred",
+      acked: delivered,
+      delivered,
+      remaining: spooled,
+    };
+  };
+
+  // The only way out of this loop besides an early `return` (terminal state or
+  // exhausted retries) is the spool draining to empty — so "acked" is the only
+  // outcome the final return below can ever report. Progress made ONLY via drops
+  // (every spooled entry rejected, none ever ack'd) still ends here and is still
+  // reported as "acked": the flush ran to completion with nothing left to do, which is
+  // the accurate top-level summary even though `delivered` may be shorter than what
+  // was originally spooled.
+  while (true) {
+    const entries = readSpool(config);
+    if (entries.length === 0) break;
+    const batchEntries = entries.slice(0, FLUSH_MAX_EVENTS);
+    const batch = batchEntries.map((entry) => ({
+      client_seq: entry.client_seq,
+      event_type: entry.event_type,
+      payload: entry.payload,
+    }));
+
+    const result = await flushOnce(config, batch);
+
+    if (result.outcome === "acked") {
+      const ackedSeqs = new Set(result.acked);
+      const remaining = entries.filter((entry) =>
+        !ackedSeqs.has(entry.client_seq)
+      );
+      // Rule 1 fix (found during Task 1 testing): a 200 whose `acknowledged` array
+      // does not actually intersect the batch just sent removes nothing, and
+      // resetting the attempt counter on it — as every genuine ack does — spins
+      // forever, since the exact same non-matching response keeps arriving for the
+      // exact same unchanged spool. This cannot happen against the real hub (its
+      // read-back ack always covers every event it just accepted, store.ts:807-857),
+      // but the client must not trust that as a liveness guarantee from an
+      // adversarial or buggy response. Bounded the same way as retryable/unreachable.
+      if (remaining.length === entries.length) {
+        const delay = await backoffOrDefer();
+        if (delay === null) return deferred();
+        continue;
+      }
+      attempt = 0;
+      writeSpool(config, remaining);
+      delivered.push(...result.acked);
+      continue;
+    }
+
+    if (result.outcome === "rejected") {
+      const rejectedSeqs = new Set(result.rejected);
+      const matched = batchEntries.filter((entry) =>
+        rejectedSeqs.has(entry.client_seq)
+      );
+      if (matched.length === 0) {
+        // The hub named seqs that are not in the batch we sent — dropping would
+        // remove nothing, which would spin forever. Not the D-15 case; loud instead.
+        return stopTerminal("malformed");
+      }
+      attempt = 0;
+      const remaining = entries.filter((entry) =>
+        !rejectedSeqs.has(entry.client_seq)
+      );
+      writeSpool(config, remaining);
+      recordDrops(
+        config,
+        matched.map((entry) => entry.client_seq),
+        "permanent_rejection",
+      );
+      continue;
+    }
+
+    if (
+      result.outcome === "terminal_auth" ||
+      result.outcome === "unknown_node" ||
+      result.outcome === "too_large" ||
+      result.outcome === "malformed"
+    ) {
+      const lineReason = result.outcome === "terminal_auth"
+        ? "auth_failed"
+        : result.outcome;
+      return stopTerminal(result.outcome, lineReason);
+    }
+
+    // retryable | unreachable
+    const delay = await backoffOrDefer();
+    if (delay === null) return deferred();
+  }
+
+  return { outcome: "acked", acked: delivered, delivered, remaining: 0 };
+}
+
+/**
+ * Read `config.nodeIdPath` if it exists, else `null` (never `undefined` —
+ * `JSON.stringify` drops `undefined`-valued keys, and the checkpoint payload's
+ * `node_id` key must always be present per the plan's acceptance criteria).
+ */
+function readNodeIdOrNull(config) {
+  try {
+    if (!existsSync(config.nodeIdPath)) return null;
+    return readFileSync(config.nodeIdPath, "utf8").trim();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Append one `event_type: "heartbeat"` event with `{spooled_events, dropped_events,
+ * uptime_ms}`. Not a new endpoint — an ordinary spooled event riding the same
+ * durability and ack-gating guarantees as everything else (there is no heartbeat
+ * route on the hub; `remoteNodeHub.ts:8-12`). Returns the allocated `client_seq`.
+ */
+export function emitHeartbeat(config, startedAtMs) {
+  const spooled = readSpool(config).length;
+  const state = readState(config);
+  return appendEvent(config, {
+    event_type: "heartbeat",
+    payload: {
+      spooled_events: spooled,
+      dropped_events: state.dropped_events,
+      uptime_ms: Date.now() - startedAtMs,
+    },
+  });
+}
+
+/**
+ * Append one `event_type: "checkpoint"` event whose payload merges the caller's JSON
+ * with `{node_id, hostname, spooled_events, dropped_events}` — the fixed fields last,
+ * so they are never shadowed by a caller-supplied key of the same name. Same
+ * ordinary-event mechanism as `emitHeartbeat`; no control channel, no new hub route.
+ * Returns the allocated `client_seq`.
+ *
+ * Payloads are deliberately synthetic: counters, a timestamp, hostname, node_id —
+ * nothing derived from the machine's working directory or repository contents.
+ * `03-CONTEXT.md` flags payload content as an unresolved FYI given D-03's permanent
+ * retention; this keeps the answer trivially safe until that is decided. Unlike
+ * `server/scripts/awcp.ts`'s checkpoint (which shells out to `git` for repo/branch/
+ * commit), this client does not import `node:child_process` or invoke `git` at all —
+ * doing so would both widen that content question and force a new `--allow-run`
+ * grant onto the in-process test file (D-09).
+ */
+export function emitCheckpoint(config, payload = {}) {
+  const spooled = readSpool(config).length;
+  const state = readState(config);
+  return appendEvent(config, {
+    event_type: "checkpoint",
+    payload: {
+      ...payload,
+      node_id: readNodeIdOrNull(config),
+      hostname: detectHostname() ?? "unknown",
+      spooled_events: spooled,
+      dropped_events: state.dropped_events,
+    },
+  });
+}
+
+/**
+ * The long-running loop: emit a start checkpoint, flush; then on every tick emit a
+ * heartbeat and flush again; on a stop signal, emit a stop checkpoint, flush once
+ * more, and finish. Exits immediately — no further tick, no stop checkpoint — if any
+ * flush returns `"terminal_auth"`, propagating exit code 77 (D-17: the client must
+ * not keep ticking against a hub that has already refused it).
+ *
+ * Returns `{stop, done}`. `stop()` is a synchronous, idempotent signal — set a flag
+ * checked between ticks — NOT a real `SIGINT`/`SIGTERM` handler: registering a live
+ * signal handler here would hijack the host process's Ctrl-C and accumulate listeners
+ * across repeated calls (every call to `runAgent`, e.g. once per test, would add
+ * another). `main`'s `"run"` command is the one real (non-test) caller that wires an
+ * OS signal to `stop()` — see its definition below. `done` resolves to
+ * `{exitCode, terminal}` once the loop (or the terminal exit) completes.
+ *
+ * The tick source is `config.sleepImpl` (D-13/D-17's existing seam, reused rather
+ * than inventing a second one) — production ticks on a real timer via `defaultSleep`;
+ * a test drives ticks deterministically by controlling when each `sleepImpl` call
+ * resolves, with no real waiting.
+ */
+export function runAgent(config) {
+  const sleepImpl = config.sleepImpl ?? defaultSleep;
+  const interval = config.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
+  const startedAtMs = Date.now();
+  let stopped = false;
+
+  async function loop() {
+    emitCheckpoint(config, { phase: "start" });
+    let flushResult = await flush(config);
+    if (flushResult.outcome === "terminal_auth") {
+      return { exitCode: 77, terminal: true };
+    }
+
+    while (!stopped) {
+      await sleepImpl(interval);
+      if (stopped) break;
+      emitHeartbeat(config, startedAtMs);
+      flushResult = await flush(config);
+      if (flushResult.outcome === "terminal_auth") {
+        return { exitCode: 77, terminal: true };
+      }
+    }
+
+    emitCheckpoint(config, { phase: "stop" });
+    flushResult = await flush(config);
+    return {
+      exitCode: flushResult.outcome === "terminal_auth" ? 77 : 0,
+      terminal: flushResult.outcome === "terminal_auth",
+    };
+  }
+
+  return {
+    stop: () => {
+      stopped = true;
+    },
+    done: loop(),
+  };
+}
+
+/**
+ * CLI surface: `register`, `flush`, `status`, `emit`, `checkpoint`, `run`.
+ *
+ * `overrides` is passed straight to `resolveConfig` — additive over the 03-02/03-03
+ * signature (`main(argv)` still works; the real entry point below never passes a
+ * second argument), and it is what lets a test drive `main`'s exit-code behavior
+ * (`process.exitCode`) against an injected `fetchImpl`/`home` without a real hub.
+ */
+export async function main(argv, overrides = {}) {
+  const config = resolveConfig(overrides);
+  const command = argv[0];
+  if (command === "register") {
+    const nodeId = await registerNode(config);
+    console.log(JSON.stringify({ node_id: nodeId }));
+    return;
+  }
+  if (command === "flush") {
+    const result = await flush(config);
+    console.log(JSON.stringify(result));
+    // Exit codes so a shell transcript records the outcome without parsing stdout:
+    // 0 success, 75 deferred (retryable exhaustion, spool intact), 77 terminal auth
+    // failure. `process.exitCode`, never `process.exit()`, so pending stream writes
+    // flush before the process ends (T-03-04-06) — an exit code that arrives with a
+    // truncated transcript defeats the point of capturing one.
+    if (result.outcome === "terminal_auth") {
+      process.exitCode = 77;
+    } else if (result.outcome === "deferred") {
+      process.exitCode = 75;
+    } else {
+      process.exitCode = 0;
+    }
+    return;
+  }
+  if (command === "status") {
+    // The third leg of "visible" (criterion 4): a counter no operator can read is not
+    // visible. One key=value per line to stdout — this is the surface the z2
+    // transcript in 03-06 will quote.
+    const state = readState(config);
+    const spooledEvents = readSpool(config).length;
+    console.log(`dropped_events=${state.dropped_events}`);
+    console.log(`spooled_events=${spooledEvents}`);
+    return;
+  }
+  if (command === "emit") {
+    const eventType = argv[1];
+    if (!eventType) {
+      throw new Error(
+        'emit requires an event_type argument: "emit <event_type> [json]"',
+      );
+    }
+    const payload = argv[2] !== undefined ? JSON.parse(argv[2]) : null;
+    const seq = appendEvent(config, { event_type: eventType, payload });
+    console.log(JSON.stringify({ client_seq: seq }));
+    return;
+  }
+  if (command === "checkpoint") {
+    const payload = argv[1] !== undefined ? JSON.parse(argv[1]) : {};
+    const seq = emitCheckpoint(config, payload);
+    console.log(JSON.stringify({ client_seq: seq }));
+    return;
+  }
+  if (command === "run") {
+    const controller = runAgent(config);
+    // The only real (non-test) registration of a live signal handler — runAgent
+    // itself never does this (see its docblock: a live SIGINT handler inside a test
+    // process is a runtime hazard, not merely a testability seam).
+    const onSignal = () => controller.stop();
+    process.on("SIGINT", onSignal);
+    process.on("SIGTERM", onSignal);
+    const result = await controller.done;
+    process.off("SIGINT", onSignal);
+    process.off("SIGTERM", onSignal);
+    process.exitCode = result.exitCode;
+    return;
+  }
+  throw new Error(
+    `unknown command: ${
+      command ?? "(none)"
+    } — expected "register", "flush", "status", ` +
+      `"emit", "checkpoint", or "run"`,
+  );
+}
+
+/**
+ * Entry-point guard (D-09, RESEARCH.md Pattern 2): importing this module — including
+ * from a Deno test via `node:` specifier compatibility — must never start a real
+ * network flush. `pathToFileURL` is used rather than string-concatenating a `file://`
+ * prefix, which mis-encodes paths containing spaces or non-ASCII characters. Guarded
+ * against an empty `argv` so an import with no invoking script cannot throw here.
+ */
+function isMainModule() {
+  const invokedPath = process.argv[1];
+  if (!invokedPath) return false;
+  try {
+    return import.meta.url === pathToFileURL(invokedPath).href;
+  } catch {
+    return false;
+  }
+}
+
+if (isMainModule()) {
+  await main(process.argv.slice(2));
+}
