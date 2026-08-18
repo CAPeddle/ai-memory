@@ -1,4 +1,4 @@
-# Roadmap: ai-memory ST-088 Host Viability Milestone
+# Roadmap: ai-memory ST-088 Host Viability Milestone (v1.0)
 
 **Milestone:** ST-088 — Policy-Scope Enforcement Pricing, Remote Execution Node, and Final ADR-016 Recommendation
 **Mode:** mvp
@@ -140,8 +140,8 @@ supporting reason, not the primary one.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Policy-Scope Pricing | — | ✅ Complete | 2026-08-05 |
-| 2. Remote Node Identity & Hub | 2/2 | ✅ Complete | 2026-08-06 |
+| 1. Policy-Scope Pricing | — | Complete | 2026-08-05 |
+| 2. Remote Node Identity & Hub | 2/2 | Complete | 2026-08-06 |
 | 3. Node Client, Reliable Delivery & Regression Safety | 5/6 | In Progress|  |
 | 4. Blocking Evidence & ADR-016 Host Decision | 0/TBD | Not started | - |
 

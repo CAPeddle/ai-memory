@@ -6,14 +6,15 @@ current_phase: 03
 current_phase_name: node-client-reliable-delivery-regression-safety
 status: executing
 stopped_at: Completed 03-05-PLAN.md
-last_updated: "2026-08-16T07:28:54.481Z"
+last_updated: "2026-08-18T13:08:43.485Z"
 last_activity: 2026-08-16
 last_activity_desc: Phase 03 execution started
 progress:
-  total_phases: 2
+  total_phases: 4
   completed_phases: 1
   total_plans: 8
   completed_plans: 7
+  percent: 25
 ---
 
 # Project State
@@ -106,6 +107,7 @@ None yet.
 - **Node 18 emits an ExperimentalWarning on global `fetch`.** Settled as D-06: use `fetch` and suppress the warning, because captured stderr is evidence in this phase and the notice would otherwise open every transcript.
 - **z2 IS NOW ENROLLED (2026-08-18, plan 03-06) — the de-enrolment hazard is live, not theoretical.** `node_id` `1fbae82b-b12d-46dc-bbbf-d64784402ca4`, enrolment window opened, used once, and closed (closure proven by a 401). **Any test run against the dev `DATABASE_URL` — including the native `./dev.sh` inner loop — issues `DROP SCHEMA IF EXISTS workflow CASCADE`, deletes z2's `execution_nodes` row, and de-enrols the node behind the opaque 401.** The criterion-6 evidence cannot be regenerated without reopening a window D-11 deliberately closed. Use `mcp-test`/`db-test` for every suite run. The durable artifact is findings `## 16.`, not the rows. This hazard outlives Phase 3.
 - **`docker compose up -d mcp` can silently keep stale environment.** Observed 2026-08-18: after editing `.env`, compose reported `Running` rather than `Recreated` and left the old process serving `:3000`. Compounding it, `.env` had no trailing newline, so an append concatenated onto the previous line — defeating both `sed '/^VAR=/d'` and `grep -c '^VAR'`, each of which then reported the reassuring answer. **Verify env changes inside the process** (`docker compose exec -T mcp printenv VAR | wc -c`), never from `.env` or an HTTP response.
+- **`progress.completed_phases` reads 1, not 2, and hand-editing it will not stick.** All four `progress.*` fields are derived from `.planning/phases/` directories by `buildStateFrontmatter` (`~/.claude/gsd-core/bin/lib/state.cjs:1433`), and `state-transition.cjs:123-127` discards a curated `total_phases`/`percent` even on the preserve path. Phase 1 completed without a phase directory, so the disk scan can only ever see 1 of the 2 completed phases. **This is cosmetic and safe as it stands**: ROADMAP is now the authority for `total_phases` (4) and for `smart-entry.isComplete`, which reads 2-of-4 from the Progress table and correctly refuses to classify the milestone complete. Fix it by giving Phase 1 a directory if it ever matters — not by editing this file.
 - **ST-082 collision watch:** If ST-082 lands before Phase 4, U1 pricing becomes an actual — update the pricing table to reflect actual rather than estimated cost before writing the ADR-016 recommendation.
 
 ## Deferred Items
