@@ -1162,3 +1162,377 @@ Candidate C (separate operational application, no memory co-tenancy):
 - [x] Comparison to Candidate C is honest (Candidate C is not "free", but "different effort profile")
 - [x] Recommendation is conditional (IF the conditions are met, Candidate A is viable)
 - [x] This section is intended as appendix to findings doc (§13) and as input to ADR-016 update
+
+---
+
+## 16. Stage 2 Unit 3: Node Client, Reliable Delivery & Regression Safety (ADR-016 criterion 6)
+
+**Numbering.** This section is `## 16.`, not `## 13.`, deliberately. This document already carries
+**two** sections numbered 13 — "Proposed ADR-016 amendments" at line 730 (Stage 1) and "Stage 2 Unit 1:
+Policy-Scope Enforcement Pricing" at line 1039, which Phase 1 appended *after* `## 14` and `## 15`. A
+third `## 13.` would make the number useless as a reference. `ROADMAP.md` and `03-CONTEXT.md` both name
+"§13" for this phase's findings; **this heading supersedes those references.** Following the same
+supersession-note pattern D-04 used for the `.mjs` filename, neither Tier-1-adjacent document was edited
+to say so.
+
+Evidence captured 2026-08-18 against the real remote node **z2** over the tailnet.
+
+### 16.1 What was built
+
+`server/scripts/awcp-node-client.mjs` — the repo's first Node.js artifact, a zero-dependency Node 18 ESM
+module using only `node:fs`, `node:path`, `node:os`, `node:url`, `node:crypto`. Subcommands: `register`,
+`emit`, `checkpoint`, `flush`, `run`, `status`. State lives under `~/.awcp/` (`node_id`, `spool.jsonl`,
+counter state); the bearer is read from the environment and never written there (D-16).
+
+The exit-code contract, which is what makes a shell transcript self-describing: **0** success, **75**
+deferred (retryable exhaustion, spool intact), **77** terminal auth failure. `process.exitCode` is used
+rather than `process.exit()` so pending stream writes flush before exit — an exit code arriving with a
+truncated transcript would defeat the purpose of capturing one.
+
+Tests: `server/tests/awcp-node-client.test.ts` (29) and `server/tests/workflow-node-client-hub-e2e.test.ts` (3).
+
+### 16.2 Enrolment, opened and closed
+
+D-11's sequence as actually executed against the containerized `mcp` service (confirmed as the process
+serving `:3000` via `docker compose ps mcp` plus `ss -lntp`; no native `./dev.sh` process was running).
+
+Both credentials are redacted to fixed placeholders below. The registration is the single request worth
+quoting because it is the only one carrying `X-Node-Enrolment-Secret` — which is exactly why an
+unredacted quote would publish the operator's secret into git history permanently.
+
+```
+# window opened: secret appended to .env, container recreated, verified INSIDE the process
+$ docker compose exec -T mcp printenv AWCP_NODE_ENROLMENT_SECRET | wc -c
+65                                   # 64 hex chars + newline — length only, value never displayed
+
+# the single enrolling invocation, run once from z2
+$ ssh personal-server '. ~/.awcp-node.env; . ~/.awcp-enrol.env; rm -f ~/.awcp-enrol.env; \
+    AWCP_HUB_URL=http://100.106.232.78:3000 node ~/awcp-node-client.mjs register'
+{"node_id":"1fbae82b-b12d-46dc-bbbf-d64784402ca4"}
+#   Authorization: Bearer <REDACTED-NODE-BEARER>
+#   X-Node-Enrolment-Secret: <REDACTED-ENROLMENT-SECRET>
+
+# window closed: line removed from .env, container recreated, verified INSIDE the process
+$ docker compose exec -T mcp printenv AWCP_NODE_ENROLMENT_SECRET | wc -c
+1                                    # empty
+
+# closure proof — fresh UNKNOWN 64-hex bearer + the old secret, built via `curl --config` (mode 0600)
+# so neither header value ever reached argv
+$ curl -s -o /dev/null -w '%{http_code}' --config /tmp/awcp-closure.curlcfg
+401
+```
+
+On z2 after enrolment: `~/.awcp` is mode `0700`, `~/.awcp/node_id` is mode `0600`, `~/.awcp-enrol.env`
+no longer exists, and concatenating every file under `~/.awcp/` and matching it against a mode-0600
+credential list with `grep -F -f` produced **no match** (D-12) — checked mechanically, never by printing.
+
+**A closure that nearly did not take, worth recording because the failure was silent.** After removing
+the line from `.env`, `docker compose up -d mcp` reported `Running` rather than `Recreated` and left the
+old process — still holding the secret — serving `:3000`. The in-process check caught it at `65`. The
+root cause was subtler than a missed recreate: `.env` had **no trailing newline**, so appending
+`AWCP_NODE_ENROLMENT_SECRET=…` concatenated it onto the end of the preceding `ANTHROPIC_API_KEY=` line
+instead of creating a new one. `sed '/^AWCP_NODE_ENROLMENT_SECRET=/d'` therefore matched nothing and
+reported success, and a `grep -c '^AWCP_NODE_ENROLMENT_SECRET'` read `0` — both consistent with "already
+removed" while the window stood open. Only the byte-level inspection found it at offset 128 of another
+line. **This is Pitfall 4 in a form the plan did not anticipate**: the plan's insistence on verifying
+inside the process, rather than inferring from `.env` or from an HTTP response, is the only reason this
+was caught rather than shipped as a false closure claim.
+
+### 16.3 Experiments, with transcripts
+
+All experiments ran from `ssh personal-server` against `AWCP_HUB_URL=http://100.106.232.78:3000`.
+**The dev hub was never stopped, restarted, or recreated during this task** (D-18); the container
+serving it was created at `11:33:25Z`, before the first experiment event at `11:34:55Z`. Experiment 4
+simulates disconnection client-side only, by repointing the client at an unroutable endpoint.
+
+**Baseline delivery + heartbeat/checkpoint** (criterion 6's other half — a 20-second `run` with a
+5000 ms heartbeat, then `SIGINT`):
+
+```
+$ AWCP_HEARTBEAT_INTERVAL_MS=5000 timeout -s INT 20 node ~/awcp-node-client.mjs run
+# (run is silent on stdout by design; the evidence is the delivered rows)
+$ node ~/awcp-node-client.mjs status
+dropped_events=0
+spooled_events=0
+```
+Delivered: `client_seq` 1 checkpoint (start), 2–4 heartbeat, 5 checkpoint (stop). A clean start/stop
+checkpoint pair with heartbeats between, and an empty spool.
+
+**Experiment 4 — disconnection and replay (EVENT-02, EVENT-03):**
+
+```
+$ export AWCP_HUB_URL=http://127.0.0.1:1        # unroutable; hub untouched
+$ for i in 1 2 3 4 5; do node ~/awcp-node-client.mjs emit exp4_event "{\"n\":$i}"; done
+{"client_seq":6} {"client_seq":7} {"client_seq":8} {"client_seq":9} {"client_seq":10}
+$ node ~/awcp-node-client.mjs status
+dropped_events=0
+spooled_events=5
+$ node ~/awcp-node-client.mjs flush; echo "flush_exit=$?"
+{"outcome":"deferred","acked":[],"delivered":[],"remaining":5}
+flush_exit=75
+$ node ~/awcp-node-client.mjs status                  # spool INTACT after failed flush
+dropped_events=0
+spooled_events=5
+
+$ export AWCP_HUB_URL=http://100.106.232.78:3000      # connectivity restored
+$ node ~/awcp-node-client.mjs flush; echo "flush_exit=$?"
+{"outcome":"acked","acked":[6,7,8,9,10],"delivered":[6,7,8,9,10],"remaining":0}
+flush_exit=0
+$ node ~/awcp-node-client.mjs status
+dropped_events=0
+spooled_events=0
+```
+Discharges EVENT-02/EVENT-03 and ROADMAP Success Criteria 2 and 3: events survived the outage
+oldest-first, and **no spool entry was removed until the hub acknowledged it** — the failed flush left
+all five in place.
+
+**Experiment 5 — duplicate delivery (EVENT-01):** the pre-flush spool copy was restored over
+`~/.awcp/spool.jsonl` and flushed again.
+
+```
+$ cp ~/.awcp-spool-preflush.copy ~/.awcp/spool.jsonl
+$ node ~/awcp-node-client.mjs flush; echo "flush_exit=$?"
+{"outcome":"acked","acked":[6,7,8,9,10],"delivered":[6,7,8,9,10],"remaining":0}
+flush_exit=0
+```
+Hub row count for this `node_id`: **10 before the replay, 10 after** — identical. The same
+`client_seq` values were acknowledged both times. `UNIQUE(node_id, client_seq)` with
+`ON CONFLICT DO NOTHING` plus read-back acknowledgement absorbed the replay and still fully acked it.
+Discharges EVENT-01 and ROADMAP Success Criterion 1.
+
+**Experiment 6 — invalid authentication (D-17):** one event emitted first so "spool intact" is a claim
+with content, then a flush with a fresh, well-formed but **unenrolled** 64-hex bearer.
+
+```
+$ node ~/awcp-node-client.mjs emit exp6_event '{"probe":true}'
+{"client_seq":11}
+$ . ~/.awcp-badauth.env                          # unenrolled bearer, delivered via stdin, never echoed
+$ node ~/awcp-node-client.mjs flush; echo "flush_exit=$?"
+{"outcome":"terminal_auth","acked":[],"delivered":[],"remaining":1}
+flush_exit=77
+# stderr:
+awcp-node-client: terminal reason=auth_failed spooled_events=1
+$ node ~/awcp-node-client.mjs status              # spool still holds the event
+dropped_events=0
+spooled_events=1
+```
+Exactly one request was made — the client treats auth failure as terminal and does not retry. It does
+**not** distinguish a wrong bearer from an unenrolled one, matching the hub's deliberately opaque 401.
+
+**Spool overflow on the real node (EVENT-04):** `AWCP_SPOOL_MAX_ENTRIES=5`, unroutable endpoint, eight
+events emitted.
+
+```
+$ node ~/awcp-node-client.mjs status
+dropped_events=3
+spooled_events=5
+# stderr, one structured line per drop:
+awcp-node-client: dropped client_seq=12 reason=spool_overflow dropped_events_total=1
+awcp-node-client: dropped client_seq=13 reason=spool_overflow dropped_events_total=2
+awcp-node-client: dropped client_seq=14 reason=spool_overflow dropped_events_total=3
+$ node ~/awcp-node-client.mjs flush               # endpoint restored; the five survivors land
+{"outcome":"acked","acked":[15,16,17,18,19],"delivered":[15,16,17,18,19],"remaining":0}
+```
+The **oldest** three (12, 13, 14) were dropped and a visible counter incremented, rather than silently
+filling disk. Discharges EVENT-04 and ROADMAP Success Criterion 4. The eviction is independently visible
+in the readback below as a gap at 12–14.
+
+**D-14 — counter monotonicity across a real process exit:** after a full drain, one more event from a
+fresh process.
+
+```
+$ node ~/awcp-node-client.mjs emit d14_event '{"final":true}'
+{"client_seq":20}
+```
+`client_seq` 20 exceeds every previously delivered value. This is the real-node form of the in-process
+restart test: the counter survived an actual process exit, not a rebuilt config object.
+
+### 16.4 Scoped SQL readback
+
+The durable artifact. Every query is scoped with `WHERE node_id = …` (D-02) — an unscoped count over
+`workflow.run_events` is nondeterministic the moment a live node streams into the same database.
+`bearer_token_hash` is deliberately **not** selected.
+
+```sql
+SELECT node_id, hostname, platform, status, registered_at, last_seen_at
+  FROM workflow.execution_nodes WHERE node_id = '1fbae82b-b12d-46dc-bbbf-d64784402ca4';
+```
+```
+               node_id                | hostname | platform | status |         registered_at         |         last_seen_at
+--------------------------------------+----------+----------+--------+-------------------------------+-------------------------------
+ 1fbae82b-b12d-46dc-bbbf-d64784402ca4 | z2       | linux    | active | 2026-08-18 11:28:14.190239+00 | 2026-08-18 11:28:14.190239+00
+(1 row)
+```
+
+```sql
+SELECT client_seq, event_type, received_at
+  FROM workflow.run_events WHERE node_id = '1fbae82b-b12d-46dc-bbbf-d64784402ca4' ORDER BY client_seq;
+```
+```
+ client_seq |   event_type   |          received_at
+------------+----------------+-------------------------------
+          1 | checkpoint     | 2026-08-18 11:34:55.553917+00
+          2 | heartbeat      | 2026-08-18 11:35:00.627552+00
+          3 | heartbeat      | 2026-08-18 11:35:05.677991+00
+          4 | heartbeat      | 2026-08-18 11:35:10.714456+00
+          5 | checkpoint     | 2026-08-18 11:35:15.758386+00
+          6 | exp4_event     | 2026-08-18 11:36:28.409664+00
+          7 | exp4_event     | 2026-08-18 11:36:28.409664+00
+          8 | exp4_event     | 2026-08-18 11:36:28.409664+00
+          9 | exp4_event     | 2026-08-18 11:36:28.409664+00
+         10 | exp4_event     | 2026-08-18 11:36:28.409664+00
+         11 | exp6_event     | 2026-08-18 11:37:10.174114+00
+         15 | overflow_event | 2026-08-18 11:37:11.473648+00
+         16 | overflow_event | 2026-08-18 11:37:11.473648+00
+         17 | overflow_event | 2026-08-18 11:37:11.473648+00
+         18 | overflow_event | 2026-08-18 11:37:11.473648+00
+         19 | overflow_event | 2026-08-18 11:37:11.473648+00
+         20 | d14_event      | 2026-08-18 11:37:24.925542+00
+(17 rows)
+```
+
+17 rows = 20 emitted − 3 dropped by overflow. The **gap at 12–14 is the eviction evidence**, and the
+presence of both `heartbeat` and `checkpoint` rows is what discharges criterion 6's full definition
+rather than its spool-and-replay half.
+
+**Two observations for Phase 4, neither of which this run resolves.** First, the plan's readback query
+named a column `first_seen_at` that does not exist; the actual column is `registered_at` (schema:
+`node_id`, `bearer_token_hash`, `registered_at`, `last_seen_at`, `status`, `hostname`, `platform`).
+Second, and more substantive: **`last_seen_at` is identical to `registered_at`** despite 17 subsequent
+delivered events, so the hub does not appear to advance `last_seen_at` on event ingestion. Whether that
+is intended or a gap is not decided here.
+
+### 16.5 Criterion-6 disposition
+
+ADR-016 §1 criterion 6 reads: *"Remote-client control — the hub-and-client topology (§2) works against
+this host: authenticated remote event ingestion with spooled replay."* Element by element:
+
+| Element | Disposition | Evidence |
+|---|---|---|
+| Authentication | **Discharged** | Enrolment through the real Phase 2 path (§16.2); Experiment 6 proves terminal `77` on an unenrolled bearer with the spool intact |
+| Heartbeat | **Discharged** | `client_seq` 2–4 `heartbeat` rows in the readback (§16.4) |
+| Checkpoint | **Discharged** | `client_seq` 1 and 5 `checkpoint` rows — start and stop pair (§16.4) |
+| Spool | **Discharged** | Experiment 4 (5 events retained through the outage) and the overflow run (bounded, oldest-first, visible counter) |
+| Replay | **Discharged** | Experiment 4 replay landed 6–10; Experiment 5 proved a second replay adds no rows |
+| Experiments 4–6 | **Discharged** | §16.3, all three on the real node against the real hub |
+| Repo-rescan | **Not implemented — an adjacent U3 capability, not a criterion-6 element** | Criterion 6's text names authenticated ingestion with spooled replay; repo-rescan is not among the things it names. It is listed under U3 in the canonical plan, and `03-CONTEXT.md:251` leaves its Phase 3 membership explicitly open. It was not built. Recorded here so Phase 4 inherits the question rather than a silence |
+
+**Overall: criterion 6 is discharged for every element it names** — authentication, heartbeat,
+checkpoint, spool, replay, and experiments 4-6, each with evidence above. Repo-rescan does not qualify
+that discharge: criterion 6's text does not name it, so its absence is a **U3 scope gap, not a
+criterion-6 shortfall**. Two honest limits travel with the result even so — the co-tenancy evidence in
+§16.7 is smoke-level (two calls, no load or concurrency), and the standing limits below are accepted
+rather than solved.
+
+**Standing limits that travel with this result** (from the plan's threat model, recorded here as Phase 4
+input rather than treated as closed):
+
+- **No per-node revocation exists** (`T-03-06-04`; `store.ts:677-679`). Deleting a node's row lets the
+  same secret re-enrol it, and `status` has no `revoked` value. Accepted for one operator-provisioned
+  node with the window closed; it becomes a real gap the moment a second node is added.
+- **Plain `http://` is acceptable here only because the tailnet path is WireGuard-encrypted end to end**
+  (`T-03-06-07`, D-01). The bearer and, once, the enrolment secret crossed this link. **Any repointing
+  of the client off the tailnet requires TLS** — a constraint a future reader inherits.
+- The enrolment window is a capability, not an allowlist: while open, any 64-hex bearer presenting the
+  secret can enrol. The secret does not expire.
+
+### 16.6 Regression safety (criterion 5 carry-forward)
+
+From 03-05, quoted as numbers:
+
+- **SAFE-01:** the filtered name-for-name diff between `03-REGRESSION-BASELINE.txt` and
+  `03-REGRESSION-FINAL.txt` is **empty (exit 0)** — 400 pre-Phase-3 tests identical in identity and
+  outcome, **391 ok / 9 FAILED**, the 9 matching the baseline's 9 exactly. `git diff --name-only`
+  over `server/tests/` names only the two new files, neither of which appears in the baseline's
+  classname list, so no pre-existing test was modified to reach green.
+- **SAFE-02:** seeded corpus counts over `public.thoughts` (ids matching `00000000-0000-4000-8000-%`)
+  were **total=33 / active=33** immediately before and immediately after the full-suite run — identical,
+  and 33/33 again after the repeatability runs.
+
+### 16.7 Co-tenancy observation
+
+Criterion 6 is a claim about whether the topology works *against this host*, yet the regression evidence
+came from the test stack while the only real node writes to the dev stack. This step closes that gap at
+smoke level: two authenticated memory-tool calls over `/mcp`, against the same dev stack z2 had just
+streamed 17 events into, taken **after** the readback was safely captured.
+
+```
+search_thoughts   → HTTP 200, 0.221 s   {"query":"remote execution node enrolment","results":[]}
+capture_thought   → HTTP 200, 0.029 s   Captured as shard / project:ai-memory
+                                        (id: 982f5f54-25d3-4a19-ad4f-b9117321c895)
+```
+
+**No behavioural or latency difference was observed.** Both tools answered normally while a real node's
+rows sat in `workflow.run_events` on the same Postgres. The empty `search_thoughts` result is a corpus
+property, not a failure — the call itself succeeded.
+
+**The captured row is deliberate provenance, retained by decision.** Its content names ST-088, plan
+03-06 and the co-tenancy probe, so a future reader finds an explained artifact rather than stray test
+data. It was not cleaned up: the suite cannot be run against the dev database at all here (it would
+`DROP SCHEMA workflow CASCADE` and de-enrol z2), and a targeted delete would run over the same
+connection that must not touch `workflow`. One identified row is the accepted cost of the observation.
+
+**What this does and does not support.** It is a smoke-level co-tenancy signal — two calls, no
+concurrency, no load. Phase 4 must not read this null result as evidence that the topology *scales* on
+this host.
+
+### 16.8 Host-fit friction observed while building (criterion 7 raw material)
+
+Captured first-hand rather than written from recall in Phase 4. **This states no criterion-7 conclusion
+— whether inheriting this codebase costs less than it saves remains Phase 4's to draw.**
+
+- **No `package.json` anywhere in the repo** (D-04/D-05), so the first Node artifact had to be `.mjs` to
+  be treated as ESM. The obvious remedy — adding a `package.json` with `"type": "module"` — would change
+  what npm tooling infers about an otherwise Deno-only tree, which is why it was not done.
+- **Deno's `node:` compatibility layer carried the client, with one sharp edge.** `node:os`'s
+  `hostname()` requires `--allow-sys=hostname` under Deno's compat layer, a grant the phase deliberately
+  does not make; the call is wrapped in try/catch and falls back to omitting the field, and
+  `process.platform` is used directly instead of `os.platform()` because it needs no syscall.
+- **The test permission surface widened.** The two new test files earned `--allow-run=deno` (spawning a
+  real hub process) and `--allow-write=/tmp` (their persisted paths are injectable to a
+  `Deno.makeTempDir()`, which is what keeps the grant scoped to `/tmp` rather than `$HOME`).
+  `CLAUDE.md`'s grant inventory had to be brought current — an inherited-codebase maintenance cost that
+  recurs with every future file that spawns a process.
+- **Operational sharp edges found in this run** and recorded above: `docker compose up -d` reporting
+  `Running` and silently keeping stale environment (§16.2), and an env file without a trailing newline
+  turning an append into a line-concatenation that defeated both `sed '/^…/d'` and `grep -c '^…'`.
+
+### 16.9 Open questions carried to Phase 4
+
+Reproduced from `03-06-PLAN.md`. Surfaced, not answered.
+
+**1. Nothing in this phase observes memory tools and a live node on the same stack (product-lens, P1).**
+*Resolution — approved by the PO on 2026-08-18 and folded into the plan:* the co-tenancy observation was
+taken and is recorded in §16.7. What remains open for Phase 4 is not *whether to look* but what a
+two-call observation can support: it is a smoke-level signal, not a load or contention study, and Phase 4
+should not read a null result as proof the topology scales on this host.
+
+**2. Host-fit friction discovered here is never routed to criterion 7 (product-lens, P2).**
+*Resolution — approved by the PO on 2026-08-18 and folded into the plan:* the friction subsection was
+added and is recorded in §16.8. It captures the friction as first-hand observation only; **criterion 7's
+conclusion remains Phase 4's to draw**, and recording the inputs here must not be mistaken for having
+answered it.
+
+**3. Does `FEATURE_WORKFLOW` stay enabled on the base `mcp` service after Phase 3?** (carried from
+03-01.) Leaving it on makes `/api/workflow/*` and an unauthenticated `/workflow` dashboard shell part of
+every `docker compose up -d` on a port published on all interfaces; turning it off silently re-breaks
+future real-node work with a 404. A maintainer decision either way. **Note that this run depended on it
+being on**, and on the port being published on all interfaces, because z2 reaches the hub over the
+tailnet — binding to loopback would have made this evidence impossible to collect.
+
+**4. Is repo-rescan in Phase 3 scope?** (carried from 03-03.) The canonical plan lists it under U3 and
+`03-CONTEXT.md:251` leaves its membership explicitly open. It was not implemented. §16.5 records it as an
+adjacent U3 capability rather than a criterion-6 element; whether it should have been built is still
+unanswered.
+
+### 16.10 Standing hazard created by this run
+
+z2 is enrolled and the enrolment window is closed. **Any test run against the dev `DATABASE_URL` —
+including the native `./dev.sh` inner loop — issues `DROP SCHEMA IF EXISTS workflow CASCADE`, which
+deletes z2's `execution_nodes` row and de-enrols the node behind the opaque 401.** The evidence above
+cannot be regenerated without reopening a window D-11 deliberately closed. This is why the write-up
+exists at all (D-03): the rows are not the artifact, this section is. Use the test stack
+(`mcp-test`/`db-test`) for all suite runs.
+
+ADR-016 remains **Proposed/Conditional**. Nothing in this section changes its status; Phase 4 owns the
+final recommendation.
