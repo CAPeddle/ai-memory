@@ -1,7 +1,7 @@
 ---
 phase: 3
-reviewers: [codex]
-reviewed_at: 2026-08-19T10:10:00Z
+reviewers: [codex, antigravity]
+reviewed_at: 2026-08-19T13:40:00Z
 plans_reviewed:
   - 03-01-PLAN.md
   - 03-02-PLAN.md
@@ -9,51 +9,43 @@ plans_reviewed:
   - 03-04-PLAN.md
   - 03-05-PLAN.md
   - 03-06-PLAN.md
-reviewer_coverage: single-reviewer
-consensus_available: false
+reviewer_coverage: two-lane
+consensus_available: true
+both_lanes_source_grounded: true
 ---
 
 # Cross-AI Plan Review — Phase 3
 
-## Reviewer Coverage — read this before the findings
+## Reviewer Coverage
 
-**One reviewer ran. There is no consensus in this document.**
+**Two lanes ran, both with repo access.** Neither emitted the
+`REVIEWED-WITHOUT-REPO-ACCESS` marker, and both cite `path:line` evidence throughout, so
+both are weighted as grounded plan reviews and the consensus sections below are real.
 
-`--all` was requested. Of the eleven reviewer lanes the workflow knows about, exactly two
-were detected on this host: `claude` and `codex`. `CLAUDE_CODE_ENTRYPOINT=cli` means this
-session *is* Claude Code, so the `claude` lane is skipped for independence — leaving `codex`
-as the only external reviewer. `gemini`, `coderabbit`, `opencode`, `qwen`, `cursor-agent`
-and `agy` are not installed; the `ollama`, `lm_studio` and `llama_cpp` local servers are not
-reachable on their default ports. None of those lanes was named explicitly, so under
-ADR-2782 D4 their absence is lenient, not an error.
+| Lane | Status | Grounding |
+|---|---|---|
+| `codex` | ran | source-grounded — verified against the working tree |
+| `antigravity` (`agy`) | ran | source-grounded — read files `codex` never opened (`store.ts`, `remoteNodeHub.ts`, `index.ts`) |
+| `claude` | skipped | this session — skipped for independence |
+| `gemini`, `coderabbit`, `opencode`, `qwen`, `cursor` | not installed | — |
+| `ollama`, `lm_studio`, `llama_cpp` | not reachable | — |
 
-The consequence is structural: `### Agreed Strengths`, `### Agreed Concerns` and
-`### Divergent Views` are defined as *"raised by 2+ reviewers"* and *"where reviewers
-disagreed"*. With a single lane they cannot be filled without manufacturing
-cross-validation that never happened. They are therefore left explicitly empty below, and
-every finding here is an **unreplicated single-reviewer finding**. The skill's success
-criterion *"consensus summary synthesized from multiple reviewers"* is **not met** for this
-run.
-
-To get real cross-AI coverage, install a second lane (`gemini`, `codex` is already present,
-or run a local `ollama` server) and re-run `/gsd-review --phase 3 --all`.
-
-**Codex had repo access.** Its output is source-grounded — it cites `path:line` throughout
-and no `REVIEWED-WITHOUT-REPO-ACCESS` marker is present — so its findings are weighted as a
-grounded plan review, not an impressionistic one.
+The two lanes read **overlapping but not identical** parts of the tree, which is what makes
+the divergences below informative rather than noise.
 
 ### One correction applied to the input
 
-The roadmap section fed to the reviewer says `**Plans**: 5/6 plans executed` and lists
-`- [ ] 03-06-PLAN.md` unchecked. **That roadmap text is stale.** Wave 6 shipped in
-`b32b6ab` (PR #50), `03-06-SUMMARY.md` exists, and `## 16.` of
+The roadmap section fed to both reviewers says `**Plans**: 5/6 plans executed` and shows
+`- [ ] 03-06-PLAN.md` unchecked. **That roadmap text is stale.** Wave 6 shipped in `b32b6ab`
+(PR #50), `03-06-SUMMARY.md` exists, and `## 16.` of
 `docs/investigations/ST-084-awcp-host-spike-findings.md` carries the criterion-6 evidence.
-The review prompt stated the correction explicitly, and no finding below rests on
-"03-06 was not executed."
+Both prompts stated the correction explicitly, and no finding below rests on "03-06 was not
+executed."
 
 ---
 
 ## Codex Review
+
 
 # Cross-AI Plan Review
 
@@ -346,76 +338,333 @@ Overall phase risk: **MEDIUM**. The evidence is good enough for ADR-016 host-dec
 
 ---
 
-## Consensus Summary
+## Antigravity Review
 
-**Not available — one reviewer ran.** See *Reviewer Coverage* above. What follows is the
-single reviewer's position, spot-checked against source by the orchestrating session, not a
-consensus.
+# Phase 3 Implementation Plan Review: Node Client, Reliable Delivery & Regression Safety
 
-### Agreed Strengths
-
-*(empty — requires 2+ reviewers)*
-
-### Agreed Concerns
-
-*(empty — requires 2+ reviewers)*
-
-### Divergent Views
-
-*(empty — requires 2+ reviewers to disagree)*
+This review evaluates the six implementation plans for **Phase 3 (ST-088 Stage 2 Unit 3)** of the `ai-memory` project, verifying all architectural designs, implementation decisions, and verification claims directly against the repository source files at `/home/cpeddle/projects/ai-memory`.
 
 ---
 
-## Unreplicated Single-Reviewer Findings, ranked
+## Overall Phase Assessment
 
-Codex's verdict: **phase goals substantially met, overall risk MEDIUM.** All six requirements
-(EVENT-01..04, SAFE-01, SAFE-02) are judged discharged. The concerns are about what the
-evidence *does not* cover, not about whether the phase delivered.
+Phase 3 achieves all its stated goals: building a zero-dependency Node.js ESM execution node client ([`server/scripts/awcp-node-client.mjs`](file:///home/cpeddle/projects/ai-memory/server/scripts/awcp-node-client.mjs)), establishing idempotent event delivery, enforcing bounded crash-safe local spooling, handling non-retryable and terminal failure modes, and proving the remote node leg against the real execution node (`z2`) without regressing existing MCP tools or mutating the seeded search corpus. The sequential wave ordering (Waves 1–6) mitigated cross-plan dependencies and prevented shared-database test pollution.
 
-The orchestrating session independently opened the cited lines for the five findings below.
-Each was confirmed present in the source as described — this is verification of the
-*mechanism*, not endorsement of the severity.
+---
 
-| # | Severity | Finding | Verified at |
+## Plan 03-01: Regression Baseline & `FEATURE_WORKFLOW` Enablement (Wave 1)
+
+### 1. Summary
+Plan 03-01 establishes the foundational testing and operational prerequisites for Phase 3 by capturing a machine-diffable, test-identity-keyed regression baseline ([`03-REGRESSION-BASELINE.txt`](file:///home/cpeddle/projects/ai-memory/.planning/phases/03-node-client-reliable-delivery-regression-safety/03-REGRESSION-BASELINE.txt)) against the isolated test container (`mcp-test` / `db-test`), and enabling `FEATURE_WORKFLOW: "true"` directly within the base `mcp` service in [`docker-compose.yml:58`](file:///home/cpeddle/projects/ai-memory/docker-compose.yml#L58). This ensures that the `/workflow/nodes/*` routes mount and return `401 Unauthorized` (auth required) rather than `404 Not Found`, unblocking real-node communication without disabling background worker services.
+
+### 2. Strengths
+- **Identity-based regression baseline**: Recording test identity and outcome mappings (`<classname>::<name> => ok|FAILED`) across 400 tests ([`03-REGRESSION-BASELINE.txt:4-404`](file:///home/cpeddle/projects/ai-memory/.planning/phases/03-node-client-reliable-delivery-regression-safety/03-REGRESSION-BASELINE.txt#L4-L404)) prevents masking regressions when a broken test coincides with a flaky test recovery.
+- **Worker flag preservation**: Enabling `FEATURE_WORKFLOW: "true"` on the base service ([`docker-compose.yml:58`](file:///home/cpeddle/projects/ai-memory/docker-compose.yml#L58)) rather than applying `docker-compose.workflow.yml` preserves the default-true flags for `FEATURE_ENTITY_WORKER`, `FEATURE_CONSOLIDATION_WORKER`, `FEATURE_EMBEDDING_BACKFILL`, and `MODEL_PROVIDER_ENABLED` ([`server/index.ts:1313-1314`](file:///home/cpeddle/projects/ai-memory/server/index.ts#L1313-L1314)), avoiding degradation of co-tenancy conditions.
+- **Diagnostic clarity**: The 12-line comment in [`docker-compose.yml:46-57`](file:///home/cpeddle/projects/ai-memory/docker-compose.yml#L46-L57) documents the critical distinction between 404 (unmounted route) and 401 (mounted route rejecting missing auth), preventing future misdiagnosis.
+
+### 3. Concerns
+- **Exposure of unauthenticated UI shell** (`Severity: LOW`): Setting `FEATURE_WORKFLOW: "true"` mounts the static unauthenticated `/workflow` dashboard shell on `0.0.0.0:3000` ([`docker-compose.yml:67`](file:///home/cpeddle/projects/ai-memory/docker-compose.yml#L67)). While backend data endpoints under `/api/workflow` remain protected by `MEMORY_API_KEY` or `AWCP_AGENT_API_KEY`, the static UI is publicly reachable over any open network interface.
+- **Test database accumulation** (`Severity: LOW`): Baseline tests ran against `db-test`, which persists across test runs during a container's lifetime ([`CLAUDE.md:114-116`](file:///home/cpeddle/projects/ai-memory/CLAUDE.md#L114-L116)), creating minor potential for ordering/state drift if tests leave uncleaned rows.
+
+### 4. Suggestions
+- Document in deployment runbooks whether `FEATURE_WORKFLOW` should remain enabled in production compose files or if it should be bound strictly to private network interfaces.
+- Consider parameterizing the UI dashboard binding behind an authentication middleware if exposed beyond local/tailnet environments.
+
+### 5. Risk Assessment
+**Risk Level: LOW**. The changes are additive, strictly isolated to configuration and baseline measurement, and easily reversible with zero mutation to core business logic.
+
+---
+
+## Plan 03-02: Node Client Tracer & EVENT-01 Replay Proof (Wave 2)
+
+### 1. Summary
+Plan 03-02 implements the initial production tracer of the node client in [`server/scripts/awcp-node-client.mjs`](file:///home/cpeddle/projects/ai-memory/server/scripts/awcp-node-client.mjs) and validates the end-to-end event lifecycle (sequence allocation, durable append, registration, real-process HTTP transmission, read-back acknowledgement, and spool truncation) via [`server/tests/workflow-node-client-hub-e2e.test.ts`](file:///home/cpeddle/projects/ai-memory/server/tests/workflow-node-client-hub-e2e.test.ts). It also establishes the repeatable gate for **EVENT-01** (duplicate event replay idempotency) against a real spawned server process.
+
+### 2. Strengths
+- **Strict zero-dependency ESM**: Built as a standalone `.mjs` module ([`server/scripts/awcp-node-client.mjs:49-64`](file:///home/cpeddle/projects/ai-memory/server/scripts/awcp-node-client.mjs#L49-L64)) using only Node 18 built-ins (`node:fs`, `node:path`, `node:os`, `node:url`, `node:crypto`), avoiding `package.json` pollution in a Deno-primary repository.
+- **Real-process test boundary**: Validates HTTP mounting, registration, and duplicate suppression using `startServerProcess` ([`server/tests/workflow-node-client-hub-e2e.test.ts:88-142`](file:///home/cpeddle/projects/ai-memory/server/tests/workflow-node-client-hub-e2e.test.ts#L88-L142)) on port 3146, exercising the real network and PostgreSQL constraints rather than in-memory mocks.
+- **Wire-type validation**: The test verifies that `acknowledged[].client_seq` is received as a native JS `number` without client-side `Number()` coercion ([`server/tests/workflow-node-client-hub-e2e.test.ts:238-248`](file:///home/cpeddle/projects/ai-memory/server/tests/workflow-node-client-hub-e2e.test.ts#L238-L248)), directly preventing regressions of the `bigint` string-coercion defect noted in [`server/src/workflow/store.ts:840-857`](file:///home/cpeddle/projects/ai-memory/server/src/workflow/store.ts#L840-L857).
+- **Entry-point guard inertness**: Implements and tests `isMainModule()` ([`server/scripts/awcp-node-client.mjs:946-958`](file:///home/cpeddle/projects/ai-memory/server/scripts/awcp-node-client.mjs#L946-L958), [`server/tests/workflow-node-client-hub-e2e.test.ts:144-180`](file:///home/cpeddle/projects/ai-memory/server/tests/workflow-node-client-hub-e2e.test.ts#L144-L180)), guaranteeing that importing the client into Deno test runners executes zero network calls and touches no real user directories.
+
+### 3. Concerns
+- **Fixed test port allocation** (`Severity: MEDIUM`): Hardcoding `PORT = 3146` ([`server/tests/workflow-node-client-hub-e2e.test.ts:53`](file:///home/cpeddle/projects/ai-memory/server/tests/workflow-node-client-hub-e2e.test.ts#L53)) introduces potential port collision if parallel test runners or lingering orphaned processes bind to port 3146.
+- **Cross-runtime OS permission edge** (`Severity: LOW`): Under Deno's `node:` compatibility layer, `node:os` `hostname()` requires `--allow-sys=hostname`. Handled gracefully via `try/catch` in `detectHostname()` ([`server/scripts/awcp-node-client.mjs:146-152`](file:///home/cpeddle/projects/ai-memory/server/scripts/awcp-node-client.mjs#L146-L152)), but represents inherited friction when running Node scripts under Deno.
+
+### 4. Suggestions
+- Use dynamic port assignment (`port: 0` or ephemeral port discovery) in `serverProcess.ts` helpers to ensure full concurrency safety across test runners.
+- Add an explicit timeout on the spawned server process shutdown hook to prevent test runner hanging on abnormal exit.
+
+### 5. Risk Assessment
+**Risk Level: LOW**. Proves the fundamental cross-process tracer and idempotency mechanics with high fidelity and strict scoping.
+
+---
+
+## Plan 03-03: Spool Reliability, Bounding & Monotonicity (Wave 3)
+
+### 1. Summary
+Plan 03-03 expands the client with bounded spool storage (`AWCP_SPOOL_MAX_ENTRIES`, default 1000), oldest-first eviction on overflow, a crash-consistent state counter ([`~/.awcp/state.json`](file:///home/cpeddle/projects/ai-memory/server/scripts/awcp-node-client.mjs#L347-L377)), structured stderr logging of dropped events, a CLI `status` subcommand, multi-batch flushing, and validation of **EVENT-02, EVENT-03, EVENT-04**, and decision **D-14** (persisted `client_seq` monotonicity across spool drains).
+
+### 2. Strengths
+- **Crash-safe atomic file replacement**: Uses temporary file creation, synchronous write, OS flush, and POSIX `renameSync` ([`server/scripts/awcp-node-client.mjs:309-334`](file:///home/cpeddle/projects/ai-memory/server/scripts/awcp-node-client.mjs#L309-L334), [`363-377`](file:///home/cpeddle/projects/ai-memory/server/scripts/awcp-node-client.mjs#L363-L377)) for all spool and state truncation operations, verified with an injected crash hook ([`server/tests/awcp-node-client.test.ts:353-398`](file:///home/cpeddle/projects/ai-memory/server/tests/awcp-node-client.test.ts#L353-L398)).
+- **D-14 counter persistence isolation**: `allocateSeq()` increments a dedicated `<home>/client_seq` file ([`server/scripts/awcp-node-client.mjs:250-261`](file:///home/cpeddle/projects/ai-memory/server/scripts/awcp-node-client.mjs#L250-L261)) and never derives sequence numbers from spool contents. Tests verify that allocating after a complete drain or file deletion continues monotonically ([`server/tests/awcp-node-client.test.ts:634-723`](file:///home/cpeddle/projects/ai-memory/server/tests/awcp-node-client.test.ts#L634-L723)), closing a critical failure mode where sequence numbers reset to 0 and get silently dropped by hub deduplication.
+- **Three-way drop visibility**: Ensures dropped events are visible via disk state, structured stderr output (`reason=spool_overflow`), and the `status` subcommand ([`server/scripts/awcp-node-client.mjs:388-406, 889-897`](file:///home/cpeddle/projects/ai-memory/server/scripts/awcp-node-client.mjs#L388-L406)), meeting Success Criterion 4.
+- **Zero test pollution**: All 14 tests in [`server/tests/awcp-node-client.test.ts`](file:///home/cpeddle/projects/ai-memory/server/tests/awcp-node-client.test.ts) execute in-process using injected temp directories and custom `fetchImpl` doubles, requiring no database and remaining within `--allow-write=/tmp`.
+
+### 3. Concerns
+- **Full-file rewrite overhead** (`Severity: LOW`): Rewriting the entire `spool.jsonl` on every eviction or partial acknowledgement has $O(N)$ I/O cost. At the bounded limit of 1000 events ($\le 16\text{ MB}$), this is negligible for an execution node, but would require segment rotation if scaled to high-frequency logging.
+- **File mode persistence across modifications** (`Severity: LOW`): File creation uses `0o600` and `ensureStateDir` enforces `0o700` ([`server/scripts/awcp-node-client.mjs:234-240`](file:///home/cpeddle/projects/ai-memory/server/scripts/awcp-node-client.mjs#L234-L240)), though on non-POSIX filesystems (e.g. standard Windows mounts) mode bits are non-functional. Not an issue on Linux/Ubuntu targets.
+
+### 4. Suggestions
+- Include a lightweight compaction or batching mechanism if event volume ever exceeds several hundred events per second.
+- Consider adding a file lock (`flock`) if multiple client processes might ever be invoked concurrently against the same `AWCP_HOME`.
+
+### 5. Risk Assessment
+**Risk Level: LOW**. Complete, robust test coverage verifying disk durability, sequence monotonicity, and outage replay order.
+
+---
+
+## Plan 03-04: Failure Semantics, Terminal States & Telemetry (Wave 4)
+
+### 1. Summary
+Plan 03-04 implements failure handling, bounded backoff retry policies, telemetry emission, and credential security. Specifically, it delivers **D-15** permanent rejection handling (400 responses with specific invalid sequence numbers drop only those entries), **D-17** terminal authentication handling (401 stops immediately with exit code 77 and leaves spool intact), exponential backoff with jitter up to 30s (`MAX_FLUSH_ATTEMPTS = 6`), heartbeat and checkpoint event emission, the `runAgent` loop, and the **D-13** automated credential leak test.
+
+### 2. Strengths
+- **Status-before-body parsing**: `flushOnce()` evaluates `res.status` before attempting `res.json()` ([`server/scripts/awcp-node-client.mjs:530-558`](file:///home/cpeddle/projects/ai-memory/server/scripts/awcp-node-client.mjs#L530-L558)). Because the hub returns plain text for 401 Unauthorized ([`server/src/workflow/remoteNodeHub.ts:110`](file:///home/cpeddle/projects/ai-memory/server/src/workflow/remoteNodeHub.ts#L110)), this avoids a `SyntaxError` that would otherwise misclassify authentication rejection as an unreachable transport error.
+- **Livelock prevention (D-15)**: Dropping only the offending sequence numbers identified in a 400 `issues` array ([`server/scripts/awcp-node-client.mjs:690-711`](file:///home/cpeddle/projects/ai-memory/server/scripts/awcp-node-client.mjs#L690-L711)) ensures that a single oversized payload does not block the delivery of valid queued events behind it.
+- **Zero-progress acknowledgement guard**: `flush()` detects if a 200 response returns an acknowledgement list that does not intersect the sent batch ([`server/scripts/awcp-node-client.mjs:679-684`](file:///home/cpeddle/projects/ai-memory/server/scripts/awcp-node-client.mjs#L679-L684)), triggering backoff and deferral rather than spinning in an infinite loop.
+- **Automated D-13 credential leak gate**: Intercepts all six runtime logging channels (`console.log/error/warn/info`, `process.stdout.write`, `process.stderr.write`) and scans disk state ([`server/tests/awcp-node-client.test.ts:1282-1444`](file:///home/cpeddle/projects/ai-memory/server/tests/awcp-node-client.test.ts#L1282-L1444)), verifying that neither `AWCP_NODE_BEARER` nor `AWCP_NODE_ENROLMENT_SECRET` leaks into output even when a transport error explicitly includes the raw Authorization header.
+
+### 3. Concerns
+- **Telemetry payload null node_id handling** (`Severity: LOW`): If `emitCheckpoint` is invoked before registration has occurred, `readNodeIdOrNull(config)` returns `null` ([`server/scripts/awcp-node-client.mjs:738-745, 789`](file:///home/cpeddle/projects/ai-memory/server/scripts/awcp-node-client.mjs#L738-L745)). While serialized cleanly, the event will have `node_id: null` in its JSON payload until the node completes registration.
+- **Single backoff timer in `runAgent`** (`Severity: LOW`): In `runAgent`, if an intermediate flush experiences transient network failure and defers (exit 75), the agent waits for the next heartbeat interval before attempting to flush again ([`server/scripts/awcp-node-client.mjs:831-837`](file:///home/cpeddle/projects/ai-memory/server/scripts/awcp-node-client.mjs#L831-L837)), which is acceptable given the default 60s heartbeat cadence.
+
+### 4. Suggestions
+- Add a fast-fail pre-check in `runAgent` or `main(["emit"|"checkpoint"])` to warn the operator if the node is not registered before emitting domain checkpoints.
+- Ensure backoff parameters (`BACKOFF_BASE_MS`, `BACKOFF_CAP_MS`) are exposed via environment variables for testing in low-latency simulation environments.
+
+### 5. Risk Assessment
+**Risk Level: LOW**. Exceptional error-handling architecture, complete coverage of edge cases, and verifiable absence of credential leakage.
+
+---
+
+## Plan 03-05: SAFE-01 / SAFE-02 Regression Gate & Grant Inventory (Wave 5)
+
+### 1. Summary
+Plan 03-05 executes the full regression safety verification prior to real-node testing. It validates **SAFE-01** by comparing the post-Phase-3 test suite output ([`03-REGRESSION-FINAL.txt`](file:///home/cpeddle/projects/ai-memory/.planning/phases/03-node-client-reliable-delivery-regression-safety/03-REGRESSION-FINAL.txt)) against the pre-Phase-3 baseline, confirming an empty name-for-name diff across all 400 pre-existing tests (391 ok / 9 known provider failures). It verifies **SAFE-02** by measuring the row counts (`total=33`, `active=33`) of the seeded search corpus (`00000000-0000-4000-8000-%`) before and after the full suite. Additionally, it updates [`CLAUDE.md:73-98`](file:///home/cpeddle/projects/ai-memory/CLAUDE.md#L73-L98) to reflect the new test files in the permission grant inventory.
+
+### 2. Strengths
+- **Deterministic identity comparison**: Proves that all 400 pre-existing tests retain identical statuses before and after the phase ([`03-REGRESSION-FINAL.txt:1-436`](file:///home/cpeddle/projects/ai-memory/.planning/phases/03-node-client-reliable-delivery-regression-safety/03-REGRESSION-FINAL.txt#L1-L436)), with zero modifications made to existing test files (`git diff --name-only` confirms only the 2 new test files were added).
+- **Direct measurement of corpus integrity**: Verifies that neither total row count nor active row count (`count(*) FILTER (WHERE active)`) of the seeded golden search corpus changed during test execution, ensuring background consolidation workers did not deactivate shards.
+- **Accurate grant inventory**: Updates CLAUDE.md with precise technical justifications for why `workflow-node-client-hub-e2e.test.ts` earns `--allow-run=deno` (process spawning) and why both new test files earn `--allow-write=/tmp` ([`CLAUDE.md:76-98`](file:///home/cpeddle/projects/ai-memory/CLAUDE.md#L76-L98)).
+
+### 3. Concerns
+- **Accumulating test database dependency** (`Severity: LOW`): Two of the nine known baseline failures (`in-project rows outrank cross-project rows` and `MMR diversifies near-duplicate zoom hits out of top-3`) depend on ranking scores in `db-test`. If `db-test` were recreated midway through, score variations could cause false diffs. This was avoided by running baseline and final comparisons against the same container lifecycle.
+
+### 4. Suggestions
+- Package the normalization and diffing logic used for `03-REGRESSION-FINAL.txt` into a reusable CI workflow or developer verification script (`verify-regression.sh`).
+
+### 5. Risk Assessment
+**Risk Level: LOW**. Methodical, quantitative verification providing conclusive proof of backward compatibility and corpus safety.
+
+---
+
+## Plan 03-06: Real-Node Leg on z2 & Findings §16 (Wave 6)
+
+### 1. Summary
+Plan 03-06 performs the real-node deployment and empirical verification on Ubuntu node `z2` (100.106.232.78) over Tailscale. It executes node registration through the one-time enrolment path, closes the enrolment window, proves closure via HTTP 401, runs Experiments 4–6 (disconnection/replay, duplicate submission, invalid auth), validates overflow eviction and counter monotonicity, records scoped SQL readbacks, and performs smoke-level co-tenancy checks against the live dev stack. The results are permanently committed to [`docs/investigations/ST-084-awcp-host-spike-findings.md:1180-1539`](file:///home/cpeddle/projects/ai-memory/docs/investigations/ST-084-awcp-host-spike-findings.md#L1180-L1539) under section `## 16.`.
+
+### 2. Strengths
+- **In-process environment verification**: Caught a critical, silent failure mode where `.env` lacked a trailing newline, causing `AWCP_NODE_ENROLMENT_SECRET` to concatenate onto the preceding line, which bypassed `sed '/^AWCP_.../d'` deletion ([`ST-084-awcp-host-spike-findings.md:1229-1240`](file:///home/cpeddle/projects/ai-memory/docs/investigations/ST-084-awcp-host-spike-findings.md#L1229-L1240)). Verifying inside the running container via `printenv | wc -c` caught the unclosed window.
+- **Committed findings as the durable artifact**: Recognizing that database rows in Docker volumes will be wiped by test runs (specifically `workflow-mvp-e2e.test.ts`'s `DROP SCHEMA workflow CASCADE`), the plan captures transcripts and scoped SQL queries into committed documentation ([`ST-084-awcp-host-spike-findings.md:1350-1397`](file:///home/cpeddle/projects/ai-memory/docs/investigations/ST-084-awcp-host-spike-findings.md#L1350-L1397)).
+- **Transparent gap disclosure**: Honestly documents that `last_seen_at` in `workflow.execution_nodes` does not update upon event ingestion ([`ST-084-awcp-host-spike-findings.md:1401-1404`](file:///home/cpeddle/projects/ai-memory/docs/investigations/ST-084-awcp-host-spike-findings.md#L1401-L1404)), and clarifies that repo-rescan is an adjacent U3 scope gap rather than an ADR-016 criterion-6 failure ([`ST-084-awcp-host-spike-findings.md:1418-1425`](file:///home/cpeddle/projects/ai-memory/docs/investigations/ST-084-awcp-host-spike-findings.md#L1418-L1425)).
+- **Pre-commit credential validation**: Mechanically scans the staged git diff with `grep -F -f /tmp/awcp-credentials.list` before committing, ensuring no bearer or secret strings were published to version control.
+
+### 3. Concerns
+- **Standing de-enrolment hazard** (`Severity: MEDIUM`): Running tests against the dev database URL (e.g. via native `./dev.sh` or local `deno test`) triggers `DROP SCHEMA IF EXISTS workflow CASCADE` in [`server/tests/workflow-mvp-e2e.test.ts:104, 601`](file:///home/cpeddle/projects/ai-memory/server/tests/workflow-mvp-e2e.test.ts#L104), destroying `execution_nodes` and locking out `z2` behind a 401 until the enrolment window is manually reopened.
+- **`last_seen_at` timestamp stagnation** (`Severity: LOW`): `store.ingestRunEvents` ([`server/src/workflow/store.ts:807-829`](file:///home/cpeddle/projects/ai-memory/server/src/workflow/store.ts#L807-L829)) inserts into `run_events` without updating `last_seen_at` on the `execution_nodes` record. Only `upsertExecutionNode` ([`server/src/workflow/store.ts:705-710`](file:///home/cpeddle/projects/ai-memory/server/src/workflow/store.ts#L705-L710)) updates `last_seen_at`. As a result, active execution nodes appear stale in the nodes table unless they re-register.
+- **Smoke-level co-tenancy proof** (`Severity: LOW`): The co-tenancy observation ([`ST-084-awcp-host-spike-findings.md:1452-1478`](file:///home/cpeddle/projects/ai-memory/docs/investigations/ST-084-awcp-host-spike-findings.md#L1452-L1478)) consists of two sequential MCP calls (`search_thoughts` and `capture_thought`). While confirming baseline functionality alongside node rows, it does not evaluate performance under concurrent load.
+
+### 4. Suggestions
+- Update `store.ingestRunEvents` to asynchronously update `last_seen_at = now()` on `workflow.execution_nodes` during event batch ingestion.
+- Refactor `workflow-mvp-e2e.test.ts` to operate in an isolated schema or enforce that tests requiring destructive schema teardown execute only against `db-test`.
+- In Phase 4 (ADR-016 recommendation), explicitly factor in the smoke-level nature of the co-tenancy evidence when evaluating Candidate A vs Candidate C.
+
+### 5. Risk Assessment
+**Risk Level: LOW to MEDIUM**. The plan executed with high technical discipline, successfully capturing all necessary empirical evidence. The primary ongoing risk is operational: accidental execution of destructive tests against the dev database de-enrolling the node.
+
+---
+
+## Phase Requirements Traceability Matrix
+
+| Requirement | Description | Discharging Plans & Verification Evidence | Status |
+| :--- | :--- | :--- | :--- |
+| **EVENT-01** | Duplicate `(node_id, client_seq)` produces no duplicate hub state and returns identical ack | [`workflow-node-client-hub-e2e.test.ts:200-284`](file:///home/cpeddle/projects/ai-memory/server/tests/workflow-node-client-hub-e2e.test.ts#L200-L284); Experiment 5 in [`ST-084-awcp-host-spike-findings.md:1289-1302`](file:///home/cpeddle/projects/ai-memory/docs/investigations/ST-084-awcp-host-spike-findings.md#L1289-L1302) | ✅ **Discharged** |
+| **EVENT-02** | Disconnected node retains bounded local events, replays oldest-first on reconnection | [`awcp-node-client.test.ts:404-457`](file:///home/cpeddle/projects/ai-memory/server/tests/awcp-node-client.test.ts#L404-L457); Experiment 4 in [`ST-084-awcp-host-spike-findings.md:1261-1288`](file:///home/cpeddle/projects/ai-memory/docs/investigations/ST-084-awcp-host-spike-findings.md#L1261-L1288) | ✅ **Discharged** |
+| **EVENT-03** | Spool entry removed only after hub acknowledgement | [`awcp-node-client.test.ts:488-577`](file:///home/cpeddle/projects/ai-memory/server/tests/awcp-node-client.test.ts#L488-L577); [`server/scripts/awcp-node-client.mjs:666-688`](file:///home/cpeddle/projects/ai-memory/server/scripts/awcp-node-client.mjs#L666-L688); Experiment 4 | ✅ **Discharged** |
+| **EVENT-04** | Spool overflow drops oldest event and records visible counter | [`awcp-node-client.test.ts:224-336`](file:///home/cpeddle/projects/ai-memory/server/tests/awcp-node-client.test.ts#L224-L336); Overflow transcript in [`ST-084-awcp-host-spike-findings.md:1322-1339`](file:///home/cpeddle/projects/ai-memory/docs/investigations/ST-084-awcp-host-spike-findings.md#L1322-L1339) | ✅ **Discharged** |
+| **SAFE-01** | Existing authenticated MCP tools pass unmodified | [`03-REGRESSION-FINAL.txt:1-436`](file:///home/cpeddle/projects/ai-memory/.planning/phases/03-node-client-reliable-delivery-regression-safety/03-REGRESSION-FINAL.txt#L1-L436) (empty diff over 400 pre-Phase-3 tests); [`ST-084-awcp-host-spike-findings.md:1443-1447`](file:///home/cpeddle/projects/ai-memory/docs/investigations/ST-084-awcp-host-spike-findings.md#L1443-L1447) | ✅ **Discharged** |
+| **SAFE-02** | Tests repeatable on test stack without mutating seeded search corpus | 33/33 total and active corpus rows verified before/after; 2 consecutive clean runs of new test suites ([`03-05-SUMMARY.md:56-74`](file:///home/cpeddle/projects/ai-memory/.planning/phases/03-node-client-reliable-delivery-regression-safety/03-05-SUMMARY.md#L56-L74)) | ✅ **Discharged** |
+
+---
+
+## Conclusion
+
+The six implementation plans for Phase 3 constitute a cohesive, technically rigorous delivery. All design commitments (zero npm dependencies, atomic crash safety, sequence counter monotonicity, terminal auth states, and identity-based regression safety) are implemented correctly and verified by code and empirical test data. The findings documented in section `## 16.` provide a solid, evidenced foundation for Phase 4's ADR-016 host topology decision.
+
+---
+
+## Consensus Summary
+
+Both lanes conclude the phase **achieves its goals** and that all six requirements
+(EVENT-01..04, SAFE-01, SAFE-02) are discharged. They disagree sharply on **how much residual
+risk that leaves**: `codex` rates the phase **MEDIUM** overall with one HIGH finding;
+`antigravity` rates most plans **LOW** and the phase **LOW–MEDIUM**. That gap is itself the
+most useful output of this review, and it is concentrated in the client's local persistence
+layer.
+
+### Agreed Strengths
+
+Raised independently by both reviewers:
+
+- **Identity-keyed regression baseline.** Recording `<file>::<test> => ok|FAILED` for all 400
+  pre-phase tests, rather than totals, is what makes a removed or renamed test detectable.
+- **Real-process test boundary.** The e2e suite drives the production client against a
+  spawned hub over real HTTP and a real Postgres, not in-memory doubles.
+- **EVENT-01 duplicate proof.** Same `client_seq` submitted twice, acknowledgements compared
+  including `event_id`, scoped row count stays at one.
+- **D-14 sequence durability.** `client_seq` lives in its own counter file and is never
+  derived from the spool — closing the reset-to-zero mode where the hub's `ON CONFLICT DO
+  NOTHING` would silently swallow later events.
+- **Status-before-body parsing.** Checking `res.status` before `res.json()` is what keeps the
+  hub's plain-text 401 from being misclassified as a transport error, which is what makes
+  D-17 work at all.
+- **D-15 partial rejection.** Dropping only the sequences named in a 400 prevents one
+  oversized payload from blocking everything queued behind it.
+- **Zero-progress acknowledgement guard.** A 200 whose ack list does not intersect the batch
+  sent triggers bounded backoff instead of an infinite loop.
+- **D-13 credential-leak gate.** Intercepts all output channels *and* scans disk state, with
+  a transport error that deliberately carries the Authorization header.
+- **Three-way drop visibility.** Overflow is observable in persisted state, structured
+  stderr, and the `status` subcommand.
+- **Honest gap disclosure.** Both reviewers specifically credit the findings document for
+  recording what did *not* work (`last_seen_at` not advancing, repo-rescan not implemented)
+  rather than omitting it.
+
+### Agreed Concerns
+
+Raised independently by both, though at different severities:
+
+| Concern | codex | antigravity | Note |
 |---|---|---|---|
-| 1 | HIGH | `allocateSeq` is an unlocked read-increment-write; two concurrent client processes can allocate the same `client_seq`. The "repeated allocation" test loops sequentially in one process, so it does not exercise this. | `server/scripts/awcp-node-client.mjs:250` — confirmed: `existsSync` → `readFileSync` → `+1` → `writeFileFsync`, no lock file |
-| 2 | MEDIUM | Crash durability is overstated — `writeSpool` fsyncs the temp fd and renames, but never fsyncs the containing directory, so the rename itself is not power-loss durable. | `server/scripts/awcp-node-client.mjs:318` — confirmed: `openSync`/`writeSync`/`fsyncSync`/`closeSync` on the temp file only, then rename |
-| 3 | MEDIUM | Eviction and drop accounting are not atomic — `evictOldest` calls `writeSpool` first and `recordDrops` second. A crash between them loses events *without* incrementing the counter EVENT-04 requires to be visible. | `server/scripts/awcp-node-client.mjs:413` — confirmed ordering |
-| 4 | MEDIUM | Phase execution state is stale. `.planning/STATE.md` still reads `status: executing`, `stopped_at: Completed 03-05-PLAN.md`, `Status: Ready to execute` — the same staleness as the roadmap checkbox above. | `.planning/STATE.md:7`, `:31` — confirmed |
-| 5 | MEDIUM | `FEATURE_WORKFLOW: "true"` is hardcoded on the base `mcp` service with no deadline or owner for reverting it, expanding the published dev-port surface indefinitely. | `docker-compose.yml:58` — confirmed hardcoded, with the reasoning preserved in the comment block above it |
+| Multi-process safety of the spool / sequence counter | **HIGH** | LOW (suggestion: "consider `flock`") | Same mechanism, four severity steps apart — see Divergent Views |
+| `FEATURE_WORKFLOW` left permanently on, expanding the dev surface | MEDIUM | LOW | codex faults the missing owner/deadline; agy faults the unauthenticated `/workflow` shell on `0.0.0.0` |
+| Co-tenancy evidence is smoke-level only | MEDIUM | LOW | Both say it must not be read as a scaling result |
+| Full-spool rewrite/parse is O(n) | LOW | LOW | Both call it fine at the 1,000-entry cap, and both say record it as a scaling limit |
+| `last_seen_at` never advances on ingestion | noted as honest disclosure | LOW, with root cause | agy located it: `store.ingestRunEvents` doesn't touch it; only `upsertExecutionNode` does |
 
-Further MEDIUM findings not independently re-verified in this session, recorded as the
-reviewer stated them: module-import side effects (`process.emitWarning` replaced at
-evaluation time, `awcp-node-client.mjs:134`); malformed-response handling (`res.json()` on a
-400, `body.acknowledged.map` assumed on a 200); SIGINT/SIGTERM shutdown blocked in
-`sleepImpl` for up to a full heartbeat interval; graceful stop reporting exit 0 with an
-undelivered final checkpoint still spooled; the real-node "exactly one request" claim being
-inferred from the client path rather than measured from a hub log; and the retained
-co-tenancy `capture_thought` row in dev memory.
+### Divergent Views
 
-### The limitation worth carrying into ADR-016
+**These are the findings worth investigating, because one reviewer looked at the same code
+and reached the opposite conclusion.**
 
-Codex's closing sentence is the one that matters for Phase 4's host decision, and it is not
-a defect claim:
+1. **Crash durability — direct contradiction.** `antigravity` lists `writeSpool` as a
+   *strength*: "crash-safe atomic file replacement… temporary file creation, synchronous
+   write, OS flush, and POSIX `renameSync`", verified by an injected crash hook. `codex`
+   calls the same code a MEDIUM defect: the temp file is fsynced but the **containing
+   directory never is**, so the rename itself is not durable across power loss.
+   **Adjudicated in codex's favour:** `grep -n "fsyncSync\|renameSync\|opendirSync"` over
+   `server/scripts/awcp-node-client.mjs` returns no `opendirSync` at all, and every
+   `fsyncSync` precedes its `renameSync` (321→333, 372→376). agy verified the atomic-rename
+   property and stopped there; the missing directory sync is real. Note it applies to
+   `writeState` as well, which neither reviewer mentioned.
+
+2. **Concurrency severity — HIGH vs. a passing suggestion.** Both saw that nothing serialises
+   access to `AWCP_HOME`. `codex` traces it to an unlocked read-increment-write in
+   `allocateSeq` and rates it HIGH, additionally noting the "repeated allocation" test loops
+   *sequentially in one process* and so does not test the property it appears to. agy raises
+   it only as a conditional suggestion. codex's version is the falsifiable one and matches
+   the code.
+
+3. **Malformed responses.** `codex` MEDIUM: a 400 unconditionally calls `res.json()`, and a
+   200 assumes `body.acknowledged.map` exists, so invalid JSON rejects `flush()` instead of
+   returning a typed outcome. agy examined the same function and recorded only the
+   status-before-body strength. Unreconciled — agy did not argue the case, it did not raise
+   it.
+
+4. **Shutdown semantics.** Both saw `runAgent` blocking in `sleepImpl`. `codex` MEDIUM:
+   SIGINT/SIGTERM can wait a full ~60s heartbeat, and a graceful stop can exit 0 with the
+   final checkpoint still spooled. agy LOW: "acceptable given the default 60s heartbeat
+   cadence." A judgement difference, not a factual one — but note agy addressed only the
+   latency, not the misleading exit code.
+
+5. **Eviction/counter atomicity and stale planning state** were raised by `codex` only
+   (`evictOldest` writes the spool before `recordDrops`; `.planning/STATE.md` still says
+   `executing`). agy did not examine `.planning/` state.
+
+6. **Findings `codex` missed entirely** — all three verified in this session:
+   - **Standing de-enrolment hazard (agy, MEDIUM).** `workflow-mvp-e2e.test.ts` runs
+     `DROP SCHEMA IF EXISTS workflow CASCADE` (lines **104** and **601**). Run against the
+     dev database it destroys `execution_nodes` and locks `z2` out behind a 401 until the
+     enrolment window is manually reopened. This is the most operationally consequential
+     finding in the document and only one reviewer saw it.
+   - **Fixed test port (agy, MEDIUM).** `const PORT = 3146` at
+     `workflow-node-client-hub-e2e.test.ts:53` collides under parallel runners or an orphaned
+     process.
+   - **`last_seen_at` root cause (agy, LOW).** Only `upsertExecutionNode`
+     (`store.ts:706`) sets it; `ingestRunEvents` does not — so a healthily-reporting node
+     reads as stale.
+
+---
+
+## Findings verified against source in this session
+
+The orchestrating session opened the cited lines for the eight findings below. Each was
+confirmed present as described. This verifies the **mechanism**, not the severity.
+
+| # | Sev | Reviewer | Finding | Verified at |
+|---|---|---|---|---|
+| 1 | HIGH | codex | `allocateSeq` is an unlocked read-increment-write; concurrent processes can allocate the same `client_seq` | `awcp-node-client.mjs:250` |
+| 2 | MED | agy | `DROP SCHEMA IF EXISTS workflow CASCADE` de-enrols `z2` if run against the dev DB | `workflow-mvp-e2e.test.ts:104`, `:601` |
+| 3 | MED | codex | No directory fsync after rename — crash-durability claim overstated | `awcp-node-client.mjs:318`, `:333`; no `opendirSync` in file |
+| 4 | MED | codex | `evictOldest` writes the spool *before* `recordDrops`; a crash between loses events without the visible counter | `awcp-node-client.mjs:413` |
+| 5 | MED | agy | Hardcoded test port | `workflow-node-client-hub-e2e.test.ts:53` |
+| 6 | MED | codex | Stale phase state — `status: executing`, `Completed 03-05-PLAN.md` | `.planning/STATE.md:7`, `:31` |
+| 7 | MED | codex | `FEATURE_WORKFLOW: "true"` hardcoded, no owner or deadline | `docker-compose.yml:58` |
+| 8 | LOW | agy | `last_seen_at` set only by `upsertExecutionNode`, not by ingestion | `store.ts:706`; absent from `ingestRunEvents` |
+
+Not re-verified here, recorded as stated: module-import side effects
+(`process.emitWarning` replaced at evaluation, `:134`); malformed-response handling;
+shutdown latency and exit-code semantics; the real-node "exactly one request" claim being
+inferred rather than measured; the retained co-tenancy `capture_thought` row; and
+`node_id: null` on a checkpoint emitted before registration.
+
+### The limitation to carry into ADR-016
+
+`codex` states it directly and `antigravity`'s `flock` suggestion implies the same boundary:
 
 > reliable delivery was demonstrated under a single active client process, not concurrent
 > local producers or every hard-crash boundary.
 
-Findings 1–3 are all instances of that single scope statement. If ADR-016 cites Phase 3
+Findings 1, 3 and 4 are all instances of that one scope statement. If ADR-016 cites Phase 3
 evidence, it should carry this qualifier rather than an unbounded "reliable delivery proven."
+Both reviewers also independently say the co-tenancy observation must not be read as a
+scaling result.
 
 ---
 
 ## Suggested disposition
 
-Phase 3 is executed, verified (`03-VERIFICATION.md`) and code-reviewed (`03-REVIEW.md`), and
-its work is merged. **Do not route this into `/gsd-plan-phase 3 --reviews`** — that would
-replan shipped work. The findings belong in one of three places:
+Phase 3 is executed, verified (`03-VERIFICATION.md`), code-reviewed (`03-REVIEW.md`) and
+merged. **Do not route this into `/gsd-plan-phase 3 --reviews`** — that replans shipped work.
+The findings belong in three places:
 
-- **Phase 4 input** — the ADR-016 scope qualifier, and the `FEATURE_WORKFLOW` persistence
-  decision (finding 5), which Phase 4 already owns.
-- **Housekeeping, now** — finding 4 (`.planning/STATE.md`) and the stale
-  `**Plans**: 5/6` / unchecked `03-06` line in `.planning/ROADMAP.md`.
-- **A new ST-NNN story** — findings 1–3 plus the malformed-response and shutdown-semantics
-  concerns, as node-client hardening. These are real gaps, but they are hardening beyond
-  what Phase 3 set out to prove.
+- **Phase 4 input** — the ADR-016 scope qualifier; the smoke-level co-tenancy caveat; and the
+  `FEATURE_WORKFLOW` persistence decision Phase 4 already owns.
+- **Housekeeping, now** — finding 6 (`.planning/STATE.md`) and the stale `**Plans**: 5/6` /
+  unchecked `03-06` line in `.planning/ROADMAP.md`.
+- **A new ST-NNN — node-client hardening** — findings 1, 3, 4 (single-writer or cross-process
+  safety, directory fsync, recoverable drop accounting), plus malformed-response handling and
+  shutdown exit semantics.
+- **A second new ST-NNN, or a `docs/solutions/` entry — test-suite operational safety** —
+  findings 2 and 5. Finding 2 in particular is a foot-gun that will bite again: an ordinary
+  local `deno test` against the dev database silently de-enrols the real node.
