@@ -28,6 +28,8 @@
 import {
   assert,
   assertEquals,
+  assertRejects,
+  assertThrows,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import process from "node:process";
 
@@ -47,6 +49,7 @@ import {
   resolveConfig,
   runAgent,
   writeSpool,
+  writeState,
 } from "../scripts/awcp-node-client.mjs";
 
 const T = { sanitizeResources: false, sanitizeOps: false };
@@ -1439,6 +1442,134 @@ Deno.test({
     assert(
       !diskContents.includes(enrolmentSecret),
       "no on-disk file may contain the enrolment secret",
+    );
+  },
+});
+
+// ---------------------------------------------------------------------------
+// ST-092 U1 (R2): the rename itself is made durable, not just the file contents.
+//
+// An fsync leaves nothing on disk to assert against — the bytes look identical
+// whether or not it happened — so a test cannot observe durability directly. What it
+// can observe is whether the call was made, which is why `fsyncDirImpl` is a config
+// seam. The pair of tests below is deliberate: the first counts calls through the
+// seam, and the second proves the seam's PRODUCTION DEFAULT is a real fsync rather
+// than a no-op, since a counting test alone would pass just as happily against a
+// default of `() => {}`.
+// ---------------------------------------------------------------------------
+
+/** Collects the directories handed to the fsync seam, in call order. */
+function fsyncDirSpy(calls: string[]) {
+  return (dirPath: string) => {
+    calls.push(dirPath);
+  };
+}
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R2: writeSpool fsyncs the spool's containing directory exactly once per call, after the rename",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const calls: string[] = [];
+    const config = resolveConfig({ home, fsyncDirImpl: fsyncDirSpy(calls) });
+
+    writeSpool(config, [{ client_seq: 1, event_type: "e", payload: null }]);
+
+    assertEquals(calls, [home], "one directory fsync, on the spool's own directory");
+
+    // Ordering matters as much as the count: fsyncing before the rename would sync a
+    // directory state that does not yet contain the replacement. Prove the ordering
+    // by observing, from inside the seam, that the target already holds the new
+    // content when the fsync runs.
+    const observed: string[] = [];
+    const orderConfig = resolveConfig({
+      home,
+      fsyncDirImpl: () => {
+        observed.push(Deno.readTextFileSync(`${home}/spool.jsonl`));
+      },
+    });
+    writeSpool(orderConfig, [{ client_seq: 2, event_type: "after", payload: null }]);
+    assertEquals(observed.length, 1);
+    assert(
+      observed[0].includes('"event_type":"after"'),
+      "the directory fsync must run AFTER the rename, not before it — the target " +
+        `still held the old content when the fsync fired: ${observed[0]}`,
+    );
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R2: writeState fsyncs the state file's containing directory exactly once per call",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const calls: string[] = [];
+    const config = resolveConfig({ home, fsyncDirImpl: fsyncDirSpy(calls) });
+
+    writeState(config, {
+      dropped_events: 3,
+      last_drop_at: null,
+      last_dropped_client_seq: null,
+      last_drop_reason: null,
+    });
+
+    assertEquals(calls, [home]);
+    assertEquals(readState(config).dropped_events, 3, "the write still lands");
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R2 control: the production fsync default really syncs a directory and throws when it cannot",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    // Built WITHOUT an override, so this is the value production runs with. If this
+    // were ever defaulted to a no-op the counting tests above would still be green.
+    const config = resolveConfig({ home });
+    assertEquals(typeof config.fsyncDirImpl, "function");
+
+    // Green: a real directory syncs without complaint.
+    config.fsyncDirImpl(home);
+
+    // Red: a directory that does not exist must surface the error. A durability
+    // helper that swallows its own failure leaves every caller believing the rename
+    // was made durable — strictly worse than not having one.
+    assertThrows(
+      () => config.fsyncDirImpl(`${home}/definitely-not-a-directory`),
+      Error,
+    );
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R2: a failing directory fsync propagates out of writeSpool and writeState rather than being swallowed",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const boom = () => {
+      throw new Error("fsyncDir refused (test double)");
+    };
+    const config = resolveConfig({ home, fsyncDirImpl: boom });
+
+    assertThrows(
+      () => writeSpool(config, []),
+      Error,
+      "fsyncDir refused",
+    );
+    assertThrows(
+      () =>
+        writeState(config, {
+          dropped_events: 0,
+          last_drop_at: null,
+          last_dropped_client_seq: null,
+          last_drop_reason: null,
+        }),
+      Error,
+      "fsyncDir refused",
     );
   },
 });

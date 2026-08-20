@@ -176,6 +176,36 @@ function appendLineFsync(path, line, mode) {
 }
 
 /**
+ * fsync a DIRECTORY, so a `renameSync` into it survives power loss (ST-092 R2).
+ *
+ * `fsyncSync` on the renamed file's own descriptor is not enough and never was:
+ * it forces the file's CONTENTS to disk, while the rename is a change to the
+ * containing directory's entries, which lives in a different set of blocks and
+ * in the directory's own page cache. POSIX requires fsync on the directory
+ * itself to make a rename durable, so without this every rewrite-and-rename
+ * writer below could lose the replacement — not to a torn file, which rename
+ * genuinely prevents, but to the whole rename evaporating.
+ *
+ * Node exposes no fsync-a-directory API by name: `opendirSync` returns a `Dir`
+ * with no file descriptor to sync. Opening the directory O_RDONLY and syncing
+ * that descriptor is the portable POSIX idiom, and it works under both Node and
+ * Deno's `node:fs` shim (verified on both before this was written).
+ *
+ * Deliberately NOT wrapped in a try/catch. A durability helper that swallows its
+ * own failure is worse than none: every caller would still believe the rename
+ * was made durable, which is the exact false assurance `writeSpool`'s docblock
+ * used to carry.
+ */
+function fsyncDir(dirPath) {
+  const fd = openSync(dirPath, "r");
+  try {
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
  * Every persisted path and every dependency is a parameter with a production default
  * applied only when an override is absent (RESEARCH.md Pattern 3) — so a test can
  * point this at `/tmp` and stay inside CLAUDE.md's existing `--allow-write=/tmp`
@@ -227,6 +257,11 @@ export function resolveConfig(overrides = {}) {
     heartbeatIntervalMs: overrides.heartbeatIntervalMs ?? envHeartbeatMs,
     sleepImpl: overrides.sleepImpl ?? defaultSleep,
     randomImpl: overrides.randomImpl ?? Math.random,
+    // ST-092 R2: the directory-fsync seam. Present for the same reason `stderrWrite`
+    // is — an fsync leaves no observable trace on disk, so the only way a test can
+    // prove the rename was made durable rather than merely performed is to count the
+    // calls. Defaulted here so production behaviour never depends on a test setting it.
+    fsyncDirImpl: overrides.fsyncDirImpl ?? fsyncDir,
   };
 }
 
@@ -300,11 +335,20 @@ export function readSpool(config) {
 
 /**
  * Rewrite-and-rename (RESEARCH.md Pattern 1): write the full new line set to a temp
- * file in the same directory, `fsyncSync` it, then `renameSync` over the target.
- * `rename()` is atomic on the same POSIX filesystem, so a crash mid-write leaves
- * either the old complete spool or the new one — never a truncated one. A plain
- * `writeSync` without `fsyncSync` is not sufficient: a synchronous Node write blocks
- * the event loop but does not force the OS page cache to disk.
+ * file in the same directory, `fsyncSync` it, `renameSync` over the target, then
+ * `fsyncDir` the containing directory. `rename()` is atomic on the same POSIX
+ * filesystem, so a crash mid-write leaves either the old complete spool or the new
+ * one — never a truncated one. A plain `writeSync` without `fsyncSync` is not
+ * sufficient: a synchronous Node write blocks the event loop but does not force the
+ * OS page cache to disk.
+ *
+ * ST-092 R2 — the directory fsync is the third of those three steps, and until this
+ * story it was missing. This docblock previously stopped after the rename and claimed
+ * the crash guarantee outright, which was true of the file's CONTENTS and not of the
+ * rename: `renameSync` is atomic with respect to a concurrent reader, but a rename
+ * that lives only in the directory's page cache does not survive power loss, so the
+ * guarantee the comment offered was strictly stronger than the one the code provided.
+ * The comment was part of the defect, not merely documentation of it.
  */
 export function writeSpool(config, entries) {
   ensureStateDir(config);
@@ -331,6 +375,7 @@ export function writeSpool(config, entries) {
     config.beforeRename(tmpPath);
   }
   renameSync(tmpPath, config.spoolPath);
+  (config.fsyncDirImpl ?? fsyncDir)(dirname(config.spoolPath));
 }
 
 /**
@@ -358,7 +403,10 @@ export function readState(config) {
  * Rewrite-and-rename `<home>/state.json`, mode 0600 — a torn counter file is as bad as
  * a torn spool (T-03-03-02): the same primitive `writeSpool` uses for its two
  * shrink operations, applied here because this file's write is also a full-content
- * replace, never an append.
+ * replace, never an append. Carries `writeSpool`'s ST-092 directory fsync for the
+ * same reason: the drop counter this file holds is the ONLY visible record that an
+ * event was dropped (EVENT-04), so a rename that does not survive power loss makes
+ * the drop silent, which is precisely what the counter exists to prevent.
  */
 export function writeState(config, state) {
   ensureStateDir(config);
@@ -374,6 +422,7 @@ export function writeState(config, state) {
     closeSync(fd);
   }
   renameSync(tmpPath, config.statePath);
+  (config.fsyncDirImpl ?? fsyncDir)(dirname(config.statePath));
 }
 
 /**
