@@ -38,6 +38,7 @@ import {
   appendEvent,
   emitCheckpoint,
   emitHeartbeat,
+  evictOldest,
   flush,
   flushOnce,
   main,
@@ -1706,5 +1707,111 @@ Deno.test({
       0o600,
       "rewrite-and-rename must not widen the counter's mode (D-16)",
     );
+  },
+});
+
+// ---------------------------------------------------------------------------
+// ST-092 U2 (R3): eviction records the drop BEFORE it shrinks the spool.
+//
+// The two steps cannot be made atomic without a journal and a recovery path, so the
+// requirement is met by choosing which way the crash window fails. Shrink-then-record
+// loses events without incrementing the counter — silent, and exactly what EVENT-04
+// forbids. Record-then-shrink over-counts for events still in the spool — visible in
+// the counter, costs an inflated total, and nothing is lost. Over-reporting a drop is
+// a strictly better failure than losing an event invisibly.
+// ---------------------------------------------------------------------------
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R3: a crash between recording a drop and shrinking the spool over-counts, and loses nothing",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = resolveConfig({ home, spoolMaxEntries: 10 });
+    const seqs: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      seqs.push(appendEvent(config, { event_type: "e", payload: { i } }));
+    }
+    assertEquals(readState(config).dropped_events, 0);
+
+    // Crash in the window between the two steps. `beforeRename` fires inside
+    // writeSpool, which under the corrected ordering runs SECOND — so the drop has
+    // already been recorded when this throws.
+    const crashing = {
+      ...config,
+      beforeRename: () => {
+        throw new Error("simulated crash mid-eviction (test double)");
+      },
+    };
+    assertThrows(() => evictOldest(crashing, 1), Error, "simulated crash mid-eviction");
+
+    assertEquals(
+      readState(config).dropped_events,
+      1,
+      "the drop must already be counted — an event that leaves the spool without " +
+        "the counter having moved first is the silent loss EVENT-04 forbids",
+    );
+    assertEquals(
+      readSpool(config).map((e: { client_seq: number }) => e.client_seq),
+      seqs,
+      "the spool is untouched: this is the over-count, not a loss",
+    );
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R3: ordinary overflow still evicts oldest-first and increments the counter exactly once per entry",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const lines: string[] = [];
+    const config = resolveConfig({
+      home,
+      spoolMaxEntries: 10,
+      stderrWrite: (line: string) => lines.push(line),
+    });
+    const seqs: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      seqs.push(appendEvent(config, { event_type: "e", payload: { i } }));
+    }
+
+    const dropped = evictOldest(config, 2);
+    assertEquals(dropped, seqs.slice(0, 2), "oldest-first");
+    assertEquals(
+      readSpool(config).map((e: { client_seq: number }) => e.client_seq),
+      seqs.slice(2),
+      "the newest entries are retained",
+    );
+    assertEquals(readState(config).dropped_events, 2);
+    assertEquals(lines.length, 2, "one structured stderr line per dropped entry");
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R3: evictOldest(0) and an empty spool remain no-ops that write nothing",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const lines: string[] = [];
+    const config = resolveConfig({
+      home,
+      spoolMaxEntries: 10,
+      stderrWrite: (line: string) => lines.push(line),
+    });
+    appendEvent(config, { event_type: "e", payload: null });
+    const before = await Deno.readTextFile(config.spoolPath);
+
+    assertEquals(evictOldest(config, 0), []);
+    assertEquals(evictOldest(config, -1), []);
+    assertEquals(await Deno.readTextFile(config.spoolPath), before);
+    assertEquals(readState(config).dropped_events, 0);
+    assertEquals(lines.length, 0);
+
+    const emptyHome = await Deno.makeTempDir();
+    const emptyConfig = resolveConfig({ home: emptyHome });
+    assertEquals(evictOldest(emptyConfig, 5), []);
+    assertEquals(readState(emptyConfig).dropped_events, 0);
   },
 });

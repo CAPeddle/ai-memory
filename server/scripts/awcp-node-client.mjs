@@ -511,6 +511,24 @@ export function recordDrops(config, seqs, reason) {
  * Removes the `count` lowest-`client_seq` entries from the spool via `writeSpool`
  * (the same rewrite-and-rename primitive that shrinks it on ack) and records the drop.
  * Returns the dropped seqs.
+ *
+ * **ST-092 R3 — record first, shrink second, and the order is the whole point.** The
+ * two steps are separate on-disk writes and cannot be made atomic without a journal
+ * and a recovery path to read it, so what this function actually chooses is WHICH WAY
+ * the crash window between them fails:
+ *
+ *   - shrink-then-record (what this did until ST-092): a crash between the two leaves
+ *     events gone from the spool with the counter never incremented. Silent loss —
+ *     exactly what EVENT-04's visible counter exists to make impossible.
+ *   - record-then-shrink (now): a crash between the two counts drops for entries that
+ *     are still in the spool. The total is inflated and the stderr lines name seqs
+ *     that were not really lost — visible, wrong in a direction an operator can see,
+ *     and nothing is missing.
+ *
+ * Over-reporting a drop is a strictly better failure than losing an event invisibly.
+ * Note the over-count is NOT self-correcting: nothing later reconciles the counter
+ * against the spool, so the inflated total persists until the state file is reset.
+ * That is accepted as the cheaper of the two errors, not overlooked.
  */
 export function evictOldest(config, count) {
   if (!count || count <= 0) return [];
@@ -518,9 +536,9 @@ export function evictOldest(config, count) {
   const toEvict = entries.slice(0, count);
   if (toEvict.length === 0) return [];
   const remaining = entries.slice(toEvict.length);
-  writeSpool(config, remaining);
   const seqs = toEvict.map((entry) => entry.client_seq);
   recordDrops(config, seqs, "spool_overflow");
+  writeSpool(config, remaining);
   return seqs;
 }
 
