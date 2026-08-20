@@ -1,6 +1,6 @@
-# 2026-08-20T08:00:13Z
-# a1c014cdaecee5b883153e79816dc3fdacab72b3
-# docker compose --profile test exec -T mcp-test deno test --frozen --allow-net --allow-env --allow-read --allow-write=/tmp --allow-run=deno,git --junit-path=/tmp/st092.junit.xml tests/
+# 2026-08-20T08:13:23Z
+# c3d5fdc807037185c722b77e4137ae414786c58c
+# docker compose --profile test exec -T mcp-test deno test --frozen --allow-net --allow-env --allow-read --allow-write=/tmp --allow-run=deno,git --junit-path=/tmp/st092b.junit.xml tests/
 ./tests/awcp-cli.test.ts::ST-087: the CLI's permission grants are read from the shipped shebang => ok
 ./tests/awcp-cli.test.ts::ST-087: the CLI's permission grants are read from the shipped shebang > a file with no shebang throws rather than defaulting => ok
 ./tests/awcp-cli.test.ts::ST-087: the CLI's permission grants are read from the shipped shebang > the grants match what the script declares => ok
@@ -72,10 +72,12 @@
 ./tests/awcp-node-client.test.ts::ST-092 R4: a 200 that is not a valid acknowledgement is `malformed`, and flush removes nothing => ok
 ./tests/awcp-node-client.test.ts::ST-092 R4: a 400 and a 200 whose bodies are not JSON both return `malformed` with the spool untouched => ok
 ./tests/awcp-node-client.test.ts::ST-092 R4: an empty `acknowledged` array is still a VALID body — zero progress, not corruption => ok
+./tests/awcp-node-client.test.ts::ST-092 R5 control: the production sleep really resolves early on abort, and really waits without one => ok
 ./tests/awcp-node-client.test.ts::ST-092 R5: a stop whose final flush drains the spool exits 0 => ok
 ./tests/awcp-node-client.test.ts::ST-092 R5: a stop whose final flush is deferred exits 75, not 0 => ok
 ./tests/awcp-node-client.test.ts::ST-092 R5: a terminal-auth outcome still exits 77 and is still reported terminal => ok
 ./tests/awcp-node-client.test.ts::ST-092 R5: stop() during the heartbeat wait wakes the loop immediately instead of waiting the interval out => ok
+./tests/awcp-node-client.test.ts::ST-092 R5: the heartbeat wait is handed an abort signal, and stop() aborts it => ok
 ./tests/awcp-node-client.test.ts::ST-092 R5: the stop checkpoint is emitted exactly once even when stop() is called twice => ok
 ./tests/awcp-node-client.test.ts::a 404 (unknown node) stops after exactly one request and leaves the spool intact => ok
 ./tests/awcp-node-client.test.ts::a 413 (payload too large) stops after exactly one request and leaves the spool intact => ok
@@ -196,7 +198,7 @@
 ./tests/health-check.unit.test.ts::deepHealthCheck: worker last run exceeds stale threshold → degraded => ok
 ./tests/health-ready.test.ts::/ready has all seven check fields => ok
 ./tests/health-ready.test.ts::/ready reports embedding_backlog as n/a (backfill disabled in test env) => ok
-./tests/health-ready.test.ts::/ready reports healthy postgres, pgvector, age, and embedding_api => FAILED
+./tests/health-ready.test.ts::/ready reports healthy postgres, pgvector, age, and embedding_api => ok
 ./tests/health-ready.test.ts::/ready returns 200 (not 503) with correct response shape => ok
 ./tests/health-ready.test.ts::/ready returns JSON content-type => ok
 ./tests/identifier-normalization.test.ts::normalizeIdentifiers handles empty and identifier-only input => ok

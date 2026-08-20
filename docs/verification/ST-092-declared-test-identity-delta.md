@@ -74,70 +74,72 @@ built, and gained a guard call — none of which touches a `Deno.test` name or a
 3. Compare against the baseline with the three header lines stripped.
 4. Every added line must be in the ADDED set above. Every removed line is a regression.
 
+
 ---
 
 # Observed result
 
 Run recorded in [`ST-092-regression-final.txt`](ST-092-regression-final.txt), in the
-baseline's own format. **480 identities observed against 432 in the baseline.**
+baseline's own format. **482 identities observed against 432 in the baseline.**
 
 Reconciliation, stated as an identity over its parts so it recomputes as the suite
 grows rather than going stale:
 
 ```
-432 baseline  +  49 added  −  1 removed  =  480 observed
+432 baseline  +  50 added  −  0 removed  =  482 observed
 ```
 
-## Added: 49 — every one of them declared
+## Removed: none
+
+**No pre-existing test identity is missing, and none changed outcome.** The failure set
+matches the baseline name for name — the same eight `e2e.test.ts` identities and the
+same `entity-worker-observability` one, all recorded as FAILED in
+`03-REGRESSION-FINAL.txt` itself for want of model-provider egress. That is the half of
+the declaration that carries the regression signal, and it holds exactly.
+
+## Added: 50 — 48 declared, 2 added mid-story and recorded here
 
 | File | Observed | Declared |
 |---|---|---|
-| `tests/awcp-node-client.test.ts` | 31 | 31 (4 + 4 + 3 + 5 + 5 + 10) |
+| `tests/awcp-node-client.test.ts` | 33 | 31 — see below |
 | `tests/awcp-node-client-lock.test.ts` | 7 | 3 tests + their 4 sub-steps |
 | `tests/test-database-guard.test.ts` | 7 | yes |
 | `tests/server-process-ports.test.ts` | 3 | yes |
-| `tests/health-ready.test.ts` | 1 | **no — see below** |
 
-## Removed: 1 — and it is the same test, not a missing one
+By requirement, inside `awcp-node-client.test.ts`: R1 × 10, R2 × 4, R2b × 4, R3 × 3,
+R4 × 5, **R5 × 7** — declared as 5.
 
-```
-- ./tests/health-ready.test.ts::/ready reports healthy postgres, pgvector, age, and embedding_api => ok
-+ ./tests/health-ready.test.ts::/ready reports healthy postgres, pgvector, age, and embedding_api => FAILED
-```
+The two extra R5 identities are a defect found by measuring the R5 change rather than
+trusting it, and fixed in the same story. Racing the heartbeat wait against a stop
+signal woke the loop immediately but left the `setTimeout` pending, and a pending timer
+keeps Node's event loop alive — so the stop checkpoint and final flush completed at
+once while the process outlived its own shutdown. A/B against a hub that acks
+immediately, 45s heartbeat: **42.2s to exit without the abort signal, 82ms with it.**
+The two tests are the wiring assertion and the control that drives the real
+`defaultSleep`, so the wiring test cannot pass against a sleep that ignores the signal.
 
-This is a comparison over `name => outcome` strings, so an outcome flip shows up as one
-removal and one addition. **No test identity disappeared.** That is the half of the
-declaration that carries the regression signal, and it holds exactly.
+Recorded as an addition to the declaration rather than folded into it silently. The
+declaration's purpose is to make an unexpected identity visible; an unexpected identity
+that turned out to be a genuine fix is exactly what it is supposed to surface.
 
-## The one undeclared item, and why it is not attributed to this story
+## An earlier run, and why it is worth recording
 
-The declaration said no pre-existing identity would change outcome. One did, and the
-honest thing is to record it rather than widen the declaration after the fact.
+The first full-suite run at this scope showed one pre-existing identity flipping
+outcome — `/ready reports healthy postgres, pgvector, age, and embedding_api` going
+`ok → FAILED`. It did **not** reproduce in this final run, and the diagnosis at the
+time was that the container has no route to the provider at all (`curl --max-time 15
+https://openrouter.ai/api/v1/models` from inside `mcp-test` returns HTTP `000` in 8ms,
+the SSL-proxy interception CLAUDE.md documents), and that this particular probe is
+*cached with a timeout* — so it sits on the boundary rather than failing outright like
+the nine that own the baseline's recorded failures.
 
-The evidence that it is environmental:
-
-1. **The provider is unreachable from the test container.** `curl --max-time 15
-   https://openrouter.ai/api/v1/models` from inside `mcp-test` returns HTTP `000` after
-   0.008s — no connection at all. `/ready` reports
-   `embedding_api: {status: "error", error: "embedding API probe failed: TimeoutError"}`.
-   This is the corporate SSL-proxy interception CLAUDE.md documents for containers.
-2. **The same cause already owns nine of the baseline's own failures.** The eight
-   `e2e.test.ts` failures and the `entity-worker-observability` failure are recorded as
-   FAILED in `03-REGRESSION-FINAL.txt` itself, for this same reason. This probe sits on
-   the boundary because it is a *cached* probe with a timeout — it was reachable enough
-   at the moment the baseline was taken and is not now.
-3. **This branch changes no code that could affect it.** `git diff main..HEAD --
-   server/src/ server/index.ts server/db/schema.sql` is empty. Nothing in ST-092 touches
-   embeddings, the health check, or any provider path. Every source change is in
-   `server/scripts/awcp-node-client.mjs`; everything else is tests, helpers, compose
-   configuration, and documentation.
-
-Recorded as a **Baseline** change, in this repo's sense of the word: which tests fail
-for known environmental reasons on this machine, at this commit. The correct baseline
-for a run on a machine without provider egress is the nine already documented plus this
-one — ten.
+A non-reproducing flip is weaker evidence than a stable one, and saying so is the point
+of leaving this paragraph in: the identity is `ok` in the artifact above, and the honest
+reading is that this probe is flaky on a machine without provider egress, not that it
+was ever affected by this story. `git diff main..HEAD -- server/src/ server/index.ts
+server/db/schema.sql` is empty, so nothing on this branch can reach it.
 
 ## Verdict
 
-The observed delta equals the declared delta, with the single environmental exception
-recorded above. No pre-existing identity is missing. **Gate passed.**
+Zero removed, zero outcome changes, and every addition either declared in advance or
+recorded above with the defect it came from. **Gate passed.**
