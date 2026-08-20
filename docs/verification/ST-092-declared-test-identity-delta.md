@@ -143,3 +143,95 @@ server/db/schema.sql` is empty, so nothing on this branch can reach it.
 
 Zero removed, zero outcome changes, and every addition either declared in advance or
 recorded above with the defect it came from. **Gate passed.**
+
+---
+
+## Round 2 — PR #52 review remediation (declared before the comparison ran)
+
+Codex and Copilot reviewed `f0c5fc0` on PR #52 and raised four findings. Three were
+fixed on this branch; the fourth (stale-lock reclaim) is deferred and is not part of
+this delta. Only one of the three is test-bearing.
+
+**Expected delta: +1 identity, 0 removed, 0 outcome changes. 482 → 483.**
+
+Added:
+
+- `./tests/awcp-node-client.test.ts::ST-092 R5: defaultSleep removes its abort listener
+  when the timer fires, not only when it aborts`
+
+The other two fixes are not test-bearing and are declared as such deliberately, so their
+absence from the delta is a recorded expectation rather than an oversight:
+
+- `allocateSeq`'s corruption message interpolates `config.home` instead of a hard-coded
+  `~/.awcp/`. Asserting on the wording of an operator hint pins prose, not behavior.
+- `AwcpLockError`'s live-holder branch now names the pid-reuse recovery. Same reasoning.
+  The existing spawned-process test already asserts the refusal exits 69 and names the
+  holder's pid, which is the behavior; the added sentence is guidance.
+
+### The control that mattered
+
+The listener test was first run against the unfixed code and **failed on its assertion**
+(`removed` was 0 against an expected 10). The first attempt at that control was invalid
+and is recorded here because the failure mode is easy to repeat: reverting the whole
+function also removed its `export`, so the test failed to *compile*, which proves the
+module surface and says nothing about the leak. The valid control keeps the export and
+reverts only the listener logic.
+
+### Amendment to the round-2 declaration
+
+The declaration above said **+1**. It was written when three of the four review fixes
+were believed non-test-bearing and the fourth was deferred. The PO then set a standing
+rule — *write a test that proves the bug first, watch it fail, then fix* — which
+invalidated both halves of that judgement. The corrected declaration is **+4, 0 removed,
+0 outcome changes. 482 → 486**, adding:
+
+- `ST-092 R5: defaultSleep removes its abort listener when the timer fires, not only when it aborts`
+- `ST-092 R2b: the corrupt-counter refusal names the home actually in use, not a hard-coded ~/.awcp`
+- `ST-092 R1: the refusal for a live holder says what to do when the recorded pid was reused`
+- `ST-092 R1: two clients that find the same stale lock must not both come away holding it`
+
+Amended rather than rewritten, because the gap between the two numbers is the finding:
+"not test-bearing" was doing the work of "I do not want to write this test." Both message
+fixes turned out to have a discriminating assertion available, and in both cases the
+*obvious* assertion was not it — the old `allocateSeq` message already contained the
+configured home via `seqPath`, and the old `AwcpLockError` message already named the
+lock path. Only `!includes("~/.awcp")` and the presence of the recovery sentence
+actually separate old from new.
+
+### The undeclared outcome flip, and the first explanation being wrong
+
+The round-2 runs showed `entity-worker-observability :: records errors when item
+processing fails` going `ok → FAILED`. It was not declared, so it was chased.
+
+**The first diagnosis was wrong and is left here because the way it was wrong is the
+lesson.** The evidence for "environmental" was real but incomplete: the test passes when
+its file is run alone, and `git diff origin/main..HEAD -- server/src/ server/index.ts
+server/db/` is empty, so this branch cannot have changed the subject's behaviour. That
+was enough to rule out a *behaviour* regression and was mistaken for enough to rule out
+this branch entirely.
+
+The timeline did not support it. `records errors` was `ok` in the run before the round-2
+tests were added and `FAILED` in both runs after. So the suite was run at `f0c5fc0` with
+the round-2 work stashed: **9 failures, the baseline — the test passes.** One sample
+each way is not determinism, but it is enough to stop calling it environmental.
+
+**What it actually is.** The assertion is `errors === 1`; the observed value is `2`. The
+test inserts one deliberately-failing thought, runs `processQueue()`, and reads the
+newest `worker_runs` row — but it never clears `entity_extraction_queue`, so retry-
+scheduled items left by earlier tests are still in it and are processed by the same run.
+The failure output shows exactly that: `[entityWorker] retryable failure (attempt 3/5,
+retry in 4s)` for an id this test never created. It is a pre-existing isolation defect —
+the test assumes a queue it owns and does not arrange one.
+
+This branch's contribution is timing only. Four added tests in `awcp-node-client.test.ts`
+lengthen a file that sorts before `entity-worker-observability.test.ts`, shifting when
+the retry backoffs land relative to it.
+
+**Left unfixed here deliberately, with a discriminator.** Fixing it means clearing a
+queue shared with other suites, in a subsystem this story does not touch. The retry storm
+that supplies the stray error exists because this machine has no provider egress — those
+retries are `OpenRouter 401: Missing Authentication header`. CI supplies a real
+`OPENROUTER_API_KEY`, so the same storm should not occur there, and **CI on this PR is the
+discriminator**: it was green at `f0c5fc0`. If it stays green, the local red is an
+artifact of the no-egress environment; if it goes red on this test, the isolation defect
+needs its own fix and its own story.

@@ -49,6 +49,7 @@
 import {
   chmodSync,
   closeSync,
+  constants as fsConstants,
   existsSync,
   fsyncSync,
   mkdirSync,
@@ -128,14 +129,25 @@ export const DEFAULT_HEARTBEAT_INTERVAL_MS = 60_000;
  * exit 75. That is delivery effort, not a stuck timer, and shortening it would be a
  * decision about how hard a departing client should try — not a bug fix.
  */
-function defaultSleep(ms, signal) {
+export function defaultSleep(ms, signal) {
   return new Promise((resolve) => {
     if (signal?.aborted) return resolve();
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener("abort", () => {
+    // The listener is removed on BOTH exits, not just on abort. `{ once: true }`
+    // only self-removes when the event actually fires, and abort fires at most once
+    // per run — so on the ordinary timer path the listener stayed attached forever.
+    // `runAgent` deliberately reuses ONE AbortController for the whole loop, which
+    // turned that into an unbounded leak: one dead listener per heartbeat tick, plus
+    // a MaxListenersExceededWarning once the signal passed ten of them. Found in the
+    // PR #52 review of this story.
+    const onAbort = () => {
       clearTimeout(timer);
       resolve();
-    }, { once: true });
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
 
@@ -160,7 +172,10 @@ export class AwcpLockError extends Error {
         `would not let the client check whether that process is still alive, so it ` +
         `is treated as live. Remove the lock if pid ${holderPid} is gone.`;
     } else {
-      detail = `it is already running as pid ${holderPid} (lock: ${lockPath}).`;
+      detail = `it is already running as pid ${holderPid} (lock: ${lockPath}). If ` +
+        `pid ${holderPid} is NOT an awcp-node-client, remove that lock file: a ` +
+        `reboot or a pid wrap can reassign a recorded pid to an unrelated live ` +
+        `process, and this check cannot tell that apart from the real holder.`;
     }
     super(
       `another awcp-node-client is already running: ${detail} Only one client may ` +
@@ -435,15 +450,93 @@ function isPidAlive(pid) {
   }
 }
 
-/** The pid recorded in the lockfile, or `null` if it is missing or unreadable. */
-function readLockPid(config) {
+/**
+ * Parse one lock line into `{pid, token}`, or `null` when it names no usable pid.
+ *
+ * `token` is `null` for a bare-pid line. No current code path writes one, but a test
+ * fixture or a hand-written lock can, and a null token never equals a live handle's
+ * token — so such a lock can be reclaimed or refused, never mistaken for ours.
+ */
+function parseLockRecord(raw) {
+  const text = typeof raw === "string" ? raw.trim() : "";
+  if (text === "") return null;
+  const [pidPart, tokenPart] = text.split(":");
+  const pid = Number.parseInt(pidPart, 10);
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  return { pid, token: tokenPart === undefined || tokenPart === "" ? null : tokenPart };
+}
+
+/** The lock's current holder record, or `null` if it is missing or unreadable. */
+function readLockRecord(config) {
   try {
-    const raw = readFileSync(config.lockPath, "utf8").trim();
-    const pid = Number.parseInt(raw, 10);
-    return Number.isInteger(pid) && pid > 0 ? pid : null;
+    return parseLockRecord(readFileSync(config.lockPath, "utf8").split("\n")[0]);
   } catch {
     return null;
   }
+}
+
+/**
+ * Take over a lock whose recorded holder is definitely dead — WITHOUT unlinking it.
+ *
+ * **Unlinking is what made takeover racy** (found by review on PR #52, and proved by
+ * the test named "two clients that find the same stale lock must not both come away
+ * holding it"). Two clients that read the same dead pid both unlinked; the second
+ * removed the first's *already created* replacement lock, and both walked away
+ * believing they held it — the duplicate `client_seq` allocation this lock exists to
+ * prevent. The old `catch` around that unlink only covered the unlink FAILING. The
+ * damaging case was it succeeding, on a file the caller no longer owned.
+ *
+ * The arbiter here is an append, not a write. `O_APPEND` writes are atomic, so every
+ * contending reclaimer's claim lands whole and in some definite order, and the FIRST
+ * claim after the stale record wins. That is decided by what is already durably in
+ * the file rather than by who writes last, which is what makes it a decision instead
+ * of a race: a loser reads the same bytes the winner does and reaches the opposite
+ * conclusion about itself.
+ *
+ * Deliberately no auxiliary lock file. A separate `.takeover` file would serialize
+ * this just as well, but a client killed while holding it leaves a file that blocks
+ * every future reclaim — trading a rare race for a rare brick, on precisely the
+ * `kill -9` this reclaim path exists to survive.
+ */
+function claimStaleLock(config, expected, record, token) {
+  let fd;
+  try {
+    // No O_CREAT: if the holder released between the EEXIST and here, the lock is
+    // simply free, and the caller retries the exclusive create rather than
+    // resurrecting a file nobody owns.
+    fd = openSync(config.lockPath, fsConstants.O_WRONLY | fsConstants.O_APPEND);
+  } catch {
+    return "retry";
+  }
+  try {
+    writeSync(fd, `\n${record}`);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+
+  const lines = readFileSync(config.lockPath, "utf8")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+
+  const head = parseLockRecord(lines[0] ?? "");
+  if (head === null || head.pid !== expected.pid || head.token !== expected.token) {
+    // The record we judged stale is gone — someone else already completed a takeover.
+    return "refuse";
+  }
+  const firstClaim = parseLockRecord(lines[1] ?? "");
+  if (firstClaim === null || firstClaim.token !== token) {
+    return "refuse";
+  }
+
+  // Won. Collapse the claim log back to a single record so the next reader sees an
+  // ordinary lock. Rewrite-and-rename replaces the path atomically, so it is never
+  // momentarily absent and no O_EXCL create can slip into a gap.
+  writeFileAtomic(config.lockPath, record, 0o600, {
+    fsyncDirImpl: config.fsyncDirImpl,
+  });
+  return "held";
 }
 
 /**
@@ -472,8 +565,14 @@ function readLockPid(config) {
  */
 export function acquireLock(config) {
   ensureStateDir(config);
-  // Two passes at most: create, and — if a stale lock was cleared — create again.
-  for (let attempt = 0; attempt < 2; attempt++) {
+  // The token is what lets a reclaimer recognise its OWN claim among several. Pids
+  // cannot do that job: two contending clients have different pids but so does every
+  // unrelated process, and a pid says nothing about which claim landed first.
+  const token = randomBytes(8).toString("hex");
+  const record = `${process.pid}:${token}`;
+  // Three passes at most: an exclusive create, and up to two retries for the case
+  // where a dead holder's lock disappears underneath the takeover.
+  for (let attempt = 0; attempt < 3; attempt++) {
     let fd;
     try {
       // "wx" is O_CREAT|O_EXCL: the kernel makes this atomic against every other
@@ -481,28 +580,42 @@ export function acquireLock(config) {
       fd = openSync(config.lockPath, "wx", 0o600);
     } catch (error) {
       if (!isErrno(error, "EEXIST")) throw error;
-      const holder = readLockPid(config);
-      const alive = (config.isPidAliveImpl ?? isPidAlive)(holder);
+      const holder = readLockRecord(config);
+      const alive = (config.isPidAliveImpl ?? isPidAlive)(holder?.pid ?? null);
       // Reclaim ONLY on a definite `false`. `true` is a live holder; `null` means the
       // runtime would not answer, and an unanswered question must not become a yes.
       if (holder === null || alive !== false) {
-        throw new AwcpLockError(holder, config.lockPath, alive);
+        throw new AwcpLockError(holder?.pid ?? null, config.lockPath, alive);
       }
-      try {
-        unlinkSync(config.lockPath);
-      } catch { /* another process reclaimed it first; the retry will refuse */ }
+      // `beforeLockReclaim` is this path's test-only seam, the same shape as
+      // writeSpool's `beforeRename`. It fires inside the stale-takeover window so a
+      // test can run a second, contending client at exactly the point where two real
+      // processes interleave. Never set in production.
+      if (typeof config.beforeLockReclaim === "function") config.beforeLockReclaim();
+      const outcome = claimStaleLock(config, holder, record, token);
+      if (outcome === "held") {
+        chmodSync(config.lockPath, 0o600);
+        return { path: config.lockPath, pid: process.pid, token };
+      }
+      if (outcome === "refuse") {
+        throw new AwcpLockError(
+          readLockRecord(config)?.pid ?? null,
+          config.lockPath,
+          null,
+        );
+      }
       continue;
     }
     try {
-      writeSync(fd, String(process.pid));
+      writeSync(fd, record);
       fsyncSync(fd);
     } finally {
       closeSync(fd);
     }
     chmodSync(config.lockPath, 0o600);
-    return { path: config.lockPath, pid: process.pid };
+    return { path: config.lockPath, pid: process.pid, token };
   }
-  throw new AwcpLockError(readLockPid(config), config.lockPath, null);
+  throw new AwcpLockError(readLockRecord(config)?.pid ?? null, config.lockPath, null);
 }
 
 /**
@@ -514,8 +627,13 @@ export function acquireLock(config) {
 export function releaseLock(handle) {
   if (!handle) return;
   try {
-    const raw = readFileSync(handle.path, "utf8").trim();
-    if (Number.parseInt(raw, 10) !== handle.pid) return;
+    const current = parseLockRecord(readFileSync(handle.path, "utf8").split("\n")[0]);
+    // Both halves must match. The token is what makes this exact: after a takeover the
+    // lock can legitimately name the same pid again on a recycled id, and only the
+    // token distinguishes "still the lock I took" from "a lock that merely looks like
+    // mine".
+    if (current === null) return;
+    if (current.pid !== handle.pid || current.token !== handle.token) return;
     unlinkSync(handle.path);
   } catch { /* already gone, or never ours */ }
 }
@@ -559,7 +677,7 @@ export function allocateSeq(config) {
           `Continuing would restart the sequence at 1, and the hub's ON CONFLICT ` +
           `(node_id, client_seq) DO NOTHING would then silently discard every event ` +
           `that followed (D-14). Restore the counter to the highest client_seq this ` +
-          `node has already sent, or delete ~/.awcp/ to enrol as a new node.`,
+          `node has already sent, or delete ${config.home} to enrol as a new node.`,
       );
     }
     current = parsed;

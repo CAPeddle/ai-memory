@@ -103,6 +103,18 @@ function readOrNull(path: string): string | null {
   }
 }
 
+/**
+ * The pid recorded in a lockfile, or `null` if there is no lock.
+ *
+ * The lock records `<pid>:<token>`, where the token is a fresh random value per
+ * acquisition — so these assertions compare the holder, which is the fact under test,
+ * rather than the file's exact bytes, which no longer have a predictable value.
+ */
+function lockHolderPid(path: string): string | null {
+  const raw = readOrNull(path);
+  return raw === null ? null : raw.trim().split("\n")[0].split(":")[0];
+}
+
 /** Wait until `predicate` holds, or fail with `label` after `timeoutMs`. */
 async function waitFor(
   label: string,
@@ -133,7 +145,7 @@ Deno.test({
       await t.step("the first process takes the lock and records its own pid", async () => {
         await waitFor("the holder to write its lockfile", () => readOrNull(lockPath) !== null);
         assertEquals(
-          readOrNull(lockPath),
+          lockHolderPid(lockPath),
           String(holder.pid),
           "the lockfile must name the process that took it",
         );
@@ -183,7 +195,7 @@ Deno.test({
           holder.kill("SIGKILL");
           await holder.status;
           assertEquals(
-            readOrNull(lockPath),
+            lockHolderPid(lockPath),
             String(holder.pid),
             "precondition: the stale lock is still there, still naming the dead pid",
           );
@@ -195,7 +207,7 @@ Deno.test({
             `the third client must reclaim and proceed. stderr=${third.stderr}`,
           );
           assertEquals(
-            readOrNull(lockPath),
+            lockHolderPid(lockPath),
             null,
             "and must release the lock it reclaimed",
           );

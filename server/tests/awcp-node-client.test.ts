@@ -29,6 +29,7 @@ import {
   assert,
   assertEquals,
   assertRejects,
+  assertStringIncludes,
   assertThrows,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import process from "node:process";
@@ -37,6 +38,7 @@ import {
   acquireLock,
   allocateSeq,
   appendEvent,
+  defaultSleep,
   emitCheckpoint,
   emitHeartbeat,
   evictOldest,
@@ -2244,8 +2246,10 @@ Deno.test({
       },
     });
     try {
+      // The lock records `<pid>:<token>` — the token is random per acquisition, so
+      // assert the holder rather than the literal bytes.
       assertEquals(
-        Deno.readTextFileSync(config.lockPath),
+        Deno.readTextFileSync(config.lockPath).trim().split(":")[0],
         String(Deno.pid),
         "the reclaimed lock must now name this process",
       );
@@ -2553,6 +2557,143 @@ Deno.test({
     assert(
       elapsed < 5_000,
       `a stopped agent must not wait out its 30s interval (took ${elapsed}ms)`,
+    );
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R5: defaultSleep removes its abort listener when the timer fires, not only when it aborts",
+  fn: async () => {
+    let added = 0;
+    let removed = 0;
+    const signal = {
+      aborted: false,
+      addEventListener: () => {
+        added++;
+      },
+      removeEventListener: () => {
+        removed++;
+      },
+    };
+
+    // Ten ORDINARY completions — the path where abort never fires, which is every
+    // heartbeat tick of a run that is not stopping. `{ once: true }` self-removes only
+    // when the event actually fires, so before the fix `removed` stayed 0 here while
+    // the listeners piled up on runAgent's single long-lived AbortController. Asserting
+    // the pair is what makes this a leak test rather than a "it still sleeps" test.
+    for (let i = 0; i < 10; i++) {
+      await defaultSleep(1, signal as unknown as AbortSignal);
+    }
+
+    assertEquals(added, 10, "each sleep must register exactly one abort listener");
+    assertEquals(
+      removed,
+      10,
+      "and each must remove it again when its timer completes normally",
+    );
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R2b: the corrupt-counter refusal names the home actually in use, not a hard-coded ~/.awcp",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = resolveConfig({ home });
+    Deno.mkdirSync(home, { recursive: true });
+    Deno.writeTextFileSync(config.seqPath, "garbage");
+
+    const err = assertThrows(() => allocateSeq(config), Error);
+    const message = (err as Error).message;
+
+    // Asserting the message CONTAINS the home would pass either way — it already
+    // interpolates seqPath, which sits under it. The discriminating assertion is the
+    // absence of the hard-coded path: an operator told to delete ~/.awcp while running
+    // with AWCP_HOME pointed elsewhere either deletes an unrelated directory or finds
+    // nothing there and concludes the advice is wrong.
+    assertStringIncludes(message, home);
+    assert(
+      !message.includes("~/.awcp"),
+      "the refusal must not name a home the client may not be using",
+    );
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R1: the refusal for a live holder says what to do when the recorded pid was reused",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = resolveConfig({ home });
+    const held = acquireLock(config);
+    try {
+      const err = assertThrows(
+        () => acquireLock({ ...config, isPidAliveImpl: () => true }),
+        Error,
+      );
+      const message = (err as Error).message;
+
+      // Naming the lock path is not the discriminating part — the old message already
+      // did. What an operator could not previously act on is the case where the pid is
+      // live but is NOT a client: a reboot or pid wrap can reassign a recorded pid, and
+      // the probe cannot tell that apart from the real holder.
+      assertStringIncludes(message, config.lockPath);
+      assertStringIncludes(message, "remove that lock file");
+    } finally {
+      releaseLock(held);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R1: two clients that find the same stale lock must not both come away holding it",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = resolveConfig({ home });
+    Deno.mkdirSync(home, { recursive: true });
+    Deno.writeTextFileSync(config.lockPath, String(DEAD_PID));
+
+    let firstHeld = false;
+    let secondHeld = false;
+
+    // The second client runs its ENTIRE acquisition inside the first one's stale
+    // takeover window — the interleaving two real processes hit when both find the
+    // same dead holder at the same moment.
+    const secondClient = () => {
+      try {
+        acquireLock({ ...config, isPidAliveImpl: () => false });
+        secondHeld = true;
+      } catch {
+        // Refused. That is one of the two acceptable outcomes.
+      }
+    };
+
+    try {
+      acquireLock({
+        ...config,
+        isPidAliveImpl: () => false,
+        beforeLockReclaim: secondClient,
+      });
+      firstHeld = true;
+    } catch {
+      // Refused. That is the other acceptable outcome.
+    }
+
+    // Deliberately no opinion about WHICH one wins — a takeover race has no
+    // preferred winner, and asserting one would pin an implementation detail. The
+    // invariant is that exactly one does. Both holding is precisely the duplicate
+    // client_seq allocation this lock exists to prevent, and the hub's
+    // ON CONFLICT (node_id, client_seq) DO NOTHING would then discard one silently.
+    assert(
+      firstHeld !== secondHeld,
+      `exactly one of two concurrent reclaimers may hold the lock ` +
+        `(first=${firstHeld}, second=${secondHeld})`,
     );
   },
 });

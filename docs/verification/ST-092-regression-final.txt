@@ -1,6 +1,6 @@
-# 2026-08-20T08:13:23Z
-# c3d5fdc807037185c722b77e4137ae414786c58c
-# docker compose --profile test exec -T mcp-test deno test --frozen --allow-net --allow-env --allow-read --allow-write=/tmp --allow-run=deno,git --junit-path=/tmp/st092b.junit.xml tests/
+# 2026-08-20T20:39:31Z
+# round 2 — PR #52 review remediation (uncommitted at capture; see the ST-092 commits)
+# docker compose --profile test exec -T mcp-test deno test --frozen --allow-net --allow-env --allow-read --allow-write=/tmp --allow-run=deno,git --junit-path=/tmp/final-run.xml tests/
 ./tests/awcp-cli.test.ts::ST-087: the CLI's permission grants are read from the shipped shebang => ok
 ./tests/awcp-cli.test.ts::ST-087: the CLI's permission grants are read from the shipped shebang > a file with no shebang throws rather than defaulting => ok
 ./tests/awcp-cli.test.ts::ST-087: the CLI's permission grants are read from the shipped shebang > the grants match what the script declares => ok
@@ -56,6 +56,8 @@
 ./tests/awcp-node-client.test.ts::ST-092 R1: main() releases the lock on the normal path, on the terminal-auth path, and on a thrown error => ok
 ./tests/awcp-node-client.test.ts::ST-092 R1: releaseLock leaves a lock that no longer names this process alone => ok
 ./tests/awcp-node-client.test.ts::ST-092 R1: releaseLock removes the file, so a second sequential run succeeds => ok
+./tests/awcp-node-client.test.ts::ST-092 R1: the refusal for a live holder says what to do when the recorded pid was reused => ok
+./tests/awcp-node-client.test.ts::ST-092 R1: two clients that find the same stale lock must not both come away holding it => ok
 ./tests/awcp-node-client.test.ts::ST-092 R2 control: the production fsync default really syncs a directory and throws when it cannot => ok
 ./tests/awcp-node-client.test.ts::ST-092 R2: a failing directory fsync propagates out of writeSpool and writeState rather than being swallowed => ok
 ./tests/awcp-node-client.test.ts::ST-092 R2: writeSpool fsyncs the spool's containing directory exactly once per call, after the rename => ok
@@ -63,6 +65,7 @@
 ./tests/awcp-node-client.test.ts::ST-092 R2b control: the truncate-in-place write this replaced does produce an empty counter, and an empty counter is now refused rather than read as 1 => ok
 ./tests/awcp-node-client.test.ts::ST-092 R2b: a crash in the counter's write window leaves the previous sequence readable, and the next allocation continues from it => ok
 ./tests/awcp-node-client.test.ts::ST-092 R2b: a garbage counter is refused, while a MISSING counter still starts at 1 => ok
+./tests/awcp-node-client.test.ts::ST-092 R2b: the corrupt-counter refusal names the home actually in use, not a hard-coded ~/.awcp => ok
 ./tests/awcp-node-client.test.ts::ST-092 R2b: the counter file is still mode 0600 after the rename => ok
 ./tests/awcp-node-client.test.ts::ST-092 R3: a crash between recording a drop and shrinking the spool over-counts, and loses nothing => ok
 ./tests/awcp-node-client.test.ts::ST-092 R3: evictOldest(0) and an empty spool remain no-ops that write nothing => ok
@@ -76,6 +79,7 @@
 ./tests/awcp-node-client.test.ts::ST-092 R5: a stop whose final flush drains the spool exits 0 => ok
 ./tests/awcp-node-client.test.ts::ST-092 R5: a stop whose final flush is deferred exits 75, not 0 => ok
 ./tests/awcp-node-client.test.ts::ST-092 R5: a terminal-auth outcome still exits 77 and is still reported terminal => ok
+./tests/awcp-node-client.test.ts::ST-092 R5: defaultSleep removes its abort listener when the timer fires, not only when it aborts => ok
 ./tests/awcp-node-client.test.ts::ST-092 R5: stop() during the heartbeat wait wakes the loop immediately instead of waiting the interval out => ok
 ./tests/awcp-node-client.test.ts::ST-092 R5: the heartbeat wait is handed an abort signal, and stop() aborts it => ok
 ./tests/awcp-node-client.test.ts::ST-092 R5: the stop checkpoint is emitted exactly once even when stop() is called twice => ok
@@ -164,7 +168,7 @@
 ./tests/entity-worker-crash-isolation.test.ts::safePoll contains thrown poll cycle and recovers on next cycle => ok
 ./tests/entity-worker-crash-isolation.test.ts::server health endpoint responds during worker activity => ok
 ./tests/entity-worker-observability.test.ts::entity worker observability — creates worker_runs record and emits lifecycle events => FAILED
-./tests/entity-worker-observability.test.ts::entity worker observability — records errors when item processing fails => ok
+./tests/entity-worker-observability.test.ts::entity worker observability — records errors when item processing fails => FAILED
 ./tests/entity-worker-observability.test.ts::entity worker observability — retention DELETE cleans stale rows => ok
 ./tests/feedback.test.ts::report_feedback: ON DELETE CASCADE removes feedback when thought is deleted => ok
 ./tests/feedback.test.ts::report_feedback: capture → search → report_feedback → row visible in feedback_events => ok
