@@ -235,3 +235,71 @@ retries are `OpenRouter 401: Missing Authentication header`. CI supplies a real
 discriminator**: it was green at `f0c5fc0`. If it stays green, the local red is an
 artifact of the no-egress environment; if it goes red on this test, the isolation defect
 needs its own fix and its own story.
+
+---
+
+## Round 3 — the fix's own review (declared before the comparison ran)
+
+Codex reviewed `4e058af` and found a defect in the round-2 lock fix itself: a reclaimer
+killed between fsyncing its appended claim and collapsing the claim log leaves that claim
+in the file permanently, so every later client appends behind a dead claimant and refuses
+forever. **This is the same brick that ruled out a separate `.takeover` file, reached by
+another route** — the round-2 rationale rejected one permanent-blocker design and then
+shipped one. The finding is correct and the inconsistency was ours.
+
+**Expected delta: +2 identities, 0 removed, 0 outcome changes. 486 → 488.**
+
+- `ST-092 R1: a claim left behind by a crashed reclaimer must not brick the lock forever`
+  — the red. Written first; against `4e058af` it failed with `acquireLock` throwing
+  `AwcpLockError` where it must take the lock.
+- `ST-092 R1: a claim whose process is still alive still wins, and we refuse behind it`
+  — **not** a red/green control, and labelled as such in the test body. It passes both
+  before and after by construction. It exists because the fix's risk is the opposite of
+  the bug: "abandon a dead claim" must not become "ignore every earlier claim", which
+  would hand the lock to a contender while a live claimant holds it.
+
+### A wrong first attempt at the fix, kept because the suite caught it
+
+The abandonment scan initially returned `"held"` from inside the loop, which jumped over
+the `writeFileAtomic` that collapses the claim log. Four tests went red, including two
+that had been green for the whole story — the lock was left as `<stale>\n<ours>` rather
+than a single record. Worth recording because of what caught it: not the new test, which
+only asserts the holder's pid, but the pre-existing `one SIGKILL must not brick the node`
+test, which asserts the lock's contents after a reclaim. A narrow new test and a broad old
+one failed for the same cause, and the old one localised it.
+
+### The entity-worker flip, third and final reading
+
+Round 3 adds two more tests to the same file and the flip is **gone** — `records errors
+when item processing fails` is `ok`, and the suite is back to the baseline 9 failures.
+
+That falsifies the round-2 correction as well. The reasoning there was: it passed before
+the round-2 tests and failed after, and a control run at `f0c5fc0` with the work stashed
+passed, therefore this branch's added tests expose it. Adding *more* tests should then
+have made it worse. It did the opposite.
+
+The honest account across four full-suite runs, same machine, same stack:
+
+| Run | Round-2 tests | Round-3 tests | `records errors` |
+|---|---|---|---|
+| simplify pass | no | no | ok |
+| round 2 (first) | yes | no | FAILED |
+| round 2 (final) | yes | no | FAILED |
+| control at `f0c5fc0` | no | no | ok |
+| round 3 | yes | yes | **ok** |
+
+So it is intermittent, and the causal conclusion drawn from one sample each way was drawn
+from noise. **The control run was itself uncontrolled** — one execution of a
+timing-sensitive test is not evidence about what causes it to fail.
+
+What survives, because it was read from the failure rather than inferred from the
+timeline: the assertion is `errors === 1` and the observed value was `2`, and the test
+never clears `entity_extraction_queue`, so retry-scheduled items from earlier tests are
+processed by the same run. That isolation defect is real and independent of this branch —
+it decides only *whether* the flake fires, not whether the defect exists. It belongs to
+the entity-worker area and wants its own story.
+
+The methodological point is worth more than the finding: two successive explanations were
+offered here with real evidence behind each, and both were wrong. The first mistook "the
+subject is untouched" for "this branch is uninvolved"; the second mistook `n=1` on a flaky
+test for a controlled comparison.

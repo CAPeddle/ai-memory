@@ -525,10 +525,31 @@ function claimStaleLock(config, expected, record, token) {
     // The record we judged stale is gone — someone else already completed a takeover.
     return "refuse";
   }
-  const firstClaim = parseLockRecord(lines[1] ?? "");
-  if (firstClaim === null || firstClaim.token !== token) {
-    return "refuse";
+  // Walk the claims in the order they landed; the first one whose process is not
+  // definitely gone owns the takeover.
+  //
+  // Skipping a definitely-dead claimant is not a refinement, it is what stops this
+  // design reintroducing the failure it was chosen to avoid. A reclaimer killed
+  // between fsyncing its claim and collapsing the log leaves that claim in the file
+  // permanently; without this, every later client appends behind a dead claimant and
+  // refuses forever, and the node needs an operator even though nothing is running —
+  // exactly the brick that ruled out a separate `.takeover` file, arrived at by
+  // another route. Found by review on PR #52, after the first fix shipped.
+  const probe = config.isPidAliveImpl ?? isPidAlive;
+  let won = false;
+  for (const line of lines.slice(1)) {
+    const claim = parseLockRecord(line);
+    if (claim === null) continue;
+    if (claim.token === token) {
+      won = true;
+      break;
+    }
+    // Only a definite `false` abandons a claim, the same rule the holder probe uses.
+    // `null` means the runtime would not answer, and an unanswered question must not
+    // become permission to step over someone else's claim.
+    if (probe(claim.pid) !== false) return "refuse";
   }
+  if (!won) return "refuse";
 
   // Won. Collapse the claim log back to a single record so the next reader sees an
   // ordinary lock. Rewrite-and-rename replaces the path atomically, so it is never

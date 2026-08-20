@@ -1,6 +1,6 @@
-# 2026-08-20T20:39:31Z
-# round 2 — PR #52 review remediation (uncommitted at capture; see the ST-092 commits)
-# docker compose --profile test exec -T mcp-test deno test --frozen --allow-net --allow-env --allow-read --allow-write=/tmp --allow-run=deno,git --junit-path=/tmp/final-run.xml tests/
+# 2026-08-20T21:10:01Z
+# round 3 — abandoned-claim fix for the round-2 lock takeover (PR #52 review)
+# docker compose --profile test exec -T mcp-test deno test --frozen --allow-net --allow-env --allow-read --allow-write=/tmp --allow-run=deno,git --junit-path=/tmp/r3.xml tests/
 ./tests/awcp-cli.test.ts::ST-087: the CLI's permission grants are read from the shipped shebang => ok
 ./tests/awcp-cli.test.ts::ST-087: the CLI's permission grants are read from the shipped shebang > a file with no shebang throws rather than defaulting => ok
 ./tests/awcp-cli.test.ts::ST-087: the CLI's permission grants are read from the shipped shebang > the grants match what the script declares => ok
@@ -48,6 +48,8 @@
 ./tests/awcp-node-client.test.ts::EVENT-04: state.json is written at mode 0600 => ok
 ./tests/awcp-node-client.test.ts::ST-092 R1 control: the production liveness probe reports this very process alive => ok
 ./tests/awcp-node-client.test.ts::ST-092 R1: `status` runs while the lock is held => ok
+./tests/awcp-node-client.test.ts::ST-092 R1: a claim left behind by a crashed reclaimer must not brick the lock forever => ok
+./tests/awcp-node-client.test.ts::ST-092 R1: a claim whose process is still alive still wins, and we refuse behind it => ok
 ./tests/awcp-node-client.test.ts::ST-092 R1: a holder whose liveness cannot be determined is refused, not reclaimed => ok
 ./tests/awcp-node-client.test.ts::ST-092 R1: a lock naming a dead pid is reclaimed — one SIGKILL must not brick the node => ok
 ./tests/awcp-node-client.test.ts::ST-092 R1: a lock naming the live current process is refused => ok
@@ -168,7 +170,7 @@
 ./tests/entity-worker-crash-isolation.test.ts::safePoll contains thrown poll cycle and recovers on next cycle => ok
 ./tests/entity-worker-crash-isolation.test.ts::server health endpoint responds during worker activity => ok
 ./tests/entity-worker-observability.test.ts::entity worker observability — creates worker_runs record and emits lifecycle events => FAILED
-./tests/entity-worker-observability.test.ts::entity worker observability — records errors when item processing fails => FAILED
+./tests/entity-worker-observability.test.ts::entity worker observability — records errors when item processing fails => ok
 ./tests/entity-worker-observability.test.ts::entity worker observability — retention DELETE cleans stale rows => ok
 ./tests/feedback.test.ts::report_feedback: ON DELETE CASCADE removes feedback when thought is deleted => ok
 ./tests/feedback.test.ts::report_feedback: capture → search → report_feedback → row visible in feedback_events => ok

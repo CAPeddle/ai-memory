@@ -101,7 +101,12 @@ A scan over an empty input set passes every claim made about its contents. The g
 ### Discrimination
 The property that a check produces different outcomes for the compliant and non-compliant cases.
 
-Distinct from Non-Vacuity, and the two are independent: a check can genuinely inspect its input and still pass regardless of what it finds. Discrimination is what a Red/Green Control demonstrates, and it is proven by removing the thing under test and confirming the check goes red — not by reasoning about what it ought to do.
+Distinct from Non-Vacuity, and the two are independent: a check can genuinely inspect its input and still pass regardless of what it finds. Discrimination is what a Red/Green Control demonstrates, and it is proven by removing the thing under test and confirming the check goes red — not by reasoning about what it ought to do. Two constraints on that removal are load-bearing and easy to lose: it must be minimal, touching only the behaviour under test, and the resulting red must be an assertion failure on the specific claim. A removal that also changes the subject's surface, or a red that arrived before the assertion executed, demonstrates nothing about discrimination — see Wrong-Reason Red.
+
+### Wrong-Reason Red
+A control that failed, but for something other than the defect it was written to demonstrate — so its red is not evidence about its subject.
+
+Two forms recur. The failure arrives *before* the assertion runs — the harness would not build, a symbol was never imported, a revert removed more than the behaviour under test — and so reports on the module surface or the wiring instead. Or the assertion runs but would have failed identically had the defect never existed, which is the Discrimination failure seen from the other side. Both are indistinguishable from a genuine control in a run log, and in any record that cites one, which is what makes the condition expensive rather than merely untidy: the record launders a non-proof into evidence, and the next reader has no way to tell. The remedy is to predict the failure before producing it — which assertion, which observed value — and accept the red only when the observed one matches. A third form carries no red at all: over a mechanism whose outcome depends on scheduling, a passing run reports the schedule the runtime happened to pick, not the property, so neither its green nor a single contrasting run supports a causal claim.
 
 ### Fails Open / Fails Closed
 Whether a check's own malfunction permits the thing it guards, or refuses it.

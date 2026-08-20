@@ -2697,3 +2697,68 @@ Deno.test({
     );
   },
 });
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R1: a claim left behind by a crashed reclaimer must not brick the lock forever",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = resolveConfig({ home });
+    Deno.mkdirSync(home, { recursive: true });
+
+    // A reclaimer that crashed between fsyncing its appended claim and collapsing the
+    // claim log leaves exactly this on disk: the stale holder it was taking over from,
+    // and its own claim behind it. Both processes are gone.
+    const ABANDONED_PID = DEAD_PID + 1;
+    Deno.writeTextFileSync(
+      config.lockPath,
+      `${DEAD_PID}\n${ABANDONED_PID}:abandonedtoken`,
+    );
+
+    const handle = acquireLock({
+      ...config,
+      isPidAliveImpl: () => false,
+    });
+    try {
+      assertEquals(
+        Deno.readTextFileSync(config.lockPath).trim().split(":")[0],
+        String(Deno.pid),
+        "a claim whose process is definitely gone is abandoned, not an owner",
+      );
+    } finally {
+      releaseLock(handle);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R1: a claim whose process is still alive still wins, and we refuse behind it",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = resolveConfig({ home });
+    Deno.mkdirSync(home, { recursive: true });
+
+    // The discrimination control for the test above. Abandoning a dead claim must not
+    // become "ignore every earlier claim" — an earlier claimant that is still running
+    // is the legitimate winner, and we must queue behind it rather than take the lock.
+    // This one passes both before and after the abandonment fix by construction; it is
+    // here to catch that fix being made too permissive, not to prove it was needed.
+    Deno.writeTextFileSync(
+      config.lockPath,
+      `${DEAD_PID}\n${Deno.pid}:livetoken`,
+    );
+
+    const err = assertThrows(
+      () =>
+        acquireLock({
+          ...config,
+          isPidAliveImpl: (pid: number) => pid !== DEAD_PID,
+        }),
+      Error,
+    );
+    assertEquals((err as Error).name, "AwcpLockError");
+  },
+});
