@@ -111,9 +111,32 @@ export const BACKOFF_CAP_MS = 30_000;
  */
 export const DEFAULT_HEARTBEAT_INTERVAL_MS = 60_000;
 
-/** Default tick source for `flush()`'s backoff and `runAgent`'s heartbeat interval. */
-function defaultSleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+/**
+ * Default tick source for `flush()`'s backoff and `runAgent`'s heartbeat interval.
+ *
+ * The optional `signal` is what makes a stop actually stop (ST-092 R5). Racing a bare
+ * `setTimeout` promise against a stop signal wakes the LOOP immediately but leaves the
+ * timer pending, and a pending timer keeps Node's event loop alive — so the work (stop
+ * checkpoint, final flush) completed at once while the PROCESS lingered for the rest of
+ * the interval. Measured A/B against a hub that acks immediately, 45s heartbeat,
+ * SIGTERM once the loop had parked: **42.2s to exit without this argument, 82ms with
+ * it.** Waking the loop was never the hard part; clearing the timer is.
+ *
+ * Callers that do not pass a signal are unaffected — `flush()`'s backoff is one, and
+ * deliberately so: shutting down against an UNREACHABLE hub still spends the full
+ * bounded backoff (~31s) trying to deliver the stop checkpoint before giving up with
+ * exit 75. That is delivery effort, not a stuck timer, and shortening it would be a
+ * decision about how hard a departing client should try — not a bug fix.
+ */
+function defaultSleep(ms, signal) {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve();
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => {
+      clearTimeout(timer);
+      resolve();
+    }, { once: true });
+  });
 }
 
 /**
@@ -1220,13 +1243,22 @@ export function runAgent(config) {
   const interval = config.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
   const startedAtMs = Date.now();
   let stopped = false;
-  // Resolved by `stop()`. Raced against the heartbeat wait so a signal wakes the loop
-  // immediately instead of at the next interval boundary. Created once, not per tick,
-  // so repeated `stop()` calls stay idempotent.
+  // Two halves of the same signal, and both are needed.
+  //
+  // `stopSignal` is what the race below settles on, and it works for ANY sleep
+  // implementation — including a test's injected one, which knows nothing about
+  // abort signals.
+  //
+  // `stopController` is passed INTO the sleep so the production timer is actually
+  // cleared. Without it the loop wakes at once but the pending `setTimeout` keeps
+  // Node's event loop alive, and the process outlives its own shutdown by the rest of
+  // the interval. Both created once, not per tick, so repeated `stop()` calls stay
+  // idempotent.
   let wake;
   const stopSignal = new Promise((resolve) => {
     wake = resolve;
   });
+  const stopController = new AbortController();
 
   async function loop() {
     emitCheckpoint(config, { phase: "start" });
@@ -1237,10 +1269,14 @@ export function runAgent(config) {
 
     while (!stopped) {
       // `Promise.race` rather than a bare await: whichever settles first wins, and
-      // `stop()` settling first is the whole point. The losing `sleepImpl` promise is
-      // left pending, which is correct — a production `setTimeout` fires into nothing
-      // and a test's injected sleep is discarded with the loop.
-      await Promise.race([sleepImpl(interval), stopSignal]);
+      // `stop()` settling first is the whole point. The signal is passed through so a
+      // sleep that understands it (the production one) cancels its timer rather than
+      // being merely outrun; an injected test sleep ignores the extra argument and the
+      // race covers it.
+      await Promise.race([
+        sleepImpl(interval, stopController.signal),
+        stopSignal,
+      ]);
       if (stopped) break;
       emitHeartbeat(config, startedAtMs);
       flushResult = await flush(config);
@@ -1267,6 +1303,7 @@ export function runAgent(config) {
     stop: () => {
       stopped = true;
       wake();
+      stopController.abort();
     },
     done: loop(),
   };

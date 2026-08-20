@@ -2480,3 +2480,79 @@ Deno.test({
     // spawned children are granted --allow-run precisely so it can be.
   },
 });
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R5: the heartbeat wait is handed an abort signal, and stop() aborts it",
+  fn: async () => {
+    // Waking the loop is not enough on its own. The production sleep is a
+    // `setTimeout`, and a pending timer keeps Node's event loop alive — so racing past
+    // it finishes the WORK immediately while the PROCESS lingers for the rest of the
+    // interval. Measured A/B against a hub that acks immediately, 45s heartbeat: 42.2s
+    // to exit without the signal, 82ms with it. This asserts the wiring that closes
+    // that gap, which no in-process assertion about `done` resolving would catch.
+    const home = await Deno.makeTempDir();
+    const signals: Array<AbortSignal | undefined> = [];
+    // deno-lint-ignore no-explicit-any
+    const recorded: any[][] = [];
+    const config = withNodeId(resolveConfig({
+      home,
+      heartbeatIntervalMs: 60_000,
+      sleepImpl: (_ms: number, signal?: AbortSignal) => {
+        signals.push(signal);
+        return new Promise<void>(() => {});
+      },
+      fetchImpl: ackingFetch(recorded),
+    })) as ReturnType<typeof resolveConfig>;
+
+    const controller = runAgent(config);
+    await new Promise((r) => setTimeout(r, 20));
+
+    assertEquals(signals.length, 1, "the loop must have parked in exactly one wait");
+    const signal = signals[0];
+    assert(signal instanceof AbortSignal, "the wait must be handed an abort signal");
+    assertEquals(signal.aborted, false, "and it must not be pre-aborted");
+
+    controller.stop();
+    assertEquals(
+      signal.aborted,
+      true,
+      "stop() must abort the signal, or the production timer is never cleared",
+    );
+    await controller.done;
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R5 control: the production sleep really resolves early on abort, and really waits without one",
+  fn: async () => {
+    // Non-vacuity for the test above: it proves the signal is wired, not that anything
+    // honours it. `resolveConfig` does not expose the default sleep, so drive it
+    // through the one caller that does — a runAgent whose interval is long enough that
+    // resolving early is unambiguous.
+    const home = await Deno.makeTempDir();
+    // deno-lint-ignore no-explicit-any
+    const recorded: any[][] = [];
+    const config = withNodeId(resolveConfig({
+      home,
+      heartbeatIntervalMs: 30_000,
+      fetchImpl: ackingFetch(recorded),
+    })) as ReturnType<typeof resolveConfig>;
+    // No sleepImpl override: this is the shipped `defaultSleep`.
+    assertEquals(typeof config.sleepImpl, "function");
+
+    const started = Date.now();
+    const controller = runAgent(config);
+    await new Promise((r) => setTimeout(r, 30));
+    controller.stop();
+    await controller.done;
+    const elapsed = Date.now() - started;
+    assert(
+      elapsed < 5_000,
+      `a stopped agent must not wait out its 30s interval (took ${elapsed}ms)`,
+    );
+  },
+});
