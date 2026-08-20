@@ -118,6 +118,21 @@ A verification observed once by hand, valid only for the tree state it ran again
 
 Unlike a check that re-runs, nobody re-observes a Point-in-Time Result, so it expires silently the moment the surface it covered changes — by any hand, not only its author's. It is therefore recorded with the commit it was taken at and the paths it covered, so a later reader can ask the tree whether it has expired instead of trusting it. A date records only when someone looked; a commit records what they looked at. Expired does not mean wrong — it means unobserved, which is the state a verification record exists to rule out.
 
+### Review Lane
+One external reviewer enlisted for an independent read, addressed as a declared unit rather than an ad-hoc invocation.
+
+A Lane is selected, and then either runs or is dropped — there is no partial state. Lanes named explicitly by the requester and Lanes picked up by a "whatever is available" selection differ in exactly one respect: an explicitly named Lane that cannot run is an error, while an unavailable Lane nobody asked for is ordinary. The asymmetry is deliberate — not finding a reviewer nobody requested is normal; failing to run one somebody requested is not.
+
+### Dropped Lane
+A Lane that was selected but whose output cannot be counted as a review.
+
+The obvious case is an empty return, which after a long run means the Lane was killed rather than that it crashed. The harder case is a Lane that returns fluent, well-formed prose answering a question nobody asked — the signature of a prompt that never reached the model. Both are the same condition and are read the same way: the Lane did not review. A Dropped Lane's output is never folded into a consensus, and a review that quietly proceeds with fewer Lanes than it reports is the failure this term exists to name. Compare Non-Vacuity Guard: a Lane that inspected nothing must not pass for one that found nothing.
+
+### Source-Grounded
+Of a review: verified against the tree it describes, rather than against the text of the artifact under review.
+
+A Source-Grounded review cites the specific lines it checked, which is what makes its claims falsifiable by a later reader; an ungrounded one can only restate what the artifact already asserts about itself. The distinction is load-bearing when several reviews are combined, because a reviewer that could not read the tree contributes an open question rather than a finding, and weighting it equally manufactures agreement that was never reached. Grounding is a property of what the reviewer actually did, not of what it was asked to do — so it is confirmed from the output, not assumed from the request.
+
 ## Search Quality & Testing
 
 ### Corpus
