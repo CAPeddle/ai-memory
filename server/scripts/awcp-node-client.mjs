@@ -55,6 +55,7 @@ import {
   openSync,
   readFileSync,
   renameSync,
+  unlinkSync,
   writeSync,
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
@@ -113,6 +114,42 @@ export const DEFAULT_HEARTBEAT_INTERVAL_MS = 60_000;
 /** Default tick source for `flush()`'s backoff and `runAgent`'s heartbeat interval. */
 function defaultSleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * A second client process is already operating this `AWCP_HOME` (ST-092 R1).
+ *
+ * Carries the holding PID so the refusal names something an operator can act on
+ * rather than merely asserting contention. Thrown BEFORE the spool, counter, or state
+ * file is touched, which is the property that makes a refused run safe to retry.
+ */
+export class AwcpLockError extends Error {
+  constructor(holderPid, lockPath, holderAlive = true) {
+    let detail;
+    if (holderPid === null) {
+      detail = `the lock at ${lockPath} exists but does not name a readable pid. ` +
+        `Remove it if no client is running.`;
+    } else if (holderAlive === null) {
+      // Refusing because the answer is unknown is a different fact from refusing
+      // because the holder is alive, and an operator needs to be able to tell them
+      // apart — the second is normal, the first means the probe could not run.
+      detail = `the lock at ${lockPath} names pid ${holderPid}, and this runtime ` +
+        `would not let the client check whether that process is still alive, so it ` +
+        `is treated as live. Remove the lock if pid ${holderPid} is gone.`;
+    } else {
+      detail = `it is already running as pid ${holderPid} (lock: ${lockPath}).`;
+    }
+    super(
+      `another awcp-node-client is already running: ${detail} Only one client may ` +
+        `operate one AWCP_HOME — a second would allocate duplicate client_seq ` +
+        `values, which the hub's ON CONFLICT (node_id, client_seq) DO NOTHING would ` +
+        `silently discard.`,
+    );
+    this.name = "AwcpLockError";
+    this.holderPid = holderPid;
+    this.holderAlive = holderAlive;
+    this.lockPath = lockPath;
+  }
 }
 
 /** A non-2xx response from the hub, carrying the status for the caller to branch on. */
@@ -280,6 +317,9 @@ export function resolveConfig(overrides = {}) {
     seqPath: overrides.seqPath ?? join(home, "client_seq"),
     nodeIdPath: overrides.nodeIdPath ?? join(home, "node_id"),
     statePath: overrides.statePath ?? join(home, "state.json"),
+    // ST-092 R1: every persisted path is a parameter, this one included, so the
+    // two-process contention test can point a pair of real children at a temp home.
+    lockPath: overrides.lockPath ?? join(home, "lock"),
     hubUrl,
     bearer: overrides.bearer ?? process.env.AWCP_NODE_BEARER ?? "",
     enrolmentSecret: overrides.enrolmentSecret ??
@@ -305,6 +345,10 @@ export function resolveConfig(overrides = {}) {
     // prove the rename was made durable rather than merely performed is to count the
     // calls. Defaulted here so production behaviour never depends on a test setting it.
     fsyncDirImpl: overrides.fsyncDirImpl ?? fsyncDir,
+    // ST-092 R1: the pid-liveness probe behind the lock's stale-reclaim decision.
+    // Injectable because the in-process suite deliberately runs without --allow-run,
+    // under which the real probe cannot answer (see `isPidAlive`).
+    isPidAliveImpl: overrides.isPidAliveImpl ?? isPidAlive,
   };
 }
 
@@ -315,6 +359,125 @@ export function ensureStateDir(config) {
   // reason writeFileFsync does — an existing dir must still end up at 0700.
   chmodSync(config.home, 0o700);
   return config;
+}
+
+/**
+ * Does `pid` name a process that currently exists? (ST-092 R1)
+ *
+ * **Three-valued on purpose: `true`, `false`, or `null` for "could not tell".** Only
+ * a definite `false` licenses reclaiming a lock, so an unanswerable question produces
+ * a refusal rather than a reclaim. Getting this backwards would let a second client
+ * steal a live lock, which is the exact corruption the lock exists to prevent — and a
+ * two-valued version would have to guess, silently, in the one case where guessing is
+ * unsafe.
+ *
+ * Signal 0 is the probe because it is the only one that works on both runtimes this
+ * module runs under. Production is Node, where it needs no capability at all. Under
+ * Deno it maps to `Deno.kill` and needs `--allow-run`, and **`/proc` is not an escape
+ * hatch from that**: Deno gates every path under `/proc` behind `--allow-all`, not
+ * behind `--allow-read`, so `existsSync("/proc/<pid>")` is MORE restricted than the
+ * signal, not less. (Verified under deno 2.9 while writing this — `--allow-read` and
+ * even `--allow-read=/proc` both raise `NotCapable`.) Without the run grant this
+ * returns `null` and the caller refuses, which is why the in-process suite injects
+ * `isPidAliveImpl` rather than widening its own grants.
+ */
+function isPidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === "ESRCH") return false;
+    // EPERM: the process exists and belongs to someone else — alive.
+    if (error?.code === "EPERM") return true;
+    // Anything else (a sandbox refusing the call, an unexpected errno) is unknown.
+    return null;
+  }
+}
+
+/** The pid recorded in the lockfile, or `null` if it is missing or unreadable. */
+function readLockPid(config) {
+  try {
+    const raw = readFileSync(config.lockPath, "utf8").trim();
+    const pid = Number.parseInt(raw, 10);
+    return Number.isInteger(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Take the single-writer lock for this `AWCP_HOME`, or refuse (ST-092 R1).
+ *
+ * **This enforces the single-writer model; it does not lift it.** `allocateSeq` is an
+ * unlocked read-increment-write, and making it genuinely concurrent-safe would mean
+ * adopting a concurrency model the hub's `(node_id, client_seq)` uniqueness was never
+ * designed around. A lock that fails loudly converts an invisible corruption — two
+ * processes allocating the same seq, the hub's ON CONFLICT DO NOTHING silently
+ * discarding one of them — into an operator-visible error, and unlike an atomicity
+ * claim it is falsifiable by two real processes.
+ *
+ * A lock whose recorded pid is no longer alive is STALE and is reclaimed: a client
+ * killed by `SIGKILL` never runs its release path, and a node that could be bricked
+ * by one `kill -9` would need manual intervention on the very failure the spool
+ * exists to survive.
+ *
+ * A lock whose contents are unreadable is refused rather than reclaimed. It cannot be
+ * produced by any ordinary path — the pid is written and fsync'd immediately after an
+ * exclusive create — so it means something unexpected, and the message names the file
+ * to delete. That is one command for an operator, against the alternative of
+ * reclaiming a lock whose owner might still be live.
+ *
+ * Returns a handle to pass to `releaseLock`.
+ */
+export function acquireLock(config) {
+  ensureStateDir(config);
+  // Two passes at most: create, and — if a stale lock was cleared — create again.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let fd;
+    try {
+      // "wx" is O_CREAT|O_EXCL: the kernel makes this atomic against every other
+      // process attempting the same thing, which is what the whole mechanism rests on.
+      fd = openSync(config.lockPath, "wx", 0o600);
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+      const holder = readLockPid(config);
+      const alive = (config.isPidAliveImpl ?? isPidAlive)(holder);
+      // Reclaim ONLY on a definite `false`. `true` is a live holder; `null` means the
+      // runtime would not answer, and an unanswered question must not become a yes.
+      if (holder === null || alive !== false) {
+        throw new AwcpLockError(holder, config.lockPath, alive);
+      }
+      try {
+        unlinkSync(config.lockPath);
+      } catch { /* another process reclaimed it first; the retry will refuse */ }
+      continue;
+    }
+    try {
+      writeSync(fd, String(process.pid));
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    chmodSync(config.lockPath, 0o600);
+    return { path: config.lockPath, pid: process.pid };
+  }
+  throw new AwcpLockError(readLockPid(config), config.lockPath, null);
+}
+
+/**
+ * Release a lock taken by `acquireLock`. Idempotent, never throws, and removes the
+ * file ONLY when it still names this process — a lock reclaimed as stale by someone
+ * else belongs to them now, and deleting it would hand a third process a lock two
+ * others believe they hold.
+ */
+export function releaseLock(handle) {
+  if (!handle) return;
+  try {
+    const raw = readFileSync(handle.path, "utf8").trim();
+    if (Number.parseInt(raw, 10) !== handle.pid) return;
+    unlinkSync(handle.path);
+  } catch { /* already gone, or never ours */ }
 }
 
 /**
@@ -1093,16 +1256,46 @@ export function runAgent(config) {
 }
 
 /**
+ * Commands that mutate `AWCP_HOME` and therefore run under the single-writer lock
+ * (ST-092 R1).
+ *
+ * `status` is absent because it only reads, and an operator must be able to inspect a
+ * node while it is running — a `status` that refused while `run` held the lock would
+ * make the drop counter unreadable exactly when someone is trying to find out why
+ * events are being dropped.
+ *
+ * `register` is absent deliberately, not by oversight. It neither allocates a
+ * `client_seq` nor rewrites the spool, and it is the operator's recovery action when
+ * a node's registration needs re-establishing — locking it would mean a running
+ * client blocks the one command most likely to be needed while it runs.
+ */
+const LOCKED_COMMANDS = new Set(["emit", "flush", "checkpoint", "run"]);
+
+/**
  * CLI surface: `register`, `flush`, `status`, `emit`, `checkpoint`, `run`.
  *
  * `overrides` is passed straight to `resolveConfig` — additive over the 03-02/03-03
  * signature (`main(argv)` still works; the real entry point below never passes a
  * second argument), and it is what lets a test drive `main`'s exit-code behavior
  * (`process.exitCode`) against an injected `fetchImpl`/`home` without a real hub.
+ *
+ * Exit codes: 0 success · 69 refused, another client holds the lock (ST-092 R1) ·
+ * 75 deferred, retryable exhaustion with the spool intact · 77 terminal auth failure.
+ * The lock is taken before the command body and released in a `finally`, so every
+ * path out — including the 77 terminal-auth path and a thrown error — gives it up.
  */
 export async function main(argv, overrides = {}) {
   const config = resolveConfig(overrides);
   const command = argv[0];
+  const lock = LOCKED_COMMANDS.has(command) ? acquireLock(config) : null;
+  try {
+    return await runCommand(config, argv, command);
+  } finally {
+    releaseLock(lock);
+  }
+}
+
+async function runCommand(config, argv, command) {
   if (command === "register") {
     const nodeId = await registerNode(config);
     console.log(JSON.stringify({ node_id: nodeId }));
@@ -1193,5 +1386,18 @@ function isMainModule() {
 }
 
 if (isMainModule()) {
-  await main(process.argv.slice(2));
+  try {
+    await main(process.argv.slice(2));
+  } catch (error) {
+    if (error instanceof AwcpLockError) {
+      // Refusal, not a crash: one line an operator can act on, and no stack trace
+      // implying the client is broken when it is doing exactly what R1 asks of it.
+      // 69 is sysexits' EX_UNAVAILABLE — distinct from 75 (deferred) and 77
+      // (terminal auth) so a shell transcript records WHICH refusal this was.
+      process.stderr.write(`awcp-node-client: ${error.message}\n`);
+      process.exitCode = 69;
+    } else {
+      throw error;
+    }
+  }
 }

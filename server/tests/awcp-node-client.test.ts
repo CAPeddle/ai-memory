@@ -34,6 +34,7 @@ import {
 import process from "node:process";
 
 import {
+  acquireLock,
   allocateSeq,
   appendEvent,
   emitCheckpoint,
@@ -46,6 +47,7 @@ import {
   MAX_PAYLOAD_BYTES,
   readSpool,
   readState,
+  releaseLock,
   registerNode,
   resolveConfig,
   runAgent,
@@ -2170,5 +2172,286 @@ Deno.test({
       .map((e: { payload: { phase?: string } }) => e.payload?.phase)
       .filter((p: string | undefined) => p === "stop");
     assertEquals(phases.length, 1, "exactly one stop checkpoint");
+  },
+});
+
+// ---------------------------------------------------------------------------
+// ST-092 U3 (R1): single-writer enforcement.
+//
+// The tests here cover the lock's own mechanics — reclaim, refusal, release on every
+// exit path — from inside one process. They CANNOT prove the property that matters:
+// an in-process test cannot distinguish this lock from no lock at all, because a
+// single process never contends with itself. That proof lives in
+// `awcp-node-client-lock.test.ts`, which spawns two real children, and the split is
+// deliberate rather than incidental — the Phase 3 test that appeared to prove
+// repeated allocation had exactly this weakness.
+// ---------------------------------------------------------------------------
+
+/** A pid above Linux's default pid_max — cannot name a running process. */
+const DEAD_PID = 4_194_305;
+
+Deno.test({
+  ...T,
+  name: "ST-092 R1: a lock naming the live current process is refused",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = resolveConfig({ home });
+    const held = acquireLock(config);
+    try {
+      const err = assertThrows(() => acquireLock(config), Error);
+      assertEquals((err as Error).name, "AwcpLockError");
+      assert(
+        (err as Error).message.includes(String(Deno.pid)),
+        `the refusal must name the holding pid: ${(err as Error).message}`,
+      );
+    } finally {
+      releaseLock(held);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R1: a lock naming a dead pid is reclaimed — one SIGKILL must not brick the node",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = resolveConfig({ home });
+    Deno.mkdirSync(home, { recursive: true });
+    Deno.writeTextFileSync(config.lockPath, String(DEAD_PID));
+
+    // The liveness probe is injected here, and that is a real limitation worth
+    // naming: this file runs without --allow-run, under which the production probe
+    // cannot answer at all (see `isPidAlive`). So this test proves the RECLAIM LOGIC
+    // given a dead holder — not that the client can tell a dead holder from a live
+    // one. The spawned-process test in awcp-node-client-lock.test.ts proves that.
+    const handle = acquireLock({
+      ...config,
+      isPidAliveImpl: (pid: number) => {
+        assertEquals(pid, DEAD_PID, "the probe must be asked about the recorded pid");
+        return false;
+      },
+    });
+    try {
+      assertEquals(
+        Deno.readTextFileSync(config.lockPath),
+        String(Deno.pid),
+        "the reclaimed lock must now name this process",
+      );
+    } finally {
+      releaseLock(handle);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "ST-092 R1: an unreadable lock is refused rather than reclaimed",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = resolveConfig({ home });
+    Deno.mkdirSync(home, { recursive: true });
+    Deno.writeTextFileSync(config.lockPath, "not-a-pid");
+
+    const err = assertThrows(() => acquireLock(config), Error);
+    assertEquals((err as Error).name, "AwcpLockError");
+    assert(
+      (err as Error).message.includes(config.lockPath),
+      "the refusal must name the file to remove",
+    );
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "ST-092 R1: releaseLock removes the file, so a second sequential run succeeds",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = resolveConfig({ home });
+    releaseLock(acquireLock(config));
+    assertEquals(existsSyncViaStat(config.lockPath), false);
+    releaseLock(acquireLock(config));
+    assertEquals(existsSyncViaStat(config.lockPath), false);
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R1: releaseLock leaves a lock that no longer names this process alone",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = resolveConfig({ home });
+    const handle = acquireLock(config);
+    // Someone else reclaimed it as stale and took it. Deleting it now would hand a
+    // third process a lock two others believe they hold.
+    Deno.writeTextFileSync(config.lockPath, String(DEAD_PID));
+    releaseLock(handle);
+    assertEquals(Deno.readTextFileSync(config.lockPath), String(DEAD_PID));
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R1: main() releases the lock on the normal path, on the terminal-auth path, and on a thrown error",
+  fn: async () => {
+    // Normal path.
+    const home = await Deno.makeTempDir();
+    const config = withNodeId(resolveConfig({ home })) as ReturnType<
+      typeof resolveConfig
+    >;
+    // deno-lint-ignore no-explicit-any
+    const recorded: any[][] = [];
+    await main(["emit", "e", '{"n":1}'], { home });
+    assertEquals(existsSyncViaStat(config.lockPath), false, "emit released");
+
+    await main(["flush"], { home, fetchImpl: ackingFetch(recorded) });
+    assertEquals(existsSyncViaStat(config.lockPath), false, "flush released");
+
+    // Terminal-auth path (exit 77) — a permanently-failing node must not stay locked.
+    await main(["emit", "e", '{"n":2}'], { home });
+    await main(["flush"], {
+      home,
+      fetchImpl: unauthorizedFetch(),
+      stderrWrite: () => {},
+    });
+    assertEquals(process.exitCode, 77, "precondition: this really is the 77 path");
+    assertEquals(
+      existsSyncViaStat(config.lockPath),
+      false,
+      "the lock must be released on the terminal-auth path",
+    );
+    process.exitCode = 0;
+
+    // Thrown error inside the command body.
+    await assertRejects(
+      () => main(["emit"], { home }),
+      Error,
+      "emit requires an event_type",
+    );
+    assertEquals(
+      existsSyncViaStat(config.lockPath),
+      false,
+      "a thrown command must not leave the lock behind",
+    );
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "ST-092 R1: `status` runs while the lock is held",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = resolveConfig({ home });
+    appendEvent(config, { event_type: "e", payload: null });
+    const handle = acquireLock(config);
+    try {
+      const { collected, restore } = capture();
+      try {
+        await main(["status"], { home });
+      } finally {
+        restore();
+      }
+      const out = collected.join("\n");
+      assert(
+        /spooled_events=1/.test(out),
+        `status must still answer while the lock is held: ${out}`,
+      );
+    } finally {
+      releaseLock(handle);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R1: a refused command leaves the counter, spool, and state byte-identical",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = resolveConfig({ home, spoolMaxEntries: 2 });
+    // Produce all three files, including a non-zero drop counter.
+    for (let i = 0; i < 3; i++) {
+      appendEvent(config, { event_type: "e", payload: { i } });
+    }
+    const before = {
+      seq: Deno.readTextFileSync(config.seqPath),
+      spool: Deno.readTextFileSync(config.spoolPath),
+      state: Deno.readTextFileSync(config.statePath),
+    };
+
+    const handle = acquireLock(config);
+    try {
+      for (const argv of [["emit", "e"], ["flush"], ["checkpoint", "{}"], ["run"]]) {
+        await assertRejects(
+          () => main(argv, { home }),
+          Error,
+          "already running",
+        );
+      }
+    } finally {
+      releaseLock(handle);
+    }
+
+    assertEquals(Deno.readTextFileSync(config.seqPath), before.seq);
+    assertEquals(Deno.readTextFileSync(config.spoolPath), before.spool);
+    assertEquals(Deno.readTextFileSync(config.statePath), before.state);
+  },
+});
+
+/** `existsSync` for the test's own assertions, via Deno rather than node:fs. */
+function existsSyncViaStat(path: string): boolean {
+  try {
+    Deno.statSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R1: a holder whose liveness cannot be determined is refused, not reclaimed",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = resolveConfig({ home });
+    Deno.mkdirSync(home, { recursive: true });
+    Deno.writeTextFileSync(config.lockPath, String(DEAD_PID));
+
+    // `null` is the production probe's answer when the runtime refuses the call. An
+    // unanswered question must not become a yes: reclaiming here would let a second
+    // client steal a lock whose holder may well be alive.
+    const err = assertThrows(
+      () => acquireLock({ ...config, isPidAliveImpl: () => null }),
+      Error,
+    );
+    assertEquals((err as Error).name, "AwcpLockError");
+    assert(
+      /would not let the client check/.test((err as Error).message),
+      `the refusal must say WHY it could not tell: ${(err as Error).message}`,
+    );
+    assertEquals(
+      Deno.readTextFileSync(config.lockPath),
+      String(DEAD_PID),
+      "an undetermined holder must leave the lock exactly as it was",
+    );
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R1 control: the production liveness probe reports this very process alive",
+  fn: async () => {
+    const config = resolveConfig({ home: await Deno.makeTempDir() });
+    // Non-vacuity guard on the default. Every refusal test above would pass just as
+    // happily against `() => true`, so something has to show the shipped probe is a
+    // real one. Deno answers signal 0 against the calling process without requiring
+    // --allow-run, which is exactly the one case this file can check.
+    assertEquals(config.isPidAliveImpl(Deno.pid), true);
+    assertEquals(config.isPidAliveImpl(0), false, "a nonsense pid is definitely dead");
+    assertEquals(config.isPidAliveImpl(-1), false);
   },
 });
