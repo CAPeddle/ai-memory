@@ -385,6 +385,23 @@ export function ensureStateDir(config) {
 }
 
 /**
+ * Does this error carry POSIX errno `name`? (ST-092)
+ *
+ * **The message is checked as well as `.code`, and that is not belt-and-braces.**
+ * Deno 2.0.0 — the version pinned in `server/Dockerfile`, and therefore the one CI
+ * runs — raises `node:fs` errors as a plain `Error` with `code === undefined` and the
+ * errno only in the message text (`EEXIST: file already exists, open '...'`). Node
+ * sets `.code`, and so does a newer Deno, which is exactly what makes this worth
+ * writing down: a `.code`-only check passes on a developer's host and fails in the
+ * container, and the failure mode is the lock silently rethrowing instead of refusing.
+ */
+function isErrno(error, name) {
+  if (error?.code === name) return true;
+  const message = typeof error?.message === "string" ? error.message : "";
+  return message.startsWith(`${name}:`) || message.endsWith(` ${name}`);
+}
+
+/**
  * Does `pid` name a process that currently exists? (ST-092 R1)
  *
  * **Three-valued on purpose: `true`, `false`, or `null` for "could not tell".** Only
@@ -404,23 +421,6 @@ export function ensureStateDir(config) {
  * returns `null` and the caller refuses, which is why the in-process suite injects
  * `isPidAliveImpl` rather than widening its own grants.
  */
-/**
- * Does this error carry POSIX errno `name`? (ST-092)
- *
- * **The message is checked as well as `.code`, and that is not belt-and-braces.**
- * Deno 2.0.0 — the version pinned in `server/Dockerfile`, and therefore the one CI
- * runs — raises `node:fs` errors as a plain `Error` with `code === undefined` and the
- * errno only in the message text (`EEXIST: file already exists, open '...'`). Node
- * sets `.code`, and so does a newer Deno, which is exactly what makes this worth
- * writing down: a `.code`-only check passes on a developer's host and fails in the
- * container, and the failure mode is the lock silently rethrowing instead of refusing.
- */
-function isErrno(error, name) {
-  if (error?.code === name) return true;
-  const message = typeof error?.message === "string" ? error.message : "";
-  return message.startsWith(`${name}:`) || message.endsWith(` ${name}`);
-}
-
 function isPidAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
@@ -595,9 +595,11 @@ export function appendEvent(config, event) {
   // is never the one dropped — "drop the oldest" is the stated contract, and evicting
   // pre-append would risk dropping an event that never even entered the spool.
   const cap = config.spoolMaxEntries ?? DEFAULT_SPOOL_MAX_ENTRIES;
-  const currentLength = readSpool(config).length;
-  if (currentLength > cap) {
-    evictOldest(config, currentLength - cap);
+  const spooled = readSpool(config);
+  if (spooled.length > cap) {
+    // Hand the entries over rather than letting `evictOldest` read them again: this is
+    // the overflow path, so it runs on every append once the spool is at its cap.
+    evictOldest(config, spooled.length - cap, spooled);
   }
 
   return seq;
@@ -733,9 +735,11 @@ export function recordDrops(config, seqs, reason) {
  * against the spool, so the inflated total persists until the state file is reset.
  * That is accepted as the cheaper of the two errors, not overlooked.
  */
-export function evictOldest(config, count) {
+export function evictOldest(config, count, knownEntries) {
   if (!count || count <= 0) return [];
-  const entries = readSpool(config);
+  // A caller that has already read the spool passes it in; the no-op guard above stays
+  // ahead of the read, so `evictOldest(config, 0)` still touches no disk at all.
+  const entries = knownEntries ?? readSpool(config);
   const toEvict = entries.slice(0, count);
   if (toEvict.length === 0) return [];
   const remaining = entries.slice(toEvict.length);
@@ -1050,8 +1054,15 @@ export async function flush(config) {
   // reported as "acked": the flush ran to completion with nothing left to do, which is
   // the accurate top-level summary even though `delivered` may be shorter than what
   // was originally spooled.
+  // Read the spool once, then track it in memory. Every path below that shrinks it
+  // writes `remaining` and carries that same array forward, because re-reading would
+  // only ever return what was just written: `flushOnce` never touches the spool, and
+  // `flush` runs under the single-writer lock (`main` holds it for the whole command),
+  // so no other process can append between the write and the next iteration. Within
+  // this process nothing can either — `runAgent` emits its heartbeat in the loop body
+  // rather than from a timer, so no append interleaves with a `flushOnce` await.
+  let entries = readSpool(config);
   while (true) {
-    const entries = readSpool(config);
     if (entries.length === 0) break;
     const batchEntries = entries.slice(0, FLUSH_MAX_EVENTS);
     const batch = batchEntries.map((entry) => ({
@@ -1082,6 +1093,7 @@ export async function flush(config) {
       }
       attempt = 0;
       writeSpool(config, remaining);
+      entries = remaining;
       delivered.push(...result.acked);
       continue;
     }
@@ -1101,6 +1113,7 @@ export async function flush(config) {
         !rejectedSeqs.has(entry.client_seq)
       );
       writeSpool(config, remaining);
+      entries = remaining;
       recordDrops(
         config,
         matched.map((entry) => entry.client_seq),

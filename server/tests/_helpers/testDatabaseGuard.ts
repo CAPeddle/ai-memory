@@ -87,33 +87,42 @@ function refusal(reason: string, where: string): Error {
 export async function requireTestDatabase(
   probe: TestDatabaseProbe = realProbe,
 ): Promise<void> {
+  // Only ever used to make a refusal concrete, so it is fetched at the throw sites
+  // rather than up front — the accepting path is the common one and owes no round
+  // trip for a string it will discard. A probe that cannot answer must not turn a
+  // refusal into a pass, so its failure degrades the message and nothing else.
+  const whereOr = async (): Promise<string> => {
+    try {
+      return await probe.describe();
+    } catch {
+      return "(could not be determined)";
+    }
+  };
+
   let marker: string | null;
-  let where = "(could not be determined)";
   try {
     marker = await probe.markerValue();
   } catch (error) {
     // Fail closed. An unreachable or uncooperative database is not evidence that
-    // dropping things on it is safe.
+    // dropping things on it is safe. No `describe()` here: the connection that just
+    // failed the marker query is in no position to answer a second one.
     throw refusal(
       `the check for the test-database marker could not be completed ` +
         `(${error instanceof Error ? error.message : String(error)})`,
-      where,
+      "(could not be determined)",
     );
   }
-  try {
-    where = await probe.describe();
-  } catch { /* the refusal is still worth raising without it */ }
 
   if (marker === null || marker === "") {
     throw refusal(
       `this database carries no \`${TEST_DATABASE_MARKER}\` marker`,
-      where,
+      await whereOr(),
     );
   }
   if (marker !== "true") {
     throw refusal(
       `its \`${TEST_DATABASE_MARKER}\` marker is ${JSON.stringify(marker)}, not "true"`,
-      where,
+      await whereOr(),
     );
   }
 }

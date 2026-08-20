@@ -59,8 +59,6 @@ import {
 const MEMORY_API_KEY = Deno.env.get("MEMORY_API_KEY") ?? "test-key";
 const DATABASE_URL = Deno.env.get("DATABASE_URL")!;
 
-/** High, uncommon port: workflow-mvp-e2e.test.ts already claims 3142/3143. */
-
 // ---------------------------------------------------------------------------
 // Layers 1-2 setup: point OPENROUTER_BASE_URL at a sentinel BEFORE embeddings.ts
 // is first evaluated (see the module-doc comment above for why this must be a
