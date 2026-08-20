@@ -2,6 +2,16 @@ import { assert, assertEquals, assertRejects } from "https://deno.land/std@0.224
 
 import { sql } from "../src/db.ts";
 import { applyAndRecordVersion, detectBootstrapVersions, runMigrations } from "../src/migrate.ts";
+import { requireTestDatabase } from "./_helpers/testDatabaseGuard.ts";
+
+/**
+ * ST-092 R6 — this file is not the one the cross-AI review named, but it is the same
+ * hazard: it runs `DROP TABLE IF EXISTS schema_migrations` and `DROP TABLE IF EXISTS
+ * recall_queries` against whatever `DATABASE_URL` points at, and on the shared dev
+ * database that destroys real platform state. Guarding only the file the review
+ * happened to find would leave the class live while looking solved.
+ */
+await requireTestDatabase();
 
 Deno.test({
   name: "migration framework: bootstrap, apply, and rollback",

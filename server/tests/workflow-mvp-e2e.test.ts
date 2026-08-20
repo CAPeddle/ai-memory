@@ -20,6 +20,15 @@
  * Requires `--allow-run=deno` (the helper spawns only `Deno.execPath()`).
  * See CLAUDE.md's test commands.
  *
+ * **This file drops the shared `workflow` schema, so it must not run against a
+ * database that is not a designated test database.** That is enforced, not merely
+ * warned about: `requireTestDatabase()` runs before the first `DROP SCHEMA` and
+ * refuses on any database without the marker the compose `seed` service applies. The
+ * note below has always covered WHEN this file may run relative to other suites; it
+ * never covered WHICH DATABASE it may run against, and CLAUDE.md's documented
+ * WSL2-native inner loop points `.env.dev` at the shared dev Postgres. Dropping
+ * `workflow` there removes `execution_nodes` and de-enrols every real remote node.
+ *
  * **This file drops the shared `workflow` schema, so it must not run concurrently with
  * the other workflow suites.** Three things make that safe, and all three are load
  * bearing: `deno test` runs test FILES sequentially unless `--parallel` is passed;
@@ -45,6 +54,7 @@ import {
   startProviderSentinel,
   startServerProcess,
 } from "./_helpers/serverProcess.ts";
+import { requireTestDatabase } from "./_helpers/testDatabaseGuard.ts";
 
 const DATABASE_URL = Deno.env.get("DATABASE_URL")!;
 const API_KEY = Deno.env.get("MEMORY_API_KEY") ?? "test-key";
@@ -82,6 +92,10 @@ Deno.test({
   sanitizeOps: false,
   name: "ST-086: a local WorkPacket is operated end to end and survives a restart",
   fn: async (t) => {
+    // Before anything else, and before any process is spawned: this suite drops the
+    // shared `workflow` schema, and `execution_nodes` lives in it.
+    await requireTestDatabase();
+
     const sentinel = await startProviderSentinel();
     // Every process this test starts, so the cleanup below stops all of them even if
     // a step fails between the first boot and the restart.
