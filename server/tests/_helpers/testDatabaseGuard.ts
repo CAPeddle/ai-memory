@@ -33,7 +33,7 @@
 
 import { sql } from "../../src/db.ts";
 
-/** The database-level setting `server/db/test-database-marker.sql` applies. */
+/** The database-level setting `server/tests/fixtures/test-database-marker.sql` applies. */
 export const TEST_DATABASE_MARKER = "ai_memory.test_database";
 
 export interface TestDatabaseProbe {
@@ -72,7 +72,7 @@ function refusal(reason: string, where: string): Error {
       `  Run this suite against the Docker test stack:\n` +
       `    docker compose --profile test exec mcp-test deno test ...\n` +
       `  A designated test database carries \`${TEST_DATABASE_MARKER} = true\`, applied\n` +
-      `  by the compose \`seed\` service from server/db/test-database-marker.sql.`,
+      `  by the compose \`seed\` service from server/tests/fixtures/test-database-marker.sql.`,
   );
 }
 

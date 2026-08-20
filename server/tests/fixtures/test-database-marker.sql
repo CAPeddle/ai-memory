@@ -20,6 +20,17 @@
 -- The setting is namespaced (`ai_memory.*`) so it is a custom parameter Postgres will
 -- accept and store rather than a reserved GUC it would reject.
 --
+-- **Why this lives under `server/tests/fixtures/` and not next to `schema.sql`.** It is
+-- test-stack setup, not schema — but the sharper reason is that `server/db/` is
+-- discovered BY PATTERN, not by name: `server/src/migrate.ts` enumerates that directory
+-- and applies anything matching `^(\d+)_.*\.sql$`, and `docker/postgres-age/Dockerfile`
+-- copies from it into `docker-entrypoint-initdb.d`. Neither picks this file up today.
+-- But a file whose entire job is to certify a database as expendable has no business
+-- sitting one rename away from the production DDL loader: if it were ever applied to a
+-- real database, every guard that reads it would pass everywhere, and would still read
+-- as enforcement. The compose mount that loads it names it explicitly, so nothing is
+-- lost by keeping it out of reach.
+--
 -- It takes effect for sessions opened AFTER this runs. The compose `seed` service is
 -- an explicit dependency of `mcp-test` (`service_completed_successfully`), so every
 -- test connection is opened after it.

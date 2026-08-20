@@ -574,7 +574,7 @@
 - phase: 0 (unblocks nothing; it repairs what ST-088 Phase 3 shipped)
 - Value: 4
 - Blocked by: — (Phase 3 is merged; this is additive and forward-only, and rewrites none of its evidence)
-- Touches: `server/scripts/awcp-node-client.mjs` (the only production file); `server/tests/_helpers/serverProcess.ts`, `server/tests/_helpers/testDatabaseGuard.ts`, seven test files; `server/db/test-database-marker.sql` and the compose `seed` service; `CLAUDE.md` grant inventory; `docs/investigations/ST-084-awcp-host-spike-findings.md` §16.11
+- Touches: `server/scripts/awcp-node-client.mjs` (the only production file); `server/tests/_helpers/serverProcess.ts`, `server/tests/_helpers/testDatabaseGuard.ts`, seven test files; `server/tests/fixtures/test-database-marker.sql` and the compose `seed` service; `CLAUDE.md` grant inventory; `docs/investigations/ST-084-awcp-host-spike-findings.md` §16.11
 - Acceptance criteria:
   - [x] **R1 — single-writer enforced, not assumed.** Exclusive lockfile; a second client exits 69 naming the holder and changes nothing; a lock naming a dead pid is reclaimed so one `kill -9` cannot brick a node. Proven by two genuinely contending processes, because an in-process test cannot distinguish this lock from no lock — the exact weakness the review found in the Phase 3 allocation test
   - [x] **R2 — the rename is durable.** `fsyncDir` after every `renameSync` in `writeSpool` and `writeState`; the docblock that claimed the guarantee before the code provided it is corrected as part of the fix

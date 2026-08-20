@@ -76,6 +76,17 @@ ALTER DATABASE ai_memory SET ai_memory.test_database = 'true';
 SELECT current_setting('ai_memory.test_database', true);
 ```
 
+**Keep the marker out of reach of whatever loads production DDL.** The first home for
+this file was `server/db/`, beside `schema.sql` — which is discovered *by pattern*:
+`server/src/migrate.ts` enumerates that directory and applies anything matching
+`^(\d+)_.*\.sql$`, and the Postgres image copies from it into
+`docker-entrypoint-initdb.d`. Neither would have picked it up as named, so nothing was
+broken — but a file whose whole job is to certify a database as expendable, sitting one
+rename away from the production DDL loader, is a fails-open mode waiting to be armed. If
+it ever reached a real database, every guard reading it would pass everywhere and would
+still read as enforcement. It lives under `server/tests/fixtures/` now; the compose mount
+that loads it names it explicitly, so nothing is lost.
+
 **Fail closed, and throw rather than skip.** Marker absent, marker not `true`, and the
 probe itself throwing must all refuse. And the refusal must be a failure, not a skip: a
 skip makes a run look green while the suite silently stops executing, and a skip that

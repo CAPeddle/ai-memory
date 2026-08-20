@@ -107,7 +107,7 @@ services:
       # the destructive suites check before dropping anything. It is applied FIRST and
       # with `-v ON_ERROR_STOP=1`, so a test stack whose marker failed to apply never
       # comes up pretending to be marked — the guard fails closed, and so does this.
-      - ./server/db/test-database-marker.sql:/seed/test-database-marker.sql:ro
+      - ./server/tests/fixtures/test-database-marker.sql:/seed/test-database-marker.sql:ro
     entrypoint: ["/bin/sh", "-c", "until pg_isready -h db-test -U ai_memory -d ai_memory; do sleep 1; done && psql -v ON_ERROR_STOP=1 -h db-test -U ai_memory -d ai_memory -f /seed/test-database-marker.sql && psql -h db-test -U ai_memory -d ai_memory -f /seed/corpus.sql"]
     restart: "no"
 
