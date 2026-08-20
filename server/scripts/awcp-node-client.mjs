@@ -381,15 +381,32 @@ export function ensureStateDir(config) {
  * returns `null` and the caller refuses, which is why the in-process suite injects
  * `isPidAliveImpl` rather than widening its own grants.
  */
+/**
+ * Does this error carry POSIX errno `name`? (ST-092)
+ *
+ * **The message is checked as well as `.code`, and that is not belt-and-braces.**
+ * Deno 2.0.0 — the version pinned in `server/Dockerfile`, and therefore the one CI
+ * runs — raises `node:fs` errors as a plain `Error` with `code === undefined` and the
+ * errno only in the message text (`EEXIST: file already exists, open '...'`). Node
+ * sets `.code`, and so does a newer Deno, which is exactly what makes this worth
+ * writing down: a `.code`-only check passes on a developer's host and fails in the
+ * container, and the failure mode is the lock silently rethrowing instead of refusing.
+ */
+function isErrno(error, name) {
+  if (error?.code === name) return true;
+  const message = typeof error?.message === "string" ? error.message : "";
+  return message.startsWith(`${name}:`) || message.endsWith(` ${name}`);
+}
+
 function isPidAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    if (error?.code === "ESRCH") return false;
+    if (isErrno(error, "ESRCH")) return false;
     // EPERM: the process exists and belongs to someone else — alive.
-    if (error?.code === "EPERM") return true;
+    if (isErrno(error, "EPERM")) return true;
     // Anything else (a sandbox refusing the call, an unexpected errno) is unknown.
     return null;
   }
@@ -440,7 +457,7 @@ export function acquireLock(config) {
       // process attempting the same thing, which is what the whole mechanism rests on.
       fd = openSync(config.lockPath, "wx", 0o600);
     } catch (error) {
-      if (error?.code !== "EEXIST") throw error;
+      if (!isErrno(error, "EEXIST")) throw error;
       const holder = readLockPid(config);
       const alive = (config.isPidAliveImpl ?? isPidAlive)(holder);
       // Reclaim ONLY on a definite `false`. `true` is a live holder; `null` means the

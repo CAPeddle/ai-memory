@@ -2198,11 +2198,22 @@ Deno.test({
     const config = resolveConfig({ home });
     const held = acquireLock(config);
     try {
-      const err = assertThrows(() => acquireLock(config), Error);
+      // The liveness verdict is injected so this exercises the LIVE-holder branch on
+      // every runtime. Left to the real probe it would depend on whether the runner
+      // granted --allow-run: this suite deliberately does not, so the real probe
+      // answers "cannot tell" and the refusal would arrive by the other route.
+      const err = assertThrows(
+        () => acquireLock({ ...config, isPidAliveImpl: () => true }),
+        Error,
+      );
       assertEquals((err as Error).name, "AwcpLockError");
       assert(
         (err as Error).message.includes(String(Deno.pid)),
         `the refusal must name the holding pid: ${(err as Error).message}`,
+      );
+      assert(
+        /already running as pid/.test((err as Error).message),
+        `a live holder must be reported as such: ${(err as Error).message}`,
       );
     } finally {
       releaseLock(held);
@@ -2446,12 +2457,26 @@ Deno.test({
     "ST-092 R1 control: the production liveness probe reports this very process alive",
   fn: async () => {
     const config = resolveConfig({ home: await Deno.makeTempDir() });
-    // Non-vacuity guard on the default. Every refusal test above would pass just as
-    // happily against `() => true`, so something has to show the shipped probe is a
-    // real one. Deno answers signal 0 against the calling process without requiring
-    // --allow-run, which is exactly the one case this file can check.
-    assertEquals(config.isPidAliveImpl(Deno.pid), true);
+    // Non-vacuity guard on the default. Every refusal test above injects its verdict,
+    // so something has to show the shipped probe is a real function with real
+    // behaviour rather than a constant.
+    //
+    // What it asserts is the CONTRACT, not one runtime's answer, because the answer
+    // legitimately differs: under `--allow-run` (Node always; Deno when granted) the
+    // probe returns `true` for a live pid, and under this suite's deliberately narrow
+    // grants Deno refuses the call and the probe returns `null`. The safety-relevant
+    // property is the same either way — a live process must NEVER be reported dead,
+    // because `false` is the only verdict that licenses stealing a lock.
+    const selfVerdict = config.isPidAliveImpl(Deno.pid);
+    assert(
+      selfVerdict === true || selfVerdict === null,
+      `a live process must never be reported dead, got ${JSON.stringify(selfVerdict)}`,
+    );
+    // These need no syscall, so they discriminate on every runtime.
     assertEquals(config.isPidAliveImpl(0), false, "a nonsense pid is definitely dead");
     assertEquals(config.isPidAliveImpl(-1), false);
+    assertEquals(config.isPidAliveImpl(1.5), false);
+    // The `true` branch is exercised for real by awcp-node-client-lock.test.ts, whose
+    // spawned children are granted --allow-run precisely so it can be.
   },
 });
