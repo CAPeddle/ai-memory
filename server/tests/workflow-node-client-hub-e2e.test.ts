@@ -50,7 +50,6 @@ const DATABASE_URL = Deno.env.get("DATABASE_URL")!;
  */
 const OPERATOR_KEY = "0f".repeat(32);
 const ENROLMENT_SECRET = "enrolment-secret-for-node-client-hub-e2e-test";
-const PORT = 3146;
 
 const NODE_HUB_ENV: Record<string, string> = {
   DATABASE_URL,
@@ -87,7 +86,7 @@ Deno.test({
   ...T,
   name: "ST-088 tracer: one event travels client -> real hub -> ack -> spool removal",
   fn: async () => {
-    const server: ServerProcess = await startServerProcess(NODE_HUB_ENV, PORT);
+    const server: ServerProcess = await startServerProcess(NODE_HUB_ENV);
     const bearer = mintBearer();
     const home = await Deno.makeTempDir({ prefix: "awcp-node-client-tracer-" });
     const config = resolveConfig({
@@ -202,7 +201,7 @@ Deno.test({
   name:
     "ST-088 EVENT-01: replaying the same (node_id, client_seq) over real HTTP creates no duplicate hub state",
   fn: async () => {
-    const server: ServerProcess = await startServerProcess(NODE_HUB_ENV, PORT);
+    const server: ServerProcess = await startServerProcess(NODE_HUB_ENV);
     const bearer = mintBearer();
     const home = await Deno.makeTempDir({ prefix: "awcp-node-client-event01-" });
     const config = resolveConfig({

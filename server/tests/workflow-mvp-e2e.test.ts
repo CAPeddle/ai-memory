@@ -49,10 +49,6 @@ import {
 const DATABASE_URL = Deno.env.get("DATABASE_URL")!;
 const API_KEY = Deno.env.get("MEMORY_API_KEY") ?? "test-key";
 
-/** High, uncommon ports: the container's own server already holds 3000. */
-const WORKFLOW_PORT = 3142;
-const CONTROL_PORT = 3143;
-
 /**
  * The workflow-only environment, exactly as the story specifies it.
  *
@@ -90,8 +86,10 @@ Deno.test({
     // Every process this test starts, so the cleanup below stops all of them even if
     // a step fails between the first boot and the restart.
     const started: ServerProcess[] = [];
-    const boot = async (port: number): Promise<ServerProcess> => {
-      const proc = await startServerProcess(workflowOnlyEnv(sentinel), port);
+    // ST-092 R7: no port argument. Every child binds an ephemeral port and reports
+    // it on its own stdout, so two suites can no longer be assigned the same one.
+    const boot = async (): Promise<ServerProcess> => {
+      const proc = await startServerProcess(workflowOnlyEnv(sentinel));
       started.push(proc);
       return proc;
     };
@@ -112,7 +110,7 @@ Deno.test({
 
       // ------------------------------------------------------------------
       await t.step("the composition root applies workflow migrations at startup", async () => {
-        server = await boot(WORKFLOW_PORT);
+        server = await boot();
 
         assert(
           await workflowSchemaExists(),
@@ -557,7 +555,7 @@ Deno.test({
         }
         assertEquals(stillUp, false, "the first server process did not actually stop");
 
-        server = await boot(WORKFLOW_PORT);
+        server = await boot();
 
         // Composition-root idempotency: the second boot applies nothing and skips
         // everything. Distinct from the unit-level idempotency workflow-migrations
@@ -691,7 +689,7 @@ Deno.test({
         MODEL_PROVIDER_ENABLED: "true",
         OPENROUTER_API_KEY: "sentinel-key",
         OPENROUTER_BASE_URL: sentinel.baseUrl,
-      }, CONTROL_PORT);
+      });
       started.push(server);
 
       const ready = await apiCall(server.baseUrl, API_KEY, "/ready");

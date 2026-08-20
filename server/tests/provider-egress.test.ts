@@ -60,7 +60,6 @@ const MEMORY_API_KEY = Deno.env.get("MEMORY_API_KEY") ?? "test-key";
 const DATABASE_URL = Deno.env.get("DATABASE_URL")!;
 
 /** High, uncommon port: workflow-mvp-e2e.test.ts already claims 3142/3143. */
-const PROCESS_PORT = 3160;
 
 // ---------------------------------------------------------------------------
 // Layers 1-2 setup: point OPENROUTER_BASE_URL at a sentinel BEFORE embeddings.ts
@@ -213,7 +212,7 @@ Deno.test({
     const sentinel = await startProviderSentinel();
     let server: ServerProcess | null = null;
     try {
-      server = await startServerProcess(workflowOnlyEnv(sentinel), PROCESS_PORT);
+      server = await startServerProcess(workflowOnlyEnv(sentinel));
 
       const response = await mcpToolCall(
         server.baseUrl,
