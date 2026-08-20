@@ -73,3 +73,71 @@ built, and gained a guard call — none of which touches a `Deno.test` name or a
    the same form as the baseline.
 3. Compare against the baseline with the three header lines stripped.
 4. Every added line must be in the ADDED set above. Every removed line is a regression.
+
+---
+
+# Observed result
+
+Run recorded in [`ST-092-regression-final.txt`](ST-092-regression-final.txt), in the
+baseline's own format. **480 identities observed against 432 in the baseline.**
+
+Reconciliation, stated as an identity over its parts so it recomputes as the suite
+grows rather than going stale:
+
+```
+432 baseline  +  49 added  −  1 removed  =  480 observed
+```
+
+## Added: 49 — every one of them declared
+
+| File | Observed | Declared |
+|---|---|---|
+| `tests/awcp-node-client.test.ts` | 31 | 31 (4 + 4 + 3 + 5 + 5 + 10) |
+| `tests/awcp-node-client-lock.test.ts` | 7 | 3 tests + their 4 sub-steps |
+| `tests/test-database-guard.test.ts` | 7 | yes |
+| `tests/server-process-ports.test.ts` | 3 | yes |
+| `tests/health-ready.test.ts` | 1 | **no — see below** |
+
+## Removed: 1 — and it is the same test, not a missing one
+
+```
+- ./tests/health-ready.test.ts::/ready reports healthy postgres, pgvector, age, and embedding_api => ok
++ ./tests/health-ready.test.ts::/ready reports healthy postgres, pgvector, age, and embedding_api => FAILED
+```
+
+This is a comparison over `name => outcome` strings, so an outcome flip shows up as one
+removal and one addition. **No test identity disappeared.** That is the half of the
+declaration that carries the regression signal, and it holds exactly.
+
+## The one undeclared item, and why it is not attributed to this story
+
+The declaration said no pre-existing identity would change outcome. One did, and the
+honest thing is to record it rather than widen the declaration after the fact.
+
+The evidence that it is environmental:
+
+1. **The provider is unreachable from the test container.** `curl --max-time 15
+   https://openrouter.ai/api/v1/models` from inside `mcp-test` returns HTTP `000` after
+   0.008s — no connection at all. `/ready` reports
+   `embedding_api: {status: "error", error: "embedding API probe failed: TimeoutError"}`.
+   This is the corporate SSL-proxy interception CLAUDE.md documents for containers.
+2. **The same cause already owns nine of the baseline's own failures.** The eight
+   `e2e.test.ts` failures and the `entity-worker-observability` failure are recorded as
+   FAILED in `03-REGRESSION-FINAL.txt` itself, for this same reason. This probe sits on
+   the boundary because it is a *cached* probe with a timeout — it was reachable enough
+   at the moment the baseline was taken and is not now.
+3. **This branch changes no code that could affect it.** `git diff main..HEAD --
+   server/src/ server/index.ts server/db/schema.sql` is empty. Nothing in ST-092 touches
+   embeddings, the health check, or any provider path. Every source change is in
+   `server/scripts/awcp-node-client.mjs`; everything else is tests, helpers, compose
+   configuration, and documentation.
+
+Recorded as a **Baseline** change, in this repo's sense of the word: which tests fail
+for known environmental reasons on this machine, at this commit. The correct baseline
+for a run on a machine without provider egress is the nine already documented plus this
+one — ten.
+
+## Verdict
+
+The observed delta equals the declared delta, with the single environmental exception
+recorded above. No pre-existing identity is missing. **Gate passed.**
