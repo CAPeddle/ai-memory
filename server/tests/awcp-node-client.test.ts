@@ -1815,3 +1815,195 @@ Deno.test({
     assertEquals(readState(emptyConfig).dropped_events, 0);
   },
 });
+
+// ---------------------------------------------------------------------------
+// ST-092 U4 (R4): flushOnce is total — no response shape escapes as an exception.
+//
+// `flushOnce`'s docblock promises that every status the hub can return maps to an
+// outcome the caller branches on explicitly. Two `await res.json()` calls could
+// reject, and a rejection there came out of `flush()` as a thrown exception instead —
+// so the promise held for every response the tests happened to model and for no
+// other. The last case below is the dangerous one: an unvalidated 200 would have had
+// its `acknowledged` array trusted, and `flush()` removes exactly the entries that
+// array names.
+// ---------------------------------------------------------------------------
+
+/** A response whose body is not JSON at all — a proxy error page, say. */
+function unparseableBodyFetch(status: number) {
+  return (_url: string, _init: { body: string }) =>
+    Promise.resolve({
+      status,
+      text: () => Promise.resolve("<html>502 Bad Gateway</html>"),
+      json: () =>
+        Promise.reject(new SyntaxError("Unexpected token < in JSON at position 0")),
+    });
+}
+
+/** A 200 whose body parses but is not a valid acknowledgement. */
+// deno-lint-ignore no-explicit-any
+function badAckBodyFetch(body: any) {
+  return (_url: string, _init: { body: string }) =>
+    Promise.resolve({ status: 200, json: () => Promise.resolve(body) });
+}
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R4: a 400 and a 200 whose bodies are not JSON both return `malformed` with the spool untouched",
+  fn: async () => {
+    for (const status of [400, 200]) {
+      const home = await Deno.makeTempDir();
+      const config = withNodeId(resolveConfig({ home })) as ReturnType<
+        typeof resolveConfig
+      >;
+      appendEvent(config, { event_type: "e", payload: { n: 1 } });
+      const before = await Deno.readTextFile(config.spoolPath);
+
+      const result = await flushOnce({
+        ...config,
+        fetchImpl: unparseableBodyFetch(status),
+      }, [{ client_seq: 1, event_type: "e", payload: { n: 1 } }]);
+
+      assertEquals(
+        result.outcome,
+        "malformed",
+        `a ${status} with an unparseable body must be malformed, not an exception`,
+      );
+      assertEquals(
+        await Deno.readTextFile(config.spoolPath),
+        before,
+        "the spool must be untouched",
+      );
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R4: a 200 that is not a valid acknowledgement is `malformed`, and flush removes nothing",
+  fn: async () => {
+    const shapes: Array<[string, unknown]> = [
+      ["no acknowledged key", { ok: true }],
+      ["acknowledged is not an array", { acknowledged: { client_seq: 1 } }],
+      ["entries lack a numeric client_seq", { acknowledged: [{ event_id: "x" }] }],
+      ["client_seq is a string", { acknowledged: [{ client_seq: "1" }] }],
+      ["body is null", null],
+    ];
+
+    for (const [label, body] of shapes) {
+      const home = await Deno.makeTempDir();
+      const config = withNodeId(resolveConfig({ home })) as ReturnType<
+        typeof resolveConfig
+      >;
+      appendEvent(config, { event_type: "e", payload: { n: 1 } });
+      const before = await Deno.readTextFile(config.spoolPath);
+
+      const result = await flushOnce(
+        { ...config, fetchImpl: badAckBodyFetch(body) },
+        [{ client_seq: 1, event_type: "e", payload: { n: 1 } }],
+      );
+      assertEquals(result.outcome, "malformed", `${label}: must not be acked`);
+
+      // The whole point: `flush()` deletes exactly what `acknowledged` names, so a
+      // 200 the client could not verify must not remove anything.
+      const flushed = await flush({
+        ...config,
+        fetchImpl: badAckBodyFetch(body),
+        stderrWrite: () => {},
+      });
+      assertEquals(flushed.outcome, "malformed", `${label}: flush stops`);
+      assertEquals(flushed.delivered, [], `${label}: nothing reported delivered`);
+      assertEquals(
+        await Deno.readTextFile(config.spoolPath),
+        before,
+        `${label}: the spool must be byte-identical — this is the case that would ` +
+          `otherwise delete undelivered events`,
+      );
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R4: an empty `acknowledged` array is still a VALID body — zero progress, not corruption",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = withNodeId(resolveConfig({ home })) as ReturnType<
+      typeof resolveConfig
+    >;
+    appendEvent(config, { event_type: "e", payload: { n: 1 } });
+
+    const result = await flushOnce(
+      { ...config, fetchImpl: badAckBodyFetch({ acknowledged: [] }) },
+      [{ client_seq: 1, event_type: "e", payload: { n: 1 } }],
+    );
+    assertEquals(result.outcome, "acked");
+    assertEquals(result.acked, []);
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R4: a 200 acknowledging seqs outside the batch removes nothing and does not spin forever",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = withNodeId(resolveConfig({ home })) as ReturnType<
+      typeof resolveConfig
+    >;
+    appendEvent(config, { event_type: "e", payload: { n: 1 } });
+    const before = await Deno.readTextFile(config.spoolPath);
+
+    const result = await flush({
+      ...config,
+      fetchImpl: badAckBodyFetch({ acknowledged: [{ client_seq: 9999 }] }),
+      sleepImpl: () => Promise.resolve(),
+      randomImpl: () => 0.5,
+    });
+
+    assertEquals(result.outcome, "deferred", "bounded, not an infinite loop");
+    assertEquals(await Deno.readTextFile(config.spoolPath), before);
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R4 control: the pre-existing valid 200 and valid 400-rejection paths are unchanged",
+  fn: async () => {
+    // Valid 200 — still acks and still shrinks the spool.
+    const home = await Deno.makeTempDir();
+    const config = withNodeId(resolveConfig({ home })) as ReturnType<
+      typeof resolveConfig
+    >;
+    appendEvent(config, { event_type: "e", payload: { n: 1 } });
+    // deno-lint-ignore no-explicit-any
+    const recorded: any[][] = [];
+    const acked = await flush({ ...config, fetchImpl: ackingFetch(recorded) });
+    assertEquals(acked.outcome, "acked");
+    assertEquals(acked.delivered, [1]);
+    assertEquals(readSpool(config).length, 0);
+
+    // Valid 400 naming client_seq values — still the D-15 per-event rejection.
+    const home2 = await Deno.makeTempDir();
+    const config2 = withNodeId(resolveConfig({ home: home2 })) as ReturnType<
+      typeof resolveConfig
+    >;
+    appendEvent(config2, { event_type: "e", payload: { n: 1 } });
+    const rejected = await flushOnce(
+      { ...config2, fetchImpl: rejectingFetch([1]) },
+      [{ client_seq: 1, event_type: "e", payload: { n: 1 } }],
+    );
+    assertEquals(rejected.outcome, "rejected");
+    assertEquals(rejected.rejected, [1]);
+
+    // A 400 in the zod-issue shape is still malformed, as before.
+    const other = await flushOnce(
+      { ...config2, fetchImpl: malformedFetch() },
+      [{ client_seq: 1, event_type: "e", payload: { n: 1 } }],
+    );
+    assertEquals(other.outcome, "malformed");
+  },
+});

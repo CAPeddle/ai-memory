@@ -621,6 +621,20 @@ export async function registerNode(config) {
  * the exact failure D-17 exists to prevent. Only the statuses that actually return a
  * JSON body (400) are parsed here.
  *
+ * **ST-092 R4 — every response is now TOTAL, including the ones a broken hub could
+ * produce.** Two `await res.json()` calls used to be able to reject: the 400 branch
+ * and the 200 branch. A rejection there escaped `flushOnce` entirely and came out of
+ * `flush()` as a thrown exception rather than one of the outcomes the docblock above
+ * promises, defeating the whole point of an outcome union. Both are now parsed
+ * through `parseJsonBody`, and a parse failure is `malformed` — a terminal outcome
+ * that leaves the spool untouched.
+ *
+ * The 200 branch additionally VALIDATES its body before trusting it. A 200 whose
+ * `acknowledged` is missing, is not an array, or holds entries without a numeric
+ * `client_seq` is `malformed`, never `acked`. This is the case that mattered most:
+ * treating an unvalidated 200 as an ack would remove spool entries the hub never
+ * confirmed, which is the ack-before-drop rule (EVENT-03) broken from the client side.
+ *
  * `acked` is `body.acknowledged.map((a) => a.client_seq)`, read as whatever JS type
  * `JSON.parse` produced for the wire value — no `Number()` coercion is applied here.
  * The hub's `store.acknowledgeSeqs` already coerces `client_seq` to a JS number
@@ -628,6 +642,48 @@ export async function registerNode(config) {
  * `JSON.parse`d spool JSONL) against an uncoerced ack value is what makes a hub-side
  * regression on that coercion visible here instead of silently retrying forever.
  */
+/**
+ * `await res.json()` that cannot reject (ST-092 R4). Returns `{ok:true, body}` or
+ * `{ok:false, detail}`. A hub that answers with truncated, empty, or non-JSON bytes
+ * is a real possibility — a proxy error page, a half-written response, a crash
+ * mid-serialisation — and none of those should reach the caller as an exception when
+ * `flushOnce`'s contract is that every response maps to a stated outcome.
+ */
+async function parseJsonBody(res) {
+  try {
+    return { ok: true, body: await res.json() };
+  } catch (error) {
+    return {
+      ok: false,
+      detail: {
+        error: "UnparseableResponseBody",
+        status: res.status,
+        message: error instanceof Error ? error.message : String(error),
+      },
+    };
+  }
+}
+
+/**
+ * Is this a 200 body the client may act on? (ST-092 R4)
+ *
+ * Deliberately strict, and deliberately checked BEFORE anything is removed from the
+ * spool: `acknowledged` must be an array and every entry must carry a numeric
+ * `client_seq`. An empty array is valid — it is a hub that accepted nothing, which
+ * `flush()` already handles as zero progress — but a malformed one is not, because
+ * `flush()` removes exactly the entries this array names and a wrong answer here
+ * deletes undelivered events.
+ */
+function isValidAckBody(body) {
+  if (body === null || typeof body !== "object") return false;
+  const acknowledged = body.acknowledged;
+  if (!Array.isArray(acknowledged)) return false;
+  return acknowledged.every((entry) =>
+    entry !== null && typeof entry === "object" &&
+    typeof entry.client_seq === "number"
+  );
+}
+
 export async function flushOnce(config, batch) {
   const nodeId = readFileSync(config.nodeIdPath, "utf8").trim();
   let res;
@@ -651,8 +707,10 @@ export async function flushOnce(config, batch) {
   if (res.status === 404) return { outcome: "unknown_node" };
   if (res.status === 413) return { outcome: "too_large" };
   if (res.status === 400) {
-    const body = await res.json();
-    const issues = body.issues;
+    const parsed = await parseJsonBody(res);
+    if (!parsed.ok) return { outcome: "malformed", detail: parsed.detail };
+    const body = parsed.body;
+    const issues = body?.issues;
     // D-15/RESEARCH.md Pitfall 2: the two 400 shapes differ by whether each issue
     // carries a numeric client_seq — detect BY THAT, not by the mere presence of
     // `issues`, which both shapes have.
@@ -673,7 +731,25 @@ export async function flushOnce(config, batch) {
     return { outcome: "retryable", status: res.status };
   }
 
-  const body = await res.json();
+  const parsed = await parseJsonBody(res);
+  if (!parsed.ok) return { outcome: "malformed", detail: parsed.detail };
+  const body = parsed.body;
+  if (!isValidAckBody(body)) {
+    // NOT "acked". `flush()` removes exactly the entries this array names, so
+    // trusting a body it could not verify would delete events the hub never
+    // confirmed — ack-before-drop (EVENT-03) broken from the client's own side.
+    return {
+      outcome: "malformed",
+      detail: {
+        error: "InvalidAcknowledgementBody",
+        status: res.status,
+        message:
+          "a 200 must carry `acknowledged` as an array of entries with a numeric " +
+          "client_seq; refusing to treat this response as an acknowledgement",
+        body,
+      },
+    };
+  }
   const acknowledged = body.acknowledged;
   const acked = acknowledged.map((entry) => entry.client_seq);
   return { outcome: "acked", acked, acknowledged };
