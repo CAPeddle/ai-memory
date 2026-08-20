@@ -1573,3 +1573,138 @@ Deno.test({
     );
   },
 });
+
+// ---------------------------------------------------------------------------
+// ST-092 U1b (R2b): the client_seq counter can never be observed as empty.
+//
+// This is the D-14 reset by a route `allocateSeq`'s own docblock did not cover, and
+// neither cross-AI review lane found it. Before this story the counter was written
+// with an `openSync(path, "w")` that truncates before writing, so the crash window
+// was a ZERO-LENGTH FILE rather than a stale value — and the recovery path read an
+// unparseable counter as 0, which made the next allocation return 1. The hub's
+// `ON CONFLICT (node_id, client_seq) DO NOTHING` then silently discards everything
+// that follows, which is precisely the failure the docblock claims to prevent.
+// ---------------------------------------------------------------------------
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R2b: a crash in the counter's write window leaves the previous sequence readable, and the next allocation continues from it",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = resolveConfig({ home });
+
+    assertEquals(allocateSeq(config), 1);
+    assertEquals(allocateSeq(config), 2);
+    assertEquals(allocateSeq(config), 3);
+    const before = await Deno.readTextFile(config.seqPath);
+    assertEquals(before, "3");
+
+    // Crash in the exact window the old truncate-in-place write could not survive:
+    // the replacement is written and fsync'd, and the process dies before it lands.
+    const crashing = {
+      ...config,
+      beforeSeqRename: () => {
+        throw new Error("simulated crash before the counter rename (test double)");
+      },
+    };
+    assertThrows(
+      () => allocateSeq(crashing),
+      Error,
+      "simulated crash before the counter rename",
+    );
+
+    const after = await Deno.readTextFile(config.seqPath);
+    assertEquals(
+      after,
+      before,
+      "the counter must still read its previous value byte-for-byte — an empty " +
+        "file here is the D-14 reset",
+    );
+    assertEquals(
+      allocateSeq(config),
+      4,
+      "the next allocation must continue the sequence, not restart it at 1",
+    );
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R2b control: the truncate-in-place write this replaced does produce an empty counter, and an empty counter is now refused rather than read as 1",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = resolveConfig({ home });
+    for (let i = 0; i < 3; i++) allocateSeq(config);
+    assertEquals(await Deno.readTextFile(config.seqPath), "3");
+
+    // Reproduce the OLD primitive's crash window directly rather than asserting
+    // against deleted code: open for write with truncation, then die before writing.
+    // This is what `writeFileFsync` did, and it is why the window was real.
+    const fd = Deno.openSync(config.seqPath, { write: true, truncate: true });
+    fd.close();
+    assertEquals(
+      (await Deno.readTextFile(config.seqPath)).length,
+      0,
+      "sanity: truncate-in-place really does leave a zero-length counter",
+    );
+
+    // The old recovery path read that as `current = 0` and returned 1 — a silent
+    // sequence reset. It must now refuse, loudly, naming the consequence.
+    const err = assertThrows(
+      () => allocateSeq(config),
+      Error,
+      "refusing to allocate a client_seq",
+    );
+    assert(
+      /D-14/.test((err as Error).message),
+      `the refusal must name the failure it prevents: ${(err as Error).message}`,
+    );
+    assertEquals(
+      await Deno.readTextFile(config.seqPath),
+      "",
+      "a refused allocation must not write anything",
+    );
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R2b: a garbage counter is refused, while a MISSING counter still starts at 1",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = resolveConfig({ home });
+
+    // Missing is the ordinary first-run case and is deliberately NOT corruption.
+    assertEquals(allocateSeq(config), 1);
+
+    for (const garbage of ["not-a-number", "-4", "   "]) {
+      Deno.writeTextFileSync(config.seqPath, garbage);
+      assertThrows(
+        () => allocateSeq(config),
+        Error,
+        "refusing to allocate a client_seq",
+        `"${garbage}" must be refused, not silently read as zero`,
+      );
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "ST-092 R2b: the counter file is still mode 0600 after the rename",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = resolveConfig({ home });
+    allocateSeq(config);
+    allocateSeq(config);
+    const mode = Deno.statSync(config.seqPath).mode! & 0o777;
+    assertEquals(
+      mode,
+      0o600,
+      "rewrite-and-rename must not widen the counter's mode (D-16)",
+    );
+  },
+});

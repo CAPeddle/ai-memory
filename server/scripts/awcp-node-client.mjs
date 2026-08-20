@@ -57,7 +57,7 @@ import {
   renameSync,
   writeSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { homedir, hostname as osHostname } from "node:os";
 import { pathToFileURL } from "node:url";
 import { randomBytes } from "node:crypto";
@@ -206,6 +206,49 @@ function fsyncDir(dirPath) {
 }
 
 /**
+ * Rewrite-and-rename one whole file, durably (RESEARCH.md Pattern 1 + ST-092 R2):
+ * write the full content to a temp file in the SAME directory, fsync it, rename over
+ * the target, then fsync the directory.
+ *
+ * The same-directory requirement is not incidental — `rename()` is only atomic within
+ * one filesystem, so a temp file in `/tmp` renamed onto a target elsewhere is an
+ * ordinary copy that can tear.
+ *
+ * `hooks.beforeRename` is the test-only crash seam: the temp file exists and is
+ * already fsync'd by the time it runs, so throwing there simulates exactly the
+ * window this primitive exists to make survivable, and proves the ORIGINAL target
+ * survives byte-identical. Production callers never pass one.
+ *
+ * Every full-content writer in this file goes through here (spool, state, sequence
+ * counter) rather than each rebuilding the sequence, so the durability property lives
+ * in one place and the next rewrite-based writer inherits it instead of re-deriving
+ * it — and, as ST-092 found, instead of quietly not having it.
+ */
+function writeFileAtomic(path, content, mode, hooks = {}) {
+  const dir = dirname(path);
+  const tmpPath = join(
+    dir,
+    `.${basename(path)}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`,
+  );
+  const fd = openSync(tmpPath, "w", mode);
+  try {
+    writeSync(fd, content);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+  // openSync's mode argument only applies at creation; chmod for the same reason
+  // writeFileFsync does, and BEFORE the rename so the target is never briefly
+  // readable at a wider mode than the one this client requires (D-16).
+  chmodSync(tmpPath, mode);
+  if (typeof hooks.beforeRename === "function") {
+    hooks.beforeRename(tmpPath);
+  }
+  renameSync(tmpPath, path);
+  (hooks.fsyncDirImpl ?? fsyncDir)(dir);
+}
+
+/**
  * Every persisted path and every dependency is a parameter with a production default
  * applied only when an override is absent (RESEARCH.md Pattern 3) — so a test can
  * point this at `/tmp` and stay inside CLAUDE.md's existing `--allow-write=/tmp`
@@ -275,12 +318,30 @@ export function ensureStateDir(config) {
 }
 
 /**
- * Read-increment-write `config.seqPath`, fsync before returning. NEVER reads
- * `spoolPath` (D-14) — deriving the next seq from the spool's last line resets to 0
- * every time the spool drains, which is the steady state after every successful
- * flush, not an edge case; the hub's `ON CONFLICT (node_id, client_seq) DO NOTHING`
- * would then silently discard the next event's new content. A missing counter file
- * starts at 1.
+ * Read-increment-write `config.seqPath` through the durable rewrite-and-rename
+ * primitive. NEVER reads `spoolPath` (D-14) — deriving the next seq from the spool's
+ * last line resets to 0 every time the spool drains, which is the steady state after
+ * every successful flush, not an edge case; the hub's `ON CONFLICT (node_id,
+ * client_seq) DO NOTHING` would then silently discard the next event's new content.
+ * A missing counter file starts at 1.
+ *
+ * **ST-092 R2b — the second route to that same D-14 reset, which the paragraph above
+ * did not cover.** Until this story the counter was written with `writeFileFsync`,
+ * whose `openSync(path, "w")` TRUNCATES the target before writing it. The crash
+ * window was therefore not "a stale value" but "a zero-length file", and the recovery
+ * path below used to read an unparseable counter as `current = 0` — so the very next
+ * allocation returned 1 and the hub silently discarded everything that followed. The
+ * docblock closed the derive-from-spool route and left this one wide open. Writing
+ * through `writeFileAtomic` removes the window: the target is never truncated, only
+ * replaced, so a crash leaves the previous complete value.
+ *
+ * **An unparseable counter is now refused, not read as zero.** With truncate-in-place
+ * gone, an empty or garbage counter file is no longer something an ordinary crash can
+ * produce, so treating it as 0 would only convert genuine corruption into the silent
+ * reset this function exists to prevent — the same reasoning as ST-092's single-writer
+ * lock, where an operator-visible error beats invisible duplicate allocation. A
+ * MISSING file is still the ordinary first-run case and still starts at 1; missing and
+ * corrupt are deliberately not the same condition.
  */
 export function allocateSeq(config) {
   ensureStateDir(config);
@@ -288,10 +349,26 @@ export function allocateSeq(config) {
   if (existsSync(config.seqPath)) {
     const raw = readFileSync(config.seqPath, "utf8").trim();
     const parsed = Number.parseInt(raw, 10);
-    if (Number.isFinite(parsed) && parsed >= 0) current = parsed;
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      throw new Error(
+        `awcp-node-client: refusing to allocate a client_seq — the counter at ` +
+          `${config.seqPath} is present but unreadable (${JSON.stringify(raw)}). ` +
+          `Continuing would restart the sequence at 1, and the hub's ON CONFLICT ` +
+          `(node_id, client_seq) DO NOTHING would then silently discard every event ` +
+          `that followed (D-14). Restore the counter to the highest client_seq this ` +
+          `node has already sent, or delete ~/.awcp/ to enrol as a new node.`,
+      );
+    }
+    current = parsed;
   }
   const next = current + 1;
-  writeFileFsync(config.seqPath, String(next), 0o600);
+  // `beforeSeqRename` is this function's own crash seam, kept separate from
+  // writeSpool's `beforeRename` so a test injecting one does not fire the other —
+  // appendEvent calls both, and a shared hook could not tell the two windows apart.
+  writeFileAtomic(config.seqPath, String(next), 0o600, {
+    beforeRename: config.beforeSeqRename,
+    fsyncDirImpl: config.fsyncDirImpl,
+  });
   return next;
 }
 
@@ -352,30 +429,16 @@ export function readSpool(config) {
  */
 export function writeSpool(config, entries) {
   ensureStateDir(config);
-  const tmpPath = join(
-    dirname(config.spoolPath),
-    `.spool.${process.pid}.${randomBytes(4).toString("hex")}.tmp`,
-  );
   const content = entries.length === 0
     ? ""
     : entries.map((entry) => JSON.stringify(entry)).join("\n") + "\n";
-  const fd = openSync(tmpPath, "w", 0o600);
-  try {
-    writeSync(fd, content);
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
-  }
-  // Test-only seam (03-03): a config carrying `beforeRename` can simulate a crash
-  // between the durable temp-file write above and the atomic rename below — the temp
-  // file already exists and is fsync'd, so throwing here proves the ORIGINAL
-  // spool.jsonl survives byte-identical. Never set in production; resolveConfig does
-  // not default this field, so a config built the normal way never carries it.
-  if (typeof config.beforeRename === "function") {
-    config.beforeRename(tmpPath);
-  }
-  renameSync(tmpPath, config.spoolPath);
-  (config.fsyncDirImpl ?? fsyncDir)(dirname(config.spoolPath));
+  // `beforeRename` is the 03-03 test-only crash seam, passed through to
+  // `writeFileAtomic`. Never set in production; resolveConfig does not default this
+  // field, so a config built the normal way never carries it.
+  writeFileAtomic(config.spoolPath, content, 0o600, {
+    beforeRename: config.beforeRename,
+    fsyncDirImpl: config.fsyncDirImpl,
+  });
 }
 
 /**
@@ -410,19 +473,9 @@ export function readState(config) {
  */
 export function writeState(config, state) {
   ensureStateDir(config);
-  const tmpPath = join(
-    dirname(config.statePath),
-    `.state.${process.pid}.${randomBytes(4).toString("hex")}.tmp`,
-  );
-  const fd = openSync(tmpPath, "w", 0o600);
-  try {
-    writeSync(fd, JSON.stringify(state));
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
-  }
-  renameSync(tmpPath, config.statePath);
-  (config.fsyncDirImpl ?? fsyncDir)(dirname(config.statePath));
+  writeFileAtomic(config.statePath, JSON.stringify(state), 0o600, {
+    fsyncDirImpl: config.fsyncDirImpl,
+  });
 }
 
 /**
