@@ -2007,3 +2007,168 @@ Deno.test({
     assertEquals(other.outcome, "malformed");
   },
 });
+
+// ---------------------------------------------------------------------------
+// ST-092 U5 (R5): shutdown is bounded by the signal, and the exit code is honest.
+// ---------------------------------------------------------------------------
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R5: stop() during the heartbeat wait wakes the loop immediately instead of waiting the interval out",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    // deno-lint-ignore no-explicit-any
+    const recorded: any[][] = [];
+    // A sleep that NEVER resolves. Under the old unconditional `await sleepImpl(...)`
+    // this test could not finish at all; under the race it finishes as soon as stop()
+    // fires. A "never" sleep is a stronger proof than a long one — it cannot pass by
+    // the interval merely elapsing.
+    const config = withNodeId(resolveConfig({
+      home,
+      heartbeatIntervalMs: 60_000,
+      sleepImpl: () => new Promise<void>(() => {}),
+      fetchImpl: ackingFetch(recorded),
+    })) as ReturnType<typeof resolveConfig>;
+
+    const controller = runAgent(config);
+    // Let the start checkpoint and first flush complete, so the loop is genuinely
+    // parked in the heartbeat wait when the signal arrives.
+    await new Promise((r) => setTimeout(r, 20));
+    controller.stop();
+
+    const result = await Promise.race([
+      controller.done,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("runAgent did not wake on stop()")), 5_000)
+      ),
+    ]) as { exitCode: number };
+
+    assertEquals(result.exitCode, 0);
+    const types = readSpool(config).map((e: { event_type: string }) => e.event_type);
+    assertEquals(types, [], "everything was delivered, so the spool is empty");
+    const sent = recorded.flat().map((e: { payload: { phase?: string } }) =>
+      e.payload?.phase
+    );
+    assert(
+      sent.includes("start") && sent.includes("stop"),
+      `both checkpoints must have been sent: ${JSON.stringify(sent)}`,
+    );
+    assertEquals(
+      sent.filter((p: string | undefined) => p === undefined).length,
+      0,
+      "no heartbeat can have been emitted — the interval never elapsed, so any " +
+        "heartbeat here would mean the loop ticked rather than being woken",
+    );
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R5: a stop whose final flush is deferred exits 75, not 0",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = withNodeId(resolveConfig({
+      home,
+      heartbeatIntervalMs: 60_000,
+      // The loop's tick source resolves immediately here so `stop()` is observed
+      // without waiting; `flush()`'s backoff shares this seam, which is what keeps
+      // the retry exhaustion below instantaneous.
+      sleepImpl: () => Promise.resolve(),
+      randomImpl: () => 0.5,
+      fetchImpl: unreachableFetch(),
+      stderrWrite: () => {},
+    })) as ReturnType<typeof resolveConfig>;
+
+    const controller = runAgent(config);
+    controller.stop();
+    const result = await controller.done as { exitCode: number; terminal: boolean };
+
+    assertEquals(
+      result.exitCode,
+      75,
+      "the hub was never reached, so the stop checkpoint is still spooled — " +
+        "reporting 0 would tell an operator this node reported its own shutdown",
+    );
+    assertEquals(result.terminal, false, "deferred is not terminal; a later run retries");
+    assert(
+      readSpool(config).length > 0,
+      "the undelivered events are still spooled, which is what 75 describes",
+    );
+  },
+});
+
+Deno.test({
+  ...T,
+  name: "ST-092 R5: a stop whose final flush drains the spool exits 0",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    // deno-lint-ignore no-explicit-any
+    const recorded: any[][] = [];
+    const config = withNodeId(resolveConfig({
+      home,
+      heartbeatIntervalMs: 60_000,
+      sleepImpl: () => Promise.resolve(),
+      fetchImpl: ackingFetch(recorded),
+    })) as ReturnType<typeof resolveConfig>;
+
+    const controller = runAgent(config);
+    controller.stop();
+    const result = await controller.done as { exitCode: number };
+
+    assertEquals(result.exitCode, 0);
+    assertEquals(readSpool(config).length, 0);
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R5: a terminal-auth outcome still exits 77 and is still reported terminal",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = withNodeId(resolveConfig({
+      home,
+      heartbeatIntervalMs: 60_000,
+      sleepImpl: () => Promise.resolve(),
+      fetchImpl: unauthorizedFetch(),
+      stderrWrite: () => {},
+    })) as ReturnType<typeof resolveConfig>;
+
+    const controller = runAgent(config);
+    const result = await controller.done as { exitCode: number; terminal: boolean };
+
+    assertEquals(result.exitCode, 77);
+    assertEquals(result.terminal, true);
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-092 R5: the stop checkpoint is emitted exactly once even when stop() is called twice",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    // deno-lint-ignore no-explicit-any
+    const recorded: any[][] = [];
+    const config = withNodeId(resolveConfig({
+      home,
+      heartbeatIntervalMs: 60_000,
+      sleepImpl: () => new Promise<void>(() => {}),
+      fetchImpl: ackingFetch(recorded),
+    })) as ReturnType<typeof resolveConfig>;
+
+    const controller = runAgent(config);
+    await new Promise((r) => setTimeout(r, 20));
+    controller.stop();
+    controller.stop();
+    controller.stop();
+    await controller.done;
+
+    const phases = recorded.flat()
+      .map((e: { payload: { phase?: string } }) => e.payload?.phase)
+      .filter((p: string | undefined) => p === "stop");
+    assertEquals(phases.length, 1, "exactly one stop checkpoint");
+  },
+});

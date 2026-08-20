@@ -1009,12 +1009,44 @@ export function emitCheckpoint(config, payload = {}) {
  * than inventing a second one) — production ticks on a real timer via `defaultSleep`;
  * a test drives ticks deterministically by controlling when each `sleepImpl` call
  * resolves, with no real waiting.
+ *
+ * **ST-092 R5 — the stop signal now INTERRUPTS the wait rather than being noticed
+ * after it.** The loop used to `await sleepImpl(interval)` unconditionally and check
+ * the flag only once that resolved, so a `SIGTERM` arriving one second into a
+ * sixty-second heartbeat interval left the process alive for the remaining
+ * fifty-nine — under an init system's default kill timeout that is not a slow
+ * shutdown, it is a `SIGKILL`, and a `SIGKILL` here means the stop checkpoint is
+ * never emitted at all. The wait is now raced against a promise `stop()` resolves,
+ * so shutdown latency is bounded by the signal.
+ *
+ * **ST-092 R5 — a stop whose final flush did not deliver no longer reports success.**
+ * The final flush's outcome was inspected only for `terminal_auth`; a `deferred`
+ * result — the hub unreachable, retries exhausted, the stop checkpoint and everything
+ * behind it still spooled — returned exit code 0. An operator reading exit 0 would
+ * take it as "this node finished cleanly and reported so". It now returns 75, the
+ * exit code `main`'s `flush` command already uses for exactly this condition, so the
+ * two surfaces agree rather than disagreeing about what a deferred flush means.
+ *
+ * **What "clean shutdown" means here, stated because the code used to answer it only
+ * implicitly.** A stop checkpoint left in the spool is NOT a failure of the client —
+ * the event is durable, ordered, and will be delivered on the next run. It IS a
+ * failure to *report* the shutdown to the hub within this process's lifetime, which
+ * is what the exit code describes. So: exit 0 means the hub has acknowledged the stop
+ * checkpoint; exit 75 means it is spooled and undelivered; exit 77 means the hub
+ * refused this node's credential and no further attempt will help.
  */
 export function runAgent(config) {
   const sleepImpl = config.sleepImpl ?? defaultSleep;
   const interval = config.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
   const startedAtMs = Date.now();
   let stopped = false;
+  // Resolved by `stop()`. Raced against the heartbeat wait so a signal wakes the loop
+  // immediately instead of at the next interval boundary. Created once, not per tick,
+  // so repeated `stop()` calls stay idempotent.
+  let wake;
+  const stopSignal = new Promise((resolve) => {
+    wake = resolve;
+  });
 
   async function loop() {
     emitCheckpoint(config, { phase: "start" });
@@ -1024,7 +1056,11 @@ export function runAgent(config) {
     }
 
     while (!stopped) {
-      await sleepImpl(interval);
+      // `Promise.race` rather than a bare await: whichever settles first wins, and
+      // `stop()` settling first is the whole point. The losing `sleepImpl` promise is
+      // left pending, which is correct — a production `setTimeout` fires into nothing
+      // and a test's injected sleep is discarded with the loop.
+      await Promise.race([sleepImpl(interval), stopSignal]);
       if (stopped) break;
       emitHeartbeat(config, startedAtMs);
       flushResult = await flush(config);
@@ -1035,15 +1071,22 @@ export function runAgent(config) {
 
     emitCheckpoint(config, { phase: "stop" });
     flushResult = await flush(config);
+    if (flushResult.outcome === "terminal_auth") {
+      return { exitCode: 77, terminal: true };
+    }
+    // Anything that did not fully deliver is reported as deferred (75), not success.
+    // `flush()` returns "acked" only when the spool drained; every other non-terminal
+    // outcome leaves events behind.
     return {
-      exitCode: flushResult.outcome === "terminal_auth" ? 77 : 0,
-      terminal: flushResult.outcome === "terminal_auth",
+      exitCode: flushResult.outcome === "acked" ? 0 : 75,
+      terminal: false,
     };
   }
 
   return {
     stop: () => {
       stopped = true;
+      wake();
     },
     done: loop(),
   };
