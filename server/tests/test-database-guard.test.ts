@@ -128,6 +128,13 @@ Deno.test({
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
+    // Before anything is dropped — including the defensive pre-clean below. The
+    // real-probe control above calls this too, but in a different `Deno.test`, and
+    // Deno keeps running after a test fails; against an unmarked database that
+    // refusal would be reported and this block would then drop a schema on the very
+    // database the guard exists to protect (found by review on PR #52).
+    await requireTestDatabase();
+
     // A marker table would have been the obvious design and would have been wrong:
     // the suites this protects drop schemas, so evidence stored in one has a window
     // in it. Demonstrated on a scratch schema rather than argued.
@@ -222,5 +229,56 @@ Deno.test({
         "the designated marker is a property of the database, not of the session",
       );
     });
+  },
+});
+
+Deno.test({
+  name:
+    "PR52-F8: the destructive control must call the guard BEFORE it drops, not after",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    // Raised by an automated reviewer (Codex). The real-probe control earlier in this
+    // file does call `requireTestDatabase()` — but in a DIFFERENT `Deno.test` block,
+    // and Deno runs the remaining tests after one fails. So against an unmarked shared
+    // dev database the guard's own refusal is reported and then the next test drops a
+    // schema on the very database the guard exists to protect. Guarding per FILE is
+    // not the property; guarding before the first destructive statement in the SAME
+    // test body is.
+    //
+    // Checked structurally rather than behaviourally because the failure needs an
+    // unmarked database, which this suite must never be pointed at to find out.
+    //
+    // The schema name is assembled from parts so this test's own source cannot match
+    // the block it is looking for.
+    const scratch = ["st092", "marker", "probe"].join("_");
+    const source = await Deno.readTextFile(new URL(import.meta.url));
+
+    const blocks = source.split(/\nDeno\.test\(/);
+    const dropping = blocks.filter((b) =>
+      b.includes(`DROP SCHEMA IF EXISTS ${scratch}`)
+    );
+    assertEquals(
+      dropping.length,
+      1,
+      "precondition: exactly one test block in this file drops the scratch schema",
+    );
+
+    // Matched on the STATEMENT, not the phrase: the block opens with a `name:` that
+    // itself contains the words DROP SCHEMA, and anchoring on those compared the guard
+    // against the test's own title instead of against anything it executes. That made
+    // this assertion unfailable rather than merely wrong — worth the extra specificity.
+    const block = dropping[0];
+    const dropAt = block.indexOf('unsafe("DROP SCHEMA');
+    const guardAt = block.indexOf("requireTestDatabase()");
+    assert(dropAt >= 0, "precondition: that block really does drop a schema");
+    assert(
+      guardAt >= 0,
+      "a test that drops schemas must call the real (no-argument) guard at all",
+    );
+    assert(
+      guardAt < dropAt,
+      "requireTestDatabase() must precede the first DROP SCHEMA in the same test body",
+    );
   },
 });
