@@ -413,7 +413,14 @@ recorded in `flushExitCode`'s docblock. Recorded so the plan is not later read a
 a decision it did not make.
 
 **Environment, because the failure count is environment-dependent.** Every run in this document was
-taken locally against the shared, accumulating `db-test`. The entity-worker failure is an artefact
-of that accumulation, so CI — which starts from a fresh database — should report **8** failures
-where this document reports 9. A CI/local mismatch on that one line is expected and is not a
-regression.
+taken locally with no `OPENROUTER_API_KEY` and against the shared, accumulating `db-test`. CI
+shares neither condition: [ci.yml](../../.github/workflows/ci.yml) gates `server-integration-tests`
+on the real secret and brings the stack up fresh, then runs the **identical** `deno test ... tests/`
+command. So all 8 provider-401 `e2e.test.ts` failures and the 1 entity-worker failure disappear
+there, and CI reports **0** failures against this branch — confirmed green on `b41b3c2`.
+
+*Corrected in place.* This paragraph first claimed CI "should report 8", reasoning only about the
+fresh database and forgetting that CI also holds the provider secret. The claim was written before
+CI had been read, and reading it falsified the prediction. The error is left recorded rather than
+silently overwritten: predicting another environment's result from one remembered difference is the
+same mistake this document already logs twice for the entity-worker flake.
