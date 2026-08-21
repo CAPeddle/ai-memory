@@ -144,8 +144,22 @@ What survived that episode is the part that was read from evidence rather than i
 from a timeline: the `entity-worker-observability :: records errors when item processing
 fails` test asserts `errors === 1` and observed `2` because it never clears
 `entity_extraction_queue`, so retry-scheduled items from earlier tests are counted by
-its run. That is a real, pre-existing isolation defect. It is **unfixed and not yet
-storied**, and it belongs to the entity-worker area, not to ST-092.
+its run. That is a real, pre-existing isolation defect belonging to the entity-worker area, not to
+ST-092.
+
+**Status, updated 2026-08-21 — and the ambiguity is worth preserving rather than flattening.**
+It is now **filed as ST-093** and still **unfixed**. The board entry lives on an unmerged
+branch — `docs/st-093-entity-queue-isolation`, commit `f41980b` — so from any other checkout
+that commit is unreachable and the branch name resolves to nothing. That is the situation
+being described, not a broken citation: the claims validator flags both, correctly, and the
+flag disappears when the branch merges. Whether it is "storied" depends on where you look: the board on an unmerged
+branch has the entry, `.github/planning/story-board.md` on this branch does not, and
+[the ST-092 delta doc](../../verification/ST-092-declared-test-identity-delta.md) says
+"now filed as ST-093" without saying where. A reader following that link before the branch
+merges hits a story number the board does not know. Round 4 of the same delta doc also
+implicates a *second* test in this file — `creates worker_runs record and emits lifecycle
+events`, on its `items_processed` assertion — so ST-093's scope is the file, not the one
+test named above.
 
 ## When to Apply
 

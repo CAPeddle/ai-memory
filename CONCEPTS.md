@@ -170,7 +170,7 @@ The worker reads queued shards, synthesizes them into consolidated wiki entries 
 ### Golden-Set
 A predetermined membership baseline for search queries, used to validate that hybrid BM25 + vector search returns expected results.
 
-A golden-set query has a known list of exact result UUIDs expected to appear in the top-10. The test asserts that all expected UUIDs are present in the actual result. Hybrid queries with vector-embedding components are not deterministic in shared CI environments where real embeddings from other tests contaminate the vector lane, so only BM25-only queries are included in the deterministic baseline; hybrid queries that depend on embedding stability are excluded or marked as non-deterministic.
+A golden-set query has a known list of exact result UUIDs expected to appear within a fixed result cutoff. The test asserts that all expected UUIDs are present in the actual result. Hybrid queries with vector-embedding components are not deterministic in shared CI environments where real embeddings from other tests contaminate the vector lane, so only BM25-only queries are included in the deterministic baseline; hybrid queries that depend on embedding stability are excluded or marked as non-deterministic.
 
 ## Governance
 
