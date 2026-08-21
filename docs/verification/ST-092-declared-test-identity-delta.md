@@ -494,3 +494,45 @@ left alone: the stale `server/index.ts:941, :997` citation duplicated into
 `server/db/workflow/001_workflow_schema.sql:17-19`, and the six `SPIKE / DISPOSABLE` stamps under
 `server/src/workflow/`. Neither is a PR #52 finding, and folding unrelated edits into a
 review-response commit is what makes a squash message stop describing its own diff.
+
+## Round 6 — the two findings the second review pass raised against round 5's own fixes
+
+**Declared before the run.** Round 6 adds **two** identities and removes none: **497 + 2 = 499**.
+
+| # | Identity | File | Proves |
+|---|---|---|---|
+| 1 | `PR52-F7: a takeover winner that releases mid-claim must make the loser retry, not throw ENOENT` | `awcp-node-client.test.ts` | `claimStaleLock`'s read-back died on a path the winner had already released |
+| 2 | `PR52-F8: the destructive control must call the guard BEFORE it drops, not after` | `test-database-guard.test.ts` | the guard ran in a *different* `Deno.test`, and Deno continues after a failure |
+
+**Both reds were taken twice, because the first attempt at each was a wrong-reason red.**
+That is the whole value of the control, so both are recorded rather than quietly re-run.
+
+| Identity | First attempt | Corrected red |
+|---|---|---|
+| `PR52-F7` | `Values are not equal: actual 0 / expected 1` — the **precondition**. The `beforeClaimReadback` seam did not exist yet, so nothing fired and the acquire quietly succeeded | seam added to the UNFIXED read-back, then: `NotFound: No such file or directory (os error 2): readfile '…/lock' … at claimStaleLock` |
+| `PR52-F8` | failed on its final assertion, but `dropAt` was matching the words `DROP SCHEMA` **in the test's own `name:`** rather than in a statement, which made the assertion unfailable rather than merely wrong | anchored on `unsafe("DROP SCHEMA` instead; verified by backing the one-line fix out again and re-running — red — then restoring |
+
+`PR52-F8` is a **structural** check, not a behavioural one, and deliberately so: reproducing the
+failure needs an unmarked database, which is the one thing this suite must never be pointed at in
+order to find out. It reads its own source, isolates the block that drops the scratch schema, and
+asserts the no-argument guard call precedes the first `sql.unsafe("DROP SCHEMA` in that same block.
+The scratch name is assembled from parts so the test's source cannot match itself.
+
+**Scope held deliberately narrow.** `server/tests/workflow-migrations.test.ts` drops schemas
+through `withScratchSchema` and never calls `requireTestDatabase()` at all — a third instance of
+the same class, found while scoping this round. It is **not** fixed here: it only ever drops
+`wf_migtest_*` schemas it created itself, inside a `finally`, so no schema the guard protects is
+reachable from it. Recorded as an observation, not folded into a commit answering two named
+findings.
+
+### Round 6 result
+
+| | Declared | Observed |
+|---|---|---|
+| Identities | 499 | **499** |
+| Added | 2 | **2**, both `ok` |
+| Removed | 0 | **0** |
+| Status flips | 0 | **0** |
+| Failures | 9 (unchanged local baseline) | **9**, the same nine by name |
+
+Artefact refreshed at [ST-092-regression-final.txt](ST-092-regression-final.txt).
