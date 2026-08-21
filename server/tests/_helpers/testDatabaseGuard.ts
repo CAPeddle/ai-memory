@@ -18,7 +18,16 @@
  * does not discriminate either (verified: `current_database()` returns `ai_memory` on
  * both). What discriminates is a database-level setting applied only by the test
  * stack's seed step: `ALTER DATABASE ai_memory SET ai_memory.test_database = 'true'`,
- * stored in `pg_db_role_setting` where no `DROP SCHEMA` can reach it.
+ * stored in `pg_db_role_setting` where no `DROP SCHEMA` can reach it. Delivering that
+ * guarantee means reading the marker out of `pg_db_role_setting` itself, scoped to
+ * `current_database()` with `setrole = 0` (the "applies to every role on this
+ * database" row `ALTER DATABASE ... SET` writes, as opposed to a `setrole`-scoped row
+ * from `ALTER ROLE ... IN DATABASE ... SET`) — not by asking Postgres for the
+ * marker's effective value in the current session. The effective session value is
+ * exactly what a connection string's `options=-c ai_memory.test_database=true`, an
+ * `ALTER ROLE ... SET`, or a plain `SET` issued earlier in the session can also
+ * produce, on a database nobody ever designated as a test database, so reading it
+ * would not have delivered the guarantee this paragraph claims.
  *
  * **It fails closed.** Marker absent, marker not `true`, or the probe itself throwing
  * all produce a refusal. A guard that treats "I could not tell" as "go ahead" is worse
@@ -43,16 +52,46 @@ export interface TestDatabaseProbe {
   describe(): Promise<string>;
 }
 
+/**
+ * Read the marker as it applies to the CONNECTED DATABASE.
+ *
+ * Exported, and taking its executor, so the guard's own tests can run it inside a
+ * transaction that has deliberately overridden the setting at session scope — which
+ * is the one thing this function must not be fooled by, and which cannot be arranged
+ * against the shared pool without leaving the override on a pooled connection.
+ */
+export async function readDatabaseScopedMarker(
+  exec: typeof sql = sql,
+  name: string = TEST_DATABASE_MARKER,
+): Promise<string | null> {
+  // `current_setting($name, true)` reads the marker's EFFECTIVE SESSION value, which
+  // is not the same claim as "this database is designated a test database" — a
+  // connection string's `options=-c ai_memory.test_database=true`, an
+  // `ALTER ROLE ... SET`, or a plain `SET` run earlier in the same session can all
+  // supply that effective value on a database nobody ever marked. None of those is
+  // the compose seed step's `ALTER DATABASE ... SET`, so a guard built on
+  // `current_setting` can be fooled by exactly the session-scoped overrides it exists
+  // to see through. Reading `pg_db_role_setting` instead asks the catalog for the
+  // row `ALTER DATABASE` itself writes: scoped to `current_database()` so it cannot
+  // answer for any other database, and to `setrole = 0` so a role-scoped
+  // `ALTER ROLE ... IN DATABASE ... SET` override — which is still a session-level
+  // grant, not a property of the database — does not satisfy it. `setconfig` entries
+  // are `key=value` text, and the value half can itself contain `=`, so the value is
+  // extracted with `substring(... from position('=' in cfg) + 1)` rather than
+  // `split_part(cfg, '=', 2)`, which would silently truncate at the first `=`.
+  const rows = await exec<{ marker: string | null }[]>`
+    SELECT substring(cfg from position('=' in cfg) + 1) AS marker
+    FROM pg_db_role_setting s
+    CROSS JOIN LATERAL unnest(s.setconfig) AS cfg
+    WHERE s.setdatabase = (SELECT oid FROM pg_database WHERE datname = current_database())
+      AND s.setrole = 0
+      AND split_part(cfg, '=', 1) = ${name}
+  `;
+  return rows[0]?.marker ?? null;
+}
+
 const realProbe: TestDatabaseProbe = {
-  markerValue: async () => {
-    // The `true` second argument makes `current_setting` return NULL for an unset
-    // custom parameter instead of raising — so an unmarked database answers the
-    // question rather than erroring, and a genuine connection failure still throws.
-    const rows = await sql<{ marker: string | null }[]>`
-      SELECT current_setting(${TEST_DATABASE_MARKER}, true) AS marker
-    `;
-    return rows[0]?.marker ?? null;
-  },
+  markerValue: () => readDatabaseScopedMarker(),
   describe: async () => {
     const rows = await sql<{ db: string; host: string | null }[]>`
       SELECT current_database() AS db, inet_server_addr()::text AS host

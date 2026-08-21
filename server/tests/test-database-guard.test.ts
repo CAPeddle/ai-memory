@@ -19,6 +19,7 @@ import {
 
 import { sql } from "../src/db.ts";
 import {
+  readDatabaseScopedMarker,
   requireTestDatabase,
   TEST_DATABASE_MARKER,
   type TestDatabaseProbe,
@@ -138,5 +139,88 @@ Deno.test({
     } finally {
       await sql.unsafe("DROP SCHEMA IF EXISTS st092_marker_probe CASCADE");
     }
+  },
+});
+
+// ---------------------------------------------------------------------------
+// PR #52 round 2 — the marker must be a property of the DATABASE, which is what this
+// file's opening docblock has claimed from the start and what `current_setting` alone
+// does not deliver. `current_setting` returns the EFFECTIVE session value, so a
+// connection string carrying `options=-c ai_memory.test_database=true`, a role with
+// `ALTER ROLE ... SET`, or a plain `SET` in the session all answer "true" on a
+// database nobody ever designated as expendable — and the guard would then clear the
+// destructive suites to drop `workflow`, `schema_migrations`, and `recall_queries` on
+// it. Raised by an automated reviewer (Codex); the gap is between the docblock's
+// claim and the query, not in the guard's branching, which is why every existing test
+// in this file passes over it.
+//
+// Both tests below run inside `sql.begin` with `set_config(..., is_local => true)`,
+// so the override is scoped to that transaction and never outlives it on a pooled
+// connection — the search_path pollution this repo already documents, arrived at from
+// the other direction.
+// ---------------------------------------------------------------------------
+
+Deno.test({
+  name:
+    "PR52-F6: a marker present only in the session must not read as a database marker",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    // A name no `ALTER DATABASE` has ever been run against, so the ONLY place it can
+    // be found is the session — which is exactly the shape of the attack: a setting
+    // supplied by the connection rather than designated on the database.
+    const sessionOnly = "ai_memory.pr52_session_only_marker";
+
+    await sql.begin(async (tx) => {
+      await tx`SELECT set_config(${sessionOnly}, 'true', true)`;
+
+      // Non-vacuity: the override really is in force for this transaction. Without
+      // this the assertion below passes for a query that returned null because it
+      // errored, because it looked at the wrong database, or because nothing was set.
+      const sessionSays = await tx<{ v: string | null }[]>`
+        SELECT current_setting(${sessionOnly}, true) AS v
+      `;
+      assertEquals(
+        sessionSays[0].v,
+        "true",
+        "precondition: the session override must be in force",
+      );
+
+      assertEquals(
+        await readDatabaseScopedMarker(tx, sessionOnly),
+        null,
+        "a setting present only in the session is not a designated test database",
+      );
+    });
+  },
+});
+
+Deno.test({
+  name:
+    "PR52-F6b: a session override must not be able to contradict the database's own marker",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    await sql.begin(async (tx) => {
+      // The inverse direction, and the one that proves the fix reads the catalog
+      // rather than merely ignoring everything: this database IS designated, and a
+      // session that says otherwise must not be believed either way round.
+      await tx`SELECT set_config(${TEST_DATABASE_MARKER}, 'false', true)`;
+
+      const sessionSays = await tx<{ v: string | null }[]>`
+        SELECT current_setting(${TEST_DATABASE_MARKER}, true) AS v
+      `;
+      assertEquals(
+        sessionSays[0].v,
+        "false",
+        "precondition: the session override must be in force",
+      );
+
+      assertEquals(
+        await readDatabaseScopedMarker(tx),
+        "true",
+        "the designated marker is a property of the database, not of the session",
+      );
+    });
   },
 });
