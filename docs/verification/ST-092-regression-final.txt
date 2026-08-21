@@ -1,5 +1,9 @@
 # 2026-08-21T11:30:34Z
 # round 4 — PR #52 review: terminal-outcome exit codes and stop-interrupts-flush
+# ENVIRONMENT: local `mcp-test` against the SHARED, ACCUMULATING db-test. The 9th
+# failure (entity-worker `items_processed`) is an artefact of that accumulation —
+# see ST-093. CI runs against a fresh database and should show 8, not 9. Do not
+# read a CI/local mismatch on that line as a regression.
 # docker compose --profile test exec -T mcp-test deno test --frozen --allow-net --allow-env --allow-read --allow-write=/tmp --allow-run=deno,git --junit-path=/tmp/r4b.xml tests/
 ./tests/awcp-cli.test.ts::ST-087: the CLI's permission grants are read from the shipped shebang => ok
 ./tests/awcp-cli.test.ts::ST-087: the CLI's permission grants are read from the shipped shebang > a file with no shebang throws rather than defaulting => ok

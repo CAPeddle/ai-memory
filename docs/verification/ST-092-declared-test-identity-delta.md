@@ -400,3 +400,20 @@ worth more caution than a comparison that finds nothing.
 supposed to certify. The edits were comment-only and could not change behaviour — but that is an
 inference, and this story has already recorded two inferences that turned out wrong, so the suite
 was simply re-run against the final tree. Both runs agree exactly (492 / +4 / 0 flips / 9 failed).
+
+### Where this went beyond the plan
+
+The plan's U-R5 step 2 ([line 308](../plans/2026-08-19-001-fix-st092-node-client-hardening-plan.md))
+says to reuse the exit-75 deferred convention rather than invent a new code. That instruction is
+scoped to the **final flush's `deferred` outcome** and says nothing about the terminal non-auth
+outcomes. Round 4 extended the same convention to `unknown_node` / `too_large` / `malformed`, which
+is a judgment call made here and not an instruction inherited from the plan — the supporting
+argument is `runAgent:1449`'s existing `acked ? 0 : 75` precedent plus the two checked conditions
+recorded in `flushExitCode`'s docblock. Recorded so the plan is not later read as the authority on
+a decision it did not make.
+
+**Environment, because the failure count is environment-dependent.** Every run in this document was
+taken locally against the shared, accumulating `db-test`. The entity-worker failure is an artefact
+of that accumulation, so CI — which starts from a fresh database — should report **8** failures
+where this document reports 9. A CI/local mismatch on that one line is expected and is not a
+regression.
