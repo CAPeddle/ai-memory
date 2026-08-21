@@ -44,6 +44,7 @@ import {
   evictOldest,
   flush,
   flushOnce,
+  FLUSH_MAX_EVENTS,
   main,
   MAX_FLUSH_ATTEMPTS,
   MAX_PAYLOAD_BYTES,
@@ -2981,5 +2982,180 @@ Deno.test({
         )
       ),
     ]);
+  },
+});
+
+// ---------------------------------------------------------------------------
+// PR #52 round 2 — three findings an automated reviewer (Codex) raised against
+// head `e2109a1`, each verified by execution before a line of the fix was written.
+//
+// All three share a shape worth naming, because it is the shape that survives a
+// green suite: each one is a guard that reads as strict and is not. `isValidAckBody`
+// validates the ack's TYPE but never its MEMBERSHIP; `allocateSeq`'s corruption
+// refusal validates the counter's PREFIX but never its WHOLE; the lock's exclusive
+// create is atomic about EXISTENCE but not about CONTENT. In each case the existing
+// tests assert the guard rejects what it was written to reject — which is exactly
+// the assertion an incomplete guard also passes.
+// ---------------------------------------------------------------------------
+
+Deno.test({
+  ...T,
+  name:
+    "PR52-F3: flush() must never remove a spool entry it did not transmit (ack outside the batch)",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = withNodeId(resolveConfig({ home }));
+
+    // One more than the batch cap, so entry 501 is provably outside the first batch.
+    // Built with `writeSpool` rather than 501 `appendEvent` calls: this test is about
+    // what `flush` REMOVES, and routing 501 allocations through the counter would add
+    // 501 fsync round trips to prove nothing this test asserts.
+    const entries = Array.from({ length: FLUSH_MAX_EVENTS + 1 }, (_, i) => ({
+      client_seq: i + 1,
+      event_type: "heartbeat",
+      payload: null,
+      queued_at: "2026-01-01T00:00:00.000Z",
+    }));
+    writeSpool(config, entries);
+    const outOfBatchSeq = FLUSH_MAX_EVENTS + 1;
+
+    const batches: number[][] = [];
+    let call = 0;
+    const fetchImpl = (_url: string, init: { body: string }) => {
+      call += 1;
+      const body = JSON.parse(init.body);
+      batches.push(
+        body.events.map((e: { client_seq: number }) => e.client_seq),
+      );
+      if (call === 1) {
+        // The hub answers a well-formed 200 that acknowledges one seq it WAS sent and
+        // one it was NOT. `isValidAckBody` passes it: every entry is an object with a
+        // numeric `client_seq`, which is all that check has ever looked at.
+        return Promise.resolve({
+          status: 200,
+          json: () =>
+            Promise.resolve({
+              acknowledged: [
+                { client_seq: 1, event_id: crypto.randomUUID() },
+                { client_seq: outOfBatchSeq, event_id: crypto.randomUUID() },
+              ],
+            }),
+        });
+      }
+      // Stop the loop on the next call, so exactly one response in this test ever
+      // acknowledges anything and the assertion below can name the batch it came from.
+      return Promise.resolve({
+        status: 401,
+        json: () => Promise.reject(new Error("401 has no JSON body")),
+      });
+    };
+
+    const before = readSpool(config).map((e: { client_seq: number }) =>
+      e.client_seq
+    );
+    await flush({ ...config, fetchImpl, sleepImpl: () => Promise.resolve() });
+    const after = new Set(
+      readSpool(config).map((e: { client_seq: number }) => e.client_seq),
+    );
+    const removed = before.filter((seq) => !after.has(seq));
+
+    // Non-vacuity, three ways. Without these the subset assertion below passes for a
+    // `flush` that transmitted everything, for one that removed nothing, and for one
+    // that never ran at all.
+    assertEquals(
+      batches[0]?.length,
+      FLUSH_MAX_EVENTS,
+      "precondition: the first batch must be capped at FLUSH_MAX_EVENTS",
+    );
+    assert(
+      !batches[0].includes(outOfBatchSeq),
+      `precondition: ${outOfBatchSeq} must be outside the first batch`,
+    );
+    assert(
+      removed.length > 0,
+      "precondition: the flush must have removed something, or the subset assertion is trivial",
+    );
+
+    // The invariant, stated as the property rather than as a count: only the first
+    // response acknowledged anything, so every entry this flush removed must have
+    // been in the batch that response answered. EVENT-03 is ack-before-drop, and an
+    // ack for an event the hub was never sent is not an ack for it.
+    const phantom = removed.filter((seq) => !batches[0].includes(seq));
+    assertEquals(
+      phantom,
+      [],
+      `flush removed ${JSON.stringify(phantom)} from the spool, and never sent it`,
+    );
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "PR52-F4: a partially numeric counter is refused, not silently read as its numeric prefix",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = resolveConfig({ home });
+
+    // Every one of these is accepted by `Number.parseInt(raw, 10)` and reads as a
+    // small number, which is the D-14 reset `allocateSeq`'s refusal exists to prevent
+    // — the counter goes backwards and the hub's ON CONFLICT DO NOTHING then discards
+    // every event that follows. The last entry is the other half of the same hole:
+    // digits all the way through, but past Number.MAX_SAFE_INTEGER, where `+ 1` stops
+    // producing a distinct value.
+    const corrupt: Record<string, string> = {
+      "1garbage": "1",
+      "1e3": "1",
+      "12 x": "12",
+      "0x10": "0",
+      "1.9": "1",
+      "+5": "5",
+      "99999999999999999999": "1e20, which cannot be incremented distinctly",
+    };
+
+    for (const [raw, readsAs] of Object.entries(corrupt)) {
+      Deno.writeTextFileSync(config.seqPath, raw);
+      assertThrows(
+        () => allocateSeq(config),
+        Error,
+        "refusing to allocate a client_seq",
+        `${JSON.stringify(raw)} must be refused, not read as ${readsAs}`,
+      );
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "PR52-F5: a crash between the exclusive lock create and its holder record must not brick the node",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = resolveConfig({ home });
+
+    // `beforeLockPublish` is this path's crash seam, the same shape as writeSpool's
+    // `beforeRename` and allocateSeq's `beforeSeqRename`. It fires in the window
+    // between "this process has exclusively claimed the lock" and "the holder record
+    // is durably readable" — the window a SIGKILL or a power loss lands in, and the
+    // one the acquire path's docblock claimed could not exist.
+    assertThrows(
+      () =>
+        acquireLock({
+          ...config,
+          beforeLockPublish: () => {
+            throw new Error("power loss mid-acquire (test double)");
+          },
+        }),
+      Error,
+      "power loss mid-acquire",
+    );
+
+    // The node must still be usable. A crash in that window used to leave a lock file
+    // with no readable holder, and `acquireLock` refuses an unreadable lock outright
+    // rather than reclaiming it — so every later command exited 69 until an operator
+    // deleted the file by hand, on precisely the `kill -9` the spool exists to survive.
+    const handle = acquireLock(config);
+    assert(handle, "a fresh client must be able to take the lock after that crash");
+    releaseLock(handle);
   },
 });

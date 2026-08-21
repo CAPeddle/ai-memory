@@ -52,6 +52,7 @@ import {
   constants as fsConstants,
   existsSync,
   fsyncSync,
+  linkSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -591,50 +592,92 @@ export function acquireLock(config) {
   // unrelated process, and a pid says nothing about which claim landed first.
   const token = randomBytes(8).toString("hex");
   const record = `${process.pid}:${token}`;
-  // Three passes at most: an exclusive create, and up to two retries for the case
+  // Staged in a private file and published with `link()`, rather than created empty
+  // with O_EXCL and filled in afterwards (P2, found by review on PR #52).
+  //
+  // The old order had a window: `openSync(lockPath, "wx")` returned with the file
+  // created and EMPTY, and only then did `writeSync`+`fsyncSync` put the holder record
+  // in it. A SIGKILL or a power loss in between left a lock with no readable holder —
+  // and `acquireLock` refuses an unreadable lock outright rather than reclaiming it
+  // (deliberately: it cannot tell a crashed create from a live holder mid-write). The
+  // node was then bricked behind exit 69 until an operator deleted the file by hand,
+  // on precisely the `kill -9` the stale-pid reclaim path exists to survive. The
+  // docblock above asserted this could not happen "because the pid is written and
+  // fsync'd immediately after an exclusive create"; immediately is not atomically.
+  //
+  // `link()` closes it. It is atomic and it fails with EEXIST when the target exists,
+  // so it is exactly as good an arbiter as O_EXCL — but what it publishes is a
+  // complete, already-fsync'd record. The lock path is never observable in an
+  // intermediate state, so the refusal above becomes true again: an unreadable lock
+  // really cannot be produced by any ordinary path.
+  //
+  // The staging file is named per-pid rather than randomly so a crash cannot
+  // accumulate litter: one process leaves at most one, and its next attempt truncates
+  // and reuses it. Two contending clients always have different pids, so the name
+  // cannot collide the way a shared `.tmp` would.
+  const staging = `${config.lockPath}.${process.pid}.tmp`;
+  // Three passes at most: an exclusive publish, and up to two retries for the case
   // where a dead holder's lock disappears underneath the takeover.
   for (let attempt = 0; attempt < 3; attempt++) {
-    let fd;
     try {
-      // "wx" is O_CREAT|O_EXCL: the kernel makes this atomic against every other
-      // process attempting the same thing, which is what the whole mechanism rests on.
-      fd = openSync(config.lockPath, "wx", 0o600);
-    } catch (error) {
-      if (!isErrno(error, "EEXIST")) throw error;
-      const holder = readLockRecord(config);
-      const alive = (config.isPidAliveImpl ?? isPidAlive)(holder?.pid ?? null);
-      // Reclaim ONLY on a definite `false`. `true` is a live holder; `null` means the
-      // runtime would not answer, and an unanswered question must not become a yes.
-      if (holder === null || alive !== false) {
-        throw new AwcpLockError(holder?.pid ?? null, config.lockPath, alive);
+      const fd = openSync(staging, "w", 0o600);
+      try {
+        writeSync(fd, record);
+        fsyncSync(fd);
+      } finally {
+        closeSync(fd);
       }
-      // `beforeLockReclaim` is this path's test-only seam, the same shape as
-      // writeSpool's `beforeRename`. It fires inside the stale-takeover window so a
-      // test can run a second, contending client at exactly the point where two real
-      // processes interleave. Never set in production.
-      if (typeof config.beforeLockReclaim === "function") config.beforeLockReclaim();
-      const outcome = claimStaleLock(config, holder, record, token);
-      if (outcome === "held") {
-        chmodSync(config.lockPath, 0o600);
-        return { path: config.lockPath, pid: process.pid, token };
+      // `beforeLockPublish` is this path's test-only seam, the same shape as
+      // writeSpool's `beforeRename`. It fires in the window a crash used to brick the
+      // node in — which now holds nothing but a staging file. Never set in production.
+      if (typeof config.beforeLockPublish === "function") config.beforeLockPublish();
+      try {
+        linkSync(staging, config.lockPath);
+      } catch (error) {
+        if (!isErrno(error, "EEXIST")) throw error;
+        const holder = readLockRecord(config);
+        const alive = (config.isPidAliveImpl ?? isPidAlive)(holder?.pid ?? null);
+        // Reclaim ONLY on a definite `false`. `true` is a live holder; `null` means the
+        // runtime would not answer, and an unanswered question must not become a yes.
+        if (holder === null || alive !== false) {
+          throw new AwcpLockError(holder?.pid ?? null, config.lockPath, alive);
+        }
+        // `beforeLockReclaim` is this path's test-only seam. It fires inside the
+        // stale-takeover window so a test can run a second, contending client at
+        // exactly the point where two real processes interleave. Never set in
+        // production.
+        if (typeof config.beforeLockReclaim === "function") config.beforeLockReclaim();
+        const outcome = claimStaleLock(config, holder, record, token);
+        if (outcome === "held") {
+          chmodSync(config.lockPath, 0o600);
+          return { path: config.lockPath, pid: process.pid, token };
+        }
+        if (outcome === "refuse") {
+          throw new AwcpLockError(
+            readLockRecord(config)?.pid ?? null,
+            config.lockPath,
+            null,
+          );
+        }
+        continue;
       }
-      if (outcome === "refuse") {
-        throw new AwcpLockError(
-          readLockRecord(config)?.pid ?? null,
-          config.lockPath,
-          null,
-        );
-      }
-      continue;
-    }
-    try {
-      writeSync(fd, record);
-      fsyncSync(fd);
+      // The link itself is the durable act, but the DIRECTORY entry it created still
+      // needs its own fsync to survive a power loss — the same reason writeFileAtomic
+      // fsyncs the directory after its rename.
+      (config.fsyncDirImpl ?? fsyncDir)(dirname(config.lockPath));
+      chmodSync(config.lockPath, 0o600);
+      return { path: config.lockPath, pid: process.pid, token };
     } finally {
-      closeSync(fd);
+      // Runs on the returning path and the retrying one alike: once `link` has
+      // published it (or refused to), the staging file has done its whole job. Best
+      // effort by design — a crash cannot reach this, which is what the per-pid name
+      // above accounts for.
+      try {
+        unlinkSync(staging);
+      } catch {
+        // Already gone, or never created. Neither is a reason to fail an acquire.
+      }
     }
-    chmodSync(config.lockPath, 0o600);
-    return { path: config.lockPath, pid: process.pid, token };
   }
   throw new AwcpLockError(readLockRecord(config)?.pid ?? null, config.lockPath, null);
 }
@@ -690,8 +733,16 @@ export function allocateSeq(config) {
   let current = 0;
   if (existsSync(config.seqPath)) {
     const raw = readFileSync(config.seqPath, "utf8").trim();
-    const parsed = Number.parseInt(raw, 10);
-    if (!Number.isFinite(parsed) || parsed < 0) {
+    // The WHOLE value must be the digits this function itself wrote, and it must be
+    // an integer `+ 1` can still distinguish (P2, found by review on PR #52).
+    // `Number.parseInt` alone is a prefix parser: it read `"1garbage"`, `"1e3"` and
+    // `"1.9"` as 1 and `"0x10"` as 0, so a counter corrupted anywhere after its first
+    // digit walked straight past this refusal and restarted the sequence — the exact
+    // D-14 reset the refusal exists to prevent, reached by the one route that leaves
+    // the value looking parseable. `Number.isSafeInteger` closes the other half:
+    // twenty digits parse cleanly and then stop incrementing distinctly.
+    const parsed = /^\d+$/.test(raw) ? Number(raw) : Number.NaN;
+    if (!Number.isSafeInteger(parsed) || parsed < 0) {
       throw new Error(
         `awcp-node-client: refusing to allocate a client_seq — the counter at ` +
           `${config.seqPath} is present but unreadable (${JSON.stringify(raw)}). ` +
@@ -1017,8 +1068,14 @@ async function parseJsonBody(res) {
  * spool: `acknowledged` must be an array and every entry must carry a numeric
  * `client_seq`. An empty array is valid — it is a hub that accepted nothing, which
  * `flush()` already handles as zero progress — but a malformed one is not, because
- * `flush()` removes exactly the entries this array names and a wrong answer here
- * deletes undelivered events.
+ * `flush()` removes spool entries this array names and a wrong answer here deletes
+ * undelivered events.
+ *
+ * This is a check on the ack's SHAPE and nothing more; it does not and cannot know
+ * which events were submitted, because `flushOnce` validates the response before the
+ * batch is back in scope. Membership is enforced where the removal happens — `flush()`
+ * intersects this array with the batch it sent — which is why an ack naming a
+ * `client_seq` outside the batch passes here and still removes nothing (P1, PR #52).
  */
 function isValidAckBody(body) {
   if (body === null || typeof body !== "object") return false;
@@ -1147,7 +1204,9 @@ export async function flushOnce(config, batch) {
  * acknowledged — never on send, never on retry attempt (EVENT-03) — and mapping every
  * outcome `flushOnce` can return onto a terminal state or a bounded retry (D-15/D-17):
  *
- *   - `acked`      → remove the acknowledged entries, loop again (more batches may
+ *   - `acked`      → remove the acknowledged entries THAT WERE IN THIS BATCH — an ack
+ *                    for anything else is not evidence about an event this process
+ *                    never sent — then loop again (more batches may
  *                    remain — this is what lets a single `flush()` call both drop a
  *                    D-15 rejection AND then deliver the remainder in the same call).
  *   - `rejected`    → remove exactly the named `client_seq` values via `writeSpool`,
@@ -1177,7 +1236,8 @@ export async function flushOnce(config, batch) {
  *
  * Returns `{outcome, acked, delivered, remaining}`. `acked` and `delivered` are the
  * same array (the cumulative client_seqs removed across every batch this call
- * completed) — `acked` is kept for 03-02 tracer-test compatibility, `delivered` is the
+ * completed — which is the acknowledged set INTERSECTED with what was sent, not the
+ * raw acknowledged set) — `acked` is kept for 03-02 tracer-test compatibility, `delivered` is the
  * name this plan's action text specifies. `remaining` is the spool's length after this
  * call returns.
  */
@@ -1264,9 +1324,28 @@ export async function flush(config) {
     const result = await flushOnce(config, batch);
 
     if (result.outcome === "acked") {
-      const ackedSeqs = new Set(result.acked);
+      // ONLY entries from the batch just sent may be removed (P1, found by review on
+      // PR #52). `isValidAckBody` checks the ack's shape but never its membership, so
+      // a 200 acknowledging `[1, 501]` against a 501-entry spool used to pass that
+      // check and then be applied to the WHOLE spool — deleting 501, which this
+      // process had not yet transmitted. Ack-before-drop (EVENT-03) is not "an ack
+      // arrived", it is "an ack arrived for this event", and only the batch knows
+      // which events those are.
+      //
+      // An out-of-batch seq is IGNORED here rather than escalated to `malformed`,
+      // which was the other way to close this. Escalating would stop the flush cold on
+      // a hub that over-acks, leaving a spool that can never drain: the hub has already
+      // stored the batch, so the retry re-sends it, the hub answers the same way, and
+      // every attempt terminates identically. Scoping removal secures the property that
+      // matters — nothing untransmitted is ever dropped — while leaving delivery of the
+      // legitimate part intact. Total non-intersection is already bounded below, by the
+      // zero-progress guard.
+      const batchSeqs = new Set(batchEntries.map((entry) => entry.client_seq));
+      const removable = new Set(
+        result.acked.filter((seq) => batchSeqs.has(seq)),
+      );
       const remaining = entries.filter((entry) =>
-        !ackedSeqs.has(entry.client_seq)
+        !removable.has(entry.client_seq)
       );
       // Rule 1 fix (found during Task 1 testing): a 200 whose `acknowledged` array
       // does not actually intersect the batch just sent removes nothing, and
@@ -1284,7 +1363,7 @@ export async function flush(config) {
       attempt = 0;
       writeSpool(config, remaining);
       entries = remaining;
-      delivered.push(...result.acked);
+      delivered.push(...removable);
       continue;
     }
 
