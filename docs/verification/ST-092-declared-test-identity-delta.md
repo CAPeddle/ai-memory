@@ -303,3 +303,100 @@ The methodological point is worth more than the finding: two successive explanat
 offered here with real evidence behind each, and both were wrong. The first mistook "the
 subject is untouched" for "this branch is uninvolved"; the second mistook `n=1` on a flaky
 test for a controlled comparison.
+
+---
+
+## Round 4 — declared before the comparison was run
+
+PR #52 review round 4. Codex raised two findings against head `7c23444`, four minutes
+after that commit was pushed, so both were read against current code rather than stale
+code. Both are confirmed against the tree; neither is a false positive.
+
+**Declared delta: +4 test identities, 0 removed, 0 renamed.** All four are new
+`Deno.test` entries appended to `tests/awcp-node-client.test.ts`:
+
+| Identity | Proves |
+|---|---|
+| `PR52-F1a: main(["flush"]) must not report success when a terminal outcome left the spool undelivered` | the CLI's exit code for `malformed` / `unknown_node` / `too_large` |
+| `PR52-F1b: runAgent must stop on a terminal non-auth outcome instead of retrying it forever` | the daemon terminates rather than looping on a terminal outcome |
+| `PR52-F2a: stop() must interrupt an in-progress flush rather than waiting out its retry budget` | the stop checkpoint reaches the spool without burning the backoff budget |
+| `PR52-F2b: stop() must abort an in-flight request, not only the backoff between requests` | the stop signal reaches `fetchImpl`, not just the sleeps |
+
+Expected total: **488 + 4 = 492**.
+
+### Red controls, recorded before the fix
+
+All four failed on their own assertion, not on a compile or import error, and the
+observed numbers matched the prediction made from reading the source:
+
+| Identity | Predicted red | Observed red |
+|---|---|---|
+| F1a | exit 0 with the event still spooled | `malformed: reported exit 0 with 1 event still spooled` |
+| F1b | loop never terminates; safety valve trips | `took 21 ticks and only stopped because the test's safety valve stopped it` |
+| F2a | first flush burns `MAX_FLUSH_ATTEMPTS - 1` = 5 sleeps | `took 5 backoff sleeps to reach the spool` |
+| F2b | hangs until the test's own timeout | timed out at 5s with the diagnostic message |
+
+F1a's non-vacuity assertion (`readSpool(config).length === 1`) passed in the red run,
+which is what makes the exit-code assertion meaningful: had the event been delivered, a
+nonzero exit would have been the wrong answer rather than the right one.
+
+F2a's injected `sleepImpl` deliberately **ignores** the abort signal. A fix that only
+threaded `stopController.signal` into the sleep would go green against a signal-honouring
+fake while changing nothing for the injected sleeps every other test in this file uses.
+The test can therefore only pass if `backoffOrDefer` checks `aborted` itself — see
+[a-control-that-fails-for-the-wrong-reason-is-not-a-control](../solutions/conventions/a-control-that-fails-for-the-wrong-reason-is-not-a-control.md).
+
+### Scope recorded honestly
+
+`flushOnce` now passes `config.abortSignal` to `fetchImpl`, so the in-loop flushes abort
+a request that never answers. **The final flush is deliberately left unbounded on that
+path**: it runs without the stop signal so it still gets its delivery attempt, which
+means a hub that accepts the connection and never responds still hangs shutdown at the
+final flush. Bounding that needs a request timeout, which is a separate decision about a
+default value and is not attempted here.
+
+### Attribution correction
+
+An earlier session note called both findings "code this PR authored." That is right for
+F2 (`main` has no stop signal at all — `defaultSleep(ms)` takes no signal parameter and
+`stopController` appears zero times) but **wrong for F1**: `malformed` and the three-way
+`77/75/0` dispatch both exist on `main`. This PR widened the hole rather than opening it —
+commit `4f5e8e8` converted two `await res.json()` throws into `malformed` returns, taking
+the count of `malformed` return sites from 2 to 5. A throw exits nonzero on its own; a
+returned outcome only works if the caller reads it, and no caller was updated.
+
+### Round 4 result — matches the declaration
+
+| | Baseline (round 3) | Round 4 |
+|---|---|---|
+| Test identities | 488 | **492** |
+| Added | — | **4** (exactly the four declared above) |
+| Removed | — | **0** |
+| Status flips on shared identities | — | **0** |
+| Failing | 9 | **9** |
+
+Artefact: [ST-092-regression-final.txt](ST-092-regression-final.txt).
+
+The 9 failures are unchanged: 8 in `e2e.test.ts` (the documented provider-401 baseline) plus
+`entity-worker-observability.test.ts::entity worker observability — creates worker_runs record
+and emits lifecycle events`. That last one was **already FAILED in the round-3 baseline** — which
+is why the flip count is 0 — and its assertion is the `items_processed` one, so this run is
+independent confirmation of the queue-pollution diagnosis now filed as **ST-093**. Note it is a
+*different* test in that file from the `records errors` one tracked in the five-run table above;
+both are exposed by the same missing isolation, which is why ST-093's acceptance criteria cover
+the file rather than a single test.
+
+**Two process notes, because both would have misled a reader of this document.**
+
+*The comparison was contaminated by its own extractor before it was trusted.* The first pass left
+XML entities encoded (`&apos;`, `&gt;`, `&quot;`) while this baseline file stores them decoded, so
+roughly seventy identities appeared as simultaneously added and removed — a large and alarming
+delta that existed entirely in the diff tool. Re-running with `html.unescape` produced the +4/-0/0
+above. A comparison not normalised the same way as its baseline manufactures findings; that is
+worth more caution than a comparison that finds nothing.
+
+*The run of record was taken twice on purpose.* The first full-suite run was in flight when the
+`flushExitCode` / R5b docblocks were edited, so its artefact did not correspond to the tree it was
+supposed to certify. The edits were comment-only and could not change behaviour — but that is an
+inference, and this story has already recorded two inferences that turned out wrong, so the suite
+was simply re-run against the final tree. Both runs agree exactly (492 / +4 / 0 flips / 9 failed).

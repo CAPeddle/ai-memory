@@ -2762,3 +2762,224 @@ Deno.test({
     assertEquals((err as Error).name, "AwcpLockError");
   },
 });
+
+// ---------------------------------------------------------------------------
+// PR #52 review round 4 — two findings Codex raised against head 7c23444, both
+// about a terminal outcome that the code recognises and then fails to act on.
+//
+// Neither is observable from the outcome-level tests above: `flush()` already
+// returns the right outcome in every case here. What is wrong is what the two
+// CALLERS do with it — the CLI turns it into exit 0, and the daemon turns it
+// into another lap of the loop. So these tests are deliberately pinned to
+// caller-visible effects (process.exitCode, whether the loop terminates,
+// whether the stop checkpoint reaches the spool) rather than to a returned
+// `outcome` string, which was never the broken part.
+// ---------------------------------------------------------------------------
+
+/** Returns true once a `phase: "stop"` checkpoint is durable in the spool file. */
+function spoolHasStopCheckpoint(config: Record<string, unknown>): boolean {
+  // deno-lint-ignore no-explicit-any
+  return readSpool(config).some((entry: any) =>
+    entry.event_type === "checkpoint" && entry.payload?.phase === "stop"
+  );
+}
+
+Deno.test({
+  ...T,
+  name:
+    'PR52-F1a: main(["flush"]) must not report success when a terminal outcome left the spool undelivered',
+  fn: async () => {
+    const originalExitCode = process.exitCode;
+    try {
+      // The three terminal outcomes that are NOT terminal_auth. `flush()` routes all
+      // of them through `stopTerminal`, which returns `remaining: <n>` and prints
+      // `terminal reason=... spooled_events=<n>` — so the client both knows and SAYS
+      // the events are still queued, then exits 0 anyway. That contradiction is the
+      // bug; asserting the exit code is what makes it visible.
+      const cases: Array<[string, () => unknown]> = [
+        ["malformed", () => unparseableBodyFetch(200)],
+        ["unknown_node", () => notFoundFetch()],
+        ["too_large", () => tooLargeFetch()],
+      ];
+
+      for (const [label, makeFetch] of cases) {
+        const home = await Deno.makeTempDir();
+        const config = withNodeId(resolveConfig({ home }));
+        appendEvent(config, { event_type: "e", payload: { n: 1 } });
+
+        process.exitCode = 0;
+        await main(["flush"], {
+          home,
+          fetchImpl: makeFetch(),
+          sleepImpl: () => Promise.resolve(),
+        });
+
+        // Non-vacuity: without this the assertion below could pass on a run where the
+        // event was actually delivered, which would make a nonzero exit code WRONG.
+        assertEquals(
+          readSpool(config).length,
+          1,
+          `precondition (${label}): the event must still be spooled`,
+        );
+        assert(
+          process.exitCode !== 0,
+          `${label}: reported exit 0 with 1 event still spooled`,
+        );
+      }
+    } finally {
+      process.exitCode = originalExitCode;
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "PR52-F1b: runAgent must stop on a terminal non-auth outcome instead of retrying it forever",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = withNodeId(resolveConfig({ home }));
+    appendEvent(config, { event_type: "e", payload: { n: 1 } });
+
+    // deno-lint-ignore no-explicit-any
+    const box: { controller?: { stop: () => void; done: Promise<any> } } = {};
+    let ticks = 0;
+    let safetyTripped = false;
+
+    // A safety valve, not part of the property under test. Without it this test
+    // cannot fail — it hangs, because the unfixed loop never terminates against a
+    // 404. `safetyTripped` converts that hang into a readable assertion.
+    const sleepImpl = () => {
+      ticks += 1;
+      if (ticks > 20) {
+        safetyTripped = true;
+        box.controller!.stop();
+      }
+      return Promise.resolve();
+    };
+
+    box.controller = runAgent({
+      ...config,
+      heartbeatIntervalMs: 1,
+      fetchImpl: notFoundFetch(),
+      sleepImpl,
+    });
+    const result = await box.controller.done as { exitCode: number };
+
+    assert(
+      !safetyTripped,
+      `runAgent kept looping after a terminal unknown_node — it took ${ticks} ticks ` +
+        `and only stopped because the test's safety valve stopped it`,
+    );
+    assert(
+      result.exitCode !== 0,
+      "a run that ended on a terminal hub rejection must not exit 0",
+    );
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "PR52-F2a: stop() must interrupt an in-progress flush rather than waiting out its retry budget",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = withNodeId(resolveConfig({ home }));
+    appendEvent(config, { event_type: "e", payload: { n: 1 } });
+
+    // deno-lint-ignore no-explicit-any
+    const box: { controller?: { stop: () => void; done: Promise<any> } } = {};
+    let sleeps = 0;
+    let sleepsBeforeStopCheckpoint = 0;
+
+    // Deliberately SIGNAL-IGNORING. A fix that only threads `stopController.signal`
+    // into the sleep would go green against a signal-honouring fake while changing
+    // nothing for an injected sleep — and every other test in this file injects one.
+    // This test can therefore only pass if `backoffOrDefer` itself checks `aborted`
+    // and gives up, which is the actual requirement.
+    const sleepImpl = () => {
+      sleeps += 1;
+      if (sleeps === 2) box.controller!.stop();
+      if (!spoolHasStopCheckpoint(config)) sleepsBeforeStopCheckpoint += 1;
+      return Promise.resolve();
+    };
+
+    box.controller = runAgent({
+      ...config,
+      heartbeatIntervalMs: 60_000,
+      fetchImpl: unreachableFetch(),
+      sleepImpl,
+    });
+    await box.controller.done;
+
+    // The property that matters is the checkpoint's DURABILITY, not its delivery:
+    // `emitCheckpoint({phase:"stop"})` appends to the spool before the final flush
+    // runs, so interrupting the first flush is what gets the stop recorded at all.
+    // Unfixed, the first flush burns its whole budget (MAX_FLUSH_ATTEMPTS - 1 = 5
+    // sleeps) before the checkpoint is written; stop() at sleep 2 must end it there.
+    assert(
+      sleepsBeforeStopCheckpoint <= 2,
+      `the stop checkpoint took ${sleepsBeforeStopCheckpoint} backoff sleeps to reach ` +
+        `the spool; stop() was signalled at sleep 2, so it must take no more than 2`,
+    );
+    assert(
+      spoolHasStopCheckpoint(config),
+      "non-vacuity: the stop checkpoint must actually be in the spool",
+    );
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "PR52-F2b: stop() must abort an in-flight request, not only the backoff between requests",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = withNodeId(resolveConfig({ home }));
+    appendEvent(config, { event_type: "e", payload: { n: 1 } });
+
+    // deno-lint-ignore no-explicit-any
+    const recorded: any[][] = [];
+    let calls = 0;
+    // Models a hub that accepts the connection and never answers — the case an
+    // `unreachableFetch()` (which throws at once) cannot reach. Honours `init.signal`
+    // exactly as the real `fetch` does, so it hangs forever when no signal is passed.
+    // Only the FIRST call hangs: the final flush must still get its delivery attempt,
+    // otherwise this test would hang on the fix rather than on the defect.
+    // deno-lint-ignore no-explicit-any
+    const hangOnceFetch = (url: string, init: any) => {
+      calls += 1;
+      if (calls > 1) return ackingFetch(recorded)(url, init);
+      return new Promise((_resolve, reject) => {
+        init.signal?.addEventListener(
+          "abort",
+          () => reject(new DOMException("The signal has been aborted", "AbortError")),
+        );
+      });
+    };
+
+    const controller = runAgent({
+      ...config,
+      heartbeatIntervalMs: 60_000,
+      fetchImpl: hangOnceFetch,
+      sleepImpl: () => Promise.resolve(),
+    });
+    setTimeout(() => controller.stop(), 20);
+
+    await Promise.race([
+      controller.done,
+      new Promise((_resolve, reject) =>
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                "stop() did not abort the in-flight request — flushOnce passes no " +
+                  "signal to fetchImpl, so a hub that never answers hangs shutdown",
+              ),
+            ),
+          5_000,
+        )
+      ),
+    ]);
+  },
+});

@@ -1,6 +1,6 @@
-# 2026-08-20T21:10:01Z
-# round 3 — abandoned-claim fix for the round-2 lock takeover (PR #52 review)
-# docker compose --profile test exec -T mcp-test deno test --frozen --allow-net --allow-env --allow-read --allow-write=/tmp --allow-run=deno,git --junit-path=/tmp/r3.xml tests/
+# 2026-08-21T11:30:34Z
+# round 4 — PR #52 review: terminal-outcome exit codes and stop-interrupts-flush
+# docker compose --profile test exec -T mcp-test deno test --frozen --allow-net --allow-env --allow-read --allow-write=/tmp --allow-run=deno,git --junit-path=/tmp/r4b.xml tests/
 ./tests/awcp-cli.test.ts::ST-087: the CLI's permission grants are read from the shipped shebang => ok
 ./tests/awcp-cli.test.ts::ST-087: the CLI's permission grants are read from the shipped shebang > a file with no shebang throws rather than defaulting => ok
 ./tests/awcp-cli.test.ts::ST-087: the CLI's permission grants are read from the shipped shebang > the grants match what the script declares => ok
@@ -46,6 +46,10 @@
 ./tests/awcp-node-client.test.ts::EVENT-04: dropped_events persists to disk and is readable via a freshly built config => ok
 ./tests/awcp-node-client.test.ts::EVENT-04: each overflow drop emits exactly one structured stderr line with the running total => ok
 ./tests/awcp-node-client.test.ts::EVENT-04: state.json is written at mode 0600 => ok
+./tests/awcp-node-client.test.ts::PR52-F1a: main(["flush"]) must not report success when a terminal outcome left the spool undelivered => ok
+./tests/awcp-node-client.test.ts::PR52-F1b: runAgent must stop on a terminal non-auth outcome instead of retrying it forever => ok
+./tests/awcp-node-client.test.ts::PR52-F2a: stop() must interrupt an in-progress flush rather than waiting out its retry budget => ok
+./tests/awcp-node-client.test.ts::PR52-F2b: stop() must abort an in-flight request, not only the backoff between requests => ok
 ./tests/awcp-node-client.test.ts::ST-092 R1 control: the production liveness probe reports this very process alive => ok
 ./tests/awcp-node-client.test.ts::ST-092 R1: `status` runs while the lock is held => ok
 ./tests/awcp-node-client.test.ts::ST-092 R1: a claim left behind by a crashed reclaimer must not brick the lock forever => ok

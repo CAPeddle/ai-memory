@@ -1030,6 +1030,42 @@ function isValidAckBody(body) {
   );
 }
 
+/**
+ * The outcomes `flush()` can return that mean "do not try again": the same batch will
+ * fail the same way next time. Every one of them leaves the spool intact.
+ */
+const TERMINAL_FLUSH_OUTCOMES = new Set([
+  "terminal_auth",
+  "unknown_node",
+  "too_large",
+  "malformed",
+]);
+
+/**
+ * The single place an outcome becomes an exit code, because the two callers had drifted
+ * apart: `runAgent`'s final flush already said `acked ? 0 : 75`, while the standalone
+ * `flush` command matched three outcomes and let the other three fall through to 0 —
+ * so `awcp-node-client flush` reported success against a hub that had rejected the
+ * batch outright, with the events still spooled and `stopTerminal` having just printed
+ * `terminal reason=... spooled_events=N` to stderr.
+ *
+ * 77 (EX_NOPERM) stays reserved for auth so a credential problem is distinguishable
+ * from a hub-side rejection without parsing stdout. Every other non-`acked` outcome
+ * shares 75, because what the exit code needs to convey is the thing they have in
+ * common: events are still spooled and undelivered.
+ *
+ * 75 is EX_TEMPFAIL, which is a slight abuse for `too_large` and `unknown_node` —
+ * retrying those will not help. It is still the right code here, for two reasons that
+ * should be re-checked if either stops holding: nothing in this repo restarts on an
+ * exit code (no unit file, no wrapper script, no `Restart=`), so 75 cannot become a
+ * poison-pill retry loop; and `stopTerminal`'s stderr line already names the precise
+ * reason, so a fourth code would buy discrimination the transcript already provides.
+ */
+function flushExitCode(outcome) {
+  if (outcome === "acked") return 0;
+  return outcome === "terminal_auth" ? 77 : 75;
+}
+
 export async function flushOnce(config, batch) {
   const nodeId = readFileSync(config.nodeIdPath, "utf8").trim();
   let res;
@@ -1043,6 +1079,11 @@ export async function flushOnce(config, batch) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ events: batch }),
+        // ST-092 R5b: without this a hub that accepts the connection and never answers
+        // hangs shutdown indefinitely — the backoff fix below bounds the waits BETWEEN
+        // requests, not a request that never returns. Undefined when no caller is
+        // stopping, which is every non-`run` path.
+        signal: config.abortSignal,
       },
     );
   } catch (error) {
@@ -1142,6 +1183,9 @@ export async function flushOnce(config, batch) {
  */
 export async function flush(config) {
   const sleepImpl = config.sleepImpl ?? defaultSleep;
+  // Set only by `runAgent`, for the flushes it may need to interrupt; `undefined`
+  // everywhere else, which leaves every other caller's behaviour unchanged.
+  const abortSignal = config.abortSignal;
   const randomImpl = config.randomImpl ?? Math.random;
   const write = config.stderrWrite ?? ((line) => process.stderr.write(line));
   const delivered = [];
@@ -1170,10 +1214,17 @@ export async function flush(config) {
     if (attempt >= MAX_FLUSH_ATTEMPTS) {
       return null;
     }
+    // ST-092 R5b. The signal is checked on BOTH sides of the sleep, and the check
+    // after it is the load-bearing one: passing `abortSignal` into `sleepImpl` only
+    // shortens a wait that honours it, and every test in this suite injects a sleep
+    // that does not. Deferring on `aborted` is what actually ends the retry loop, so
+    // it ends for an injected sleep and the production one alike.
+    if (abortSignal?.aborted) return null;
     const raw = BACKOFF_BASE_MS * 2 ** (attempt - 1);
     const jitterFactor = 1 + (randomImpl() * 0.4 - 0.2); // +/-20%
     const delay = Math.min(BACKOFF_CAP_MS, Math.round(raw * jitterFactor));
-    await sleepImpl(delay);
+    await sleepImpl(delay, abortSignal);
+    if (abortSignal?.aborted) return null;
     return delay;
   };
   const deferred = () => {
@@ -1374,6 +1425,16 @@ export function emitCheckpoint(config, payload = {}) {
  * never emitted at all. The wait is now raced against a promise `stop()` resolves,
  * so shutdown latency is bounded by the signal.
  *
+ * **ST-092 R5b — the signal now reaches the FLUSH too, not just the tick.** Bounding
+ * the heartbeat wait alone left `flush()`'s own retry backoff (~31s across five
+ * sleeps) and its in-flight request unaware that a stop had been signalled, so a
+ * SIGTERM against an unreachable hub still burned the full budget before the stop
+ * checkpoint was so much as appended. The in-loop flushes now carry
+ * `stopController.signal`; the final flush deliberately does not, so it still gets a
+ * bounded delivery attempt. A hub that accepts the connection and never answers can
+ * still hang that final flush — bounding it needs a request timeout, which is a
+ * separate decision and is not made here.
+ *
  * **ST-092 R5 — a stop whose final flush did not deliver no longer reports success.**
  * The final flush's outcome was inspected only for `terminal_auth`; a `deferred`
  * result — the hub unreachable, retries exhausted, the stop checkpoint and everything
@@ -1387,7 +1448,9 @@ export function emitCheckpoint(config, payload = {}) {
  * the event is durable, ordered, and will be delivered on the next run. It IS a
  * failure to *report* the shutdown to the hub within this process's lifetime, which
  * is what the exit code describes. So: exit 0 means the hub has acknowledged the stop
- * checkpoint; exit 75 means it is spooled and undelivered; exit 77 means the hub
+ * checkpoint; exit 75 means it is spooled and undelivered — whether because the
+ * retries were exhausted or because the hub terminally rejected the batch, which
+ * `stopTerminal`'s stderr line distinguishes; exit 77 means the hub
  * refused this node's credential and no further attempt will help.
  */
 export function runAgent(config) {
@@ -1414,9 +1477,13 @@ export function runAgent(config) {
 
   async function loop() {
     emitCheckpoint(config, { phase: "start" });
-    let flushResult = await flush(config);
-    if (flushResult.outcome === "terminal_auth") {
-      return { exitCode: 77, terminal: true };
+    // The in-loop flushes carry the stop signal so a shutdown interrupts them; the
+    // FINAL flush below deliberately does not, so it still gets its bounded delivery
+    // attempt rather than deferring instantly on an already-aborted signal.
+    const interruptibleConfig = { ...config, abortSignal: stopController.signal };
+    let flushResult = await flush(interruptibleConfig);
+    if (TERMINAL_FLUSH_OUTCOMES.has(flushResult.outcome)) {
+      return { exitCode: flushExitCode(flushResult.outcome), terminal: true };
     }
 
     while (!stopped) {
@@ -1431,22 +1498,22 @@ export function runAgent(config) {
       ]);
       if (stopped) break;
       emitHeartbeat(config, startedAtMs);
-      flushResult = await flush(config);
-      if (flushResult.outcome === "terminal_auth") {
-        return { exitCode: 77, terminal: true };
+      flushResult = await flush(interruptibleConfig);
+      if (TERMINAL_FLUSH_OUTCOMES.has(flushResult.outcome)) {
+        return { exitCode: flushExitCode(flushResult.outcome), terminal: true };
       }
     }
 
     emitCheckpoint(config, { phase: "stop" });
     flushResult = await flush(config);
-    if (flushResult.outcome === "terminal_auth") {
-      return { exitCode: 77, terminal: true };
+    if (TERMINAL_FLUSH_OUTCOMES.has(flushResult.outcome)) {
+      return { exitCode: flushExitCode(flushResult.outcome), terminal: true };
     }
     // Anything that did not fully deliver is reported as deferred (75), not success.
     // `flush()` returns "acked" only when the spool drained; every other non-terminal
     // outcome leaves events behind.
     return {
-      exitCode: flushResult.outcome === "acked" ? 0 : 75,
+      exitCode: flushExitCode(flushResult.outcome),
       terminal: false,
     };
   }
@@ -1486,7 +1553,9 @@ const LOCKED_COMMANDS = new Set(["emit", "flush", "checkpoint", "run"]);
  * (`process.exitCode`) against an injected `fetchImpl`/`home` without a real hub.
  *
  * Exit codes: 0 success · 69 refused, another client holds the lock (ST-092 R1) ·
- * 75 deferred, retryable exhaustion with the spool intact · 77 terminal auth failure.
+ * 75 anything that left the spool undelivered — retryable exhaustion AND the terminal
+ * non-auth rejections (`unknown_node`, `too_large`, `malformed`) · 77 terminal auth
+ * failure. See `flushExitCode`.
  * The lock is taken before the command body and released in a `finally`, so every
  * path out — including the 77 terminal-auth path and a thrown error — gives it up.
  */
@@ -1510,18 +1579,15 @@ async function runCommand(config, argv, command) {
   if (command === "flush") {
     const result = await flush(config);
     console.log(JSON.stringify(result));
-    // Exit codes so a shell transcript records the outcome without parsing stdout:
-    // 0 success, 75 deferred (retryable exhaustion, spool intact), 77 terminal auth
-    // failure. `process.exitCode`, never `process.exit()`, so pending stream writes
-    // flush before the process ends (T-03-04-06) — an exit code that arrives with a
+    // Exit codes so a shell transcript records the outcome without parsing stdout —
+    // see `flushExitCode` for the mapping and why only `acked` earns 0. This used to
+    // enumerate the three outcomes it knew about and let the rest fall through to 0,
+    // which is how a hub-rejected batch came to report success.
+    //
+    // `process.exitCode`, never `process.exit()`, so pending stream writes flush
+    // before the process ends (T-03-04-06) — an exit code that arrives with a
     // truncated transcript defeats the point of capturing one.
-    if (result.outcome === "terminal_auth") {
-      process.exitCode = 77;
-    } else if (result.outcome === "deferred") {
-      process.exitCode = 75;
-    } else {
-      process.exitCode = 0;
-    }
+    process.exitCode = flushExitCode(result.outcome);
     return;
   }
   if (command === "status") {
