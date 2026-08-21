@@ -156,6 +156,34 @@ All four conditions are filed as **ST-094** (Backlog, `.github/planning/story-bo
 
 ---
 
+## Appendix — the RUP ↔ Compound Engineering mapping, evaluated
+
+**Source:** an opinion piece supplied by the PO in-session on 2026-08-21 (no URL; reproduced in substance below). It maps RUP's four phases onto Compound Engineering's `Plan → Work → Review → Compound` loop — Inception↔exploration, Elaboration↔Plan, Construction↔Work, Transition↔release, with RUP's continuous disciplines mapped onto Review and Compound. It argues Compound Engineering's distinctive contribution is that RUP asks teams to *maintain* artifacts whereas CE asks each completed task to *improve the environment*, proposes a retention rule ("keep a RUP artifact only when it improves a decision, reduces ambiguity, proves a risk, supports traceability, or makes future work easier"), and recommends a synthesis of RUP phases as lifecycle states, CE as the iteration protocol, risk-first sequencing, executable knowledge, and evidence-based phase gates.
+
+**Verdict: sound as conceptual analysis, superseded as a proposal for this repo.**
+
+- **It maps RUP onto CE alone**, treating CE as the lifecycle controller. That is the arrangement this document decides against. Its "sensible combined hierarchy" has CE loops nested directly inside RUP phases with no third system, so it describes a repo without GSD in it.
+- **Two of its five synthesis items already exist here under different names.** `.planning/ROADMAP.md` carries four phases, each with an explicit `**Depends on**: Phase N`; Phase 1 is *"Classify and price all 15 retrieval/egress paths; discharge the ADR-016 gate"* — risk-first sequencing with a literal evidence gate — and Phase 4 is *"Prove or report UNPROVEN execution blocking"*. `.planning/config.json` sets `"human_verify_mode": "end-of-phase"` plus a `milestone_branch_template`. Adopting "RUP phases as lifecycle states" as written would add a third vocabulary over a working one.
+- **Its stated tension aims at the wrong failure mode.** It warns that RUP becomes artifact-heavy. This repo's problem is the inverse — artifacts that plainly earn their keep but are *ungoverned*, which is the defect this whole document exists to fix. Nothing here fails its retention rule.
+- **It carries no mechanism.** Every decision recorded above turned on mechanism: a Skill-tool directive versus a text include, a trailer's position relative to a blank line, frozen section ordering. A mapping that cannot say which tool emits which artifact cannot be executed against.
+
+**Fact-checks of its two repo-specific claims:**
+
+| Claim | Verdict |
+|---|---|
+| "PR #34 was predominantly an Elaboration iteration" | **Holds.** PR #34 is *"ST-084 Stage 1: Workflow Operations host spike — promising with concerns"*, merged 2026-07-31. Genuinely an architecture spike. |
+| "the MVP slice in PR #31 should begin the move into Construction" | **Wrong.** PR #31 is *"AWCP spec evaluation + ADR-013 platform/product definitions (ST-081)"*, merged to `main` 2026-08-01 — spec evaluation and definitional ADR work, i.e. Inception/Elaboration, not an MVP slice. The sequence is also inverted: PR #34's base branch was `claude/ai-memory-spec-evaluation-t6r76j`, PR #31's head — #34 was **stacked on** #31, so #31 is the parent, not the successor. |
+
+**What survives and is worth keeping:**
+
+1. The Elaboration↔Plan correspondence, which is precisely stated and matches how ST-084 actually ran.
+2. The *"Compound goes beyond RUP"* distinction — maintain-artifacts versus improve-the-environment. This is the piece's most durable idea and survives every correction above.
+3. **The Transition gate — the one actionable item.** *"Move from Construction to Transition only when acceptance and operational criteria are demonstrated"* is sharp here for a reason the piece does not know: `.github/workflows/ci.yml` triggers only on `main` and PRs targeting `main`, so a PR into a feature or integration branch runs **no CI at all**, and ST-092 entered Review under exactly that condition. The repo currently cannot demonstrate operational criteria on the stacked branches that are its common case. Carried into **ST-094** as an open question, since it lands on the same enforcement axis as the `Story:` trailer audit.
+
+**Fairness note.** The piece appears to have been written without knowledge that GSD is live in this repository. Given CE alone, its mapping is largely right; the corrections above are about *this repo's* configuration, not about the author's reasoning.
+
+---
+
 ## Method and confidence
 
 Formed via `ce-brainstorm` → `ce-pov` on 2026-08-21. Grounding came from five subagents in **independent contexts** — a repo governance scout, a toolchain scout over the installed `gsd-core` and CE plugin sources, a project-grounding scout, a precedent-and-activity scout (GitHub tracker reachable, 30+ PRs reviewed), and an external-evidence researcher — plus bounded direct reads by the orchestrator for the load-bearing claims (the `init.cjs` directive branch, the `git log` trailer checks, `ship.md`'s ordering).
