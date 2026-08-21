@@ -516,7 +516,31 @@ function claimStaleLock(config, expected, record, token) {
     closeSync(fd);
   }
 
-  const lines = readFileSync(config.lockPath, "utf8")
+  // `beforeClaimReadback` is this path's test-only seam, the same shape as the two
+  // above. It fires in the window between this claim landing durably and the read-back
+  // that decides it. Never set in production.
+  if (typeof config.beforeClaimReadback === "function") config.beforeClaimReadback();
+
+  let contents;
+  try {
+    contents = readFileSync(config.lockPath, "utf8");
+  } catch (error) {
+    // ENOENT here is not a failure, it is an answer (found by review on PR #52). The
+    // takeover winner can replace the claim log, run a short command such as `emit` to
+    // completion, and release — unlinking the lock — while a loser is still fsyncing
+    // its append onto the old inode. The loser then reads a path that is simply gone,
+    // which means the lock is free: exactly the condition the `openSync` above already
+    // treats as "retry". Letting it escape instead killed that process on an
+    // unhandled ENOENT, at the one moment its command could safely have proceeded.
+    //
+    // ENOENT ONLY. Any other read failure is a real problem and must not be laundered
+    // into a retry — the loop above would swallow it three times and then report a
+    // lock error naming the wrong cause.
+    if (!isErrno(error, "ENOENT")) throw error;
+    return "retry";
+  }
+
+  const lines = contents
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line !== "");

@@ -3159,3 +3159,39 @@ Deno.test({
     releaseLock(handle);
   },
 });
+
+Deno.test({
+  ...T,
+  name:
+    "PR52-F7: a takeover winner that releases mid-claim must make the loser retry, not throw ENOENT",
+  fn: async () => {
+    const home = await Deno.makeTempDir();
+    const config = resolveConfig({ home });
+
+    // A lock whose recorded holder is definitely dead, so the stale-takeover path is
+    // the one this acquire takes.
+    Deno.writeTextFileSync(config.lockPath, "999999:deadbeefdeadbeef");
+    Deno.chmodSync(config.lockPath, 0o600);
+
+    let fired = 0;
+    const handle = acquireLock({
+      ...config,
+      isPidAliveImpl: () => false,
+      // `beforeClaimReadback` fires between the claim's fsync'd append and the
+      // read-back that decides who won. That window is real: the winner can complete a
+      // short command and release — unlinking the lock — while a loser is still
+      // fsyncing onto the old inode. The read-back then hits a path that is simply
+      // gone, which is not a failure, it is the answer "nobody holds this now".
+      beforeClaimReadback: () => {
+        if (fired++ === 0) Deno.removeSync(config.lockPath);
+      },
+    });
+
+    assertEquals(fired, 1, "precondition: the readback seam must have fired exactly once");
+    assert(
+      handle,
+      "the loser must retry into the now-free lock, not die on the winner's release",
+    );
+    releaseLock(handle);
+  },
+});
