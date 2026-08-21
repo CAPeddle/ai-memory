@@ -147,8 +147,10 @@ Flip to full consolidation if **`.planning/` and `docs/plans/` ever disagree abo
 
 ## Not done, and why
 
+All four conditions are filed as **ST-094** (Backlog, `.github/planning/story-board.md`), which carries the acceptance criteria and a detailed handoff.
+
 - **The `CLAUDE.md` boundary section (condition 1) is not written.** It changes governance, which `CLAUDE.md`'s own workflow gate says requires a board entry — and WIP is full (ST-088 In Progress, ST-092 in Review). It needs a story, not a drive-by edit.
-- **`agent_skills` (condition 2) is not populated** — same reason; it changes how every GSD subagent behaves.
+- **`agent_skills` (condition 2) is not populated** — same reason; it changes how every GSD subagent behaves. Verified empty this session: `node ~/.claude/gsd-core/bin/gsd-tools.cjs query agent-skills gsd-code-reviewer` exits 0 with an empty block.
 - **Nothing about the ARCTIC handoff capability is scoped here.** That was a separate deliverable the PO deferred in favour of this decision; it remains unscoped.
 - **ST-066** (migrate VS Code planning prompts to the unified format) has been Backlog since 2026-07-02 and is adjacent — those prompts still target the retired ExecPlan format.
 
