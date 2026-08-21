@@ -424,3 +424,73 @@ fresh database and forgetting that CI also holds the provider secret. The claim 
 CI had been read, and reading it falsified the prediction. The error is left recorded rather than
 silently overwritten: predicting another environment's result from one remembered difference is the
 same mistake this document already logs twice for the entity-worker flake.
+
+## Round 5 — the three PR #52 findings from the second review pass
+
+**Declared before the run, per this document's own rule.** Round 5 adds **five** test identities
+and removes none, so the expected total is **492 + 5 = 497**. Any other number is a finding, not a
+rounding difference.
+
+| # | Identity | File | Proves |
+|---|---|---|---|
+| 1 | `PR52-F3: flush() must never remove a spool entry it did not transmit (ack outside the batch)` | `awcp-node-client.test.ts` | P1 — a 200 acking a `client_seq` outside the batch deleted an untransmitted event |
+| 2 | `PR52-F4: a partially numeric counter is refused, not silently read as its numeric prefix` | `awcp-node-client.test.ts` | P2 — `Number.parseInt` is a prefix parser, so `"1garbage"` reset the D-14 counter |
+| 3 | `PR52-F5: a crash between the exclusive lock create and its holder record must not brick the node` | `awcp-node-client.test.ts` | P2 — `openSync(…,"wx")` published an empty lock; a crash there needed an operator |
+| 4 | `PR52-F6: a marker present only in the session must not read as a database marker` | `test-database-guard.test.ts` | P2 — `current_setting` reads the session value, not a property of the database |
+| 5 | `PR52-F6b: a session override must not be able to contradict the database's own marker` | `test-database-guard.test.ts` | the inverse direction, so #4 cannot pass by ignoring everything |
+
+**Red control — predicted before the fixes, observed after writing the tests against the unfixed
+tree.** Every one failed on its own assertion, at the predicted value; none failed on a
+precondition, an import, or a type error.
+
+| Identity | Predicted failure | Observed |
+|---|---|---|
+| `PR52-F3` | removes `501`, which was never sent | `AssertionError: flush removed [501] from the spool, and never sent it` |
+| `PR52-F4` | `"1garbage"` accepted, read as `1` | `Expected function to throw: "1garbage" must be refused, not read as 1` |
+| `PR52-F5` | second acquire refuses an unreadable lock | `AwcpLockError: … exists but does not name a readable pid` |
+| `PR52-F6` | session-only setting reads as `"true"` | `Values are not equal: … actual "true" / expected null` |
+| `PR52-F6b` | session override wins over the database | `Values are not equal: actual false / expected true` |
+
+**The `PR52-F5` red is produced by a seam that did not exist before this round**, which is worth
+stating plainly rather than leaving a reader to notice. `beforeLockPublish` was added to the
+*unfixed* create-then-write path first, and the red was taken there — so the failure is the real
+brick, reached through the window a `SIGKILL` lands in, not an artefact of the new implementation.
+The same seam then moved to fire before `linkSync`. A seam introduced alongside its fix and never
+run against the old code would have proved nothing.
+
+**Both non-vacuity guards in `PR52-F3` are load-bearing and neither is decoration.** Without
+`batches[0].length === FLUSH_MAX_EVENTS` the subset assertion passes for a flush that transmitted
+the whole spool in one batch; without `removed.length > 0` it passes for a flush that removed
+nothing at all. The `PR52-F6` pair carries the equivalent guard inside the transaction: each asserts
+`current_setting` really does return the overridden value before asserting the catalog read does
+not, so a `null` cannot come back from a query that simply errored.
+
+### Round 5 result
+
+| | Declared | Observed |
+|---|---|---|
+| Identities | 497 | **497** |
+| Added | 5 | **5**, all `ok` |
+| Removed | 0 | **0** |
+| Status flips | 0 | **0** |
+| Failures | 9 (unchanged local baseline) | **9** |
+
+The nine are the same nine as round 4, by name: eight `e2e.test.ts` provider-401s and the one
+entity-worker `items_processed` accumulation now filed as ST-093. Artefact refreshed at
+[ST-092-regression-final.txt](ST-092-regression-final.txt).
+
+**One new normalisation note, since this document already records one comparison that lied.** Deno
+writes raw ANSI escape sequences into `<failure>` bodies, and those bytes are illegal in XML 1.0,
+so the round-5 JUnit file does not parse at all until they are stripped. They were — but only from
+the failure *bodies*, which this comparison never reads: identity comes from the `classname` and
+`name` attributes, and the baseline stores identity and status only. That is the distinction the
+round-4 note was about. Stripping a character class the comparison does not consult is not the same
+act as decoding one it does.
+
+### Scope note — what round 5 did not touch
+
+The two follow-ups deferred at the end of the conventions refresh remain open and were deliberately
+left alone: the stale `server/index.ts:941, :997` citation duplicated into
+`server/db/workflow/001_workflow_schema.sql:17-19`, and the six `SPIKE / DISPOSABLE` stamps under
+`server/src/workflow/`. Neither is a PR #52 finding, and folding unrelated edits into a
+review-response commit is what makes a squash message stop describing its own diff.

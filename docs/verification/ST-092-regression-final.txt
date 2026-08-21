@@ -1,5 +1,7 @@
-# 2026-08-21T11:30:34Z
-# round 4 — PR #52 review: terminal-outcome exit codes and stop-interrupts-flush
+# 2026-08-21T14:58Z
+# round 5 — PR #52 second review pass: ack-outside-batch (P1), partially numeric
+#   counter, non-atomic lock publish, and a test-database marker read from the
+#   session instead of the database catalog.
 # ENVIRONMENT: local `mcp-test`, no OPENROUTER_API_KEY, against the SHARED and
 # ACCUMULATING db-test. Both facts shape the count, and CI shares neither:
 #   8 failures in e2e.test.ts are the documented provider-401 baseline — CI
@@ -8,7 +10,8 @@
 #     CI starts from a fresh database, so it passes there too.
 # CI therefore runs the IDENTICAL command over tests/ and reports 0 failures.
 # 9-vs-0 is the expected local/CI difference, not a regression in either.
-# docker compose --profile test exec -T mcp-test deno test --frozen --allow-net --allow-env --allow-read --allow-write=/tmp --allow-run=deno,git --junit-path=/tmp/r4b.xml tests/
+# 497 identities: 492 from round 4, +5 declared in advance, 0 removed, 0 flips.
+# docker compose --profile test exec -T mcp-test deno test --frozen --allow-net --allow-env --allow-read --allow-write=/tmp --allow-run=deno,git --junit-path=/tmp/st092-round5.xml tests/
 ./tests/awcp-cli.test.ts::ST-087: the CLI's permission grants are read from the shipped shebang => ok
 ./tests/awcp-cli.test.ts::ST-087: the CLI's permission grants are read from the shipped shebang > a file with no shebang throws rather than defaulting => ok
 ./tests/awcp-cli.test.ts::ST-087: the CLI's permission grants are read from the shipped shebang > the grants match what the script declares => ok
@@ -58,6 +61,9 @@
 ./tests/awcp-node-client.test.ts::PR52-F1b: runAgent must stop on a terminal non-auth outcome instead of retrying it forever => ok
 ./tests/awcp-node-client.test.ts::PR52-F2a: stop() must interrupt an in-progress flush rather than waiting out its retry budget => ok
 ./tests/awcp-node-client.test.ts::PR52-F2b: stop() must abort an in-flight request, not only the backoff between requests => ok
+./tests/awcp-node-client.test.ts::PR52-F3: flush() must never remove a spool entry it did not transmit (ack outside the batch) => ok
+./tests/awcp-node-client.test.ts::PR52-F4: a partially numeric counter is refused, not silently read as its numeric prefix => ok
+./tests/awcp-node-client.test.ts::PR52-F5: a crash between the exclusive lock create and its holder record must not brick the node => ok
 ./tests/awcp-node-client.test.ts::ST-092 R1 control: the production liveness probe reports this very process alive => ok
 ./tests/awcp-node-client.test.ts::ST-092 R1: `status` runs while the lock is held => ok
 ./tests/awcp-node-client.test.ts::ST-092 R1: a claim left behind by a crashed reclaimer must not brick the lock forever => ok
@@ -344,6 +350,8 @@
 ./tests/startup-validation.test.ts::startup validation: reports OPENROUTER_API_KEY when missing => ok
 ./tests/startup-validation.test.ts::startup validation: reports both required variables when both are missing => ok
 ./tests/startup-validation.test.ts::startup validation: reports none when both required variables are present => ok
+./tests/test-database-guard.test.ts::PR52-F6: a marker present only in the session must not read as a database marker => ok
+./tests/test-database-guard.test.ts::PR52-F6b: a session override must not be able to contradict the database's own marker => ok
 ./tests/test-database-guard.test.ts::ST-092 R6 control: the REAL probe finds the marker on the database this suite is connected to => ok
 ./tests/test-database-guard.test.ts::ST-092 R6 control: the marker survives DROP SCHEMA, which is the operation it guards => ok
 ./tests/test-database-guard.test.ts::ST-092 R6: a failing describe() does not turn a refusal into a pass => ok
