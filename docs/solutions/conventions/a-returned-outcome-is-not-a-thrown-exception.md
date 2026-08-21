@@ -186,6 +186,17 @@ grep -rn 'flush(' server/scripts/ server/tests/
 Read each one and ask the concrete question: *given the new value, what does this caller
 now do?* Not *does it compile* — it compiles either way. That is the whole hazard.
 
+**Corollary, for when the closed set and its members live in different files.** Rule 1
+assumes the thing to sweep is a *caller*. Sometimes it is an independent classifier over
+a surface defined elsewhere, and then nothing links the two at all — not the type system,
+not a call graph, not a grep for the function name. A permissive-default classifier is
+safe only when its enumeration is mechanically derived from, or asserted against, the
+real surface it classifies. A second hand-written table proves the classifier is
+internally consistent, never that it is complete: it is the same-enumeration trap
+described under *Why This Matters*, one file further out. When you add a member to the
+real surface, the question is not "did I update the callers" but "what else independently
+enumerates this set, and how would it have known?"
+
 ### 2. A fall-through `else` in an outcome dispatch must default to failure
 
 This is the rule that would have made the miss loud instead of silent.
@@ -343,8 +354,20 @@ Run the caller enumeration when a change has any of these shapes:
 
 Do **not** bother when the returned value's consumers are exhaustively type-checked and the
 compiler fails on a missing case — a TypeScript discriminated union consumed via an
-exhaustive `switch` with a `never` default already provides this mechanically. The rule
-exists for the places that check nothing, which in this repo means every `.mjs` script.
+exhaustive `switch` with a `never` default already provides this mechanically.
+
+**Be strict about what earns that exemption, though: the language does not, only the
+construct does.** A pattern review of this repo's TypeScript found exactly one `switch`
+statement in the whole server surface, over a CLI command string, and no `never`-default
+exhaustiveness check anywhere. What actually recurs is an **if/else chain over a closed
+union** — which TypeScript does *not* exhaustiveness-check, so the safety net the
+exemption implies is not present. `server/src/consolidationWorker.ts:284-291` dispatching
+on `Band` (`"promote" | "flag" | "skip"`) is the local example: a fourth band would
+compile clean and fall into the `else`. It happens to fall toward *more* human review
+rather than less, so it is restrictive-by-luck rather than dangerous — but the luck is
+what is doing the work, not the type system.
+
+The rule therefore applies to plain `.mjs` scripts and to typed if/else dispatch alike.
 
 ## Examples
 
