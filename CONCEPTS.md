@@ -138,6 +138,18 @@ Of a review: verified against the tree it describes, rather than against the tex
 
 A Source-Grounded review cites the specific lines it checked, which is what makes its claims falsifiable by a later reader; an ungrounded one can only restate what the artifact already asserts about itself. The distinction is load-bearing when several reviews are combined, because a reviewer that could not read the tree contributes an open question rather than a finding, and weighting it equally manufactures agreement that was never reached. Grounding is a property of what the reviewer actually did, not of what it was asked to do — so it is confirmed from the output, not assumed from the request.
 
+## Event Delivery
+
+### Spool
+A node's durable on-disk queue of events awaiting delivery, held between the moment an event is produced and the moment the far side confirms it.
+
+The Spool is bounded, and an overflowing one evicts its oldest entries rather than refusing new ones — a producer is never blocked by a delivery problem, and the count of what was dropped is recorded rather than lost. An entry leaves the Spool only when the far side names it as received; a response that cannot be verified to name it is not a confirmation, so nothing is removed on one. This is what makes loss visible instead of silent: an event is either delivered, still queued, or counted as dropped, and never merely absent.
+
+### Terminal Outcome
+A delivery result meaning the same batch will fail the same way if sent again, as distinct from a deferred one, which is worth retrying.
+
+The distinction exists to decide what the caller does next, so it is only worth drawing where a caller acts on it: a Terminal Outcome must stop a retry loop and must not be reported as success, while a deferred one leaves the Spool intact for a later attempt. Both leave events undelivered, which is why an exit code that separates only success from authentication failure conveys neither. Adding a new Terminal Outcome is therefore never a local change — every caller that dispatches on the outcome already encodes an assumption about how many there are. See [Fails Open / Fails Closed](#fails-open--fails-closed).
+
 ## Search Quality & Testing
 
 ### Corpus
