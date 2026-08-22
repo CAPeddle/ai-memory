@@ -223,6 +223,13 @@ Inside a frozen file, write instead:
   — costs nothing to keep accurate, because the file it points at is a file you
   can still edit.
 
+**A note on this document's own citations.** It cites line numbers freely, which
+looks like it violates the rule above. It does not: the prohibition is scoped to
+files you cannot edit. This file is editable, so when a citation here rots,
+someone can fix it — that is the whole distinction the rule turns on. The
+census table below is here for the same reason, and pointedly not in the
+`store.ts` docblock it describes.
+
 ### 5. "It's only a comment" is not a safety argument when the checksum is over bytes
 
 The phrase to distrust, in a handoff or a PR description, is any variant of
