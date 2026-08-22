@@ -20,6 +20,15 @@
  * Requires `--allow-run=deno` (the helper spawns only `Deno.execPath()`).
  * See CLAUDE.md's test commands.
  *
+ * **This file drops the shared `workflow` schema, so it must not run against a
+ * database that is not a designated test database.** That is enforced, not merely
+ * warned about: `requireTestDatabase()` runs before the first `DROP SCHEMA` and
+ * refuses on any database without the marker the compose `seed` service applies. The
+ * note below has always covered WHEN this file may run relative to other suites; it
+ * never covered WHICH DATABASE it may run against, and CLAUDE.md's documented
+ * WSL2-native inner loop points `.env.dev` at the shared dev Postgres. Dropping
+ * `workflow` there removes `execution_nodes` and de-enrols every real remote node.
+ *
  * **This file drops the shared `workflow` schema, so it must not run concurrently with
  * the other workflow suites.** Three things make that safe, and all three are load
  * bearing: `deno test` runs test FILES sequentially unless `--parallel` is passed;
@@ -45,13 +54,10 @@ import {
   startProviderSentinel,
   startServerProcess,
 } from "./_helpers/serverProcess.ts";
+import { requireTestDatabase } from "./_helpers/testDatabaseGuard.ts";
 
 const DATABASE_URL = Deno.env.get("DATABASE_URL")!;
 const API_KEY = Deno.env.get("MEMORY_API_KEY") ?? "test-key";
-
-/** High, uncommon ports: the container's own server already holds 3000. */
-const WORKFLOW_PORT = 3142;
-const CONTROL_PORT = 3143;
 
 /**
  * The workflow-only environment, exactly as the story specifies it.
@@ -86,12 +92,18 @@ Deno.test({
   sanitizeOps: false,
   name: "ST-086: a local WorkPacket is operated end to end and survives a restart",
   fn: async (t) => {
+    // Before anything else, and before any process is spawned: this suite drops the
+    // shared `workflow` schema, and `execution_nodes` lives in it.
+    await requireTestDatabase();
+
     const sentinel = await startProviderSentinel();
     // Every process this test starts, so the cleanup below stops all of them even if
     // a step fails between the first boot and the restart.
     const started: ServerProcess[] = [];
-    const boot = async (port: number): Promise<ServerProcess> => {
-      const proc = await startServerProcess(workflowOnlyEnv(sentinel), port);
+    // ST-092 R7: no port argument. Every child binds an ephemeral port and reports
+    // it on its own stdout, so two suites can no longer be assigned the same one.
+    const boot = async (): Promise<ServerProcess> => {
+      const proc = await startServerProcess(workflowOnlyEnv(sentinel));
       started.push(proc);
       return proc;
     };
@@ -112,7 +124,7 @@ Deno.test({
 
       // ------------------------------------------------------------------
       await t.step("the composition root applies workflow migrations at startup", async () => {
-        server = await boot(WORKFLOW_PORT);
+        server = await boot();
 
         assert(
           await workflowSchemaExists(),
@@ -557,7 +569,7 @@ Deno.test({
         }
         assertEquals(stillUp, false, "the first server process did not actually stop");
 
-        server = await boot(WORKFLOW_PORT);
+        server = await boot();
 
         // Composition-root idempotency: the second boot applies nothing and skips
         // everything. Distinct from the unit-level idempotency workflow-migrations
@@ -691,7 +703,7 @@ Deno.test({
         MODEL_PROVIDER_ENABLED: "true",
         OPENROUTER_API_KEY: "sentinel-key",
         OPENROUTER_BASE_URL: sentinel.baseUrl,
-      }, CONTROL_PORT);
+      });
       started.push(server);
 
       const ready = await apiCall(server.baseUrl, API_KEY, "/ready");

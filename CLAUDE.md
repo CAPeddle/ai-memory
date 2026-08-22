@@ -84,7 +84,20 @@ docker compose --profile test exec mcp-test deno test --frozen --allow-net --all
 #                       against a real hub process and that the hub's own duplicate
 #                       suppression (EVENT-01) survives a replay — neither is
 #                       observable from an in-process test.
-#                       Find them with: grep -l startServerProcess tests/*.ts
+#                       awcp-node-client-lock.test.ts (ST-092) spawns the node client
+#                       itself, twice, against one AWCP_HOME. It is the ONE file here
+#                       that spawns without going through startServerProcess, because
+#                       what it needs is two contending clients rather than a server —
+#                       so the grep below does not find it, which is the whole reason
+#                       this line exists. Its children are additionally granted
+#                       --allow-run of their own: the lock's stale-holder decision
+#                       rests on a signal-0 pid probe, free under Node (where the
+#                       client ships) but gated under Deno, and /proc is no way around
+#                       it since Deno gates /proc behind --allow-all rather than
+#                       --allow-read.
+#                       Find most of them with: grep -l startServerProcess tests/*.ts
+#                       — and note that command is a starting point, not the
+#                       inventory; the inventory is this comment.
 #   --allow-run=git     awcp-cli.test.ts builds a throwaway repository, because
 #                       server/scripts/awcp.ts derives a checkpoint's repo/branch/commit
 #                       by running git and there is no honest way to prove that without
