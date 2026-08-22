@@ -11,7 +11,7 @@
  * describes, a pure projection cannot. Recorded as a deliberate reduction in the
  * plan's Implementation Addendum §B.
  *
- * SPIKE / DISPOSABLE.
+ * PROVISIONAL — not a throwaway spike; gated on ADR-016. See types.ts.
  */
 
 import type {

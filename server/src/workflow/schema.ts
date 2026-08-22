@@ -45,7 +45,7 @@
  * migration trips {@link MigrationDriftError} after nothing but a checkout, suspect
  * EOLs before suspecting a bad edit.
  *
- * SPIKE / DISPOSABLE.
+ * PROVISIONAL — not a throwaway spike; gated on ADR-016. See types.ts.
  */
 
 import { sql } from "../db.ts";

@@ -5,7 +5,14 @@
  * `thought` representation. Nothing here is a thought, shard, wiki row, or graph
  * entity. That separation is criterion 1 of the ADR-016 host-acceptance gate.
  *
- * SPIKE / DISPOSABLE — see docs/plans/2026-07-29-001-awcp-ai-memory-host-spike.md
+ * This is no longer a throwaway spike: the module now spans 12 source files,
+ * 4 migrations under server/db/workflow/, and 11 test files, exercised by
+ * the ST-086, ST-087, ST-088, and ST-092 suites. Acceptance is still gated on
+ * ADR-016 (docs/design/adr/ADR-016-awcp-consolidation-host-topology.md),
+ * which is Proposed — Conditional: Stage 1 criteria 1-4 are met, 5-7 are
+ * outstanding. So the shape here is provisional, not settled, pending that
+ * gate. See docs/plans/2026-07-29-001-awcp-ai-memory-host-spike.md for where
+ * it originated.
  */
 
 /** Controlled policy scope. NOT a descriptive tag — a closed vocabulary. */

@@ -10,7 +10,7 @@
  * other memory-domain object. `workflow-boundary.test.ts` asserts that by
  * scanning this module's source.
  *
- * SPIKE / DISPOSABLE.
+ * PROVISIONAL — not a throwaway spike; gated on ADR-016. See types.ts.
  */
 
 import { sql } from "../db.ts";
