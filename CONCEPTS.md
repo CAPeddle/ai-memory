@@ -106,7 +106,12 @@ A scan over an empty input set passes every claim made about its contents. The g
 ### Discrimination
 The property that a check produces different outcomes for the compliant and non-compliant cases.
 
-Distinct from Non-Vacuity, and the two are independent: a check can genuinely inspect its input and still pass regardless of what it finds. Discrimination is what a Red/Green Control demonstrates, and it is proven by removing the thing under test and confirming the check goes red — not by reasoning about what it ought to do.
+Distinct from Non-Vacuity, and the two are independent: a check can genuinely inspect its input and still pass regardless of what it finds. Discrimination is what a Red/Green Control demonstrates, and it is proven by removing the thing under test and confirming the check goes red — not by reasoning about what it ought to do. Two constraints on that removal are load-bearing and easy to lose: it must be minimal, touching only the behaviour under test, and the resulting red must be an assertion failure on the specific claim. A removal that also changes the subject's surface, or a red that arrived before the assertion executed, demonstrates nothing about discrimination — see Wrong-Reason Red.
+
+### Wrong-Reason Red
+A control that failed, but for something other than the defect it was written to demonstrate — so its red is not evidence about its subject.
+
+Two forms recur. The failure arrives *before* the assertion runs — the harness would not build, a symbol was never imported, a revert removed more than the behaviour under test — and so reports on the module surface or the wiring instead. Or the assertion runs but would have failed identically had the defect never existed, which is the Discrimination failure seen from the other side. Both are indistinguishable from a genuine control in a run log, and in any record that cites one, which is what makes the condition expensive rather than merely untidy: the record launders a non-proof into evidence, and the next reader has no way to tell. The remedy is to predict the failure before producing it — which assertion, which observed value — and accept the red only when the observed one matches. A third form carries no red at all: over a mechanism whose outcome depends on scheduling, a passing run reports the schedule the runtime happened to pick, not the property, so neither its green nor a single contrasting run supports a causal claim.
 
 ### Fails Open / Fails Closed
 Whether a check's own malfunction permits the thing it guards, or refuses it.
@@ -122,6 +127,33 @@ A Baseline names *which* tests fail and why — characteristically, credentials 
 A verification observed once by hand, valid only for the tree state it ran against.
 
 Unlike a check that re-runs, nobody re-observes a Point-in-Time Result, so it expires silently the moment the surface it covered changes — by any hand, not only its author's. It is therefore recorded with the commit it was taken at and the paths it covered, so a later reader can ask the tree whether it has expired instead of trusting it. A date records only when someone looked; a commit records what they looked at. Expired does not mean wrong — it means unobserved, which is the state a verification record exists to rule out.
+
+### Review Lane
+One external reviewer enlisted for an independent read, addressed as a declared unit rather than an ad-hoc invocation.
+
+A Lane is selected, and then either runs or is dropped — there is no partial state. Lanes named explicitly by the requester and Lanes picked up by a "whatever is available" selection differ in exactly one respect: an explicitly named Lane that cannot run is an error, while an unavailable Lane nobody asked for is ordinary. The asymmetry is deliberate — not finding a reviewer nobody requested is normal; failing to run one somebody requested is not.
+
+### Dropped Lane
+A Lane that was selected but whose output cannot be counted as a review.
+
+The obvious case is an empty return, which after a long run means the Lane was killed rather than that it crashed. The harder case is a Lane that returns fluent, well-formed prose answering a question nobody asked — the signature of a prompt that never reached the model. Both are the same condition and are read the same way: the Lane did not review. A Dropped Lane's output is never folded into a consensus, and a review that quietly proceeds with fewer Lanes than it reports is the failure this term exists to name. Compare Non-Vacuity Guard: a Lane that inspected nothing must not pass for one that found nothing.
+
+### Source-Grounded
+Of a review: verified against the tree it describes, rather than against the text of the artifact under review.
+
+A Source-Grounded review cites the specific lines it checked, which is what makes its claims falsifiable by a later reader; an ungrounded one can only restate what the artifact already asserts about itself. The distinction is load-bearing when several reviews are combined, because a reviewer that could not read the tree contributes an open question rather than a finding, and weighting it equally manufactures agreement that was never reached. Grounding is a property of what the reviewer actually did, not of what it was asked to do — so it is confirmed from the output, not assumed from the request.
+
+## Event Delivery
+
+### Spool
+A node's durable on-disk queue of events awaiting delivery, held between the moment an event is produced and the moment the far side confirms it.
+
+The Spool is bounded, and an overflowing one evicts its oldest entries rather than refusing new ones — a producer is never blocked by a delivery problem, and the count of what was dropped is recorded rather than lost. An entry leaves the Spool only when the far side names it as received; a response that cannot be verified to name it is not a confirmation, so nothing is removed on one. This is what makes loss visible instead of silent: an event is either delivered, still queued, or counted as dropped, and never merely absent.
+
+### Terminal Outcome
+A delivery result meaning the same batch will fail the same way if sent again, as distinct from a deferred one, which is worth retrying.
+
+The distinction exists to decide what the caller does next, so it is only worth drawing where a caller acts on it: a Terminal Outcome must stop a retry loop and must not be reported as success, while a deferred one leaves the Spool intact for a later attempt. Both leave events undelivered, which is why an exit code that separates only success from authentication failure conveys neither. Adding a new Terminal Outcome is therefore never a local change — every caller that dispatches on the outcome already encodes an assumption about how many there are. See [Fails Open / Fails Closed](#fails-open--fails-closed).
 
 ## Search Quality & Testing
 

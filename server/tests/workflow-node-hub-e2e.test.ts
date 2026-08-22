@@ -56,7 +56,6 @@ const OPERATOR_KEY = "0f".repeat(32);
 
 /** Operator-chosen, no format rule — deliberately not bearer-shaped. */
 const ENROLMENT_SECRET = "enrolment-secret-for-node-hub-mount-test";
-const PORT = 3145;
 
 const NODE_HUB_ENV: Record<string, string> = {
   DATABASE_URL,
@@ -90,7 +89,7 @@ Deno.test({
   sanitizeOps: false,
   name: "ST-088: /workflow/nodes is mounted and bearer-guarded by the composition root",
   fn: async (t) => {
-    const server: ServerProcess = await startServerProcess(NODE_HUB_ENV, PORT);
+    const server: ServerProcess = await startServerProcess(NODE_HUB_ENV);
     const bearer = mintBearer();
 
     try {

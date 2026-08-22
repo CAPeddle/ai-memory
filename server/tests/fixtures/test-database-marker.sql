@@ -1,0 +1,37 @@
+-- ST-092 R6 — mark this database as a designated TEST database.
+--
+-- Loaded into `db-test` by the compose `seed` service, and nowhere else. It is what
+-- lets a destructive suite establish, before it drops anything, that it is connected
+-- to a database whose contents are expendable.
+--
+-- **Why a database-level setting rather than a name or a marker table.**
+--   - The NAME does not discriminate: `db` and `db-test` are both `POSTGRES_DB:
+--     ai_memory` (docker-compose.yml), so `current_database()` returns the same string
+--     on the shared dev database and on the throwaway one. A guard keyed on it would
+--     pass in exactly the situation that matters.
+--   - A marker TABLE lives inside a schema, and the suites this guards drop schemas.
+--     A guard whose evidence can be destroyed by the operation it guards is a guard
+--     with a window in it.
+--   - `ALTER DATABASE ... SET` is stored in `pg_db_role_setting`, keyed by database
+--     OID. No `DROP SCHEMA` can reach it, it applies to every new session on this
+--     database regardless of user, and it cannot appear on a database nobody ran this
+--     against.
+--
+-- The setting is namespaced (`ai_memory.*`) so it is a custom parameter Postgres will
+-- accept and store rather than a reserved GUC it would reject.
+--
+-- **Why this lives under `server/tests/fixtures/` and not next to `schema.sql`.** It is
+-- test-stack setup, not schema — but the sharper reason is that `server/db/` is
+-- discovered BY PATTERN, not by name: `server/src/migrate.ts` enumerates that directory
+-- and applies anything matching `^(\d+)_.*\.sql$`, and `docker/postgres-age/Dockerfile`
+-- copies from it into `docker-entrypoint-initdb.d`. Neither picks this file up today.
+-- But a file whose entire job is to certify a database as expendable has no business
+-- sitting one rename away from the production DDL loader: if it were ever applied to a
+-- real database, every guard that reads it would pass everywhere, and would still read
+-- as enforcement. The compose mount that loads it names it explicitly, so nothing is
+-- lost by keeping it out of reach.
+--
+-- It takes effect for sessions opened AFTER this runs. The compose `seed` service is
+-- an explicit dependency of `mcp-test` (`service_completed_successfully`), so every
+-- test connection is opened after it.
+ALTER DATABASE ai_memory SET ai_memory.test_database = 'true';

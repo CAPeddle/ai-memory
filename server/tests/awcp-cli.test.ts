@@ -44,9 +44,6 @@ const OPERATOR_KEY = Deno.env.get("MEMORY_API_KEY") ?? "test-key";
 /** Distinct from the operator key — the server refuses to start when they match. */
 const AGENT_KEY = `${OPERATOR_KEY}-st087-agent`;
 
-/** High, uncommon port: 3000 is the container's own server, 3142/3143 are ST-086's. */
-const CLI_PORT = 3144;
-
 function serverEnv(): Record<string, string> {
   return {
     DATABASE_URL,
@@ -60,10 +57,26 @@ function serverEnv(): Record<string, string> {
   };
 }
 
-/** The environment the CLI needs to reach the server under test, as the operator. */
+/**
+ * The environment the CLI needs to reach the server under test, as the operator.
+ *
+ * ST-092 R7: the base URL comes from the running server's own handle rather than a
+ * module-level port constant. This file used to hardcode 3144, which
+ * `workflow-agent-key-e2e.test.ts` had also been assigned — the collision the
+ * ephemeral-port change removes. `serverBaseUrl` is set once the child has reported
+ * the port it actually bound.
+ */
+let serverBaseUrl = "";
+
 function cliEnv(extra: Record<string, string> = {}): Record<string, string> {
+  if (serverBaseUrl === "") {
+    throw new Error(
+      "cliEnv() was called before the server process reported its port — a CLI " +
+        "pointed at an empty base URL would fail for a reason unrelated to its subject",
+    );
+  }
   return {
-    AWCP_BASE_URL: `http://127.0.0.1:${CLI_PORT}`,
+    AWCP_BASE_URL: serverBaseUrl,
     MEMORY_API_KEY: OPERATOR_KEY,
     ...extra,
   };
@@ -111,7 +124,8 @@ Deno.test({
   sanitizeOps: false,
   name: "ST-087: the awcp CLI reports a real session through the HTTP API",
   fn: async (t) => {
-    const server = await startServerProcess(serverEnv(), CLI_PORT);
+    const server = await startServerProcess(serverEnv());
+    serverBaseUrl = server.baseUrl;
 
     try {
       await t.step("the CLI prints its usage and exits 0", async () => {
@@ -238,7 +252,7 @@ Deno.test({
         // No MEMORY_API_KEY in this environment at all. Combined with clearEnv, the
         // operator key is absent as a fact about the child rather than a hope.
         const agentEnv = {
-          AWCP_BASE_URL: `http://127.0.0.1:${CLI_PORT}`,
+          AWCP_BASE_URL: serverBaseUrl,
           AWCP_AGENT_API_KEY: AGENT_KEY,
         };
 

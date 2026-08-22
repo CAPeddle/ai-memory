@@ -1536,3 +1536,45 @@ exists at all (D-03): the rows are not the artifact, this section is. Use the te
 
 ADR-016 remains **Proposed/Conditional**. Nothing in this section changes its status; Phase 4 owns the
 final recommendation.
+
+### 16.11 The §16.10 hazard is closed, and single-writer is now enforced rather than assumed (ST-092)
+
+§16.10 above records a standing hazard this section created: z2 is enrolled, the enrolment
+window is closed, and any suite run against the dev `DATABASE_URL` issues `DROP SCHEMA IF EXISTS
+workflow CASCADE`, deleting z2's `execution_nodes` row and de-enrolling it behind an opaque 401.
+The mitigation offered there was a documented instruction — *use the test stack*.
+
+**ST-092 replaced that instruction with enforcement.** `server/tests/workflow-mvp-e2e.test.ts` and
+`server/tests/migrations.test.ts` now call `requireTestDatabase()` before their first destructive
+statement, and it refuses on any database that does not carry a database-level marker applied only
+by the compose `seed` service. It keys on a property of the connected database rather than of the
+environment, because an environment check passes in exactly the case that matters — and the
+database *name* does not discriminate at all, since `db` and `db-test` are both `POSTGRES_DB:
+ai_memory`. The refusal was demonstrated against a real unmarked database with a row in
+`workflow.execution_nodes`: the row survives the guarded run and is gone after the same run with
+the guard removed.
+
+§16.10's warning stands as history; the hazard it describes can no longer be reached by the
+command it warns about.
+
+**What this changes for ADR-016's benefit, and only this.** Criterion 6's evidence in §16.1–§16.10
+was gathered under an *assumed* single-writer model: the client was designed for one active
+process per node, nothing enforced it, and the Phase 3 test that appeared to prove repeated
+`client_seq` allocation looped sequentially inside one process — so it could not have failed for
+the reason it existed. ST-092 makes the constraint real: an exclusive lockfile, proven by two
+genuinely contending processes, with the contention refusal and the stale-lock reclaim both
+observed failing when lock acquisition was stubbed out. Phase 4 may therefore cite this section's
+evidence without the "concurrent local producers" caveat the cross-AI review attached to it.
+
+**One durability gap this section's evidence did not cover, and neither review lane found.**
+`allocateSeq`'s docblock explains why the counter must never be derived from the spool — a reset
+makes the hub's `ON CONFLICT (node_id, client_seq) DO NOTHING` silently discard real events (D-14).
+It closed that route and left another open: the counter was written with an `openSync(path, "w")`
+that truncates before writing, so the crash window was a zero-length file, and the recovery path
+read an unparseable counter as `0` and returned `1`. Same reset, different door. It surfaced while
+verifying an unrelated claim about how many call sites rename, and is now closed — the counter goes
+through the same rewrite-and-rename primitive as the spool and state file, and an unparseable
+counter is refused rather than read as zero.
+
+This subsection records only what ST-092 proved. ADR-016 remains **Proposed/Conditional**; Phase 4
+still owns the final recommendation, and none of the above discharges the §6.1 pricing gate.

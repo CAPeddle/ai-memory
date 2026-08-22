@@ -49,15 +49,18 @@
 import {
   chmodSync,
   closeSync,
+  constants as fsConstants,
   existsSync,
   fsyncSync,
+  linkSync,
   mkdirSync,
   openSync,
   readFileSync,
   renameSync,
+  unlinkSync,
   writeSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { homedir, hostname as osHostname } from "node:os";
 import { pathToFileURL } from "node:url";
 import { randomBytes } from "node:crypto";
@@ -110,9 +113,82 @@ export const BACKOFF_CAP_MS = 30_000;
  */
 export const DEFAULT_HEARTBEAT_INTERVAL_MS = 60_000;
 
-/** Default tick source for `flush()`'s backoff and `runAgent`'s heartbeat interval. */
-function defaultSleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+/**
+ * Default tick source for `flush()`'s backoff and `runAgent`'s heartbeat interval.
+ *
+ * The optional `signal` is what makes a stop actually stop (ST-092 R5). Racing a bare
+ * `setTimeout` promise against a stop signal wakes the LOOP immediately but leaves the
+ * timer pending, and a pending timer keeps Node's event loop alive — so the work (stop
+ * checkpoint, final flush) completed at once while the PROCESS lingered for the rest of
+ * the interval. Measured A/B against a hub that acks immediately, 45s heartbeat,
+ * SIGTERM once the loop had parked: **42.2s to exit without this argument, 82ms with
+ * it.** Waking the loop was never the hard part; clearing the timer is.
+ *
+ * Callers that do not pass a signal are unaffected — `flush()`'s backoff is one, and
+ * deliberately so: shutting down against an UNREACHABLE hub still spends the full
+ * bounded backoff (~31s) trying to deliver the stop checkpoint before giving up with
+ * exit 75. That is delivery effort, not a stuck timer, and shortening it would be a
+ * decision about how hard a departing client should try — not a bug fix.
+ */
+export function defaultSleep(ms, signal) {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve();
+    // The listener is removed on BOTH exits, not just on abort. `{ once: true }`
+    // only self-removes when the event actually fires, and abort fires at most once
+    // per run — so on the ordinary timer path the listener stayed attached forever.
+    // `runAgent` deliberately reuses ONE AbortController for the whole loop, which
+    // turned that into an unbounded leak: one dead listener per heartbeat tick, plus
+    // a MaxListenersExceededWarning once the signal passed ten of them. Found in the
+    // PR #52 review of this story.
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
+ * A second client process is already operating this `AWCP_HOME` (ST-092 R1).
+ *
+ * Carries the holding PID so the refusal names something an operator can act on
+ * rather than merely asserting contention. Thrown BEFORE the spool, counter, or state
+ * file is touched, which is the property that makes a refused run safe to retry.
+ */
+export class AwcpLockError extends Error {
+  constructor(holderPid, lockPath, holderAlive = true) {
+    let detail;
+    if (holderPid === null) {
+      detail = `the lock at ${lockPath} exists but does not name a readable pid. ` +
+        `Remove it if no client is running.`;
+    } else if (holderAlive === null) {
+      // Refusing because the answer is unknown is a different fact from refusing
+      // because the holder is alive, and an operator needs to be able to tell them
+      // apart — the second is normal, the first means the probe could not run.
+      detail = `the lock at ${lockPath} names pid ${holderPid}, and this runtime ` +
+        `would not let the client check whether that process is still alive, so it ` +
+        `is treated as live. Remove the lock if pid ${holderPid} is gone.`;
+    } else {
+      detail = `it is already running as pid ${holderPid} (lock: ${lockPath}). If ` +
+        `pid ${holderPid} is NOT an awcp-node-client, remove that lock file: a ` +
+        `reboot or a pid wrap can reassign a recorded pid to an unrelated live ` +
+        `process, and this check cannot tell that apart from the real holder.`;
+    }
+    super(
+      `another awcp-node-client is already running: ${detail} Only one client may ` +
+        `operate one AWCP_HOME — a second would allocate duplicate client_seq ` +
+        `values, which the hub's ON CONFLICT (node_id, client_seq) DO NOTHING would ` +
+        `silently discard.`,
+    );
+    this.name = "AwcpLockError";
+    this.holderPid = holderPid;
+    this.holderAlive = holderAlive;
+    this.lockPath = lockPath;
+  }
 }
 
 /** A non-2xx response from the hub, carrying the status for the caller to branch on. */
@@ -176,6 +252,79 @@ function appendLineFsync(path, line, mode) {
 }
 
 /**
+ * fsync a DIRECTORY, so a `renameSync` into it survives power loss (ST-092 R2).
+ *
+ * `fsyncSync` on the renamed file's own descriptor is not enough and never was:
+ * it forces the file's CONTENTS to disk, while the rename is a change to the
+ * containing directory's entries, which lives in a different set of blocks and
+ * in the directory's own page cache. POSIX requires fsync on the directory
+ * itself to make a rename durable, so without this every rewrite-and-rename
+ * writer below could lose the replacement — not to a torn file, which rename
+ * genuinely prevents, but to the whole rename evaporating.
+ *
+ * Node exposes no fsync-a-directory API by name: `opendirSync` returns a `Dir`
+ * with no file descriptor to sync. Opening the directory O_RDONLY and syncing
+ * that descriptor is the portable POSIX idiom, and it works under both Node and
+ * Deno's `node:fs` shim (verified on both before this was written).
+ *
+ * Deliberately NOT wrapped in a try/catch. A durability helper that swallows its
+ * own failure is worse than none: every caller would still believe the rename
+ * was made durable, which is the exact false assurance `writeSpool`'s docblock
+ * used to carry.
+ */
+function fsyncDir(dirPath) {
+  const fd = openSync(dirPath, "r");
+  try {
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
+ * Rewrite-and-rename one whole file, durably (RESEARCH.md Pattern 1 + ST-092 R2):
+ * write the full content to a temp file in the SAME directory, fsync it, rename over
+ * the target, then fsync the directory.
+ *
+ * The same-directory requirement is not incidental — `rename()` is only atomic within
+ * one filesystem, so a temp file in `/tmp` renamed onto a target elsewhere is an
+ * ordinary copy that can tear.
+ *
+ * `hooks.beforeRename` is the test-only crash seam: the temp file exists and is
+ * already fsync'd by the time it runs, so throwing there simulates exactly the
+ * window this primitive exists to make survivable, and proves the ORIGINAL target
+ * survives byte-identical. Production callers never pass one.
+ *
+ * Every full-content writer in this file goes through here (spool, state, sequence
+ * counter) rather than each rebuilding the sequence, so the durability property lives
+ * in one place and the next rewrite-based writer inherits it instead of re-deriving
+ * it — and, as ST-092 found, instead of quietly not having it.
+ */
+function writeFileAtomic(path, content, mode, hooks = {}) {
+  const dir = dirname(path);
+  const tmpPath = join(
+    dir,
+    `.${basename(path)}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`,
+  );
+  const fd = openSync(tmpPath, "w", mode);
+  try {
+    writeSync(fd, content);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+  // openSync's mode argument only applies at creation; chmod for the same reason
+  // writeFileFsync does, and BEFORE the rename so the target is never briefly
+  // readable at a wider mode than the one this client requires (D-16).
+  chmodSync(tmpPath, mode);
+  if (typeof hooks.beforeRename === "function") {
+    hooks.beforeRename(tmpPath);
+  }
+  renameSync(tmpPath, path);
+  (hooks.fsyncDirImpl ?? fsyncDir)(dir);
+}
+
+/**
  * Every persisted path and every dependency is a parameter with a production default
  * applied only when an override is absent (RESEARCH.md Pattern 3) — so a test can
  * point this at `/tmp` and stay inside CLAUDE.md's existing `--allow-write=/tmp`
@@ -207,6 +356,9 @@ export function resolveConfig(overrides = {}) {
     seqPath: overrides.seqPath ?? join(home, "client_seq"),
     nodeIdPath: overrides.nodeIdPath ?? join(home, "node_id"),
     statePath: overrides.statePath ?? join(home, "state.json"),
+    // ST-092 R1: every persisted path is a parameter, this one included, so the
+    // two-process contention test can point a pair of real children at a temp home.
+    lockPath: overrides.lockPath ?? join(home, "lock"),
     hubUrl,
     bearer: overrides.bearer ?? process.env.AWCP_NODE_BEARER ?? "",
     enrolmentSecret: overrides.enrolmentSecret ??
@@ -227,6 +379,15 @@ export function resolveConfig(overrides = {}) {
     heartbeatIntervalMs: overrides.heartbeatIntervalMs ?? envHeartbeatMs,
     sleepImpl: overrides.sleepImpl ?? defaultSleep,
     randomImpl: overrides.randomImpl ?? Math.random,
+    // ST-092 R2: the directory-fsync seam. Present for the same reason `stderrWrite`
+    // is — an fsync leaves no observable trace on disk, so the only way a test can
+    // prove the rename was made durable rather than merely performed is to count the
+    // calls. Defaulted here so production behaviour never depends on a test setting it.
+    fsyncDirImpl: overrides.fsyncDirImpl ?? fsyncDir,
+    // ST-092 R1: the pid-liveness probe behind the lock's stale-reclaim decision.
+    // Injectable because the in-process suite deliberately runs without --allow-run,
+    // under which the real probe cannot answer (see `isPidAlive`).
+    isPidAliveImpl: overrides.isPidAliveImpl ?? isPidAlive,
   };
 }
 
@@ -240,23 +401,391 @@ export function ensureStateDir(config) {
 }
 
 /**
- * Read-increment-write `config.seqPath`, fsync before returning. NEVER reads
- * `spoolPath` (D-14) — deriving the next seq from the spool's last line resets to 0
- * every time the spool drains, which is the steady state after every successful
- * flush, not an edge case; the hub's `ON CONFLICT (node_id, client_seq) DO NOTHING`
- * would then silently discard the next event's new content. A missing counter file
- * starts at 1.
+ * Does this error carry POSIX errno `name`? (ST-092)
+ *
+ * **The message is checked as well as `.code`, and that is not belt-and-braces.**
+ * Deno 2.0.0 — the version pinned in `server/Dockerfile`, and therefore the one CI
+ * runs — raises `node:fs` errors as a plain `Error` with `code === undefined` and the
+ * errno only in the message text (`EEXIST: file already exists, open '...'`). Node
+ * sets `.code`, and so does a newer Deno, which is exactly what makes this worth
+ * writing down: a `.code`-only check passes on a developer's host and fails in the
+ * container, and the failure mode is the lock silently rethrowing instead of refusing.
+ */
+function isErrno(error, name) {
+  if (error?.code === name) return true;
+  const message = typeof error?.message === "string" ? error.message : "";
+  return message.startsWith(`${name}:`) || message.endsWith(` ${name}`);
+}
+
+/**
+ * Does `pid` name a process that currently exists? (ST-092 R1)
+ *
+ * **Three-valued on purpose: `true`, `false`, or `null` for "could not tell".** Only
+ * a definite `false` licenses reclaiming a lock, so an unanswerable question produces
+ * a refusal rather than a reclaim. Getting this backwards would let a second client
+ * steal a live lock, which is the exact corruption the lock exists to prevent — and a
+ * two-valued version would have to guess, silently, in the one case where guessing is
+ * unsafe.
+ *
+ * Signal 0 is the probe because it is the only one that works on both runtimes this
+ * module runs under. Production is Node, where it needs no capability at all. Under
+ * Deno it maps to `Deno.kill` and needs `--allow-run`, and **`/proc` is not an escape
+ * hatch from that**: Deno gates every path under `/proc` behind `--allow-all`, not
+ * behind `--allow-read`, so `existsSync("/proc/<pid>")` is MORE restricted than the
+ * signal, not less. (Verified under deno 2.9 while writing this — `--allow-read` and
+ * even `--allow-read=/proc` both raise `NotCapable`.) Without the run grant this
+ * returns `null` and the caller refuses, which is why the in-process suite injects
+ * `isPidAliveImpl` rather than widening its own grants.
+ */
+function isPidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (isErrno(error, "ESRCH")) return false;
+    // EPERM: the process exists and belongs to someone else — alive.
+    if (isErrno(error, "EPERM")) return true;
+    // Anything else (a sandbox refusing the call, an unexpected errno) is unknown.
+    return null;
+  }
+}
+
+/**
+ * Parse one lock line into `{pid, token}`, or `null` when it names no usable pid.
+ *
+ * `token` is `null` for a bare-pid line. No current code path writes one, but a test
+ * fixture or a hand-written lock can, and a null token never equals a live handle's
+ * token — so such a lock can be reclaimed or refused, never mistaken for ours.
+ */
+function parseLockRecord(raw) {
+  const text = typeof raw === "string" ? raw.trim() : "";
+  if (text === "") return null;
+  const [pidPart, tokenPart] = text.split(":");
+  const pid = Number.parseInt(pidPart, 10);
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  return { pid, token: tokenPart === undefined || tokenPart === "" ? null : tokenPart };
+}
+
+/** The lock's current holder record, or `null` if it is missing or unreadable. */
+function readLockRecord(config) {
+  try {
+    return parseLockRecord(readFileSync(config.lockPath, "utf8").split("\n")[0]);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Take over a lock whose recorded holder is definitely dead — WITHOUT unlinking it.
+ *
+ * **Unlinking is what made takeover racy** (found by review on PR #52, and proved by
+ * the test named "two clients that find the same stale lock must not both come away
+ * holding it"). Two clients that read the same dead pid both unlinked; the second
+ * removed the first's *already created* replacement lock, and both walked away
+ * believing they held it — the duplicate `client_seq` allocation this lock exists to
+ * prevent. The old `catch` around that unlink only covered the unlink FAILING. The
+ * damaging case was it succeeding, on a file the caller no longer owned.
+ *
+ * The arbiter here is an append, not a write. `O_APPEND` writes are atomic, so every
+ * contending reclaimer's claim lands whole and in some definite order, and the FIRST
+ * claim after the stale record wins. That is decided by what is already durably in
+ * the file rather than by who writes last, which is what makes it a decision instead
+ * of a race: a loser reads the same bytes the winner does and reaches the opposite
+ * conclusion about itself.
+ *
+ * Deliberately no auxiliary lock file. A separate `.takeover` file would serialize
+ * this just as well, but a client killed while holding it leaves a file that blocks
+ * every future reclaim — trading a rare race for a rare brick, on precisely the
+ * `kill -9` this reclaim path exists to survive.
+ */
+function claimStaleLock(config, expected, record, token) {
+  let fd;
+  try {
+    // No O_CREAT: if the holder released between the EEXIST and here, the lock is
+    // simply free, and the caller retries the exclusive create rather than
+    // resurrecting a file nobody owns.
+    fd = openSync(config.lockPath, fsConstants.O_WRONLY | fsConstants.O_APPEND);
+  } catch {
+    return "retry";
+  }
+  try {
+    writeSync(fd, `\n${record}`);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+
+  // `beforeClaimReadback` is this path's test-only seam, the same shape as the two
+  // above. It fires in the window between this claim landing durably and the read-back
+  // that decides it. Never set in production.
+  if (typeof config.beforeClaimReadback === "function") config.beforeClaimReadback();
+
+  let contents;
+  try {
+    contents = readFileSync(config.lockPath, "utf8");
+  } catch (error) {
+    // ENOENT here is not a failure, it is an answer (found by review on PR #52). The
+    // takeover winner can replace the claim log, run a short command such as `emit` to
+    // completion, and release — unlinking the lock — while a loser is still fsyncing
+    // its append onto the old inode. The loser then reads a path that is simply gone,
+    // which means the lock is free: exactly the condition the `openSync` above already
+    // treats as "retry". Letting it escape instead killed that process on an
+    // unhandled ENOENT, at the one moment its command could safely have proceeded.
+    //
+    // ENOENT ONLY. Any other read failure is a real problem and must not be laundered
+    // into a retry — the loop above would swallow it three times and then report a
+    // lock error naming the wrong cause.
+    if (!isErrno(error, "ENOENT")) throw error;
+    return "retry";
+  }
+
+  const lines = contents
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+
+  const head = parseLockRecord(lines[0] ?? "");
+  if (head === null || head.pid !== expected.pid || head.token !== expected.token) {
+    // The record we judged stale is gone — someone else already completed a takeover.
+    return "refuse";
+  }
+  // Walk the claims in the order they landed; the first one whose process is not
+  // definitely gone owns the takeover.
+  //
+  // Skipping a definitely-dead claimant is not a refinement, it is what stops this
+  // design reintroducing the failure it was chosen to avoid. A reclaimer killed
+  // between fsyncing its claim and collapsing the log leaves that claim in the file
+  // permanently; without this, every later client appends behind a dead claimant and
+  // refuses forever, and the node needs an operator even though nothing is running —
+  // exactly the brick that ruled out a separate `.takeover` file, arrived at by
+  // another route. Found by review on PR #52, after the first fix shipped.
+  const probe = config.isPidAliveImpl ?? isPidAlive;
+  let won = false;
+  for (const line of lines.slice(1)) {
+    const claim = parseLockRecord(line);
+    if (claim === null) continue;
+    if (claim.token === token) {
+      won = true;
+      break;
+    }
+    // Only a definite `false` abandons a claim, the same rule the holder probe uses.
+    // `null` means the runtime would not answer, and an unanswered question must not
+    // become permission to step over someone else's claim.
+    if (probe(claim.pid) !== false) return "refuse";
+  }
+  if (!won) return "refuse";
+
+  // Won. Collapse the claim log back to a single record so the next reader sees an
+  // ordinary lock. Rewrite-and-rename replaces the path atomically, so it is never
+  // momentarily absent and no O_EXCL create can slip into a gap.
+  writeFileAtomic(config.lockPath, record, 0o600, {
+    fsyncDirImpl: config.fsyncDirImpl,
+  });
+  return "held";
+}
+
+/**
+ * Take the single-writer lock for this `AWCP_HOME`, or refuse (ST-092 R1).
+ *
+ * **This enforces the single-writer model; it does not lift it.** `allocateSeq` is an
+ * unlocked read-increment-write, and making it genuinely concurrent-safe would mean
+ * adopting a concurrency model the hub's `(node_id, client_seq)` uniqueness was never
+ * designed around. A lock that fails loudly converts an invisible corruption — two
+ * processes allocating the same seq, the hub's ON CONFLICT DO NOTHING silently
+ * discarding one of them — into an operator-visible error, and unlike an atomicity
+ * claim it is falsifiable by two real processes.
+ *
+ * A lock whose recorded pid is no longer alive is STALE and is reclaimed: a client
+ * killed by `SIGKILL` never runs its release path, and a node that could be bricked
+ * by one `kill -9` would need manual intervention on the very failure the spool
+ * exists to survive.
+ *
+ * A lock whose contents are unreadable is refused rather than reclaimed. It cannot be
+ * produced by any ordinary path — the pid is written and fsync'd immediately after an
+ * exclusive create — so it means something unexpected, and the message names the file
+ * to delete. That is one command for an operator, against the alternative of
+ * reclaiming a lock whose owner might still be live.
+ *
+ * Returns a handle to pass to `releaseLock`.
+ */
+export function acquireLock(config) {
+  ensureStateDir(config);
+  // The token is what lets a reclaimer recognise its OWN claim among several. Pids
+  // cannot do that job: two contending clients have different pids but so does every
+  // unrelated process, and a pid says nothing about which claim landed first.
+  const token = randomBytes(8).toString("hex");
+  const record = `${process.pid}:${token}`;
+  // Staged in a private file and published with `link()`, rather than created empty
+  // with O_EXCL and filled in afterwards (P2, found by review on PR #52).
+  //
+  // The old order had a window: `openSync(lockPath, "wx")` returned with the file
+  // created and EMPTY, and only then did `writeSync`+`fsyncSync` put the holder record
+  // in it. A SIGKILL or a power loss in between left a lock with no readable holder —
+  // and `acquireLock` refuses an unreadable lock outright rather than reclaiming it
+  // (deliberately: it cannot tell a crashed create from a live holder mid-write). The
+  // node was then bricked behind exit 69 until an operator deleted the file by hand,
+  // on precisely the `kill -9` the stale-pid reclaim path exists to survive. The
+  // docblock above asserted this could not happen "because the pid is written and
+  // fsync'd immediately after an exclusive create"; immediately is not atomically.
+  //
+  // `link()` closes it. It is atomic and it fails with EEXIST when the target exists,
+  // so it is exactly as good an arbiter as O_EXCL — but what it publishes is a
+  // complete, already-fsync'd record. The lock path is never observable in an
+  // intermediate state, so the refusal above becomes true again: an unreadable lock
+  // really cannot be produced by any ordinary path.
+  //
+  // The staging file is named per-pid rather than randomly so a crash cannot
+  // accumulate litter: one process leaves at most one, and its next attempt truncates
+  // and reuses it. Two contending clients always have different pids, so the name
+  // cannot collide the way a shared `.tmp` would.
+  const staging = `${config.lockPath}.${process.pid}.tmp`;
+  // Three passes at most: an exclusive publish, and up to two retries for the case
+  // where a dead holder's lock disappears underneath the takeover.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const fd = openSync(staging, "w", 0o600);
+      try {
+        writeSync(fd, record);
+        fsyncSync(fd);
+      } finally {
+        closeSync(fd);
+      }
+      // `beforeLockPublish` is this path's test-only seam, the same shape as
+      // writeSpool's `beforeRename`. It fires in the window a crash used to brick the
+      // node in — which now holds nothing but a staging file. Never set in production.
+      if (typeof config.beforeLockPublish === "function") config.beforeLockPublish();
+      try {
+        linkSync(staging, config.lockPath);
+      } catch (error) {
+        if (!isErrno(error, "EEXIST")) throw error;
+        const holder = readLockRecord(config);
+        const alive = (config.isPidAliveImpl ?? isPidAlive)(holder?.pid ?? null);
+        // Reclaim ONLY on a definite `false`. `true` is a live holder; `null` means the
+        // runtime would not answer, and an unanswered question must not become a yes.
+        if (holder === null || alive !== false) {
+          throw new AwcpLockError(holder?.pid ?? null, config.lockPath, alive);
+        }
+        // `beforeLockReclaim` is this path's test-only seam. It fires inside the
+        // stale-takeover window so a test can run a second, contending client at
+        // exactly the point where two real processes interleave. Never set in
+        // production.
+        if (typeof config.beforeLockReclaim === "function") config.beforeLockReclaim();
+        const outcome = claimStaleLock(config, holder, record, token);
+        if (outcome === "held") {
+          chmodSync(config.lockPath, 0o600);
+          return { path: config.lockPath, pid: process.pid, token };
+        }
+        if (outcome === "refuse") {
+          throw new AwcpLockError(
+            readLockRecord(config)?.pid ?? null,
+            config.lockPath,
+            null,
+          );
+        }
+        continue;
+      }
+      // The link itself is the durable act, but the DIRECTORY entry it created still
+      // needs its own fsync to survive a power loss — the same reason writeFileAtomic
+      // fsyncs the directory after its rename.
+      (config.fsyncDirImpl ?? fsyncDir)(dirname(config.lockPath));
+      chmodSync(config.lockPath, 0o600);
+      return { path: config.lockPath, pid: process.pid, token };
+    } finally {
+      // Runs on the returning path and the retrying one alike: once `link` has
+      // published it (or refused to), the staging file has done its whole job. Best
+      // effort by design — a crash cannot reach this, which is what the per-pid name
+      // above accounts for.
+      try {
+        unlinkSync(staging);
+      } catch {
+        // Already gone, or never created. Neither is a reason to fail an acquire.
+      }
+    }
+  }
+  throw new AwcpLockError(readLockRecord(config)?.pid ?? null, config.lockPath, null);
+}
+
+/**
+ * Release a lock taken by `acquireLock`. Idempotent, never throws, and removes the
+ * file ONLY when it still names this process — a lock reclaimed as stale by someone
+ * else belongs to them now, and deleting it would hand a third process a lock two
+ * others believe they hold.
+ */
+export function releaseLock(handle) {
+  if (!handle) return;
+  try {
+    const current = parseLockRecord(readFileSync(handle.path, "utf8").split("\n")[0]);
+    // Both halves must match. The token is what makes this exact: after a takeover the
+    // lock can legitimately name the same pid again on a recycled id, and only the
+    // token distinguishes "still the lock I took" from "a lock that merely looks like
+    // mine".
+    if (current === null) return;
+    if (current.pid !== handle.pid || current.token !== handle.token) return;
+    unlinkSync(handle.path);
+  } catch { /* already gone, or never ours */ }
+}
+
+/**
+ * Read-increment-write `config.seqPath` through the durable rewrite-and-rename
+ * primitive. NEVER reads `spoolPath` (D-14) — deriving the next seq from the spool's
+ * last line resets to 0 every time the spool drains, which is the steady state after
+ * every successful flush, not an edge case; the hub's `ON CONFLICT (node_id,
+ * client_seq) DO NOTHING` would then silently discard the next event's new content.
+ * A missing counter file starts at 1.
+ *
+ * **ST-092 R2b — the second route to that same D-14 reset, which the paragraph above
+ * did not cover.** Until this story the counter was written with `writeFileFsync`,
+ * whose `openSync(path, "w")` TRUNCATES the target before writing it. The crash
+ * window was therefore not "a stale value" but "a zero-length file", and the recovery
+ * path below used to read an unparseable counter as `current = 0` — so the very next
+ * allocation returned 1 and the hub silently discarded everything that followed. The
+ * docblock closed the derive-from-spool route and left this one wide open. Writing
+ * through `writeFileAtomic` removes the window: the target is never truncated, only
+ * replaced, so a crash leaves the previous complete value.
+ *
+ * **An unparseable counter is now refused, not read as zero.** With truncate-in-place
+ * gone, an empty or garbage counter file is no longer something an ordinary crash can
+ * produce, so treating it as 0 would only convert genuine corruption into the silent
+ * reset this function exists to prevent — the same reasoning as ST-092's single-writer
+ * lock, where an operator-visible error beats invisible duplicate allocation. A
+ * MISSING file is still the ordinary first-run case and still starts at 1; missing and
+ * corrupt are deliberately not the same condition.
  */
 export function allocateSeq(config) {
   ensureStateDir(config);
   let current = 0;
   if (existsSync(config.seqPath)) {
     const raw = readFileSync(config.seqPath, "utf8").trim();
-    const parsed = Number.parseInt(raw, 10);
-    if (Number.isFinite(parsed) && parsed >= 0) current = parsed;
+    // The WHOLE value must be the digits this function itself wrote, and it must be
+    // an integer `+ 1` can still distinguish (P2, found by review on PR #52).
+    // `Number.parseInt` alone is a prefix parser: it read `"1garbage"`, `"1e3"` and
+    // `"1.9"` as 1 and `"0x10"` as 0, so a counter corrupted anywhere after its first
+    // digit walked straight past this refusal and restarted the sequence — the exact
+    // D-14 reset the refusal exists to prevent, reached by the one route that leaves
+    // the value looking parseable. `Number.isSafeInteger` closes the other half:
+    // twenty digits parse cleanly and then stop incrementing distinctly.
+    const parsed = /^\d+$/.test(raw) ? Number(raw) : Number.NaN;
+    if (!Number.isSafeInteger(parsed) || parsed < 0) {
+      throw new Error(
+        `awcp-node-client: refusing to allocate a client_seq — the counter at ` +
+          `${config.seqPath} is present but unreadable (${JSON.stringify(raw)}). ` +
+          `Continuing would restart the sequence at 1, and the hub's ON CONFLICT ` +
+          `(node_id, client_seq) DO NOTHING would then silently discard every event ` +
+          `that followed (D-14). Restore the counter to the highest client_seq this ` +
+          `node has already sent, or delete ${config.home} to enrol as a new node.`,
+      );
+    }
+    current = parsed;
   }
   const next = current + 1;
-  writeFileFsync(config.seqPath, String(next), 0o600);
+  // `beforeSeqRename` is this function's own crash seam, kept separate from
+  // writeSpool's `beforeRename` so a test injecting one does not fire the other —
+  // appendEvent calls both, and a shared hook could not tell the two windows apart.
+  writeFileAtomic(config.seqPath, String(next), 0o600, {
+    beforeRename: config.beforeSeqRename,
+    fsyncDirImpl: config.fsyncDirImpl,
+  });
   return next;
 }
 
@@ -280,9 +809,11 @@ export function appendEvent(config, event) {
   // is never the one dropped — "drop the oldest" is the stated contract, and evicting
   // pre-append would risk dropping an event that never even entered the spool.
   const cap = config.spoolMaxEntries ?? DEFAULT_SPOOL_MAX_ENTRIES;
-  const currentLength = readSpool(config).length;
-  if (currentLength > cap) {
-    evictOldest(config, currentLength - cap);
+  const spooled = readSpool(config);
+  if (spooled.length > cap) {
+    // Hand the entries over rather than letting `evictOldest` read them again: this is
+    // the overflow path, so it runs on every append once the spool is at its cap.
+    evictOldest(config, spooled.length - cap, spooled);
   }
 
   return seq;
@@ -300,37 +831,33 @@ export function readSpool(config) {
 
 /**
  * Rewrite-and-rename (RESEARCH.md Pattern 1): write the full new line set to a temp
- * file in the same directory, `fsyncSync` it, then `renameSync` over the target.
- * `rename()` is atomic on the same POSIX filesystem, so a crash mid-write leaves
- * either the old complete spool or the new one — never a truncated one. A plain
- * `writeSync` without `fsyncSync` is not sufficient: a synchronous Node write blocks
- * the event loop but does not force the OS page cache to disk.
+ * file in the same directory, `fsyncSync` it, `renameSync` over the target, then
+ * `fsyncDir` the containing directory. `rename()` is atomic on the same POSIX
+ * filesystem, so a crash mid-write leaves either the old complete spool or the new
+ * one — never a truncated one. A plain `writeSync` without `fsyncSync` is not
+ * sufficient: a synchronous Node write blocks the event loop but does not force the
+ * OS page cache to disk.
+ *
+ * ST-092 R2 — the directory fsync is the third of those three steps, and until this
+ * story it was missing. This docblock previously stopped after the rename and claimed
+ * the crash guarantee outright, which was true of the file's CONTENTS and not of the
+ * rename: `renameSync` is atomic with respect to a concurrent reader, but a rename
+ * that lives only in the directory's page cache does not survive power loss, so the
+ * guarantee the comment offered was strictly stronger than the one the code provided.
+ * The comment was part of the defect, not merely documentation of it.
  */
 export function writeSpool(config, entries) {
   ensureStateDir(config);
-  const tmpPath = join(
-    dirname(config.spoolPath),
-    `.spool.${process.pid}.${randomBytes(4).toString("hex")}.tmp`,
-  );
   const content = entries.length === 0
     ? ""
     : entries.map((entry) => JSON.stringify(entry)).join("\n") + "\n";
-  const fd = openSync(tmpPath, "w", 0o600);
-  try {
-    writeSync(fd, content);
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
-  }
-  // Test-only seam (03-03): a config carrying `beforeRename` can simulate a crash
-  // between the durable temp-file write above and the atomic rename below — the temp
-  // file already exists and is fsync'd, so throwing here proves the ORIGINAL
-  // spool.jsonl survives byte-identical. Never set in production; resolveConfig does
-  // not default this field, so a config built the normal way never carries it.
-  if (typeof config.beforeRename === "function") {
-    config.beforeRename(tmpPath);
-  }
-  renameSync(tmpPath, config.spoolPath);
+  // `beforeRename` is the 03-03 test-only crash seam, passed through to
+  // `writeFileAtomic`. Never set in production; resolveConfig does not default this
+  // field, so a config built the normal way never carries it.
+  writeFileAtomic(config.spoolPath, content, 0o600, {
+    beforeRename: config.beforeRename,
+    fsyncDirImpl: config.fsyncDirImpl,
+  });
 }
 
 /**
@@ -358,22 +885,16 @@ export function readState(config) {
  * Rewrite-and-rename `<home>/state.json`, mode 0600 — a torn counter file is as bad as
  * a torn spool (T-03-03-02): the same primitive `writeSpool` uses for its two
  * shrink operations, applied here because this file's write is also a full-content
- * replace, never an append.
+ * replace, never an append. Carries `writeSpool`'s ST-092 directory fsync for the
+ * same reason: the drop counter this file holds is the ONLY visible record that an
+ * event was dropped (EVENT-04), so a rename that does not survive power loss makes
+ * the drop silent, which is precisely what the counter exists to prevent.
  */
 export function writeState(config, state) {
   ensureStateDir(config);
-  const tmpPath = join(
-    dirname(config.statePath),
-    `.state.${process.pid}.${randomBytes(4).toString("hex")}.tmp`,
-  );
-  const fd = openSync(tmpPath, "w", 0o600);
-  try {
-    writeSync(fd, JSON.stringify(state));
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
-  }
-  renameSync(tmpPath, config.statePath);
+  writeFileAtomic(config.statePath, JSON.stringify(state), 0o600, {
+    fsyncDirImpl: config.fsyncDirImpl,
+  });
 }
 
 /**
@@ -409,16 +930,36 @@ export function recordDrops(config, seqs, reason) {
  * Removes the `count` lowest-`client_seq` entries from the spool via `writeSpool`
  * (the same rewrite-and-rename primitive that shrinks it on ack) and records the drop.
  * Returns the dropped seqs.
+ *
+ * **ST-092 R3 — record first, shrink second, and the order is the whole point.** The
+ * two steps are separate on-disk writes and cannot be made atomic without a journal
+ * and a recovery path to read it, so what this function actually chooses is WHICH WAY
+ * the crash window between them fails:
+ *
+ *   - shrink-then-record (what this did until ST-092): a crash between the two leaves
+ *     events gone from the spool with the counter never incremented. Silent loss —
+ *     exactly what EVENT-04's visible counter exists to make impossible.
+ *   - record-then-shrink (now): a crash between the two counts drops for entries that
+ *     are still in the spool. The total is inflated and the stderr lines name seqs
+ *     that were not really lost — visible, wrong in a direction an operator can see,
+ *     and nothing is missing.
+ *
+ * Over-reporting a drop is a strictly better failure than losing an event invisibly.
+ * Note the over-count is NOT self-correcting: nothing later reconciles the counter
+ * against the spool, so the inflated total persists until the state file is reset.
+ * That is accepted as the cheaper of the two errors, not overlooked.
  */
-export function evictOldest(config, count) {
+export function evictOldest(config, count, knownEntries) {
   if (!count || count <= 0) return [];
-  const entries = readSpool(config);
+  // A caller that has already read the spool passes it in; the no-op guard above stays
+  // ahead of the read, so `evictOldest(config, 0)` still touches no disk at all.
+  const entries = knownEntries ?? readSpool(config);
   const toEvict = entries.slice(0, count);
   if (toEvict.length === 0) return [];
   const remaining = entries.slice(toEvict.length);
-  writeSpool(config, remaining);
   const seqs = toEvict.map((entry) => entry.client_seq);
   recordDrops(config, seqs, "spool_overflow");
+  writeSpool(config, remaining);
   return seqs;
 }
 
@@ -501,6 +1042,20 @@ export async function registerNode(config) {
  * the exact failure D-17 exists to prevent. Only the statuses that actually return a
  * JSON body (400) are parsed here.
  *
+ * **ST-092 R4 — every response is now TOTAL, including the ones a broken hub could
+ * produce.** Two `await res.json()` calls used to be able to reject: the 400 branch
+ * and the 200 branch. A rejection there escaped `flushOnce` entirely and came out of
+ * `flush()` as a thrown exception rather than one of the outcomes the docblock above
+ * promises, defeating the whole point of an outcome union. Both are now parsed
+ * through `parseJsonBody`, and a parse failure is `malformed` — a terminal outcome
+ * that leaves the spool untouched.
+ *
+ * The 200 branch additionally VALIDATES its body before trusting it. A 200 whose
+ * `acknowledged` is missing, is not an array, or holds entries without a numeric
+ * `client_seq` is `malformed`, never `acked`. This is the case that mattered most:
+ * treating an unvalidated 200 as an ack would remove spool entries the hub never
+ * confirmed, which is the ack-before-drop rule (EVENT-03) broken from the client side.
+ *
  * `acked` is `body.acknowledged.map((a) => a.client_seq)`, read as whatever JS type
  * `JSON.parse` produced for the wire value — no `Number()` coercion is applied here.
  * The hub's `store.acknowledgeSeqs` already coerces `client_seq` to a JS number
@@ -508,6 +1063,90 @@ export async function registerNode(config) {
  * `JSON.parse`d spool JSONL) against an uncoerced ack value is what makes a hub-side
  * regression on that coercion visible here instead of silently retrying forever.
  */
+/**
+ * `await res.json()` that cannot reject (ST-092 R4). Returns `{ok:true, body}` or
+ * `{ok:false, detail}`. A hub that answers with truncated, empty, or non-JSON bytes
+ * is a real possibility — a proxy error page, a half-written response, a crash
+ * mid-serialisation — and none of those should reach the caller as an exception when
+ * `flushOnce`'s contract is that every response maps to a stated outcome.
+ */
+async function parseJsonBody(res) {
+  try {
+    return { ok: true, body: await res.json() };
+  } catch (error) {
+    return {
+      ok: false,
+      detail: {
+        error: "UnparseableResponseBody",
+        status: res.status,
+        message: error instanceof Error ? error.message : String(error),
+      },
+    };
+  }
+}
+
+/**
+ * Is this a 200 body the client may act on? (ST-092 R4)
+ *
+ * Deliberately strict, and deliberately checked BEFORE anything is removed from the
+ * spool: `acknowledged` must be an array and every entry must carry a numeric
+ * `client_seq`. An empty array is valid — it is a hub that accepted nothing, which
+ * `flush()` already handles as zero progress — but a malformed one is not, because
+ * `flush()` removes spool entries this array names and a wrong answer here deletes
+ * undelivered events.
+ *
+ * This is a check on the ack's SHAPE and nothing more; it does not and cannot know
+ * which events were submitted, because `flushOnce` validates the response before the
+ * batch is back in scope. Membership is enforced where the removal happens — `flush()`
+ * intersects this array with the batch it sent — which is why an ack naming a
+ * `client_seq` outside the batch passes here and still removes nothing (P1, PR #52).
+ */
+function isValidAckBody(body) {
+  if (body === null || typeof body !== "object") return false;
+  const acknowledged = body.acknowledged;
+  if (!Array.isArray(acknowledged)) return false;
+  return acknowledged.every((entry) =>
+    entry !== null && typeof entry === "object" &&
+    typeof entry.client_seq === "number"
+  );
+}
+
+/**
+ * The outcomes `flush()` can return that mean "do not try again": the same batch will
+ * fail the same way next time. Every one of them leaves the spool intact.
+ */
+const TERMINAL_FLUSH_OUTCOMES = new Set([
+  "terminal_auth",
+  "unknown_node",
+  "too_large",
+  "malformed",
+]);
+
+/**
+ * The single place an outcome becomes an exit code, because the two callers had drifted
+ * apart: `runAgent`'s final flush already said `acked ? 0 : 75`, while the standalone
+ * `flush` command matched three outcomes and let the other three fall through to 0 —
+ * so `awcp-node-client flush` reported success against a hub that had rejected the
+ * batch outright, with the events still spooled and `stopTerminal` having just printed
+ * `terminal reason=... spooled_events=N` to stderr.
+ *
+ * 77 (EX_NOPERM) stays reserved for auth so a credential problem is distinguishable
+ * from a hub-side rejection without parsing stdout. Every other non-`acked` outcome
+ * shares 75, because what the exit code needs to convey is the thing they have in
+ * common: events are still spooled and undelivered.
+ *
+ * 75 is EX_TEMPFAIL, which is a slight abuse for `too_large` and `unknown_node` —
+ * retrying those will not help. It is still the right code here, for two reasons that
+ * should be re-checked if either stops holding: nothing in this repo restarts on an
+ * exit code (no unit file, no wrapper script, no `Restart=`), so 75 cannot become a
+ * poison-pill retry loop; and `stopTerminal`'s stderr line already names the precise
+ * reason, so a fourth code would buy discrimination the transcript already provides.
+ */
+function flushExitCode(outcome) {
+  if (outcome === "acked") return 0;
+  return outcome === "terminal_auth" ? 77 : 75;
+}
+
 export async function flushOnce(config, batch) {
   const nodeId = readFileSync(config.nodeIdPath, "utf8").trim();
   let res;
@@ -521,6 +1160,11 @@ export async function flushOnce(config, batch) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ events: batch }),
+        // ST-092 R5b: without this a hub that accepts the connection and never answers
+        // hangs shutdown indefinitely — the backoff fix below bounds the waits BETWEEN
+        // requests, not a request that never returns. Undefined when no caller is
+        // stopping, which is every non-`run` path.
+        signal: config.abortSignal,
       },
     );
   } catch (error) {
@@ -531,8 +1175,10 @@ export async function flushOnce(config, batch) {
   if (res.status === 404) return { outcome: "unknown_node" };
   if (res.status === 413) return { outcome: "too_large" };
   if (res.status === 400) {
-    const body = await res.json();
-    const issues = body.issues;
+    const parsed = await parseJsonBody(res);
+    if (!parsed.ok) return { outcome: "malformed", detail: parsed.detail };
+    const body = parsed.body;
+    const issues = body?.issues;
     // D-15/RESEARCH.md Pitfall 2: the two 400 shapes differ by whether each issue
     // carries a numeric client_seq — detect BY THAT, not by the mere presence of
     // `issues`, which both shapes have.
@@ -553,7 +1199,25 @@ export async function flushOnce(config, batch) {
     return { outcome: "retryable", status: res.status };
   }
 
-  const body = await res.json();
+  const parsed = await parseJsonBody(res);
+  if (!parsed.ok) return { outcome: "malformed", detail: parsed.detail };
+  const body = parsed.body;
+  if (!isValidAckBody(body)) {
+    // NOT "acked". `flush()` removes exactly the entries this array names, so
+    // trusting a body it could not verify would delete events the hub never
+    // confirmed — ack-before-drop (EVENT-03) broken from the client's own side.
+    return {
+      outcome: "malformed",
+      detail: {
+        error: "InvalidAcknowledgementBody",
+        status: res.status,
+        message:
+          "a 200 must carry `acknowledged` as an array of entries with a numeric " +
+          "client_seq; refusing to treat this response as an acknowledgement",
+        body,
+      },
+    };
+  }
   const acknowledged = body.acknowledged;
   const acked = acknowledged.map((entry) => entry.client_seq);
   return { outcome: "acked", acked, acknowledged };
@@ -564,7 +1228,9 @@ export async function flushOnce(config, batch) {
  * acknowledged — never on send, never on retry attempt (EVENT-03) — and mapping every
  * outcome `flushOnce` can return onto a terminal state or a bounded retry (D-15/D-17):
  *
- *   - `acked`      → remove the acknowledged entries, loop again (more batches may
+ *   - `acked`      → remove the acknowledged entries THAT WERE IN THIS BATCH — an ack
+ *                    for anything else is not evidence about an event this process
+ *                    never sent — then loop again (more batches may
  *                    remain — this is what lets a single `flush()` call both drop a
  *                    D-15 rejection AND then deliver the remainder in the same call).
  *   - `rejected`    → remove exactly the named `client_seq` values via `writeSpool`,
@@ -594,12 +1260,16 @@ export async function flushOnce(config, batch) {
  *
  * Returns `{outcome, acked, delivered, remaining}`. `acked` and `delivered` are the
  * same array (the cumulative client_seqs removed across every batch this call
- * completed) — `acked` is kept for 03-02 tracer-test compatibility, `delivered` is the
+ * completed — which is the acknowledged set INTERSECTED with what was sent, not the
+ * raw acknowledged set) — `acked` is kept for 03-02 tracer-test compatibility, `delivered` is the
  * name this plan's action text specifies. `remaining` is the spool's length after this
  * call returns.
  */
 export async function flush(config) {
   const sleepImpl = config.sleepImpl ?? defaultSleep;
+  // Set only by `runAgent`, for the flushes it may need to interrupt; `undefined`
+  // everywhere else, which leaves every other caller's behaviour unchanged.
+  const abortSignal = config.abortSignal;
   const randomImpl = config.randomImpl ?? Math.random;
   const write = config.stderrWrite ?? ((line) => process.stderr.write(line));
   const delivered = [];
@@ -628,10 +1298,17 @@ export async function flush(config) {
     if (attempt >= MAX_FLUSH_ATTEMPTS) {
       return null;
     }
+    // ST-092 R5b. The signal is checked on BOTH sides of the sleep, and the check
+    // after it is the load-bearing one: passing `abortSignal` into `sleepImpl` only
+    // shortens a wait that honours it, and every test in this suite injects a sleep
+    // that does not. Deferring on `aborted` is what actually ends the retry loop, so
+    // it ends for an injected sleep and the production one alike.
+    if (abortSignal?.aborted) return null;
     const raw = BACKOFF_BASE_MS * 2 ** (attempt - 1);
     const jitterFactor = 1 + (randomImpl() * 0.4 - 0.2); // +/-20%
     const delay = Math.min(BACKOFF_CAP_MS, Math.round(raw * jitterFactor));
-    await sleepImpl(delay);
+    await sleepImpl(delay, abortSignal);
+    if (abortSignal?.aborted) return null;
     return delay;
   };
   const deferred = () => {
@@ -651,8 +1328,15 @@ export async function flush(config) {
   // reported as "acked": the flush ran to completion with nothing left to do, which is
   // the accurate top-level summary even though `delivered` may be shorter than what
   // was originally spooled.
+  // Read the spool once, then track it in memory. Every path below that shrinks it
+  // writes `remaining` and carries that same array forward, because re-reading would
+  // only ever return what was just written: `flushOnce` never touches the spool, and
+  // `flush` runs under the single-writer lock (`main` holds it for the whole command),
+  // so no other process can append between the write and the next iteration. Within
+  // this process nothing can either — `runAgent` emits its heartbeat in the loop body
+  // rather than from a timer, so no append interleaves with a `flushOnce` await.
+  let entries = readSpool(config);
   while (true) {
-    const entries = readSpool(config);
     if (entries.length === 0) break;
     const batchEntries = entries.slice(0, FLUSH_MAX_EVENTS);
     const batch = batchEntries.map((entry) => ({
@@ -664,9 +1348,28 @@ export async function flush(config) {
     const result = await flushOnce(config, batch);
 
     if (result.outcome === "acked") {
-      const ackedSeqs = new Set(result.acked);
+      // ONLY entries from the batch just sent may be removed (P1, found by review on
+      // PR #52). `isValidAckBody` checks the ack's shape but never its membership, so
+      // a 200 acknowledging `[1, 501]` against a 501-entry spool used to pass that
+      // check and then be applied to the WHOLE spool — deleting 501, which this
+      // process had not yet transmitted. Ack-before-drop (EVENT-03) is not "an ack
+      // arrived", it is "an ack arrived for this event", and only the batch knows
+      // which events those are.
+      //
+      // An out-of-batch seq is IGNORED here rather than escalated to `malformed`,
+      // which was the other way to close this. Escalating would stop the flush cold on
+      // a hub that over-acks, leaving a spool that can never drain: the hub has already
+      // stored the batch, so the retry re-sends it, the hub answers the same way, and
+      // every attempt terminates identically. Scoping removal secures the property that
+      // matters — nothing untransmitted is ever dropped — while leaving delivery of the
+      // legitimate part intact. Total non-intersection is already bounded below, by the
+      // zero-progress guard.
+      const batchSeqs = new Set(batchEntries.map((entry) => entry.client_seq));
+      const removable = new Set(
+        result.acked.filter((seq) => batchSeqs.has(seq)),
+      );
       const remaining = entries.filter((entry) =>
-        !ackedSeqs.has(entry.client_seq)
+        !removable.has(entry.client_seq)
       );
       // Rule 1 fix (found during Task 1 testing): a 200 whose `acknowledged` array
       // does not actually intersect the batch just sent removes nothing, and
@@ -683,7 +1386,8 @@ export async function flush(config) {
       }
       attempt = 0;
       writeSpool(config, remaining);
-      delivered.push(...result.acked);
+      entries = remaining;
+      delivered.push(...removable);
       continue;
     }
 
@@ -702,6 +1406,7 @@ export async function flush(config) {
         !rejectedSeqs.has(entry.client_seq)
       );
       writeSpool(config, remaining);
+      entries = remaining;
       recordDrops(
         config,
         matched.map((entry) => entry.client_seq),
@@ -813,45 +1518,134 @@ export function emitCheckpoint(config, payload = {}) {
  * than inventing a second one) — production ticks on a real timer via `defaultSleep`;
  * a test drives ticks deterministically by controlling when each `sleepImpl` call
  * resolves, with no real waiting.
+ *
+ * **ST-092 R5 — the stop signal now INTERRUPTS the wait rather than being noticed
+ * after it.** The loop used to `await sleepImpl(interval)` unconditionally and check
+ * the flag only once that resolved, so a `SIGTERM` arriving one second into a
+ * sixty-second heartbeat interval left the process alive for the remaining
+ * fifty-nine — under an init system's default kill timeout that is not a slow
+ * shutdown, it is a `SIGKILL`, and a `SIGKILL` here means the stop checkpoint is
+ * never emitted at all. The wait is now raced against a promise `stop()` resolves,
+ * so shutdown latency is bounded by the signal.
+ *
+ * **ST-092 R5b — the signal now reaches the FLUSH too, not just the tick.** Bounding
+ * the heartbeat wait alone left `flush()`'s own retry backoff (~31s across five
+ * sleeps) and its in-flight request unaware that a stop had been signalled, so a
+ * SIGTERM against an unreachable hub still burned the full budget before the stop
+ * checkpoint was so much as appended. The in-loop flushes now carry
+ * `stopController.signal`; the final flush deliberately does not, so it still gets a
+ * bounded delivery attempt. A hub that accepts the connection and never answers can
+ * still hang that final flush — bounding it needs a request timeout, which is a
+ * separate decision and is not made here.
+ *
+ * **ST-092 R5 — a stop whose final flush did not deliver no longer reports success.**
+ * The final flush's outcome was inspected only for `terminal_auth`; a `deferred`
+ * result — the hub unreachable, retries exhausted, the stop checkpoint and everything
+ * behind it still spooled — returned exit code 0. An operator reading exit 0 would
+ * take it as "this node finished cleanly and reported so". It now returns 75, the
+ * exit code `main`'s `flush` command already uses for exactly this condition, so the
+ * two surfaces agree rather than disagreeing about what a deferred flush means.
+ *
+ * **What "clean shutdown" means here, stated because the code used to answer it only
+ * implicitly.** A stop checkpoint left in the spool is NOT a failure of the client —
+ * the event is durable, ordered, and will be delivered on the next run. It IS a
+ * failure to *report* the shutdown to the hub within this process's lifetime, which
+ * is what the exit code describes. So: exit 0 means the hub has acknowledged the stop
+ * checkpoint; exit 75 means it is spooled and undelivered — whether because the
+ * retries were exhausted or because the hub terminally rejected the batch, which
+ * `stopTerminal`'s stderr line distinguishes; exit 77 means the hub
+ * refused this node's credential and no further attempt will help.
  */
 export function runAgent(config) {
   const sleepImpl = config.sleepImpl ?? defaultSleep;
   const interval = config.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
   const startedAtMs = Date.now();
   let stopped = false;
+  // Two halves of the same signal, and both are needed.
+  //
+  // `stopSignal` is what the race below settles on, and it works for ANY sleep
+  // implementation — including a test's injected one, which knows nothing about
+  // abort signals.
+  //
+  // `stopController` is passed INTO the sleep so the production timer is actually
+  // cleared. Without it the loop wakes at once but the pending `setTimeout` keeps
+  // Node's event loop alive, and the process outlives its own shutdown by the rest of
+  // the interval. Both created once, not per tick, so repeated `stop()` calls stay
+  // idempotent.
+  let wake;
+  const stopSignal = new Promise((resolve) => {
+    wake = resolve;
+  });
+  const stopController = new AbortController();
 
   async function loop() {
     emitCheckpoint(config, { phase: "start" });
-    let flushResult = await flush(config);
-    if (flushResult.outcome === "terminal_auth") {
-      return { exitCode: 77, terminal: true };
+    // The in-loop flushes carry the stop signal so a shutdown interrupts them; the
+    // FINAL flush below deliberately does not, so it still gets its bounded delivery
+    // attempt rather than deferring instantly on an already-aborted signal.
+    const interruptibleConfig = { ...config, abortSignal: stopController.signal };
+    let flushResult = await flush(interruptibleConfig);
+    if (TERMINAL_FLUSH_OUTCOMES.has(flushResult.outcome)) {
+      return { exitCode: flushExitCode(flushResult.outcome), terminal: true };
     }
 
     while (!stopped) {
-      await sleepImpl(interval);
+      // `Promise.race` rather than a bare await: whichever settles first wins, and
+      // `stop()` settling first is the whole point. The signal is passed through so a
+      // sleep that understands it (the production one) cancels its timer rather than
+      // being merely outrun; an injected test sleep ignores the extra argument and the
+      // race covers it.
+      await Promise.race([
+        sleepImpl(interval, stopController.signal),
+        stopSignal,
+      ]);
       if (stopped) break;
       emitHeartbeat(config, startedAtMs);
-      flushResult = await flush(config);
-      if (flushResult.outcome === "terminal_auth") {
-        return { exitCode: 77, terminal: true };
+      flushResult = await flush(interruptibleConfig);
+      if (TERMINAL_FLUSH_OUTCOMES.has(flushResult.outcome)) {
+        return { exitCode: flushExitCode(flushResult.outcome), terminal: true };
       }
     }
 
     emitCheckpoint(config, { phase: "stop" });
     flushResult = await flush(config);
+    if (TERMINAL_FLUSH_OUTCOMES.has(flushResult.outcome)) {
+      return { exitCode: flushExitCode(flushResult.outcome), terminal: true };
+    }
+    // Anything that did not fully deliver is reported as deferred (75), not success.
+    // `flush()` returns "acked" only when the spool drained; every other non-terminal
+    // outcome leaves events behind.
     return {
-      exitCode: flushResult.outcome === "terminal_auth" ? 77 : 0,
-      terminal: flushResult.outcome === "terminal_auth",
+      exitCode: flushExitCode(flushResult.outcome),
+      terminal: false,
     };
   }
 
   return {
     stop: () => {
       stopped = true;
+      wake();
+      stopController.abort();
     },
     done: loop(),
   };
 }
+
+/**
+ * Commands that mutate `AWCP_HOME` and therefore run under the single-writer lock
+ * (ST-092 R1).
+ *
+ * `status` is absent because it only reads, and an operator must be able to inspect a
+ * node while it is running — a `status` that refused while `run` held the lock would
+ * make the drop counter unreadable exactly when someone is trying to find out why
+ * events are being dropped.
+ *
+ * `register` is absent deliberately, not by oversight. It neither allocates a
+ * `client_seq` nor rewrites the spool, and it is the operator's recovery action when
+ * a node's registration needs re-establishing — locking it would mean a running
+ * client blocks the one command most likely to be needed while it runs.
+ */
+const LOCKED_COMMANDS = new Set(["emit", "flush", "checkpoint", "run"]);
 
 /**
  * CLI surface: `register`, `flush`, `status`, `emit`, `checkpoint`, `run`.
@@ -860,10 +1654,26 @@ export function runAgent(config) {
  * signature (`main(argv)` still works; the real entry point below never passes a
  * second argument), and it is what lets a test drive `main`'s exit-code behavior
  * (`process.exitCode`) against an injected `fetchImpl`/`home` without a real hub.
+ *
+ * Exit codes: 0 success · 69 refused, another client holds the lock (ST-092 R1) ·
+ * 75 anything that left the spool undelivered — retryable exhaustion AND the terminal
+ * non-auth rejections (`unknown_node`, `too_large`, `malformed`) · 77 terminal auth
+ * failure. See `flushExitCode`.
+ * The lock is taken before the command body and released in a `finally`, so every
+ * path out — including the 77 terminal-auth path and a thrown error — gives it up.
  */
 export async function main(argv, overrides = {}) {
   const config = resolveConfig(overrides);
   const command = argv[0];
+  const lock = LOCKED_COMMANDS.has(command) ? acquireLock(config) : null;
+  try {
+    return await runCommand(config, argv, command);
+  } finally {
+    releaseLock(lock);
+  }
+}
+
+async function runCommand(config, argv, command) {
   if (command === "register") {
     const nodeId = await registerNode(config);
     console.log(JSON.stringify({ node_id: nodeId }));
@@ -872,18 +1682,15 @@ export async function main(argv, overrides = {}) {
   if (command === "flush") {
     const result = await flush(config);
     console.log(JSON.stringify(result));
-    // Exit codes so a shell transcript records the outcome without parsing stdout:
-    // 0 success, 75 deferred (retryable exhaustion, spool intact), 77 terminal auth
-    // failure. `process.exitCode`, never `process.exit()`, so pending stream writes
-    // flush before the process ends (T-03-04-06) — an exit code that arrives with a
+    // Exit codes so a shell transcript records the outcome without parsing stdout —
+    // see `flushExitCode` for the mapping and why only `acked` earns 0. This used to
+    // enumerate the three outcomes it knew about and let the rest fall through to 0,
+    // which is how a hub-rejected batch came to report success.
+    //
+    // `process.exitCode`, never `process.exit()`, so pending stream writes flush
+    // before the process ends (T-03-04-06) — an exit code that arrives with a
     // truncated transcript defeats the point of capturing one.
-    if (result.outcome === "terminal_auth") {
-      process.exitCode = 77;
-    } else if (result.outcome === "deferred") {
-      process.exitCode = 75;
-    } else {
-      process.exitCode = 0;
-    }
+    process.exitCode = flushExitCode(result.outcome);
     return;
   }
   if (command === "status") {
@@ -954,5 +1761,18 @@ function isMainModule() {
 }
 
 if (isMainModule()) {
-  await main(process.argv.slice(2));
+  try {
+    await main(process.argv.slice(2));
+  } catch (error) {
+    if (error instanceof AwcpLockError) {
+      // Refusal, not a crash: one line an operator can act on, and no stack trace
+      // implying the client is broken when it is doing exactly what R1 asks of it.
+      // 69 is sysexits' EX_UNAVAILABLE — distinct from 75 (deferred) and 77
+      // (terminal auth) so a shell transcript records WHICH refusal this was.
+      process.stderr.write(`awcp-node-client: ${error.message}\n`);
+      process.exitCode = 69;
+    } else {
+      throw error;
+    }
+  }
 }

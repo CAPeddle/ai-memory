@@ -31,7 +31,6 @@ import {
 const DATABASE_URL = Deno.env.get("DATABASE_URL")!;
 const OPERATOR_KEY = "operator-key-for-agent-boundary-test";
 const AGENT_KEY = "agent-key-for-agent-boundary-test";
-const PORT = 3144;
 
 const AGENT_SPLIT_ENV: Record<string, string> = {
   DATABASE_URL,
@@ -49,7 +48,7 @@ Deno.test({
   sanitizeOps: false,
   name: "ST-086 follow-up: the agent key may report and read but is refused on operator-only routes",
   fn: async () => {
-    const server: ServerProcess = await startServerProcess(AGENT_SPLIT_ENV, PORT);
+    const server: ServerProcess = await startServerProcess(AGENT_SPLIT_ENV);
     try {
       // ---------------------------------------------------------------
       // No key at all -> 401, unchanged.

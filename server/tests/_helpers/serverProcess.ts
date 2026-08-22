@@ -79,10 +79,19 @@ export async function startProviderSentinel(): Promise<ProviderSentinel> {
 
 export interface ServerProcess {
   baseUrl: string;
+  /** The port the kernel actually gave this child, parsed from its own stdout. */
+  port: number;
   /** Everything the process wrote to stdout and stderr, joined. */
   output(): string;
   stop(): Promise<void>;
 }
+
+/**
+ * Deno.serve's own startup line, e.g. `Listening on http://127.0.0.1:41337/`.
+ * Anchored on the scheme and host so a stray occurrence of the words in some other
+ * log line cannot be mistaken for a bound port.
+ */
+const LISTENING_LINE = /Listening on https?:\/\/[^\s:]+:(\d+)\//;
 
 const BOOT_TIMEOUT_MS = 60_000;
 
@@ -98,12 +107,13 @@ const BOOT_TIMEOUT_MS = 60_000;
  */
 export async function startServerProcess(
   env: Record<string, string>,
-  port: number,
 ): Promise<ServerProcess> {
   const entry = new URL("../../index.ts", import.meta.url).pathname;
   const child = new Deno.Command(Deno.execPath(), {
     args: ["run", "--allow-net", "--allow-env", "--allow-read", entry],
-    env: { ...env, PORT: String(port) },
+    // ST-092 R7: PORT=0 asks the kernel for a free port. Which one it picked is
+    // read back out of the child's own startup line below.
+    env: { ...env, PORT: "0" },
     clearEnv: true,
     stdout: "piped",
     stderr: "piped",
@@ -118,7 +128,6 @@ export async function startServerProcess(
   };
   const draining = Promise.all([drain(child.stdout), drain(child.stderr)]);
 
-  const baseUrl = `http://127.0.0.1:${port}`;
   let exited = false;
   const status = child.status.then((s) => {
     exited = true;
@@ -139,23 +148,19 @@ export async function startServerProcess(
     }
     await status.catch(() => {});
     await draining.catch(() => {});
-    throw new Error(`${reason} on port ${port}. Output:\n${chunks.join("")}`);
+    throw new Error(`${reason}. Output:\n${chunks.join("")}`);
   };
 
   const deadline = Date.now() + BOOT_TIMEOUT_MS;
 
   // `/health` is unauthenticated and answers 200 UNCONDITIONALLY (see
-  // server/src/auth.ts / index.ts), on a FIXED, well-known port (3142/3143 in the
-  // e2e suite). That combination means a bare `/health` 200 is not proof that this
+  // server/src/auth.ts / index.ts), so a bare `/health` 200 is not proof that this
   // fetch reached the child we just spawned — it is only proof that *something* is
-  // listening on the port. `exited` cannot substitute for that proof either: it only
-  // flips once the `child.status` promise resolves, which happens strictly AFTER the
-  // first `fetch` below would already be in flight. So if a stale or competing
-  // process already holds this port, the new child fails to bind and exits, but the
-  // very first poll iteration can still get a 200 from the STALE process before
-  // `exited` has had any chance to become true — and this helper would then hand back
-  // a "healthy" handle pointing at the wrong process entirely, certifying whatever
-  // happened to be on the port instead of the process this test actually started.
+  // listening. `exited` cannot substitute for that proof either: it only flips once
+  // the `child.status` promise resolves, which happens strictly AFTER the first
+  // `fetch` below would already be in flight, so a competing listener could answer a
+  // poll before `exited` had any chance to become true — and this helper would hand
+  // back a "healthy" handle pointing at the wrong process entirely.
   //
   // Deno.serve prints "Listening on http://<host>:<port>/" to stdout the moment IT
   // binds successfully (server/index.ts's `Deno.serve({ port: PORT }, app.fetch)`
@@ -163,11 +168,23 @@ export async function startServerProcess(
   // running a bare `Deno.serve` under this exact Deno image). That line is specific to
   // THIS child's stdout, which nothing else can write to, so it is the one signal
   // available here that actually discriminates "this process bound the port" from
-  // "the port answers". Do NOT simplify this back to a bare health poll — that is
-  // precisely the bug this loop exists to prevent.
+  // "the port answers". Do NOT simplify this back to a bare health poll.
+  //
+  // **ST-092 R7 — that line is now the source of the port as well as the proof of
+  // binding, and the change makes it stronger rather than weaker.** Until this story
+  // the helper was handed a fixed well-known port (3142/3143/3144/3145/3146/3160),
+  // and the hazard the paragraph above describes was live rather than theoretical:
+  // two suites had in fact each been assigned 3144. Under `PORT=0` the kernel hands
+  // out a free port and prints it here, so a stale process holding "the" port cannot
+  // occur at all — the collision class is gone rather than caught. What remains is
+  // the same discrimination argument, now doing double duty: the only way to learn
+  // where this child is listening is to read what this child said.
   let bound = false;
+  let boundPort = 0;
   while (Date.now() < deadline && !exited) {
-    if (chunks.join("").includes("Listening on")) {
+    const match = LISTENING_LINE.exec(chunks.join(""));
+    if (match) {
+      boundPort = Number(match[1]);
       bound = true;
       break;
     }
@@ -175,13 +192,20 @@ export async function startServerProcess(
   }
 
   if (exited) {
-    await failBoot("server process exited before it reported binding the port");
+    await failBoot("server process exited before it reported binding a port");
   }
   if (!bound) {
     await failBoot(
-      "server process never reported binding the port within the timeout",
+      "server process never reported binding a port within the timeout",
     );
   }
+  if (!Number.isInteger(boundPort) || boundPort <= 0) {
+    await failBoot(
+      `server process reported a listening line with no usable port (${boundPort})`,
+    );
+  }
+
+  const baseUrl = `http://127.0.0.1:${boundPort}`;
 
   // Only now, having proven THIS process bound the port, use /health as a readiness
   // confirmation (the port being bound does not yet mean the handler is serving).
@@ -206,6 +230,7 @@ export async function startServerProcess(
 
   return {
     baseUrl,
+    port: boundPort,
     output: () => chunks.join(""),
     stop: async () => {
       if (!exited) {
