@@ -6,13 +6,25 @@
  * entity. That separation is criterion 1 of the ADR-016 host-acceptance gate.
  *
  * This is no longer a throwaway spike: the module now spans 12 source files,
- * 4 migrations under server/db/workflow/, and 11 test files, exercised by
- * the ST-086, ST-087, ST-088, and ST-092 suites. Acceptance is still gated on
- * ADR-016 (docs/design/adr/ADR-016-awcp-consolidation-host-topology.md),
- * which is Proposed — Conditional: Stage 1 criteria 1-4 are met, 5-7 are
- * outstanding. So the shape here is provisional, not settled, pending that
- * gate. See docs/plans/2026-07-29-001-awcp-ai-memory-host-spike.md for where
- * it originated.
+ * 4 migrations under server/db/workflow/, and 11 test files, exercised by the
+ * ST-086, ST-087 and ST-088 suites. Acceptance is still gated on ADR-016
+ * (docs/design/adr/ADR-016-awcp-consolidation-host-topology.md), which as of
+ * its revision 1.3 is Proposed — Conditional: Stage 1 criteria 1-4 are met,
+ * 5-7 are outstanding. The revision is named because that is a point-in-time
+ * claim about another document; re-read the ADR's own changelog rather than
+ * trusting this line. So the shape here is provisional, not settled, pending
+ * that gate. See docs/plans/2026-07-29-001-awcp-ai-memory-host-spike.md for
+ * where it originated.
+ *
+ * **A seventh stamp survives, and not by oversight.**
+ * server/db/workflow/001_workflow_schema.sql still opens `SPIKE / DISPOSABLE`,
+ * so a reader following the "4 migrations" citation above lands on the very
+ * claim this note retires. It could not be corrected with the other six: the
+ * runner in schema.ts checksums raw file bytes, so any edit to an applied
+ * migration — one comment character included — trips MigrationDriftError, and
+ * index.ts exits 1 on drift before Deno.serve, so the port never opens.
+ * Correcting it means updating the ledger checksum on every database that has
+ * already applied it. That is an operational act, not a comment fix.
  */
 
 /** Controlled policy scope. NOT a descriptive tag — a closed vocabulary. */
