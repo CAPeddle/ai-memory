@@ -60,6 +60,11 @@ Promotion is optional, one-way, and non-authoritative. It happens outside the op
 
 An attempt does not resolve to success or failure. It resolves to one of four outcomes, because what the caller should do next differs in each: the projection exists and its reference is recorded; it exists but the reference was not recorded, so it must be reconciled rather than repeated; it demonstrably never happened, which is the only case where simply repeating it is safe; or its status is unknown, because the attempt was abandoned or the far side never said — and an unknown attempt may still succeed after the caller has given up on it. Since unknown is unavoidable rather than exceptional, the Decision's own identity serves as the idempotency key: repeated attempts carrying it must yield at most one projection.
 
+### Migration Ledger
+The per-database record of which schema migrations have already been applied, holding each one's version, filename, and a checksum of its contents.
+
+The ledger lives inside the schema it manages, so dropping that schema removes the ledger with it and the teardown is a single statement that leaves nothing behind. The checksum is taken over a migration file's raw bytes, with no normalisation of whitespace, line endings, or comments — which makes an applied migration's content effectively frozen, since any later edit to that file, a comment included, no longer matches what was recorded. A mismatch is read as an unknown state rather than a skippable difference: it aborts the entire migration run before anything is applied, and where the feature owning the schema is enabled, it aborts startup, so the process exits rather than serving in a degraded state. Correcting such a file therefore means updating the recorded checksum on every database that holds a row for it, which is an operational change rather than an edit.
+
 ## Delivery Workflow
 
 ### Story
@@ -151,3 +156,7 @@ A Governance Asset becomes part of the project's searchable documentation record
 The committed, regenerated index of all active Governance Assets: one JSON file and one Markdown file, both checked into the repository.
 
 The catalog is a point-in-time snapshot, not a live query. After any frontmatter change, the catalog must be explicitly rebuilt (`build` command) and the regenerated files committed alongside the frontmatter change. The `validate` command checks for drift between the committed catalog and the current asset set — passing validation means the catalog accurately reflects the active assets; drift means the catalog is stale and needs a rebuild. CI enforces this check, so unreconciled drift fails the build.
+
+## Flagged ambiguities
+
+- **"Drift" carries two enforcement-bearing senses here, and they are not interchangeable.** An Asset Catalog drifts when the committed index no longer matches the active asset set: validation reports it and a rebuild fixes it. A Migration Ledger drifts when a migration file's bytes no longer match its recorded checksum: that is an unknown-state error which aborts startup and cannot be fixed by re-running anything. A third, informal use — a code citation whose line numbers no longer point at what they named — is ordinary comment rot and carries neither's enforcement.
