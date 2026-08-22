@@ -3,8 +3,11 @@
  *
  * This is the ONLY workflow file that imports the database handle. Every
  * statement is schema-qualified `workflow.*` — mandatory, because AGE graph
- * queries leave a sticky polluted `search_path` on pooled connections
- * (server/index.ts:941, entityWorker.ts:115), so `workflow` is never implicit.
+ * queries leave a sticky polluted `search_path` on pooled connections (the
+ * `graph_traverse` MCP tool, server/index.ts:1033; the entity worker's graph
+ * reads, server/src/entityWorker.ts:115), so `workflow` is never implicit.
+ * Sites are named as well as numbered because the numbers drift: this citation
+ * said :941 until 2026-08-22, and five other copies of it still do.
  *
  * No statement here touches `thoughts`, `entity_mentions`, `memory_graph`, or any
  * other memory-domain object. `workflow-boundary.test.ts` asserts that by
