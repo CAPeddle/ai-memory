@@ -26,6 +26,22 @@
 
 ## Backlog
 
+### ST-094: Derive workflow route authorization from the router, not a hand-kept allowlist
+- Type: security
+- Source: `ce-compound-refresh` over `docs/solutions/conventions/`, 2026-08-22 — surfaced while auditing the learnings store, verified independently twice against the tree, and deliberately left unfiled until the PO decided it earned a story rather than a residual note
+- phase: 2
+- Value: 4
+- Blocked by: — (nothing; `policy.ts` and `api.ts` are both stable, and ST-088 Stage 2 does not touch them)
+- Touches: `server/src/workflow/policy.ts`, `server/src/workflow/api.ts`, `server/tests/workflow-policy.test.ts`
+- Acceptance criteria:
+  - [ ] A test derives the route set from Hono's `.routes` on the real `api.ts` router and asserts every registered route falls into exactly one bucket — operator-only or agent-reachable. There is currently **no** `.routes` introspection anywhere under `server/`, so this is new capability, not a refactor
+  - [ ] That test fails when a route is added to `api.ts` alone — proven by adding one, observing red for that reason, and removing it. A guard that cannot fail on the thing it guards is the shape this story exists to stop repeating
+  - [ ] `CASES` in `workflow-policy.test.ts` gains a non-vacuity guard. It already has a discrimination control (an always-true classifier, `workflow-policy.test.ts:129-138`), but nothing proves `CASES` ever saw the real route set
+  - [ ] The `requiresOperator` docblock's hand-listed "all seven reporting/read routes" (`policy.ts:75-78`) either derives from the same source or is deleted — a third hand-kept enumeration is a third thing that drifts
+  - [ ] Decide and record whether the default flips to deny (allowlist) or stays permissive with the router-derived test as the guard. Either is defensible; leaving it undecided is not
+- Plan: to be created under `docs/plans/` at implementation time
+- Notes: 🟠 Live production authorization, not a test blind spot. `OPERATOR_ONLY_ROUTES` (`policy.ts:65-70`) holds **4** patterns and `requiresOperator` (`policy.ts:85`) is `OPERATOR_ONLY_ROUTES.some(...)`, so **the default is `false` = agent-reachable**. `api.ts` registers **11** routes; the decision is consumed at `server/index.ts:1231`. A new supervision route added to `api.ts` alone is therefore agent-reachable the moment it lands, with nothing reporting it. **Three** hand-maintained enumerations must stay in sync and none derives from the router: `OPERATOR_ONLY_ROUTES` (4) · the `requiresOperator` docblock prose (7) · `CASES` (11). The repo already holds the rule this violates — [`verification-mechanisms-need-adversarial-review.md`](../../docs/solutions/conventions/verification-mechanisms-need-adversarial-review.md) §1: *"Prefer allowlists to blocklists for any boundary check… any boundary, allow/deny, or lint-style check over a surface that grows."* This is that rule never applied to a second surface. [`fix-the-assumption-not-the-symptom.md`](../../docs/solutions/conventions/fix-the-assumption-not-the-symptom.md) Instance 4 is the same shape one level down, but its blast radius was a *test* blind spot; this one's is live authorization. Line numbers are named alongside symbols deliberately — see this story's own source.
+
 ### ST-091: Move the .NET stack to the latest feasible SDK (off net8.0, before .NET 8 EOL)
 - Type: infrastructure
 - Source: ST-088 close-out, 2026-08-13 — `dotnet run --project tools/GovernanceAssetValidator -- validate .` could not run in WSL2 (`global.json` pins `8.0.100`; the box has `10.0.110` only), so an ADR + solutions-doc frontmatter change shipped hand-checked rather than validated
