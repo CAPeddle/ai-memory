@@ -32,6 +32,34 @@
 
 ## Backlog
 
+### ST-097: Pivot to GSD, split the board by tense, and ship the first AWCP daily-use slice
+- Type: chore (workflow pivot + product slice)
+- Source: PO direction 2026-08-23 — pivot to GSD as the long-horizon planning workflow using CE's strengths, fold the story-board mechanism into it, and prove it with a working AWCP slice. Grounded in [`awcp-strategy-baseline-2026-08.md`](../../docs/investigations/awcp-strategy-baseline-2026-08.md) and the external evidence import
+- phase: 0 (workflow) + 1 (AWCP slice)
+- Value: 4
+- Blocked by: **U2 only** — the two local branches must land or be lifted before the board is touched. Not blocked by ST-088: this story authors no Horizon B–D content and adds no schema, so ADR-016's host gate does not reach it
+- Touches: `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, `.planning/config.json`, `.github/planning/story-board.md`, `CLAUDE.md`, `server/scripts/awcp.ts`, `.claude/settings.json`, `server/tests/awcp-cli.test.ts`, and the 77 files referencing the board
+- Acceptance criteria:
+  - [ ] **`.planning/REQUIREMENTS.md:66` is superseded in writing, first.** It currently reads *"Replacing the existing story board or `docs/plans/` | GSD tracking supplements current governance and must preserve delivery history"*, and `ROADMAP.md` repeats it at `:7`, `:17`, `:175`. A dated supersession at all four sites, naming this story, recording that the delivery-history reason is **honoured** by the freeze rather than overridden. A silent delete is barred
+  - [ ] **The board splits by tense.** 48 Done + 6 Archived freeze in place as an append-only delivery ledger that keeps minting `ST-NNN`; the 33 Backlog entries migrate to `ROADMAP.md` as `999.x`. **ST-088 does not migrate** — it is already the live `.planning/` milestone
+  - [ ] **Every migrated entry is verified against the tree before it is re-published.** `git log --grep` or a source check per entry, and frozen pass-counts converted to a failure set plus reconciliation identity or dropped — `verify-worktree-change-against-docker-test-stack.md` §4 names this board *by line* as carrying that anti-pattern
+  - [ ] **A CE skill is observed executing inside a GSD-spawned agent.** `runtime` flips to `claude` in `.planning/config.json`, `agent_skills` is populated, `claude_md_path` is resolved. Proof is an observed run, not a config diff — a skip warning means the mechanism is absent
+  - [ ] **A new `ST-NNN` is minted from the frozen ledger** and verified free across `main` and every local branch
+  - [ ] **The doc sweep ships in the same change as the split.** 77 files reference `story-board.md`; ST-066 is the precedent for what happens otherwise — four prompt files stranded against a dead format since 2026-07-02
+  - [ ] **`CLAUDE.md` is amended**: the Workflow gate's minting algorithm names the ledger and drops the WIP clause; Source-of-truth precedence gains a `.planning/` tier; squash-vs-merge is decided deliberately rather than inherited
+  - [ ] **`awcp status` exists and answers "what am I doing?" from a terminal** — rendering `GET /api/workflow/overview`, including the attention queue with reasons. **No new migration**
+  - [ ] **A coding session opens and closes its own run with no human keystroke**
+  - [ ] The slice is executed **through** the new GSD-driven loop, so the pivot's first output is evidence rather than assertion
+- Plan: [docs/plans/2026-08-23-2245-chore-st097-gsd-pivot-board-split-awcp-status-slice-plan.md](../../docs/plans/2026-08-23-2245-chore-st097-gsd-pivot-board-split-awcp-status-slice-plan.md)
+- Handoff:
+  - **Read in this order:** (1) this story's plan; (2) the strategy baseline's six decisions; (3) `ADR-016:57`; (4) `delegate-the-doing-keep-the-checking.md`, which is the operating manual for running CE inside GSD
+  - **Already decided — do not re-litigate.** Runtime flips in the project config, not per-session env var. Board splits by tense; it is not retired. `ST-NNN` survives and the frozen ledger mints it. The AWCP slice is `awcp status` + session capture. This story supersedes ST-096's sequencing and its branches land first
+  - **The finding that shaped the slice:** the increment ladder was climbed **inverted**. Increment 7+ (dashboard, remote spooling) shipped and is the module's most hardened code; increments 1–3's daily-use affordances are all absent. The spec names `awcp status` as *"the first daily-use win"* and it does not exist — all five CLI subcommands are POSTs
+  - **Hazards.** `.planning/` is contested; `STATE.md` has regressed three times, once uncommitted in the tree right now — establish single-session ownership first. `docs/st-093-entity-queue-isolation` **must never be merged** (175 additions / 7,860 deletions against `main`); lift content only. Nothing mechanical depends on the board — no frontmatter, absent from the asset catalog, no CI job or git hook — so the retirement will break zero checks and report nothing
+  - **Verification matched to scope.** U1–U6 change no server code: `grep` checks, the `agent-skills` query, and a real mint. **Run the Deno suite for U7 only**, and only `tests/awcp-cli.test.ts`
+  - **Numbering.** ST-097 verified free on `main` and across all local branches before filing. This is the **fourth** entry inserting at the top of `## Backlog` — with `main`'s ST-094, ST-095 and ST-096 — so the conflict is four-way and resolves by **keeping all four entries**
+- Notes: **This is the last entry the board receives as a queue.** Value 4 rather than 5 because it ships one narrow user-facing capability; the rest is the workflow that makes the next ones cheaper. Filed on the board it retires, per `CLAUDE.md` §Workflow gate C5 — a governance change may not skip the gate. **Supersedes [ST-096](#st-096-realign-the-gsd-milestone-structure-onto-the-awcp-capability-horizons)** on sequencing: ST-096's U6 keeps the board and its Scope Boundaries bar rewriting `.planning/` now, both reversed here. ST-096's Horizon B–D milestone work still stands and still waits for ST-088.
+
 ### ST-096: Realign the GSD milestone structure onto the AWCP capability horizons
 - Type: chore (planning-structure realignment)
 - Source: PO strategy round, 2026-08-23 — [`docs/investigations/awcp-strategy-baseline-2026-08.md`](../../docs/investigations/awcp-strategy-baseline-2026-08.md) and its [external evidence import](../../docs/investigations/awcp-external-evidence-import-2026-08.md). A supplied strategy synthesis proposed reorganising future work around capability horizons A–I; it was reviewed against the tree, revised once by its author after the review presumed-host objection, and settled by six PO decisions
