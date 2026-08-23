@@ -183,7 +183,7 @@ provenance or recorded in `PROJECT.md` Out of Scope with what would bring it in.
 | agent-radio | **Imported** — `cpeddle/agent-radio`, private, read via `gh`. Carries measured evidence that bears directly on Horizon B |
 | Architecture Analyzer | **Imported** — `CAPeddle/architecture_analyser`, private, Rust. Analyses **C++ and C# only**, so Horizon H cannot apply to `server/`; capability claims carry an unverified-currency caveat |
 | Local-model / coding-model evaluation | **Partially imported** — `docs/investigations/Local GPU Model Setup.md` (untracked). Design rationale captured; the five named benchmark artifacts are **not located**, so §18 may not be cited as evidence-backed |
-| Codex app-server lifecycle/events | **Deferred to a separate pass**, deliberately — vendor documentation is a different provenance tier, and it belongs beside the agent-radio finding so the two can be compared |
+| Codex app-server lifecycle/events | **Imported and verified** against vendor documentation 2026-08-23. Its central spike question — live state for a thread hosted in another app-server process — is answered **no**, so Horizon B must be planned as managed-runtime-or-nothing for live state |
 | Workspace-enrolment invariant | **Unlocated.** Remains a named non-goal |
 
 The provenance split is not bureaucracy. It is the same discipline the ST-084 findings use, and the

@@ -186,6 +186,116 @@ evidence-backed. The scorecard files are the thing to ask for.
 
 ---
 
+---
+
+## Codex app-server — the transcript verified, and its open question closed
+
+**Source:** `docs/investigations/AWCP Codex Integration Analysis.md` (PO-supplied model session
+transcript, created 2026-08-23 21:54, **untracked**), plus this session's own reads of
+`learn.chatgpt.com/docs/app-server.md` and `openai/codex` issue #21743. The transcript's protocol
+claims were **checked against the vendor documentation rather than accepted**; quoted strings below
+are as returned by that read.
+
+### What verified
+
+Every protocol claim the transcript makes holds, and one it hedged on is more precise than it
+allowed:
+
+| Transcript claim | Vendor documentation |
+|---|---|
+| Statuses `notLoaded`, `idle`, `systemError`, `active`; `active` can report `waitingOnApproval` | **Confirmed, exactly.** Status is a union; the active payload carries `activeFlags`, documented as `"status": { "type": "active", "activeFlags": ["waitingOnApproval"] }`. `waitingOnApproval` is a **flag within active**, not a top-level status — the transcript's model is right, and a secondary web summary that flattened them into one list is the thing that was wrong |
+| `turn/started` / `turn/completed`, completion distinguishing completed / interrupted / failed | Confirmed |
+| Native persisted thread goal with objective, token budget, tokens consumed, execution time | **Confirmed** — `thread/goal/set` returns `{ threadId, objective, status, tokenBudget, tokensUsed, timeUsedSeconds }` |
+| `thread/list` discovers persisted sessions by `cwd`, distinguishing sources | Confirmed — filters include `modelProviders`, `archived`, `cwd` |
+| WebSocket transport experimental | **Confirmed and stronger than stated** — *"WebSocket transport is experimental and unsupported"*, *"aren't supported for production workloads"*, and *"Use plain WebSockets only for localhost or an SSH port-forwarded connection"* |
+| Remote operation via `--listen` / `--remote` | Confirmed, plus `--ws-auth capability-token --ws-token-file` |
+
+### The open question is answered, and the answer is no
+
+The transcript names its *"single most important spike question"*: can a second app-server obtain
+authoritative live state for a thread hosted in another app-server process? It hedged — *"the
+documentation I found does not prove"* it.
+
+**The documentation is explicit enough to settle it.** `thread/loaded/list` returns *"thread IDs
+currently loaded in memory"*; **neither it nor `thread/list` reports live state across different
+app-server processes — both operate within a single process instance.** A persisted thread that is
+actively running in process A is reported by process B as `notLoaded`.
+
+Independent corroboration at a different layer: **`openai/codex` issue #21743** (open, filed
+2026-05-08, **no maintainer response**) — Codex Desktop does not refresh an open thread view when
+another app-server client appends a turn; it *"appears to catch up only later."* The reporter's
+fourth requested outcome is that OpenAI *"explicitly document that cross-client live sync isn't
+supported"*, which is a fair reading of where things stand.
+
+### Consequence: the three integration levels collapse to two
+
+The transcript's Discovered / Attached / Managed-runtime ladder is a good frame, but on today's
+Codex:
+
+- **Discovered** is real, and gives association, history and resumability — **never live state.**
+- **Attached to a runtime AWCP did not start is not available.** There is no documented path to it.
+- **Managed runtime** is the only level that yields trustworthy live state.
+
+So the transcript's *"likely outcome"* — that AWCP *"probably needs sessions to run through a
+provider runtime endpoint that AWCP knows about"* — is **not an expectation to test. It is a
+documented constraint.** Horizon B should be planned as **managed-runtime-or-nothing for live state**,
+with discovered sessions treated as historical association only. The spike's five questions remain
+worth running, but question 3 (attachment) now has a documented answer and the experiment's job is to
+falsify it, not to discover it.
+
+### The cross-cutting finding — this is why the two sources belong together
+
+Both providers' native control surfaces have a failure mode in which **the answer looks authoritative
+and is not**:
+
+| Provider | Failure mode |
+|---|---|
+| OpenCode 1.18.18 | `POST .../prompt` with `delivery=steer` returns **`200`** and is **never delivered** |
+| Codex app-server | A thread actively running in process A is reported by process B as **`notLoaded`** — a real status value, indistinguishable from the truth |
+
+Neither is an error. Neither is detectable from the response alone. This is the same defect wearing
+two costumes, and it means the provider capability contract needs **two axes, not one**:
+
+1. **accepted vs delivered** — for control verbs. A verb that returns success without an
+   observable consequence is not a capability.
+2. **authoritative vs observed** — for state reads. A state reading must carry whether the
+   reporting endpoint actually **hosts** the thing it describes, because a non-hosting endpoint
+   returns plausible values rather than errors.
+
+**That pair is the requirement Horizon B should be written against**, and it is not derivable from
+either source alone — which is the reason this import was held until both were in hand.
+
+### What this changes for Horizon C
+
+`codex app-server --listen` plus `codex --remote` describes execution staying near the compute while
+a laptop disconnects — which is the Z2 problem. If it holds, it replaces the previously-envisaged
+*inspect terminal → determine idle → send `/exit` → scrape the resume command → save it → shut down*
+sequence with a native thread id and a reconnect.
+
+**But the transport that makes it work is documented as unsupported for production and confined to
+localhost or SSH port-forwarding.** So it is a legitimate **spike**, not a design AWCP's permanent
+remote transport may be built on. This does not displace the existing spool/ack/replay continuity
+work, which is provider-independent and already has real evidence behind it (criterion 6).
+
+### One semantic separation worth carrying verbatim
+
+*"`turn/completed` must not mean work item completed."* A Codex turn can finish with *"I found the
+problem; shall I implement it?"* — the thread goes idle while the work item stays in progress. This
+is the same distinction ST-084 already made in refusing to conflate `blocking` execution state with
+workflow transitions, and it is the clearest available argument for the layer split the baseline
+adopted: **providers own execution state; AWCP owns workflow state.**
+
+### Provenance and caveats
+
+The transcript is a model session, and its citations are to vendor pages. Its protocol claims are now
+**verified against those pages by direct read this session**; its *architectural recommendations*
+remain conversation-sourced and carry no more weight than their reasoning. The vendor documentation
+itself describes an **experimental** surface — the app-server command and WebSocket transport both —
+so every claim above has a shelf life, and issue #21743 is open with no maintainer position.
+
+The file is **untracked** in a tracked directory, as is `Local GPU Model Setup.md`. Both should be
+committed with provenance or moved out of `docs/investigations/`.
+
 ## Import queue, after this pass
 
 | Item | Status |
@@ -193,7 +303,7 @@ evidence-backed. The scorecard files are the thing to ask for.
 | agent-radio | **Imported.** Private repo, read via `gh`. Bears directly on Horizon B |
 | Architecture Analyzer | **Imported**, with an unresolved scope mismatch and an unverified-currency caveat |
 | Local-model / coding-model evaluation | **Partially imported.** Design rationale captured; measured results **not located** |
-| Codex app-server lifecycle/events | **Not yet fetched.** Deliberately deferred to a separate pass — it is vendor documentation, a different provenance tier, and the interesting question is whether it distinguishes *accepted* from *delivered* where OpenCode did not. That comparison wants both halves in one place |
+| Codex app-server lifecycle/events | **Imported and verified** against vendor documentation. Its own open question is answered *negatively*: no cross-process live state. Paired with the OpenCode finding it yields the two-axis capability contract Horizon B needs |
 | Workspace-enrolment invariant | **Unlocated.** Remains a named non-goal |
 
 ## What was deliberately not done
