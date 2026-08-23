@@ -19,7 +19,7 @@
  * Everything else (packets, runs, checkpoints, decisions, evidence, completion)
  * is deliberately memory-free and lives in store.ts.
  *
- * SPIKE / DISPOSABLE.
+ * PROVISIONAL — not a throwaway spike; gated on ADR-016. See types.ts.
  */
 
 import {
