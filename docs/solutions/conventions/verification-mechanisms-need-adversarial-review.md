@@ -106,9 +106,10 @@ acceptance is gated on ADR-016, Proposed — Conditional at its revision 1.3, so
 still change shape or go away. The hedge is anchored there deliberately. An earlier version
 rested it on the module's `SPIKE / DISPOSABLE` docblock stamps, which is the weaker anchor —
 a hedge that depends on a comment string stops being true the moment someone edits the comment,
-and one of those stamps sits inside an applied migration where it cannot be edited at all (see
-`an-applied-migrations-body-is-byte-frozen.md`). Nothing in the guidance depends on that code
-still existing.
+and one of those stamps sits inside an applied migration where it cannot be edited at all: the
+migration runner checksums each applied file's raw bytes against its ledger row, and any edit —
+including to a comment — trips `MigrationDriftError` and stops the server from opening its
+port. Nothing in the guidance depends on that code still existing.
 
 **Line numbers drift from ordinary review churn, not just from disposal — this doc learned
 that the hard way.** Two further review rounds on the same open PR moved roughly nine of its
