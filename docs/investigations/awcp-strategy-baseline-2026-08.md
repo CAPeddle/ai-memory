@@ -175,13 +175,16 @@ stale relative to ADR-016 and carries no authority on the host question.
 Owed before any of these may be cited by a requirement. Per decision 6, each is either imported with
 provenance or recorded in `PROJECT.md` Out of Scope with what would bring it in.
 
-| Item | Source named by the PO |
+**Resolved 2026-08-23** — sources named by the PO and read the same session. Findings are in
+[awcp-external-evidence-import-2026-08.md](awcp-external-evidence-import-2026-08.md).
+
+| Item | Status |
 |---|---|
-| agent-radio | Another repo or directory on this machine — paths owed |
-| Architecture Analyzer | Another repo or directory on this machine — paths owed |
-| Local-model / coding-model evaluation | Prior conversation transcripts — to be pasted; recorded as conversation-sourced, a weaker provenance tier than a verified read |
-| Codex app-server lifecycle/events | Public vendor documentation — to be fetched and summarised as **external** evidence, kept distinct from project-verified facts |
-| Workspace-enrolment invariant | Unlocated. Non-goal until sourced |
+| agent-radio | **Imported** — `cpeddle/agent-radio`, private, read via `gh`. Carries measured evidence that bears directly on Horizon B |
+| Architecture Analyzer | **Imported** — `CAPeddle/architecture_analyser`, private, Rust. Analyses **C++ and C# only**, so Horizon H cannot apply to `server/`; capability claims carry an unverified-currency caveat |
+| Local-model / coding-model evaluation | **Partially imported** — `docs/investigations/Local GPU Model Setup.md` (untracked). Design rationale captured; the five named benchmark artifacts are **not located**, so §18 may not be cited as evidence-backed |
+| Codex app-server lifecycle/events | **Deferred to a separate pass**, deliberately — vendor documentation is a different provenance tier, and it belongs beside the agent-radio finding so the two can be compared |
+| Workspace-enrolment invariant | **Unlocated.** Remains a named non-goal |
 
 The provenance split is not bureaucracy. It is the same discipline the ST-084 findings use, and the
 reason this review could check the revision's four claims in the first place.
