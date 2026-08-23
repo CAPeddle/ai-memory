@@ -65,6 +65,17 @@ CE's composition model is invocation-by-prompt: a CE skill can invoke another sk
 
 **Conclusion:** the drive direction that requires building nothing is GSD-drives-CE. The reverse requires inventing the wiring.
 
+> **Correction, 2026-08-23 — the asymmetry has an unmet precondition this section originally omitted.**
+> Everything above is verified and still stands, but it describes the mechanism *on the Claude runtime* without ever checking which runtime this repo is set to. It is set to **`copilot`** — `.planning/config.json` has `"runtime": "copilot"`, and `~/.gsd/defaults.json` sets the same as a machine-wide default, so this is the PO's standing choice rather than a stale value.
+>
+> `buildAgentSkillsBlock` takes the `else` branch for a namespaced skill on any non-`claude` runtime and warns *"requires a Skill-tool-capable runtime (claude) — skipping on runtime `copilot`"*. `references/agent-skills-bootstrap.md:47` documents it as *"skipped with a warning on all other runtimes … Not closeable on Cursor."*
+>
+> **So as configured today the true state is not "GSD can invoke CE and CE cannot invoke GSD" — it is that neither can invoke the other.** The verdict's direction is unchanged, because it rests on which system *can* be wired rather than which is wired now, and only GSD has the mechanism at all. But "requires building nothing" is too strong: it requires a runtime decision first.
+>
+> That decision is not a flag flip. `runtime` has ~118 references across `~/.claude/gsd-core/bin/lib/` and determines the global config home, the global skills base (`getGlobalSkillsBase`), where slash commands materialise, agent-install location, and model resolution. The cheap resolution is that **runtime is a property of the session's host, not of the repository**: `GSD_RUNTIME` takes precedence over `config.runtime` (`capability-state.cjs:409`, `GSD_RUNTIME → config.runtime → 'claude'`), so a Claude Code session can export `GSD_RUNTIME=claude` and leave the Copilot default untouched for VS Code sessions. Carried into ST-095 as an acceptance criterion.
+>
+> A second finding of the same shape: `.planning/config.json` sets `"claude_md_path": "./.github/copilot-instructions.md"`, so the governance file GSD injects into its agents is **not** `CLAUDE.md` — which is the file this document's whole "governance is silent" argument, and ST-095's first acceptance criterion, are about. Also carried into ST-095.
+
 ---
 
 ## The mechanical carve-out — why CE keeps commit and PR
@@ -147,7 +158,7 @@ Flip to full consolidation if **`.planning/` and `docs/plans/` ever disagree abo
 
 ## Not done, and why
 
-All four conditions are filed as **ST-094** (Backlog, `.github/planning/story-board.md`), which carries the acceptance criteria and a detailed handoff.
+All four conditions are filed as **ST-095** (Backlog, `.github/planning/story-board.md`), which carries the acceptance criteria and a detailed handoff.
 
 - **The `CLAUDE.md` boundary section (condition 1) is not written.** It changes governance, which `CLAUDE.md`'s own workflow gate says requires a board entry — and WIP is full (ST-088 In Progress, ST-092 in Review). It needs a story, not a drive-by edit.
 - **`agent_skills` (condition 2) is not populated** — same reason; it changes how every GSD subagent behaves. Verified empty this session: `node ~/.claude/gsd-core/bin/gsd-tools.cjs query agent-skills gsd-code-reviewer` exits 0 with an empty block.
@@ -178,7 +189,7 @@ All four conditions are filed as **ST-094** (Backlog, `.github/planning/story-bo
 
 1. The Elaboration↔Plan correspondence, which is precisely stated and matches how ST-084 actually ran.
 2. The *"Compound goes beyond RUP"* distinction — maintain-artifacts versus improve-the-environment. This is the piece's most durable idea and survives every correction above.
-3. **The Transition gate — the one actionable item.** *"Move from Construction to Transition only when acceptance and operational criteria are demonstrated"* is sharp here for a reason the piece does not know: `.github/workflows/ci.yml` triggers only on `main` and PRs targeting `main`, so a PR into a feature or integration branch runs **no CI at all**, and ST-092 entered Review under exactly that condition. The repo currently cannot demonstrate operational criteria on the stacked branches that are its common case. Carried into **ST-094** as an open question, since it lands on the same enforcement axis as the `Story:` trailer audit.
+3. **The Transition gate — the one actionable item.** *"Move from Construction to Transition only when acceptance and operational criteria are demonstrated"* is sharp here for a reason the piece does not know: `.github/workflows/ci.yml` triggers only on `main` and PRs targeting `main`, so a PR into a feature or integration branch runs **no CI at all**, and ST-092 entered Review under exactly that condition. The repo currently cannot demonstrate operational criteria on the stacked branches that are its common case. Carried into **ST-095** as an open question, since it lands on the same enforcement axis as the `Story:` trailer audit.
 
 **Fairness note.** The piece appears to have been written without knowledge that GSD is live in this repository. Given CE alone, its mapping is largely right; the corrections above are about *this repo's* configuration, not about the author's reasoning.
 
