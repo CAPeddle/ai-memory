@@ -111,15 +111,29 @@ $ sed 's|server/index.ts:941, :997|server/index.ts:1033, :1089|' \
 Different digest, therefore `MigrationDriftError`, therefore exit 1 before the
 port opens — on every database that already holds the `4b06c583…` row.
 
-**Why the trap is quiet.** `db-test` is tmpfs (`docker-compose.yml:86-87`), so
-it is wiped when its container stops and never carries a ledger row across a
-change. CI starts the whole stack fresh on a clean runner
+**Why the trap is quiet — in CI, and in a freshly recreated test stack.**
+`db-test` is tmpfs (`docker-compose.yml:86-87`), and tmpfs is wiped when its
+**container** stops, not between commands run against it — CLAUDE.md documents
+`db-test` itself as "shared and accumulating," which is the same fact stated
+the other way round. A `db-test` recreated for this session (a fresh
+`--profile test up`, or CI's clean runner) starts with no ledger row and
+cannot reproduce the drift; CI is always this case
 (`.github/workflows/ci.yml`: `docker compose --profile test up -d --build
---wait`, torn down with `down -v`), so it never has a prior row either. A
-comment edit inside an applied migration is therefore **green in the test stack
-and green in CI**, and red only on the persistent dev database and on any live
-execution node. The two environments you would reach for first are exactly the
-two that cannot reproduce the failure.
+--wait`, torn down with `down -v`). But a `db-test` a developer leaves running
+across a checkout change keeps whatever ledger row it already had in that live
+tmpfs — unless something in between drops it: `workflow-mvp-e2e.test.ts` runs
+`DROP SCHEMA IF EXISTS workflow CASCADE` against whatever `DATABASE_URL`
+points at (guarded to test databases only by
+`server/tests/_helpers/testDatabaseGuard.ts`), and a run of that suite against
+`db-test` wipes and re-migrates the `workflow` schema from the current files —
+which also cannot reproduce a stale-checksum drift, because the schema it
+lands with matches whatever is on disk *now*. So a comment edit inside an
+applied migration is green in CI and in any freshly recreated or
+just-workflow-tested `db-test`, and red on the dev database, on a `db-test`
+left running with an older ledger row still in it, and on any other hub
+deployment that already applied the migration. Do not assume `db-test` is safe
+from this just because it is tmpfs — ask what has run against it since the
+edit, not just whether the container restarted.
 
 ## Guidance
 
@@ -152,11 +166,21 @@ docker compose exec -T db psql -U ai_memory -d ai_memory \
 sha256sum server/db/workflow/*.sql
 ```
 
-If a filename appears in both outputs with matching digests, that file's bytes
-are frozen for as long as that database lives. Run the query against every
-database that has ever booted with `FEATURE_WORKFLOW=true`, not just the one on
-your machine — the dev database and any live execution node both count, and
-neither is visible from the test stack.
+Match by **version**, not filename: `applyMigrations` keys the ledger by
+`version` (`const ledger = new Map(ledgerRows.map((r) => [r.version, r]))`,
+`server/src/workflow/schema.ts`) and compares checksums for that version only —
+the ledger's `filename` column is stored for operator legibility but plays no
+part in the identity check. So if a **version number** in the query output
+matches a version number among your local files and the two checksums agree,
+that file's bytes are frozen for as long as that database lives, even if the
+file has since been renamed; matching by filename alone would wrongly call a
+renamed-but-unedited migration editable. Run the query against every hub
+deployment that has ever booted with `FEATURE_WORKFLOW=true`, not just the one
+on your machine — the dev database and any other Postgres a workflow-enabled
+server boots against both count. Execution nodes do not: in the hub-and-client
+topology (ADR-016 §2), a node holds no database credential and no ledger to
+enumerate. Neither the dev database nor any other hub deployment is visible
+from the test stack.
 
 ### 2. Treat the freeze as a feature, not an obstacle to route around
 
@@ -173,13 +197,31 @@ changed" escape hatch. Each of those trades a loud, early, total failure for a
 quiet divergence between what the database holds and what the repo claims it
 holds.
 
-### 3. Know the real cost before you decide a change is worth it
+### 3. Know the real cost before you decide a change is worth it — and know what a checksum rewrite does not do
+
+**This procedure only ever rewrites the ledger's record of the bytes — it never
+replays the statements.** `applyMigrations` keys the ledger by `version` and,
+for any version already present, skips straight to `report.skipped` without
+running `migration.statements` again (`server/src/workflow/schema.ts`). So
+updating the checksum on an already-applied database does not apply the edited
+SQL to it: the objects that migration created stay exactly what the *original*
+statements produced, while a database migrating from scratch reads the edited
+file and gets different objects. That makes the sequence below sound for
+exactly one class of edit — a byte change you can prove is behaviourally inert,
+such as a comment or a line-ending normalisation, where nothing needs to
+actually happen inside the database because the checksum was the only thing
+wrong. It is not a way to apply a behavioural fix: doing that with only a
+checksum update leaves already-migrated databases silently holding schema they
+do not match the repo's claim of, which is precisely the divergence the
+checksum exists to prevent, now produced on purpose instead of by accident.
 
 Changing an applied migration's bytes is a **coordinated operational change**,
-not a commit. The full sequence:
+not a commit. The full sequence, for a provably inert byte change:
 
-1. Enumerate every database that has applied the migration (dev, each execution
-   node, any operator's local stack).
+1. Enumerate every hub deployment that has applied the migration (the dev
+   database, and any other Postgres a workflow-enabled server boots against —
+   not execution nodes, which hold no database credential or ledger; see §1
+   above).
 2. For each, before its next boot, update the ledger row:
    `UPDATE workflow.schema_migrations SET checksum = '<new>' WHERE version = N;`
 3. Verify the new digest matches `sha256sum` of the committed file on the exact
@@ -189,10 +231,12 @@ not a commit. The full sequence:
 Miss any database and it fails to start — not degrade, fail — with a FATAL log
 naming a checksum mismatch nobody caused that day.
 
-That is justified when the migration's **behaviour** is wrong and a new
-migration cannot fix it forward. It is essentially never justified to correct
-prose. The normal answer for a wrong statement is a new numbered migration; the
-normal answer for wrong prose is to put the prose somewhere editable.
+A wrong **behaviour** is exactly the case this procedure cannot handle — the
+skip means there is no checksum-only path that makes an already-applied
+database's schema match a corrected statement. The normal answer for a wrong
+statement is a new numbered migration; the normal answer for wrong prose is to
+put the prose somewhere editable. This sequence exists only for the case where
+the migration's behaviour was never wrong — only the record of its bytes was.
 
 ### 4. Do not put drift-prone content inside a file you cannot edit
 
@@ -340,11 +384,14 @@ still holds (the module is still provisional), but the quoted string is stale.
 Nothing about those two files is frozen; they are just two more copies nobody
 has reached yet.
 
-**And the blast radius is inverted from where you would test.** Green in
-`db-test`, green in CI, red on the dev database and on live execution nodes.
-A change that looks fully verified is verified only in the environments
-structurally incapable of showing the problem — and per CLAUDE.md, a PR into an
-integration branch runs no CI at all, so the local run is the only gate anyway.
+**And the blast radius is inverted from where you would test.** Green in CI and
+in a freshly recreated (or just-workflow-tested) `db-test`, red on the dev
+database, on a `db-test` left running with an older ledger row, and on any
+other hub deployment — see "Why the trap is quiet" above for the `db-test`
+nuance. A change that looks fully verified is verified only in the
+environments structurally incapable of showing the problem — and per
+CLAUDE.md, a PR into an integration branch runs no CI at all, so the local run
+is the only gate anyway.
 
 ## When to Apply
 
@@ -391,7 +438,8 @@ migrations failed: MigrationDriftError: …
 
 from `server/index.ts:88`, followed by `Deno.exit(1)` at `server/index.ts:91`,
 1233 lines before `Deno.serve` at `server/index.ts:1310` — on the dev database
-and on every execution node, while `db-test` and CI stayed green.
+and on any other hub deployment that already applied the migration, while a
+freshly recreated `db-test` and CI stayed green.
 
 ### Checking before editing — the three commands
 
