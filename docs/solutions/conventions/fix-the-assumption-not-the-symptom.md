@@ -93,9 +93,13 @@ sibling instance is by definition outside the diff. (session history)
 **Citation durability.** Every `file:line` below resolved on branch
 `claude/st-084-awcp-host-spike` as of 2026-07-31, with PR #34 still open against a feature
 branch. Line numbers are pinned to the PR rather than to a commit SHA deliberately — the
-branch SHAs are local-only and a squash merge rewrites them. The module is also stamped
-`SPIKE / DISPOSABLE`, so if the spike is disposed of, read the citations as historical
-illustration. Nothing in the guidance depends on that code still existing.
+branch SHAs are local-only and a squash merge rewrites them. PR #34 has since merged as
+`094b141`, so these resolve on `main`. Whether they keep resolving turns on the module's
+governance status rather than on any marker in its source: acceptance is gated on ADR-016,
+Proposed — Conditional at its revision 1.3. If that gate resolves against the module, read the
+citations as historical illustration. This deliberately no longer rests on the module's
+`SPIKE / DISPOSABLE` stamps — a hedge anchored to a comment string expires whenever someone
+edits the comment. Nothing in the guidance depends on that code still existing.
 
 ## Guidance
 
@@ -126,7 +130,7 @@ Concretely, after landing a fix, spend the five minutes to walk this list:
    `completePacket`'s docblock records that a concurrent evidence DELETE is a different
    writer on a different table that the packet lock does not cover, and that closing it
    generally needs SERIALIZABLE "or the same lock-and-refuse treatment on `attachEvidence`'s
-   inverse" (`server/src/workflow/store.ts:439-444`). Found by applying this rule; recorded
+   inverse" (`server/src/workflow/store.ts:543-548`). Found by applying this rule; recorded
    as a residual rather than papered over.
 
 ### Sub-rule: sweeping the siblings is the floor, not the ceiling
@@ -369,7 +373,7 @@ gate's criteria read and its UPDATE. Adding `FOR UPDATE` serialises it against
 `completePacket` on the same `work_packets` row. It does nothing about a criterion arriving
 *after* completion commits — which is not a race at all, and which no lock prevents. The
 shipped `addCriterion` does both, and its docblock says so outright
-(`server/src/workflow/store.ts:344-350`):
+(`server/src/workflow/store.ts:431-434`):
 
 > Locking alone is not sufficient, which is easy to get wrong: it makes the race
 > deterministic without making it safe, because a criterion inserted *after* completion
@@ -377,7 +381,7 @@ shipped `addCriterion` does both, and its docblock says so outright
 > a packet is complete its verification contract is frozen.
 
 ```ts
-// server/src/workflow/store.ts:357-363
+// server/src/workflow/store.ts:444-450
   return await sql.begin(async (tx: SqlExecutor) => {
     const packets = await tx<WorkPacket[]>`
       SELECT * FROM workflow.work_packets WHERE id = ${packetId} FOR UPDATE
@@ -429,6 +433,13 @@ therefore only ran on one machine.
 
 ## Related
 
+- [A returned outcome is not a thrown exception — every caller must be updated](./a-returned-outcome-is-not-a-thrown-exception.md)
+  — the sharpest recorded instance of this rule, and the one that argues hardest for it. There
+  the sibling was **seventy lines away in the same file**, in the same commit series, and the
+  commit that fixed one site said "so the two surfaces agree" — true as scoped, about the one
+  outcome it had checked, and silently generalised into a claim nobody had verified. It also
+  adds the construct this doc does not name: a fall-through `else` that defaults to *success*,
+  which is what turns a missed sibling from loud into silent.
 - [Review the verification mechanism as adversarially as the code — especially when the
   deliverable is evidence](./verification-mechanisms-need-adversarial-review.md) — the
   sibling learning from this same PR, covering allowlist-vs-blocklist, non-vacuity and

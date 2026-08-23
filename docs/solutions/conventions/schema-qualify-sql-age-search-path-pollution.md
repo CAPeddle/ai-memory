@@ -30,7 +30,7 @@ Four sites in the memory domain issue a bare `SET search_path` inside a
 multi-statement `sql.unsafe()` call, on a connection borrowed from the shared
 `postgres.js` pool:
 
-- `server/index.ts:941` and `server/index.ts:997` — the `graph_traverse` and
+- `server/index.ts:1033` and `server/index.ts:1089` — the `graph_traverse` and
   `graph_search` MCP tools
 - `server/src/entityWorker.ts:115` and `server/src/entityWorker.ts:125` — the
   entity worker's graph reads and writes
