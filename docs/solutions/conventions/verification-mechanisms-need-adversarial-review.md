@@ -97,10 +97,19 @@ injection source and cleared the moment they could not be an attack vector; whet
 assertion actually exercised the property it named was never a question those lenses asked.
 
 **A note on the citations that follow.** The habits are the durable part; the code they
-point at is not. The citations resolve on branch `claude/st-084-awcp-host-spike` only — PR
-#34 was open against a feature branch rather than `main`, and the module itself is stamped
-`SPIKE / DISPOSABLE`. If the spike is disposed of, read them as historical illustration;
-nothing in the guidance depends on that code still existing.
+point at is not. **Updated 2026-08-21:** when this was written the citations resolved only on
+branch `claude/st-084-awcp-host-spike`, PR #34 being open against a feature branch rather than
+`main`. That PR has since merged (`094b141`), so they now resolve on `main` and the module is
+exercised by the ST-086/087/088/092 suites — read them as live, not historical. What keeps the
+hedge warranted is the module's governance status rather than any marker in its source:
+acceptance is gated on ADR-016, Proposed — Conditional at its revision 1.3, so this code may
+still change shape or go away. The hedge is anchored there deliberately. An earlier version
+rested it on the module's `SPIKE / DISPOSABLE` docblock stamps, which is the weaker anchor —
+a hedge that depends on a comment string stops being true the moment someone edits the comment,
+and one of those stamps sits inside an applied migration where it cannot be edited at all: the
+migration runner checksums each applied file's raw bytes against its ledger row, and any edit —
+including to a comment — trips `MigrationDriftError` and stops the server from opening its
+port. Nothing in the guidance depends on that code still existing.
 
 **Line numbers drift from ordinary review churn, not just from disposal — this doc learned
 that the hard way.** Two further review rounds on the same open PR moved roughly nine of its
@@ -138,7 +147,13 @@ list nobody rereads.
 
 ### 2. Give every check two proofs: non-vacuity *and* discrimination
 
-These are different properties and they fail independently.
+These are different properties and they fail independently. Both are now defined
+canonically in [`CONCEPTS.md`](../../../CONCEPTS.md) under *Verification Practice* — treat the
+glossary as the source and the sketches below as this incident's illustration of it. In
+particular the glossary's **Discrimination** is two-directional (different outcomes for the
+compliant *and* non-compliant cases) and carries two constraints added later: the removal that
+produces the red must be minimal, and the red must be an assertion failure on the specific
+claim. Neither is restated here.
 
 **Non-vacuity** — the check saw input at all. A scan whose regex silently matched nothing
 looks exactly like a scan that found no violations.
@@ -253,8 +268,8 @@ boundary hides every rule that would move it there.
 Added after two further review rounds, because it is the same failure one level out: a
 check that cannot fire in the environment that gates merge is not a check.
 
-Two of this file's own controls wrote fixture files. CI runs `deno test` with no
-`--allow-write` (`.github/workflows/ci.yml`), so both threw `NotCapable` there while passing
+Two of this file's own controls wrote fixture files. CI at the time ran `deno test` with no
+`--allow-write`, so both threw `NotCapable` there while passing
 locally — green where it was cheap, absent where it mattered. The enumeration control was
 rebuilt to need no writes at all: it points the same enumeration function at a *different
 real directory* and requires that directory's contents back, which proves the function reads
@@ -415,7 +430,7 @@ the reported site while the same assumption survived one branch over.
   source comments.
 - `.github/instructions/coding-standards.instructions.md` already mandates red-green TDD,
   but scoped to *production behaviour*. Habit #2 extends the same discipline to the check
-  itself. The "Deno / Server Testing" section (lines 125-136) governs test *hygiene* —
+  itself. The "Deno / Server Testing" section (lines 125-137) governs test *hygiene* —
   isolation, cleanup, flakiness — and never test *validity*: a test can satisfy every rule
   there and still certify a claim it cannot check.
 - [ST-084 spike findings §14](../../investigations/ST-084-awcp-host-spike-findings.md) — the
