@@ -40,11 +40,13 @@ Mint with:
 ## Seed
 
 `ST-001`…`ST-097` are seeded as a single contiguous block, dated the day the allocator was created.
-Contiguity is deliberate. Seven IDs in that range have **no** `### ST-NNN` entry on the story board —
+Contiguity is deliberate. Seven IDs in that range had **no** `### ST-NNN` entry on the story board when
+this file was seeded —
 `ST-023`, `ST-025`, `ST-027`, `ST-033`, `ST-046`, `ST-069`, `ST-095` — yet five of them are
 demonstrably real allocations (`ST-069` has its own plan file and a merged PR; `ST-046` has an
 ExecPlan and merged commits; `ST-023` and `ST-033` are cross-referenced from board rows that remain;
-`ST-095` exists only on the unmerged branch `docs/gsd-ce-drive-direction`). A board-derived seed
+`ST-095` was live on the then-unmerged branch `docs/gsd-ce-drive-direction`, and its board entry
+reached `docs/awcp-strategy-baseline` by merge later the same day). A board-derived seed
 would therefore under-reserve and re-issue an ID already in use. The two with no trace at all
 (`ST-025`, `ST-027`) are reserved rather than reclaimed, because absence of evidence is not evidence
 that they were never handed out.
@@ -145,6 +147,6 @@ ST-091  2026-08-24  branch:main  seed:board — story-board.md entry
 ST-092  2026-08-24  branch:main  seed:board — story-board.md entry
 ST-093  2026-08-24  branch:main  seed:board — story-board.md entry
 ST-094  2026-08-24  branch:main  seed:board — story-board.md entry
-ST-095  2026-08-24  branch:docs/gsd-ce-drive-direction  seed:branch — allocated on an unmerged branch; main has never seen it
+ST-095  2026-08-24  branch:docs/gsd-ce-drive-direction  seed:branch — allocated on an unmerged branch; main has never seen it; its board entry was carried onto docs/awcp-strategy-baseline by merge on 2026-08-24, so that branch holds it too
 ST-096  2026-08-24  branch:main  seed:board — story-board.md entry
 ST-097  2026-08-24  branch:main  seed:board — story-board.md entry
