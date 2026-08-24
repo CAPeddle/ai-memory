@@ -136,12 +136,13 @@ Deno.test({
         const ledger = await sql<{ version: number; filename: string }[]>`
           SELECT version, filename FROM workflow.schema_migrations ORDER BY version
         `;
-        assertEquals(ledger.map((r) => r.version), [1, 2, 3, 4]);
+        assertEquals(ledger.map((r) => r.version), [1, 2, 3, 4, 5]);
         assertEquals(ledger.map((r) => r.filename), [
           "001_workflow_schema.sql",
           "002_decision_run_packet_integrity.sql",
           "003_execution_nodes.sql",
           "004_run_events.sql",
+          "005_work_items.sql",
         ]);
 
         // ...and the composition root said so, from inside the process.
@@ -157,6 +158,7 @@ Deno.test({
           "002_decision_run_packet_integrity.sql",
           "003_execution_nodes.sql",
           "004_run_events.sql",
+          "005_work_items.sql",
         ]);
       });
 
@@ -581,6 +583,7 @@ Deno.test({
           "002_decision_run_packet_integrity.sql",
           "003_execution_nodes.sql",
           "004_run_events.sql",
+          "005_work_items.sql",
         ]);
 
         const view = await apiCall(server.baseUrl, API_KEY, `/api/workflow/packets/${packetId}`);

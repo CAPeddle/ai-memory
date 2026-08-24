@@ -346,6 +346,9 @@ Deno.test({
         // in the workflow schema for the same reason as everything else here — one
         // DROP SCHEMA is the whole teardown.
         "execution_nodes",
+        // ST-097 (migration 005): the observed-session lane and the explicit
+        // session-to-work-item claim. Same schema, same one-statement teardown.
+        "observed_sessions",
         "operational_decisions",
         "run_events",
         // The module's OWN migration ledger. It lives inside the workflow schema
@@ -354,6 +357,10 @@ Deno.test({
         // avoid, and would leave a row behind after DROP SCHEMA workflow CASCADE.
         "schema_migrations",
         "verification_criteria",
+        // ST-097 (migration 005): the claim table, and the WorkItem layer above the
+        // packet (ADR-017). `work_packets` gains only a nullable `work_item_id`.
+        "work_item_sessions",
+        "work_items",
         "work_packets",
       ]);
 
@@ -506,10 +513,13 @@ Deno.test({
       "checkpoints",
       "evidence_items",
       "execution_nodes", // ST-088 U2
+      "observed_sessions", // ST-097 migration 005
       "operational_decisions",
       "run_events", // ST-088 U2
       "schema_migrations",
       "verification_criteria",
+      "work_item_sessions", // ST-097 migration 005
+      "work_items", // ST-097 migration 005 (ADR-017)
       "work_packets",
     ]);
   },
