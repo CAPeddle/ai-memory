@@ -47,7 +47,8 @@ works if the two are the same store, and they are not.
   structure becomes authoritative **at the next-milestone boundary already chosen** rather than by
   rewriting a live milestone's artifacts.
 - **Workstream B** — the smallest end-to-end AWCP product slice: WorkItem → associated
-  execution/session → status → web UI → actionable attention.
+  execution/session → status → web UI. **Attention is deliberately *not* in this slice** — see
+  KTD-B1.
 
 **Authority hierarchy.** [`awcp-strategy-baseline-2026-08.md`](../investigations/awcp-strategy-baseline-2026-08.md)
 and its six decisions bind. [`ADR-016`](../design/adr/ADR-016-awcp-consolidation-host-topology.md)
@@ -56,8 +57,7 @@ requirement rather than to route around it.** [`ADR-013`](../design/adr/ADR-013-
 is Accepted and D0 amends its §4(b) layering by supersession, not by edit.
 [CLAUDE.md](../../CLAUDE.md) governs conventions and merge rules.
 [ST-096's plan](2026-08-23-2210-chore-st096-gsd-milestone-realignment-plan.md) is **coordinated
-with, not superseded — pending PO confirmation**; see KTD-A4, the one decision here that is *not*
-settled, and OQ6.
+with, not superseded** (KTD-A4, confirmed by the PO 2026-08-24).
 
 **Stop conditions:**
 
@@ -70,13 +70,14 @@ settled, and OQ6.
 3. **Stop if the runtime flip (A1) does not produce an *observed* CE-skill execution inside a GSD
    agent.** A config diff is not the proof; a skipped-with-warning line means the mechanism is
    absent.
-4. **Stop if B's zero-attention requirement is met by suppression.** The healthy-session zero is
-   only evidence when its Red/Green Control shows the abandoned case producing exactly one item.
-5. **Stop if B8 begins before its attention contract change is chosen.** `AttentionItem.packet_id`
-   is non-nullable and `evaluateAttention` requires a `WorkPacket`, so an unclaimed observed session
-   — which by KTD-D5 has no packet — cannot be represented at all. See KTD-B6.
-6. **Stop if any B unit begins before OQ2/OQ4 are settled.** They are now settled in KTD-B4; this
-   condition exists so a later reopening does not silently unblock B3 and B8.
+4. **Stop if attention creeps back into this slice.** Attention rules and attention rendering are
+   out by PO decision (KTD-B1). A "just show the reasons we already compute" addition is the exact
+   creep this condition exists to catch, because the existing `evaluateAttention` cannot represent a
+   packet-less observed session at all — see KTD-B6.
+5. **Stop if session capture expands past dogfooding without a retention decision.** KTD-B7 fixes
+   the boundary; crossing it without the decision is what turns a minimal event lane into an
+   unbounded store.
+6. **Stop if any new `ST-NNN` or `AW-NNN` is minted before A2 lands.** This plan mints none.
 
 ---
 
@@ -207,33 +208,36 @@ human-facing id.
 readers instead of the file. D0-1 follows the same discipline: the supersession is recorded in the
 new ADR with a reader instruction, and `ADR-013` is left alone.
 
-**KTD-D2 — Whether `ST-NNN` is the human-facing identifier for AWCP-native work is an OPEN DECISION
-reserved to the PO, with a recommendation, not a settled matter.**
-*(session-settled: user-directed — that it stays open. The PO instructed it must not be inferred from
-the development ledger. Rejected alternative: settling it inside this plan.)*
+**KTD-D2 — AWCP-native work gets its own human-facing identifier namespace, `AW-NNN`. `ST-NNN`
+stays the development-story identity and becomes *provenance* when AWCP dogfoods its own
+development.**
+*(session-settled: user-directed, 2026-08-24. The PO instructed that this must not be inferred from
+the development ledger, and settled it explicitly. Rejected alternatives: reusing `ST-NNN` as the
+human-facing id for AWCP-native work; deferring to a UUID-only WorkItem.)*
 
-The PO instructed explicitly: *"Determine explicitly whether ST-NNN is the intended human-facing
-identifier for AWCP-native work. Do not infer this from the current development ledger."* This plan
-therefore **does not settle it**. D0-1 records the decision with its two options and their
-consequences:
+This preserves the distinction the whole restructure exists to recover. Reusing `ST-NNN` would have
+coupled product data to a development-ledger allocator with different concurrency properties —
+recreating inside AWCP exactly the coupling this plan removes from the board.
 
-- **Option 1 — AWCP-native work gets its own human-facing id** (e.g. `AW-NNN`), allocated by AWCP's
-  own persistence. `ST-NNN` stays a *provenance reference* on dogfooded items
-  (`source_system = 'story-board'`). Keeps the two concerns fully separable; costs a second
-  vocabulary.
-- **Option 2 — `ST-NNN` is reused as the human-facing id for AWCP-native work.** One vocabulary, but
-  it couples product data to a development-ledger allocator, and A2's allocator would have to serve
-  two masters with different concurrency properties.
+**What it means concretely.** A WorkItem carries `source_system` + `source_ref` for *external*
+identity, and an `AW-NNN` human-facing label for AWCP-native work. A dogfooded WorkItem for this
+repository's own development carries `source_system='story-board'`, `source_ref='ST-097'` **and** its
+own `AW-NNN` — the `ST-NNN` is the provenance reference, not the identity.
 
-**Recommendation: Option 1.** The PO's own framing — "two different ticket/work-item concerns … do
-not assume these are the same persistence or lifecycle mechanism" — argues for it, and Option 2
-recreates inside AWCP the coupling this plan exists to remove. **Recorded as a recommendation; the
-decision is the PO's and B's dogfooding unit (B9) is written to work under either.**
+**`AW-NNN` allocation is AWCP's own, and it is not A2's allocator.** A2 allocates development story
+ids from a markdown registry because the board is a markdown artifact; `AW-NNN` is allocated by
+AWCP's persistence, where a database can enforce uniqueness directly. **They are two allocators by
+design, which is the cost this decision accepts** — the alternative was one allocator serving two
+masters with different concurrency properties, which is what made Option 2 worse.
 
 **KTD-D3 — B2's storage needs a PO *override* of ADR-016 §1, plus a §3 revisit. They are two
 different things and only one of them is a mechanism the repository already provides.**
 
-*(NOT settled — this is the plan's central ask of the PO.)*
+*(session-settled: user-directed, 2026-08-24 — **narrow**. The override covers migration `005`
+only; ADR-016 §1 is not broadly lifted and ST-088 still settles the general host/storage question.
+Rejected alternatives: a broad override for AWCP workflow migrations generally; no override, with
+B2 onward waiting on ST-088 Phase 4. The PO's reasoning: another premature migration needing its own
+explicit decision is **desirable pressure rather than bureaucracy** at this stage.)*
 
 An earlier draft claimed D0-4 was *"the compliant route through this, not around it."* **That was
 wrong, and the error is worth keeping visible so it is not re-derived.** ADR-016 §3's own heading
@@ -244,9 +248,10 @@ host"*, which is discharged by the ST-084 Stage 2 spike — tracked as **ST-088*
 
 So D0-4 asks for two things:
 
-1. **An explicit PO override of ADR-016 §1** for migration `005` specifically, recorded as an
-   amendment in ADR-016's Revision History so it is legible as an override rather than as
-   compliance; and
+1. **An explicit PO override of ADR-016 §1 for migration `005` and nothing else**, recorded as a
+   dated amendment in ADR-016's Revision History so it is legible as an override rather than as
+   compliance. **Any later AWCP migration returns for its own decision** — the gate keeps working;
+   and
 2. **the §3 storage-layout revisit** that `awcp-spec-evaluation.md:177` requires so the decision is
    not *"silently resolved by the first migration author"*.
 
@@ -330,7 +335,7 @@ applied to persistence.
 
 | Unit | Deliverable | Depends on |
 |---|---|---|
-| **D0-1** | `ADR-017 — The AWCP WorkItem contract`: identity, provenance pair, relation to packet/run/session, the ADR-013 §4(b) layering supersession with its reader instruction, and KTD-D2's open decision recorded with both options | — |
+| **D0-1** | `ADR-017 — The AWCP WorkItem contract`: identity, provenance pair, relation to packet/run/session, the ADR-013 §4(b) layering supersession with its reader instruction, and KTD-D2's settled `AW-NNN` namespace with its allocation boundary (AWCP's persistence, not A2's registry) | — |
 | **D0-2** | `CONCEPTS.md`: new **Work Item** entry; amend `:7` (the containment root is no longer the packet); amend **Work Packet** `:11-14` to name its optional parent; state the Work Item ↔ Story relation explicitly so the two vocabularies stop being adjacent-but-unlinked | D0-1 |
 | **D0-3** | Versioned TypeScript contract in `server/src/workflow/types.ts` + `schema.ts` — **types and zod only, no DDL** | D0-1 |
 | **D0-4** | **PO gate — two asks.** (a) An explicit override of ADR-016 **§1**'s host bar for migration `005`, recorded as an amendment in ADR-016's Revision History; (b) the **§3** storage-layout revisit `awcp-spec-evaluation.md:177` requires. Returns permit-or-defer for B2 | D0-1 |
@@ -440,8 +445,10 @@ mandatory. So forward work becomes schedulable only by being **a requirement of 
 converted at the boundary by `gsd-new-milestone`, not written into a live ROADMAP as icebox rows.
 
 **KTD-A4 — ST-096 is coordinated with, not superseded.**
-*(NOT settled — this is my narrowing of the PO's 2026-08-23 decision, on new evidence, and it is the
-one decision in this plan awaiting confirmation rather than recording one.)*
+*(session-settled: user-directed. Raised as the plan author's narrowing of the PO's 2026-08-23
+decision on new evidence, and **confirmed by the PO 2026-08-24**: ST-096 is useful as the
+milestone-boundary sequencing gate the GSD transition consumes. Rejected alternative: ST-097
+supersedes ST-096 as originally decided.)*
 
 *(This narrows a prior PO decision, and the change is flagged rather than made quietly.)* The
 previous round settled *"ST-097 supersedes ST-096; land its branches first."* That rested on the
@@ -450,6 +457,33 @@ above removes. ST-096 is a pure **sequencing** plan (`execution: docs`) that aut
 and no ROADMAP content, and schedules the ST-088 → Horizon B–D boundary. That boundary is now
 precisely where A6 hands authority over. **ST-096 therefore becomes the boundary gate A6 consumes.**
 The branch-landing half of the prior decision stands unchanged.
+
+**KTD-A5 — ST-097 stays the transition/bootstrap story only until A2 makes safe allocation
+possible; then the remaining GSD-boundary work and the AWCP product slice separate.**
+*(session-settled: user-directed, 2026-08-24. Rejected alternatives: one `ST-097` for the whole
+transition; splitting D0+A from B only.)*
+
+The PO's reasoning, which is also the finding that prompted it: **one story must not occupy the
+development slot through both an ST-088 boundary wait and an independent AWCP product slice.** As
+written, one story number and one trailer covered everything, so the board's single In-Progress slot
+was held across a PO gate and an undated wait — while A6, the unit that *removes* the WIP limit, is
+itself gated on ST-088. That is circular, and the split breaks it.
+
+**The sequence, and why this order:**
+
+1. **ST-097 carries D0 and A1–A3 only** — the WorkItem contract, the runtime flip, the allocator, and
+   landing the branches. This is the bootstrap: it is the work that makes safe allocation exist.
+2. **When A2 lands, allocate.** The remaining GSD-boundary work (A4–A7) and the AWCP product slice
+   (B) each get their own `ST-NNN`, minted through A2 under the provisional-until-merged rule.
+3. **B then proceeds independently of A's ST-088 gate**, which is the point — B depends on D0, never
+   on A, and there is no reason for the product slice to wait on a milestone boundary.
+
+**This is also the allocator's first real proof.** A2's verification allocates a test id; minting the
+two successor stories exercises it on work that matters, which is a better check than a synthetic
+one — and if it fails there, it fails before anything depends on the id.
+
+**Nothing is minted by this plan.** The successor ids do not exist until A2 does; until then the
+workstreams keep their provisional names.
 
 ### A Implementation Units
 
@@ -477,28 +511,37 @@ and reinforced by A1's finding that the referenced governance file is currently 
 
 ## Workstream B — the first AWCP working slice
 
-**Shape:** WorkItem → associated execution/session → status → **web UI** → actionable attention.
+**Shape:** WorkItem → associated execution/session → status → **web UI**. Attention rules and
+attention rendering are **deferred to the post-continuity boundary** (KTD-B1).
 
 ### B Key Technical Decisions
 
-**KTD-B1 — The web UI is the primary product surface; `awcp status` is a secondary diagnostic that
-consumes the same read model.**
-*(session-settled: user-directed — baseline decision 4, reaffirmed 2026-08-24. Rejected alternative:
-a CLI-first slice with the UI deferred, which is what the previous version built.)*
+**KTD-B1 — The web UI is the primary product surface, and attention is deliberately deferred to the
+post-continuity boundary.**
+*(session-settled: user-directed, 2026-08-24. Rejected alternatives: keeping observed-session
+attention in this slice as originally planned; taking the contract change now but rendering nothing.)*
 
-Baseline decision 4 made the web UI primary, superseding `awcp-spec-evaluation.md`'s increment-7
-deferral. **It also says the web UI is *"not the first horizon"* and that *"Horizon order is
-unchanged — provider/session truth (B) and continuity (C) still precede the attention UI (D)."*
-This slice departs from that ordering clause deliberately**, building a WorkItem-rooted view and
-observed-session attention ahead of Horizons B and C, because the plan's whole premise is that the
-increment ladder was climbed inverted and the daily-use affordance is the missing one. Recorded here
-as a departure with its reason rather than left to arrive silently — and OQ7 puts the alternative
-(ship WorkItem/provenance/session truth now, move attention rules and rendering to the
-post-continuity boundary) to the PO, because it is a scope decision rather than an error. The first version of this plan built a CLI-first slice and never addressed that — a
-product-lens finding. Corrected here. `server/src/workflow/dashboard.ts` already renders attention,
-runs, checkpoints, decisions and criteria (405 lines, single-file HTML), so the UI unit **extends an
-existing surface** rather than creating one. The CLI is "secondary" only if it is literally a second
-client of one read model, not a parallel implementation.
+**Primary surface.** Baseline decision 4 made the web UI primary, superseding
+`awcp-spec-evaluation.md`'s increment-7 deferral. `server/src/workflow/dashboard.ts` already renders
+runs, checkpoints, decisions, criteria and a packet view (405 lines, single-file HTML), so B6
+**extends an existing surface** rather than creating one. `awcp status` is "secondary" only if it is
+literally a second client of one read model, not a parallel implementation.
+
+**And attention is out — which restores an ordering this plan previously departed from.** Baseline
+decision 4 also says the web UI is *"not the first horizon"*, and that *"Horizon order is unchanged
+— provider/session truth (B) and continuity (C) still precede the attention UI (D)."* An earlier
+draft of this plan built observed-session attention in the first slice and recorded the departure as
+deliberate. **The PO reversed that**, on the reasoning the cross-model product lens supplied:
+defining attention semantics over a *provisional* session signal turns the later attention milestone
+into a migration of an adopted contract rather than a projection of validated runtime truth.
+
+**So this slice ships WorkItem, provenance, observed-session truth, status and the web UI — and
+stops there.** What that costs, stated plainly rather than discovered: the slice answers *"what is
+the state of this work?"* and **not** *"which one needs me?"* — the second question was the original
+motivation, and it now waits for Horizons B and C to validate session truth first. The requirement
+is deferred, not dropped: **a healthy captured session producing zero attention items remains a
+binding requirement of the attention milestone**, with the Red/Green Control and non-vacuity guard
+this plan specified for it (KTD-B6) carried forward intact.
 
 **KTD-B2 — Nothing in the capture path fabricates a packet id or a policy scope. It cannot, by
 construction.**
@@ -585,24 +628,45 @@ packets, which `buildOverview` excludes via `store.listActivePackets()`.
 values include `#57`, which a path segment cannot carry (`#` opens a fragment), and Jira-style keys
 with slashes would split into segments. The route is `GET /work-items/by-ref?source=<s>&ref=<r>`.
 
-**KTD-B6 — B8 requires a named change to the attention contract, and the change is not free.**
+**KTD-B6 — The attention contract change is *specified here and executed later*, so the attention
+milestone inherits a decision rather than rediscovering a blocker.**
+
+Attention is out of this slice (KTD-B1), but the analysis that made it implementable is worth
+keeping, because it is what would otherwise be rediscovered as a blocker mid-milestone:
 
 `AttentionItem` declares `packet_id: string` **non-nullable** (`types.ts:130-135`), `AttentionReason`
 is a **closed five-value union** (`:123-128`), `evaluateAttention` takes a **required**
 `packet: WorkPacket` (`attention.ts:44`), and `buildOverview` iterates only
 `store.listActivePackets()` (`readModel.ts:73-81`). An unclaimed observed session has no packet by
-KTD-D5's design — **so the "exactly one" abandoned-session item has nowhere to live**, and the
-discrimination checks would pass vacuously against an evaluator that never sees observed sessions at
-all. That is precisely the failure the plan's own non-vacuity guard exists to catch.
+KTD-D5's design — **so an observed-session attention item cannot be represented at all**, and any
+discrimination check written against the current evaluator would pass vacuously.
 
-**Decision: widen the existing contract rather than fork it.** `AttentionItem.packet_id` becomes
-nullable, gains a nullable `session_id`, and `AttentionReason` gains one value — `abandoned`.
-`evaluateAttention` keeps its packet-rooted signature and a sibling `evaluateSessionAttention` is
-added; `buildOverview` unions both. The rejected alternative — a parallel session-attention type
-with its own queue — would give the operator two queues to watch, which defeats the single
-attention surface the product is built around. **Every existing consumer of `AttentionItem`
-(`dashboard.ts`, `readModel.ts`, the CLI) changes**, and that cost belongs to B8, not to a later
-story.
+**Recorded for the attention milestone, not for this slice:** widen the existing contract rather
+than fork it — `packet_id` nullable, a nullable `session_id`, one new `AttentionReason` value
+(`abandoned`), a sibling `evaluateSessionAttention`, and a `buildOverview` union. The rejected
+alternative — a parallel session-attention type with its own queue — would give the operator two
+queues to watch and defeat the single attention surface the product is built around. **Every
+existing `AttentionItem` consumer changes** (`dashboard.ts`, `readModel.ts`, the CLI), and that cost
+belongs to the attention milestone.
+
+**Carried forward with it:** the healthy-session **zero** attention items, its Red/Green Control
+(the same session abandoned yields **exactly one**), the non-vacuity guard, and positive
+discrimination against `stale` / `ended-without-checkpoint` / `ready-for-review`. Those were the
+requirement; deferring the unit does not weaken them.
+
+**KTD-B7 — Observed-session events inherit the existing run-event retention posture; expanding
+capture past dogfooding is gated on an explicit retention decision.**
+*(session-settled: user-directed, 2026-08-24. Rejected alternatives: designing a retention subsystem
+inside this slice; treating retention as out of scope with no boundary recorded.)*
+
+No new retention subsystem is built here. Session events live on the same lane as `run_events` and
+inherit its posture, and the payload stays deliberately minimal (KTD-B4 item 6) — which is what
+keeps the inherited posture defensible rather than merely convenient. **The boundary is recorded
+now: expanding session capture beyond dogfooding — more nodes, continuous capture, or richer
+payloads — requires an explicit retention and compaction decision first.** Recording it is the
+point: this is a deliberate deferral with a named trigger, not a gap discovered once the store has
+already grown.
+
 
 ### B Implementation Units
 
@@ -614,10 +678,10 @@ story.
 | **B3** | **Observed-session lane** — typed `session_start`, periodic `session_heartbeat`, and typed `session_end` events carrying `session_id`, emitted on the existing node bearer, with the closed payload field set and the concrete heartbeat-gap abandonment threshold fixed here (KTD-B4 items 4–6). No packet, no scope, no run | B1, B2, B2a |
 | **B4** | **Claim route** — `POST /api/workflow/work-items/:id/sessions` associating an observed session with an existing WorkItem. **Operator-only** in `OPERATOR_ONLY_ROUTES` (KTD-D5). Uniqueness is enforced by B2's constraint; the `SELECT`-derived acknowledgement follows the `EVENT-01` precedent for *reporting* the duplicate, because a duplicate insert returns no row. **An unclaim counterpart is out of this slice** — KTD-D5's table shape permits it, but its authorization is unspecified and it is not needed for B9 | B2, B2a, B3 |
 | **B5** | **Read model + provenance lookup** — extend `OverviewView`/`buildOverview` (`readModel.ts:54-80`) with the WorkItem projection D0-5 defines; add `GET /work-items`, `GET /work-items/:id`, and `GET /work-items/by-ref?source=&ref=` (query parameters, not path segments — KTD-B5). `PacketView` already carries per-packet `policyScope` (`readModel.ts:43`) and the WorkItem projection keeps it per-packet rather than aggregating it | B2, B2a, D0-5 |
-| **B6** | **Web UI** *(primary surface)* — extend `dashboard.ts` with a WorkItem view. **Four things it must specify rather than leave to the implementer, because this is now the primary surface and one line is not a specification.** (a) **Hierarchy:** a WorkItem may own 0..n packets and 0..n sessions — state whether packets nest inside the WorkItem card and whether sessions render per-packet or as a flat WorkItem-level list, and what the reader sees first when several packets each carry attention. (b) **Observed versus authoritative must be visible**, not merely true in the schema: an unclaimed session read as a supervised run at the one place a human looks defeats KTD-D5 entirely. Use the existing state-tag convention (`.tag.scope`, `.tag.done`, `.reason.stale`). (c) **Attention must be actionable**, not a second passive list — the existing attention renderer groups and lists with no click-through, while the decision and criteria sections do attach buttons; say whether an item naming an unclaimed session links to B4's claim. (d) **Empty states** follow the existing `.empty` convention per subsection — B9's dogfooding WorkItem starts packet-less and session-less, so this is day-one behaviour, not an edge case | B5 |
+| **B6** | **Web UI** *(primary surface)* — extend `dashboard.ts` with a WorkItem view. **Three things it must specify rather than leave to the implementer, because this is now the primary surface and one line is not a specification.** (a) **Hierarchy:** a WorkItem may own 0..n packets and 0..n sessions — state whether packets nest inside the WorkItem card and whether sessions render per-packet or as a flat WorkItem-level list, and what the reader sees first when a WorkItem owns several packets. (b) **Observed versus authoritative must be visible**, not merely true in the schema: an unclaimed session read as a supervised run at the one place a human looks defeats KTD-D5 entirely. Use the existing state-tag convention (`.tag.scope`, `.tag.done`, `.reason.stale`). (c) **Empty states** follow the existing `.empty` convention per subsection — B9's dogfooding WorkItem starts packet-less and session-less, so this is day-one behaviour, not an edge case. **The WorkItem view renders no attention** (KTD-B1); the existing packet-level attention rendering is untouched | B5 |
 | **B7** | **`awcp status`** *(secondary)* — a `get()` helper beside the existing `post()` (`awcp.ts:167`) consuming the same read model. Credential resolution unchanged (`resolveApiKey()`, `:159`). Record beside the CLI's docblock (`:373-387`) why a *read* does not breach the supervision boundary those absent subcommands protect | B5 |
-| **B8** | **Attention rules for observed sessions**, implementing KTD-B6's contract change (nullable `packet_id`, new `session_id`, the `abandoned` reason, `evaluateSessionAttention`, and the `buildOverview` union) and updating **every existing `AttentionItem` consumer**. Controls in the Verification Contract | B1, B3, B5, KTD-B6 |
-| **B9** | **Dogfooding** — a WorkItem created through B2a with `source_system='story-board'`, `source_ref='ST-097'`, answerable over HTTP by a caller holding no UUID. Written to work under either KTD-D2 option. **State in the artifact that the story-board reference is hand-maintained and carries no sync guarantee** — A6 is held to an *enforced* sync precisely because discretionary bookkeeping is this repo's documented failure, and dogfooding beyond a single item needs the same bar before it expands | B2a, B5, A2 |
+| ~~**B8**~~ | **Deferred to the attention milestone** by PO decision (KTD-B1). Its contract change, its Red/Green Control, and its non-vacuity and discrimination guards are specified in KTD-B6 so the milestone inherits them | — |
+| **B9** | **Dogfooding** — a WorkItem created through B2a carrying its own `AW-NNN` (KTD-D2) plus `source_system='story-board'`, `source_ref='ST-097'` as **provenance**, answerable over HTTP by a caller holding no UUID. The `ST-NNN` is the reference, not the identity — which is the distinction this whole restructure exists to draw, demonstrated on one real item. **State in the artifact that the story-board reference is hand-maintained and carries no sync guarantee** — A6 is held to an *enforced* sync precisely because discretionary bookkeeping is this repo's documented failure, and dogfooding beyond a single item needs the same bar before it expands | B2a, B5, A2 |
 
 **Known wart, left alone and said so:** `PacketStatus` declares `in_progress` and `blocked`
 (`types.ts:40`) and no code path can write either — `setPacketStatus` was deliberately deleted
@@ -651,9 +715,8 @@ land out of order.
 | B2 | Migration applies; `DROP SCHEMA workflow CASCADE` leaves nothing | Teardown remains one statement |
 | B4 | Replay a claim | One association, and the ack is `SELECT`-derived |
 | B5 | `GET /work-items/by-ref/story-board/ST-097` | Resolves without a UUID |
-| B8 | **Zero-attention + Red/Green Control** | A healthy observed session (start → heartbeats → clean close, unclaimed) yields **zero** attention items; the *same* session abandoned mid-flight yields **exactly one** |
-| B8 | **Non-vacuity guard** | The evaluator asserts it inspected a non-empty set, so a wiring break cannot render as a clean queue |
-| B8 | **Discrimination on rules 3/4/5** | An observed session positively does **not** trip `stale` (idle > 30 min — `DEFAULT_STALE_AFTER_MS`, `attention.ts:26`), `ended-without-checkpoint`, or `ready-for-review` (zero required criteria counts as satisfied **deliberately**, `attention.ts:105-126`) |
+| B — attention | **No attention row here, deliberately.** The zero/one control and its guards move with B8 to the attention milestone (KTD-B6). A slice-level attention assertion would be the creep stop condition 4 exists to catch |
+| B6 | The WorkItem view renders no attention | Packet-level attention rendering is unchanged; nothing new is added |
 | B — all | **Fabrication guard** | An observed session never claimed leaves `work_packets` row-count unchanged and creates no `policy_scope` value anywhere |
 | B — all | **Credential parity matrix** | Per added route, agent key → expected status. Operator-only routes return **403** (authenticated, not authorised), distinct from 401 |
 | B6 | **UI/agent read parity** | Every field the UI renders for a WorkItem is retrievable by an agent-key GET. Assert on the field set, not a sample response |
@@ -664,7 +727,7 @@ land out of order.
 | B2a | Create a packet through `POST /packets` with a `workItemId` in the body | Rejected or ignored — the binding is operator-only (KTD-D4) |
 | B4 | Two concurrent identical claims | One association row. The **UNIQUE constraint** is what passes this, not the `SELECT` ack |
 | B5 | `GET /work-items/by-ref?source=github&ref=%2357` | Resolves — `#57` survives the round trip. Also test `PROJ-1234` and `ST-097` |
-| **End-to-end** | Create a WorkItem (B2a) → observe a session (B3) → claim it (B4) → read it (B5) → see it in the UI (B6) → its attention state (B8) | **One item travels the whole chain.** Without this row every link is proven in isolation and the slice can pass while not being end-to-end |
+| **End-to-end** | Create a WorkItem (B2a) → observe a session (B3) → claim it (B4) → read it (B5) → see it in the UI (B6) | **One item travels the whole chain.** Without this row every link is proven in isolation and the slice can pass while not being end-to-end |
 | All | `git log --format='%H %(trailers:key=Story,valueonly)' main..HEAD` | **Every** commit on the branch returns `ST-097`. `git log -1` inspects one commit and would pass against the ~34-commit population the original finding was about |
 
 **Scope the test run to the deliverable.** D0-1/D0-2/D0-4 and all of A change no server code and run
@@ -690,11 +753,15 @@ The criteria below describe the **granted** branch.
 
 D0 has a recorded contract and a PO decision on storage; `CONCEPTS.md` defines Work Item and no
 longer roots containment at the packet. A's three responsibilities are three artifacts, the
-allocator conflicts loudly rather than duplicating silently, and authority hands over at the
+allocator rejects a duplicate at mint time rather than at merge, and authority hands over at the
 milestone boundary rather than by rewriting a live milestone. B answers *"what is the state of
-ST-097?"* over HTTP to a caller holding no UUID, renders it in the web UI, produces zero attention
-for a healthy session and exactly one for an abandoned one — and creates no packet and no policy
-scope anywhere along the way.
+ST-097?"* over HTTP to a caller holding no UUID and renders it in the web UI — creating no packet
+and no policy scope anywhere along the way.
+
+**It does not answer *"which one needs me?"***. Attention is deferred to the post-continuity
+milestone by PO decision (KTD-B1), so this slice is neither done by producing attention nor undone
+by lacking it. That question was the original motivation, and the deferral is the trade the PO took
+to avoid defining attention semantics over a provisional session signal.
 
 ## Scope Boundaries
 
@@ -705,6 +772,11 @@ scope anywhere along the way.
 - **`ADR-013` is not edited.** KTD-D1; the supersession is recorded in ADR-017.
 - **Horizon B–D milestone *content* is not authored.** Baseline decision 3; A5 stages candidates, it
   does not write requirements.
+- **Observed-session attention rules and attention rendering** — deferred to the post-continuity
+  milestone by PO decision (KTD-B1), with the contract change and every control specified in KTD-B6
+  so nothing is rediscovered. **The requirement is deferred, not dropped.**
+- **A session-data retention subsystem** — session events inherit the run-event posture; expanding
+  capture past dogfooding is gated on an explicit retention and compaction decision (KTD-B7).
 - **Arming the completion gate** — real (criteria are curl-only, so zero required criteria means a
   packet completes unconditionally) and deliberately not this slice.
 - **Workflow MCP tools** — deferred, and **the blocker is auth, not taste**: `requireApiKey`
@@ -731,41 +803,18 @@ scope anywhere along the way.
 | Deleting the board's queue role breaks something silently | Nothing mechanical depends on it — which is the danger. A7 ships with A6 |
 | WorkItem duplicates existing columns (`work_packets.repository`/`branch`, `evidence_items.detail`, `checkpoints.repo_commit`) | D0-1 states which is authoritative for what; the packet keeps its repo binding, the WorkItem carries external identity |
 
-## Open Questions
+## Open Questions — all settled 2026-08-24
 
-**OQ1 — KTD-D2: is `ST-NNN` the human-facing id for AWCP-native work?** Reserved to the PO by
-instruction. Recommendation recorded (Option 1, a separate `AW-NNN`); B9 works under either.
+*(All six open questions from the 2026-08-24 review round were settled by the PO the same day. They
+are recorded in their KTDs — **OQ1** → KTD-D2 (`AW-NNN`, a separate AWCP-native namespace);
+**OQ2** → KTD-D3 (narrow override, migration `005` only); **OQ3** → KTD-A5 (split once A2 makes safe
+allocation possible); **OQ4** → KTD-B1 (attention deferred to the post-continuity boundary);
+**OQ5** → KTD-B7 (inherit the run-event retention posture, with the expansion boundary recorded);
+**OQ6** → KTD-A4 (ST-096 coordinated, confirmed). Nothing in this plan is now waiting on a decision
+except the D0-4 gate itself, which is a unit rather than a question.)*
 
-**OQ2 — Does granting D0-4 also settle ADR-016 §1 beyond migration `005`?** The plan asks for a
-scoped override. Granted broadly, B2–B4 stop being gated work at all; granted narrowly, every later
-AWCP migration returns for its own override.
-
-**OQ3 — Do D0, A and B stay one `ST-097`, or become three stories once A2 lands?** They now carry one
-story number and one trailer, so the board's single In-Progress slot is held for the whole
-transition — through a PO gate and a possible wait on ST-088 Phase 4 — and the unit that *removes*
-the WIP limit (A6) is itself gated on ST-088. Splitting is only possible after A2 exists, since this
-plan mints nothing.
-
-**OQ4 — Should attention move out of the first slice?** The cross-model product lens argues the slice
-should ship WorkItem, provenance and session truth now, and move observed-session **attention rules
-and rendering** to the post-continuity boundary — because adopting an attention contract over a
-provisional signal turns the later attention milestone into a migration rather than a projection of
-validated runtime truth. That is a real scope fork against the stated *"actionable attention"*
-requirement, so it is the PO's call. See KTD-B1.
-
-**OQ5 — Does persisted session data need a lifecycle policy in this slice?** B2 persists external
-identifiers and observed-session history and B6 exposes them, with no data classification,
-retention, deletion, redaction or log policy stated. Nothing breaks at one dogfooded item; the
-question is whether the policy is owed before the store accumulates.
-
-**OQ6 — Confirm KTD-A4.** ST-096 coordinated rather than superseded is the plan author's narrowing of
-the PO's 2026-08-23 decision on new evidence. A6 consumes ST-096's sequencing, so a reversal changes
-when Workstream A can complete.
-
-*(The previous draft's OQ2/OQ3/OQ4 — abandonment threshold, `session_id` origin, clean-close
-semantics — are now **settled in KTD-B4**; they gated B3 and B8 while carrying no stop condition, so
-an implementer would have had to invent three answers to an event contract this plan itself calls
-expensive to change. Its OQ5, the non-AWCP staging destination, is settled inside A5(b).)*
+**The one thing still open, and it is a unit not a question:** D0-4. The PO has settled *how broad*
+the override should be; granting it is the gate B2 waits on.
 
 ---
 
