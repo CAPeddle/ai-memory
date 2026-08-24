@@ -61,21 +61,48 @@ interface RoutePattern {
  *   self-certification hole `/complete` closes, one step earlier in the process.
  *   It sits on the operator side even though — unlike the other three — it is not
  *   literally an act of signing off.
+ * - `POST /work-items` — an agent must never create a WorkItem. A WorkItem records
+ *   *requested* work and its external provenance (ADR-017 §2), and only the
+ *   operator knows what was requested; an agent minting one would be AWCP inventing
+ *   a unit of requested work that nobody asked for, carrying a provenance pair
+ *   nothing corroborates.
+ * - `PATCH /packets/:packetId/work-item` — binding a packet to a WorkItem. An agent
+ *   key may legitimately create a packet, and a packet is the only authority for its
+ *   own Policy Scope (ADR-017 §3). If the binding were agent-reachable, an
+ *   agent-authored packet carrying any scope it liked could be parented to a
+ *   WorkItem and so become the scope authority for anything reached through it —
+ *   the security boundary relocated by an agent, which is precisely what removing
+ *   the scope column from the WorkItem does NOT by itself prevent. This entry is the
+ *   half that does.
+ *
+ * **Adding a write route WITHOUT adding it here is the failure mode this list has,
+ * and it is silent.** {@link requiresOperator} returns false by default, so an
+ * omitted route is not "unclassified" — it is classified as agent-reachable, and
+ * nothing reports that. It was observed rather than theorised: with both routes
+ * above mounted and neither listed here, the agent key answered 201 to
+ * `POST /work-items` and minted a real WorkItem row.
  */
 const OPERATOR_ONLY_ROUTES: RoutePattern[] = [
   { method: "POST", regex: new RegExp(`^/api/workflow/decisions/${ID}/resolve$`) },
   { method: "POST", regex: new RegExp(`^/api/workflow/criteria/${ID}/evidence$`) },
   { method: "POST", regex: new RegExp(`^/api/workflow/packets/${ID}/complete$`) },
   { method: "POST", regex: new RegExp(`^/api/workflow/packets/${ID}/criteria$`) },
+  { method: "POST", regex: /^\/api\/workflow\/work-items$/ },
+  { method: "PATCH", regex: new RegExp(`^/api/workflow/packets/${ID}/work-item$`) },
 ];
 
 /**
- * True when `method`+`path` names one of the four operator-only routes above.
+ * True when `method`+`path` names one of the six operator-only routes above.
  *
  * Every other `/api/workflow` route — including all seven reporting/read routes
  * (`POST /packets`, `POST /packets/:packetId/runs`, `POST /runs/:runId/checkpoints`,
  * `POST /runs/:runId/end`, `POST /packets/:packetId/decisions`, `GET /overview`,
  * `GET /packets/:packetId`) — returns `false`, so either credential may call it.
+ *
+ * The match is method-aware as well as path-aware, and that stopped being a
+ * theoretical nicety when the binding route arrived: it is the module's only
+ * non-POST write, so `PATCH /packets/:id/work-item` and a hypothetical
+ * `POST /packets/:id/work-item` classify differently.
  *
  * This function makes no authentication decision of its own: it does not know
  * whether the caller presented a valid key, an agent key, or no key at all. It only

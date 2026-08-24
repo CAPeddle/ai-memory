@@ -130,6 +130,16 @@ export interface WorkPacket {
   branch: string | null;
   policy_scope: PolicyScope;
   status: PacketStatus;
+  /**
+   * The optional parent {@link WorkItem} (ADR-017 §3), added by migration 005.
+   *
+   * **Nullable is the contract, not a convenience.** A packet is entirely valid with
+   * no parent, and every packet that predates the WorkItem layer stays valid,
+   * unchanged and unparented. Binding is its own operator-only write and is never
+   * settable at creation — `CreatePacketInput` deliberately has no counterpart to
+   * this field, so a packet cannot arrive already parented.
+   */
+  work_item_id: string | null;
   created_at: Date;
   updated_at: Date;
   completed_at: Date | null;

@@ -197,6 +197,110 @@ Deno.test({
       assertEquals(stillOpen.body.openDecisions.length, 1, "the decision must still be unresolved");
 
       // ---------------------------------------------------------------
+      // ST-097 B2a: the two WorkItem write routes. An agent must never create a
+      // WorkItem, and must never bind a packet to one — so both are operator-only,
+      // and each gets the full triple: no key -> 401, agent key -> 403, operator key
+      // -> success. The 401/403 pair is the load-bearing distinction: 403 means the
+      // credential authenticated and the ROUTE refused it, which is a different fact
+      // from "we did not recognise you" and must not be collapsed into it.
+      //
+      // These run on their own fresh packet rather than the one above, which is
+      // completed a few lines further down. Binding to a completed packet is
+      // undefined territory and nothing here should depend on it.
+      // ---------------------------------------------------------------
+      {
+        const noKeyCreate = await fetch(`${server.baseUrl}/api/workflow/work-items`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sourceSystem: "awcp-native" }),
+        });
+        assertEquals(noKeyCreate.status, 401, await noKeyCreate.text());
+      }
+
+      const createItemDenied = await apiCall(
+        server.baseUrl,
+        AGENT_KEY,
+        "/api/workflow/work-items",
+        { method: "POST", body: JSON.stringify({ sourceSystem: "awcp-native" }) },
+      );
+      assertEquals(createItemDenied.status, 403, JSON.stringify(createItemDenied.body));
+
+      const createItemOk = await apiCall(
+        server.baseUrl,
+        OPERATOR_KEY,
+        "/api/workflow/work-items",
+        { method: "POST", body: JSON.stringify({ sourceSystem: "awcp-native" }) },
+      );
+      assertEquals(createItemOk.status, 201, JSON.stringify(createItemOk.body));
+      const workItemId = createItemOk.body.id;
+
+      const bindTarget = await apiCall(server.baseUrl, AGENT_KEY, "/api/workflow/packets", {
+        method: "POST",
+        body: JSON.stringify({
+          title: "binding target",
+          objective: "an agent may still create a packet; it may not parent one",
+          policyScope: "personal",
+        }),
+      });
+      assertEquals(bindTarget.status, 201, JSON.stringify(bindTarget.body));
+      const bindTargetId = bindTarget.body.id;
+
+      // KTD-D4: `work_item_id` is never settable through POST /packets. The agent key
+      // creating a packet is legal; the packet arriving parented would not be.
+      const smuggled = await apiCall(server.baseUrl, AGENT_KEY, "/api/workflow/packets", {
+        method: "POST",
+        body: JSON.stringify({
+          title: "smuggled binding",
+          objective: "prove work_item_id cannot ride in on packet creation",
+          policyScope: "personal",
+          workItemId,
+        }),
+      });
+      assertEquals(smuggled.status, 201, JSON.stringify(smuggled.body));
+      assertEquals(
+        smuggled.body.work_item_id,
+        null,
+        "an agent-created packet must never arrive already parented",
+      );
+
+      {
+        const noKeyBind = await fetch(
+          `${server.baseUrl}/api/workflow/packets/${bindTargetId}/work-item`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ workItemId }),
+          },
+        );
+        assertEquals(noKeyBind.status, 401, await noKeyBind.text());
+      }
+
+      const bindDenied = await apiCall(
+        server.baseUrl,
+        AGENT_KEY,
+        `/api/workflow/packets/${bindTargetId}/work-item`,
+        { method: "PATCH", body: JSON.stringify({ workItemId }) },
+      );
+      assertEquals(bindDenied.status, 403, JSON.stringify(bindDenied.body));
+
+      // The refused bind must not have written. Read it back with the operator key.
+      const stillUnparented = await apiCall(
+        server.baseUrl,
+        OPERATOR_KEY,
+        `/api/workflow/packets/${bindTargetId}`,
+      );
+      assertEquals(stillUnparented.body.packet.work_item_id, null);
+
+      const bindOk = await apiCall(
+        server.baseUrl,
+        OPERATOR_KEY,
+        `/api/workflow/packets/${bindTargetId}/work-item`,
+        { method: "PATCH", body: JSON.stringify({ workItemId }) },
+      );
+      assertEquals(bindOk.status, 200, JSON.stringify(bindOk.body));
+      assertEquals(bindOk.body.work_item_id, workItemId);
+
+      // ---------------------------------------------------------------
       // Discrimination control: the OPERATOR key CAN do every one of the four denied
       // actions above. This is what proves the 403s are the authorisation rule
       // firing — not the routes themselves being broken, misrouted, or 404ing under

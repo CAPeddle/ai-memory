@@ -250,6 +250,8 @@ applied by the composition root's `/api/workflow` middleware in `server/index.ts
 | POST | `/packets/:packetId/criteria` | **operator-only** |
 | POST | `/criteria/:criterionId/evidence` | **operator-only** |
 | POST | `/packets/:packetId/complete` | **operator-only** |
+| POST | `/work-items` | **operator-only** |
+| PATCH | `/packets/:packetId/work-item` | **operator-only** |
 
 The two `GET` routes are deliberately reporting/read: a resuming agent otherwise has no
 way to check whether a blocking decision it raised was ever resolved.
@@ -258,6 +260,16 @@ way to check whether a blocking decision it raised was ever resolved.
 criteria define the verification contract the agent will be judged against, so
 authoring that contract is supervision, not reporting — the same self-certification
 concern that puts `/complete` on the operator side, one step earlier in the process.
+
+The two WorkItem writes (ST-097) are operator-only for a related but distinct reason.
+A WorkItem records *requested* work and its external provenance, and only the operator
+knows what was requested — so `POST /work-items` is supervision, and an agent minting
+one would be AWCP inventing a unit of work nobody asked for. `PATCH
+/packets/:packetId/work-item` follows from that plus scope: a packet is the only
+authority for its own Policy Scope, an agent key may legitimately create a packet, and
+an agent-authored packet parented to a WorkItem would become the scope authority for
+anything reached through it. For the same reason `work_item_id` is **not** accepted by
+`POST /packets` — binding is only ever the PATCH above, never a field on creation.
 
 Failures map deliberately: **400** malformed input or missing/invalid policy scope ·
 **404** unknown packet, run, decision or criterion (including a foreign-key miss, which

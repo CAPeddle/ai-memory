@@ -31,6 +31,10 @@ function packet(overrides: Partial<WorkPacket> = {}): WorkPacket {
     branch: null,
     policy_scope: "personal",
     status: "in_progress",
+    // Unparented, as every packet is until the operator binds it. Attention is a
+    // packet-level concept and gains nothing from the WorkItem layer (ADR-017 §3);
+    // this field is here only because a `WorkPacket` literal must be complete.
+    work_item_id: null,
     created_at: NOW,
     updated_at: NOW,
     completed_at: null,

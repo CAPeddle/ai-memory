@@ -2,8 +2,8 @@
  * Unit tests for `requiresOperator` (server/src/workflow/policy.ts) — the pure route
  * classification behind the operator/agent credential split.
  *
- * Table-driven, covering every one of the eleven /api/workflow routes explicitly, both
- * classifications, plus a uuid-segment case. The reporting-route assertions are a
+ * Table-driven, covering every one of the thirteen /api/workflow routes explicitly,
+ * both classifications, plus a uuid-segment case. The reporting-route assertions are a
  * discrimination control: a bug that classified everything as operator-only (e.g. a
  * `some()` that always returns true, or a stray `.test(path) || true`) would pass every
  * operator-only assertion below and be caught only by these.
@@ -82,6 +82,22 @@ const CASES: Case[] = [
     path: `/api/workflow/packets/${UUID}/criteria`,
     expected: true,
   },
+  // ST-097 B2a. Both are WRITES INTO the WorkItem layer, and `requiresOperator`
+  // returns false by default — so a route merely omitted from OPERATOR_ONLY_ROUTES
+  // is silently agent-reachable. These two cases are what makes that omission fail
+  // loudly rather than pass quietly.
+  {
+    label: "POST /work-items",
+    method: "POST",
+    path: "/api/workflow/work-items",
+    expected: true,
+  },
+  {
+    label: "PATCH /packets/:packetId/work-item",
+    method: "PATCH",
+    path: `/api/workflow/packets/${UUID}/work-item`,
+    expected: true,
+  },
 ];
 
 for (const c of CASES) {
@@ -95,6 +111,14 @@ Deno.test("requiresOperator: method matters, not just path — GET on an operato
   // rather than path-only (a GET can never collide with it in this router, but the
   // function itself must not silently ignore method).
   assertEquals(requiresOperator("GET", `/api/workflow/packets/${UUID}/complete`), false);
+});
+
+Deno.test("requiresOperator: the work-item binding is matched on PATCH and on nothing else", () => {
+  // The binding route is the module's only non-POST write. A classifier that ignored
+  // method, or that was copied from a POST entry without its method being changed,
+  // would answer wrongly on one of these two.
+  assertEquals(requiresOperator("PATCH", `/api/workflow/packets/${UUID}/work-item`), true);
+  assertEquals(requiresOperator("POST", `/api/workflow/packets/${UUID}/work-item`), false);
 });
 
 Deno.test("requiresOperator: method comparison is case-insensitive", () => {

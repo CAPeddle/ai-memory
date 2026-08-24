@@ -25,6 +25,7 @@ import type { Context } from "npm:hono@4.9.2";
 import { z } from "npm:zod@4.1.13";
 
 import { buildOverview, buildPacketView } from "./readModel.ts";
+import { createWorkItemSchema } from "./schema.ts";
 import * as store from "./store.ts";
 import {
   CompletionBlockedError,
@@ -103,6 +104,18 @@ const evidenceSchema = z.object({
   kind: z.enum(["manual", "command_result", "external_build"]),
   detail: z.string().min(1),
   recordedCommit: z.string().nullish(),
+});
+
+/**
+ * The WorkItem binding's body — one id and nothing else.
+ *
+ * Deliberately NOT `createWorkItemSchema`: binding names an existing WorkItem, it
+ * does not describe one. A route that accepted a provenance pair here would be a
+ * second creation path wearing an update's name, and the WorkItem it minted would
+ * bypass whatever the create route later grows.
+ */
+const bindWorkItemSchema = z.object({
+  workItemId: z.uuid(),
 });
 
 const idSchema = z.uuid();
@@ -398,8 +411,63 @@ export function createWorkflowApi(): Hono {
       return c.json(result as Json, successStatus);
     });
 
+  // --- Work items ---------------------------------------------------------
+
+  /**
+   * Create a WorkItem (ADR-017 §1-§4). OPERATOR-ONLY — see policy.ts.
+   *
+   * The body schema is `createWorkItemSchema` from schema.ts rather than a private
+   * copy declared here beside the others. That is the one deliberate break from this
+   * file's own idiom, and it is the ADR's instruction: §2's closed provenance set and
+   * the pair rule that goes with it are the versioned contract, so a second
+   * declaration of them at the HTTP edge would be a second place for the vocabulary
+   * to drift. Everything the schema does NOT accept is load-bearing too — no
+   * `awLabel` (§4 mints nothing here), no `policyScope` (§3), no `status` (§6), no
+   * `title` (§2) — and a plain `z.object` strips all four rather than smuggling them
+   * through.
+   */
+  api.post(
+    "/work-items",
+    command(createWorkItemSchema, [], (body) =>
+      store.createWorkItem({
+        sourceSystem: body.sourceSystem,
+        sourceRef: body.sourceRef ?? null,
+      })),
+  );
+
+  /**
+   * Bind a packet to a WorkItem. OPERATOR-ONLY — see policy.ts.
+   *
+   * PATCH rather than POST because this sets one field on an existing packet;
+   * it is the module's only non-POST write, which is why policy.ts's classification
+   * has to be method-aware for it and not merely path-aware.
+   *
+   * 200 rather than 201: nothing is created. The updated packet comes back so the
+   * caller can see the binding it just made without a second read.
+   */
+  api.patch(
+    "/packets/:packetId/work-item",
+    command(
+      bindWorkItemSchema,
+      ["packetId"],
+      (body, params) => store.bindPacketToWorkItem(params.packetId, body.workItemId),
+      200,
+    ),
+  );
+
   // --- Work packets -------------------------------------------------------
 
+  /**
+   * Create a packet.
+   *
+   * **`workItemId` is not in `createPacketSchema`, and its absence is the contract**
+   * (ADR-017 §3, KTD-D4). A plain `z.object` strips an unknown key, so a body
+   * carrying one parses to a body that does not, and `store.createPacket` never
+   * names the column. Binding is the operator-only PATCH above; if it were reachable
+   * here, an agent key — which may legitimately create packets — could mint a packet
+   * already parented to a WorkItem and become the scope authority for anything
+   * reached through it.
+   */
   api.post(
     "/packets",
     command(createPacketSchema, [], (body) =>
