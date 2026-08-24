@@ -34,8 +34,8 @@ see KTD5. [CLAUDE.md](../../CLAUDE.md) governs conventions and merge rules; U6 a
 [`ADR-016`](../design/adr/ADR-016-awcp-consolidation-host-topology.md) outranks everything on the
 host question and constrains U7 to zero DDL.
 
-**Board state.** ST-097 is filed on the board it is retiring — the last entry that board receives as
-a queue. Verified free on `main` and across all local branches before filing. It takes **In Progress**
+**Board state.** ST-097 is filed on the board whose **queue role** it is retiring — the last entry that board receives
+as a queue. The file itself survives (KTD2). Verified free on `main` and across all local branches before filing. It takes **In Progress**
 only after U2 lands; until then it is Backlog, because ST-088 holds the slot and U2's whole purpose
 is to clear the branch state first.
 
@@ -134,8 +134,8 @@ that justification.
 with a boundary.)*
 ST-096's U6 resolves the Backlog conflict *"by keeping all three entries"* and its Scope Boundaries
 bar rewriting `.planning/` now. Both are superseded here. But its **branches must land or be lifted
-before the board is touched**: three branches each hold a distinct entry at the top of `## Backlog`,
-and editing the file first turns a resolvable three-way text conflict into silent content loss.
+before the board is touched**: three branches plus `main` each hold a distinct entry at the top of `## Backlog`,
+and editing the file first turns a resolvable four-way text conflict into silent content loss.
 
 ---
 
@@ -214,8 +214,8 @@ own home) are local-only and each holds a distinct top-of-Backlog entry, as does
 the diff sums to 175 additions / 7,860 deletions; the board header records this. Lift content, never
 merge that branch.
 
-Resolve the three-way Backlog conflict by **keeping all entries**. Reconfirm ST-095/096/097 numbering
-at merge.
+Resolve the **four-way** Backlog conflict by **keeping all four entries** — ST-094 (from `main`),
+ST-095, ST-096, ST-097. Reconfirm ST-095/096/097 numbering at merge.
 
 ### U3 — Make CE-inside-GSD actually execute *(depends: U2)*
 
@@ -312,7 +312,7 @@ story.
 | Unit | Check | Passes when |
 |---|---|---|
 | U1 | `grep -n 'supersede' .planning/REQUIREMENTS.md .planning/ROADMAP.md` | All four sites carry a dated supersession naming ST-097 |
-| U2 | `git log --oneline main..` on each branch; board diff | All three Backlog entries present after merge |
+| U2 | `git log --oneline main..` on each branch; board diff | All **four** Backlog entries present after merge (ST-094/095/096/097) |
 | U3 | `node ~/.claude/gsd-core/bin/gsd-tools.cjs query agent-skills <agent>` | Emits a **directive**, not a skip warning — plus one observed CE-skill execution inside a GSD agent |
 | U4 | `git log --grep` per migrated entry; `grep -c '999\.' .planning/ROADMAP.md` | 33 entries present and each verified against the tree before migration |
 | U4 | Mint a new `ST-NNN` from the ledger | Allocated, and free across `main` and every local branch |
@@ -328,8 +328,9 @@ with all required criteria evidenced renders `ready-for-review`; a missing API k
 the same message shape `resolveApiKey()` already uses; an unreachable server exits non-zero without a
 stack trace.
 
-**Run the server suite for U7 only** — it is the sole unit touching `server/`. U1–U6 change no server
-code, and both ST-095 and ST-096 say explicitly not to run it for governance work.
+**Run Deno tests for U7 only, and only `tests/awcp-cli.test.ts`** — U7 is the sole unit touching
+`server/`. U1–U6 change no server code, and both ST-095 and ST-096 say explicitly not to run the
+suite for governance work.
 
 ```
 docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env \
