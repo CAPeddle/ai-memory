@@ -250,10 +250,31 @@ So D0-4 asks for two things:
 
 1. **An explicit PO override of ADR-016 §1 for migration `005` and nothing else**, recorded as a
    dated amendment in ADR-016's Revision History so it is legible as an override rather than as
-   compliance. **Any later AWCP migration returns for its own decision** — the gate keeps working;
-   and
+   compliance — and explicitly **not** as evidence that ST-088 has completed the host decision.
+   **Any later AWCP migration returns for its own decision**; the gate keeps working. This half is
+   the PO's, and it is the only half still outstanding; and
 2. **the §3 storage-layout revisit** that `awcp-spec-evaluation.md:177` requires so the decision is
-   not *"silently resolved by the first migration author"*.
+   not *"silently resolved by the first migration author"*. **This half is settled here** — see
+   KTD-D3a. `awcp-spec-evaluation.md:177` is explicit that storage layout is *"a module-design
+   decision, **not a further PO decision**"*, so writing it down *is* the revisit.
+
+**KTD-D3a — WorkItem, observed sessions and the association live in the existing `workflow` schema.
+WorkItem is the parent of WorkPacket in the same aggregate; no second schema is introduced.**
+*(module-design decision, taken here rather than escalated, per `awcp-spec-evaluation.md:177`.
+Rejected alternative: a logically separate schema or tables behind their own module interface.)*
+
+Three reasons, in order of weight. **Teardown stays one statement** — `DROP SCHEMA workflow CASCADE`
+— which is the property the *contract-first, storage-disposable* rule actually depends on, and a
+second schema would give the module two teardown paths and two migration ledgers. **The aggregate is
+already contained** — `CONCEPTS.md:7` states a Work Packet owns everything beneath it and nothing
+under it points into the Memory Domain; adding a parent *above* the packet extends that containment
+rather than crossing it, so the boundary ADR-016's criteria 1–4 were assessed against is unchanged.
+And **`work_packets.work_item_id` is a foreign key**, which a cross-schema split would either
+complicate or force into an application-level join.
+
+**This narrows the host question rather than widening it**, which matters because §1's bar exists to
+stop schema work presuming the host: the decision commits to nothing about *where the `workflow`
+schema lives*, only that WorkItem lives beside its packets wherever that is.
 
 **Price the override honestly, because an earlier draft did not.** It is tempting to justify `005`
 as cheap under the repo's *contract-first, storage-disposable* rule, since teardown is one
@@ -269,6 +290,32 @@ proceed *"against an in-memory/contract-only substrate."* No such substrate exis
 `server/src/workflow/`, and building one means building the read model twice. **The honest decline
 branch is that Workstream B ships no operator-visible deliverable**: D0-1..D0-3 and B1 (contract and
 types) complete, and everything from B2 onward sequences behind ST-088 Phase 4.
+
+**KTD-D6 — A WorkItem has no aggregate authoritative status. Its components are presented
+separately, and neither client synthesises one.**
+*(design decision, 2026-08-24. Rejected alternative: a WorkItem-level status projection with
+precedence rules across packets, sessions and external source status.)*
+
+The review asked how a WorkItem with 0..n packets reports its state, and warned that the web UI and
+`awcp status` could otherwise disagree. **The answer is that there is nothing to aggregate, and
+inventing one would be the more dangerous failure.**
+
+- **External requested-work status stays authoritative at its source.** This is not a new position —
+  it is `awcp-spec-evaluation.md:163` restated: *"Requested work, hierarchy, status, priority,
+  labels, fix versions | **Jira** (unchanged)."* A WorkItem-level status would be AWCP asserting
+  authority over exactly the column that matrix assigns elsewhere.
+- **AWCP exposes what it does own, separately**: packet operational state, and observed-session
+  state, each under the WorkItem, each labelled as itself.
+- **Both clients consume the same read model and render the components.** They cannot disagree,
+  because neither computes anything — which is a stronger guarantee than agreeing on a shared
+  precedence rule.
+- **Nothing synthesises `in_progress` or `blocked`.** `PacketStatus` declares both and no code path
+  can write either (`types.ts:40`; `setPacketStatus` deliberately deleted, `api.ts:6-10`). Deriving a
+  WorkItem status from packets whose own status is stuck at `open` would manufacture a signal the
+  server does not hold — the same class of error as inferring one.
+
+**The cost, stated:** *"what is the state of ST-097?"* is answered by a small structured set rather
+than one word. That is the honest shape of the data, and a single word would have been a claim.
 
 **KTD-D4 — WorkItem is deliberately scope-free; Policy Scope stays on the packet.**
 *(my call, derived from the PO's "do not fabricate policy scope" prohibition plus `CONCEPTS.md:51-54`.
@@ -339,7 +386,7 @@ applied to persistence.
 | **D0-2** | `CONCEPTS.md`: new **Work Item** entry; amend `:7` (the containment root is no longer the packet); amend **Work Packet** `:11-14` to name its optional parent; state the Work Item ↔ Story relation explicitly so the two vocabularies stop being adjacent-but-unlinked | D0-1 |
 | **D0-3** | Versioned TypeScript contract in `server/src/workflow/types.ts` + `schema.ts` — **types and zod only, no DDL** | D0-1 |
 | **D0-4** | **PO gate — two asks.** (a) An explicit override of ADR-016 **§1**'s host bar for migration `005`, recorded as an amendment in ADR-016's Revision History; (b) the **§3** storage-layout revisit `awcp-spec-evaluation.md:177` requires. Returns permit-or-defer for B2 | D0-1 |
-| **D0-5** | **The WorkItem status contract.** A WorkItem owns 0..n packets; `PacketStatus` renders `open` for everything in flight (`types.ts:40`, `api.ts:6-10`). Define the WorkItem-level status projection and its precedence across packets, observed sessions, and external source status — or state explicitly that a WorkItem has no status and both clients render its packets' statuses individually. **Without this the web UI and `awcp status` can disagree** | D0-1 |
+| **D0-5** | **The WorkItem status contract — settled as *no aggregate status*.** See KTD-D6. ADR-017 records the decision and its reasoning; there is no projection to design | D0-1 |
 
 ---
 
@@ -511,8 +558,9 @@ and reinforced by A1's finding that the referenced governance file is currently 
 
 ## Workstream B — the first AWCP working slice
 
-**Shape:** WorkItem → associated execution/session → status → **web UI**. Attention rules and
-attention rendering are **deferred to the post-continuity boundary** (KTD-B1).
+**Shape:** WorkItem → observed session → **explicit** WorkItem/session association → shared read
+model → **web-primary status surface** → secondary `awcp status` CLI. Attention rules and attention
+rendering are **deferred to the post-continuity boundary** (KTD-B1); the slice ends at the CLI.
 
 ### B Key Technical Decisions
 
@@ -695,6 +743,56 @@ inferring a status the server does not hold.
 
 ---
 
+## Execution sequence — what is runnable now, and what is gated
+
+An executor needs this partition before it starts, because three different gates are in play and
+they do not expire together.
+
+**Runnable immediately — no gate.** This is what ST-097 carries after KTD-A5's split.
+
+| Unit | Why it is ungated |
+|---|---|
+| **D0-1** ADR-017 — the WorkItem contract | Documentation of a decision; the storage half is settled in KTD-D3a, the status half in KTD-D6 |
+| **D0-2** `CONCEPTS.md` — Work Item entry, amend `:7` and Work Packet | Glossary |
+| **D0-3** Versioned types + zod (`types.ts`, `schema.ts`) | **No DDL.** Contract-first is exactly what `ADR-016:57` permits |
+| **D0-5** Record the status decision in ADR-017 | Part of D0-1 |
+| **A1** Runtime flip + compatibility matrix | `.planning/config.json` only; no milestone artifact |
+| **A2** The allocator (`story-ids.md`) + `CLAUDE.md` mint procedure | Creates a new file; gates everything that mints |
+| **A3** Land or lift the two local branches | Branch hygiene |
+
+**Gated on the D0-4 override** — the one PO decision still outstanding.
+
+| Unit | Blocked on |
+|---|---|
+| **B2** Migration `005` | The §1 override. §3 is settled (KTD-D3a) |
+| **B2a** Write paths (create, bind, session materialisation) | B2 |
+| **B3** Observed-session lane | B2, B2a |
+| **B4** Claim route | B2, B2a, B3 |
+| **B5** Read model + provenance lookup | B2, B2a |
+| **B6** Web UI | B5 |
+| **B7** `awcp status` | B5 |
+| **B9** Dogfooding | B2a, B5, A2 |
+
+**B1** (contract types consumed by B) is runnable now — it is D0-3's output under another name, and
+carries no DDL.
+
+**Gated on ST-088 closing** — the milestone boundary, undated.
+
+| Unit | Blocked on |
+|---|---|
+| **A4** Freeze the archive | ST-088 |
+| **A5** Stage forward work | ST-088 |
+| **A6** Boundary handover (`PROJECT.md`, `CLAUDE.md`, WIP replacement, sync check) | ST-088, A2, A4, A5 |
+| **A7** Reference sweep | A6, ships with it |
+
+**The consequence worth naming.** If D0-4 is granted, an executor can run **D0 + A1–A3 + all of B**
+without waiting for ST-088 — the product slice never depends on the milestone boundary, only the
+governance handover does. If it is not granted, the runnable set is D0-1..D0-3, B1, and A1–A3, and
+that is a complete and coherent stopping point rather than a stalled one.
+
+**Story allocation happens during execution, not here.** Once A2 lands, the successor stories are
+minted through it (KTD-A5). No ID is pre-minted in this plan.
+
 ## Verification Contract
 
 **Local proof only. Nothing is pushed, and the Definition of Done contains no PR.** The first
@@ -752,9 +850,11 @@ comment block is the inventory; its grep is explicitly "a starting point."
 
 ## Definition of Done
 
-**If D0-4 is declined, "done" means D0-1..D0-3 and B1 only** — the contract, the glossary, and the
-types. Workstream B ships nothing operator-visible, and B2 onward sequences behind ST-088 Phase 4.
-The criteria below describe the **granted** branch.
+**If D0-4 is declined, "done" means D0-1..D0-3, B1, and A1–A3** — the contract, the glossary, the
+types, the runtime flip, the allocator and the branches. Workstream B ships nothing operator-visible
+and B2 onward sequences behind ST-088 Phase 4. That is a coherent stopping point, not a stall. The
+criteria below describe the **granted** branch; the Execution sequence section above partitions the
+units either way.
 
 D0 has a recorded contract and a PO decision on storage; `CONCEPTS.md` defines Work Item and no
 longer roots containment at the packet. A's three responsibilities are three artifacts, the
