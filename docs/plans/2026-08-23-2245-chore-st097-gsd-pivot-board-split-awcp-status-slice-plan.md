@@ -589,9 +589,11 @@ credential-parity test from reading as an authorization proof.
 
 **KTD-B4 — The observed-session lifecycle contract, settled here rather than left open.**
 
-*(These were OQ2/OQ3/OQ4 in the previous draft. They are promoted to decisions because B3 and B8
-cannot be implemented deterministically without them, and leaving them open guaranteed the
-implementer would invent three answers.)*
+*(These were OQ2/OQ3/OQ4 in the previous draft. They are promoted to decisions because the event
+contract cannot be implemented deterministically without them, and leaving them open guaranteed the
+implementer would invent three answers to a contract this plan itself calls expensive to change
+once events exist. They remain settled here even though attention left the slice — the *events* are
+contract, and retrofitting them later is a migration plus a reconciliation.)*
 
 1. **Per-session identity enters the event contract now.** `client_seq` is per-*node*, so two
    concurrent sessions on one machine share one counter and interleave indistinguishably — which
@@ -610,7 +612,10 @@ implementer would invent three answers.)*
    decided by a heartbeat gap, not by the absence of `session_end`.**
 5. **The abandonment threshold is distinct from `DEFAULT_STALE_AFTER_MS`.** 30 minutes idle is
    normal for a supervised run and normal for a human's dev session; 30 minutes with **no
-   heartbeat** is not. B3 fixes the concrete gap value and B8's controls assert against it.
+   heartbeat** is not. **B3 emits the heartbeats; the concrete gap *value* travels with the
+   deferred attention package (KTD-B6)**, because a threshold is evaluation policy and this slice
+   has no evaluator left to consume it. Emitting the signal now is what keeps the later decision
+   from being a migration.
 6. **Payload contents are a closed set** — `session_id`, event timestamp, `node_id`, and nothing
    else. `server/scripts/awcp-node-client.mjs:1477-1485` keeps payloads synthetic deliberately,
    because payload content is unresolved under permanent event retention; B3 adds the first new
@@ -674,7 +679,7 @@ already grown.
 |---|---|---|
 | **B1** | WorkItem contract types + zod schema, versioned. **No DDL** | D0-3 |
 | **B2** | **Migration `005_work_items.sql`** — `workflow.work_items`; nullable `work_packets.work_item_id` FK; `workflow.observed_sessions` keyed `(node_id, session_id)`; the session↔WorkItem association table with a **UNIQUE constraint on `(node_id, session_id, work_item_id)`** (KTD-D5 — the ack is a report, not an exclusion mechanism). Additive only; no `IF NOT EXISTS` (the ledger owns idempotency, and 002–004 headers state raw re-execution *should* fail loudly); every object schema-qualified `workflow.*`. **Comments carry symbol anchors and invariants, never line numbers or counts** — the file is byte-frozen from its first application | **D0-4 PO gate** |
-| **B2a** | **The write paths B2's columns need, because a column with no producer is the defect this plan diagnoses.** `001:63-64` promised *"Stage 2 populates node_id from the remote execution node"*; Stage 2 landed and never wired it, and `work_packets.work_item_id` would repeat it exactly. Deliver: **(a)** `POST /work-items` creating a WorkItem from a `(source_system, source_ref)` pair — **operator-only**; without it nothing in B can bring a WorkItem into existence and B9 would require hand-written SQL. **(b)** `PATCH /packets/:id/work-item` binding a packet to a WorkItem — **operator-only**, and `work_item_id` is *never* settable through `POST /packets` (KTD-D4). **(c)** The hub materialises `workflow.observed_sessions` from `session_start`/`session_heartbeat`/`session_end` **inside the existing ingest transaction** (`store.ts:830,858`), preserving its replay-idempotency contract — a jsonb-grep view over `run_events` is rejected, because it would make B4's claim and B8's staleness both depend on a payload field the abandonment case is most likely to omit | B2 |
+| **B2a** | **The write paths B2's columns need, because a column with no producer is the defect this plan diagnoses.** `001:63-64` promised *"Stage 2 populates node_id from the remote execution node"*; Stage 2 landed and never wired it, and `work_packets.work_item_id` would repeat it exactly. Deliver: **(a)** `POST /work-items` creating a WorkItem from a `(source_system, source_ref)` pair — **operator-only**; without it nothing in B can bring a WorkItem into existence and B9 would require hand-written SQL. **(b)** `PATCH /packets/:id/work-item` binding a packet to a WorkItem — **operator-only**, and `work_item_id` is *never* settable through `POST /packets` (KTD-D4). **(c)** The hub materialises `workflow.observed_sessions` from `session_start`/`session_heartbeat`/`session_end` **inside the existing ingest transaction** (`store.ts:830,858`), preserving its replay-idempotency contract — a jsonb-grep view over `run_events` is rejected, because it would make B4's claim — and, later, any abandonment evaluation — depend on a payload field the abandonment case is most likely to omit | B2 |
 | **B3** | **Observed-session lane** — typed `session_start`, periodic `session_heartbeat`, and typed `session_end` events carrying `session_id`, emitted on the existing node bearer, with the closed payload field set and the concrete heartbeat-gap abandonment threshold fixed here (KTD-B4 items 4–6). No packet, no scope, no run | B1, B2, B2a |
 | **B4** | **Claim route** — `POST /api/workflow/work-items/:id/sessions` associating an observed session with an existing WorkItem. **Operator-only** in `OPERATOR_ONLY_ROUTES` (KTD-D5). Uniqueness is enforced by B2's constraint; the `SELECT`-derived acknowledgement follows the `EVENT-01` precedent for *reporting* the duplicate, because a duplicate insert returns no row. **An unclaim counterpart is out of this slice** — KTD-D5's table shape permits it, but its authorization is unspecified and it is not needed for B9 | B2, B2a, B3 |
 | **B5** | **Read model + provenance lookup** — extend `OverviewView`/`buildOverview` (`readModel.ts:54-80`) with the WorkItem projection D0-5 defines; add `GET /work-items`, `GET /work-items/:id`, and `GET /work-items/by-ref?source=&ref=` (query parameters, not path segments — KTD-B5). `PacketView` already carries per-packet `policyScope` (`readModel.ts:43`) and the WorkItem projection keeps it per-packet rather than aggregating it | B2, B2a, D0-5 |
@@ -715,7 +720,7 @@ land out of order.
 | B2 | Migration applies; `DROP SCHEMA workflow CASCADE` leaves nothing | Teardown remains one statement |
 | B4 | Replay a claim | One association, and the ack is `SELECT`-derived |
 | B5 | `GET /work-items/by-ref/story-board/ST-097` | Resolves without a UUID |
-| B — attention | **No attention row here, deliberately.** The zero/one control and its guards move with B8 to the attention milestone (KTD-B6). A slice-level attention assertion would be the creep stop condition 4 exists to catch |
+| B — attention | **No attention row here, deliberately.** The zero/one control and its guards move to the attention milestone (KTD-B6). A slice-level attention assertion would be the creep **stop condition 4** exists to catch |
 | B6 | The WorkItem view renders no attention | Packet-level attention rendering is unchanged; nothing new is added |
 | B — all | **Fabrication guard** | An observed session never claimed leaves `work_packets` row-count unchanged and creates no `policy_scope` value anywhere |
 | B — all | **Credential parity matrix** | Per added route, agent key → expected status. Operator-only routes return **403** (authenticated, not authorised), distinct from 401 |
@@ -795,7 +800,7 @@ to avoid defining attention semantics over a provisional session signal.
 |---|---|
 | **D0-4 is declined** and B2 cannot land | B1 and B5–B7 proceed against a contract-only substrate; B2–B4 sequence behind ST-088 Phase 4. Stated as stop condition 1 rather than discovered mid-build |
 | **Migration `005` becomes byte-frozen the moment any database applies it** — checksum is over raw bytes, drift aborts the run and exits the server before the port opens, and CI/`db-test` stay green regardless, so only the dev database and live hubs show it | Write its comments with symbol anchors and invariants, never line numbers or counts. Get them right before it lands: correcting an applied migration is an operational change on every database, and never re-runs statements. **This is also the reversal cost D0-4 must be priced against** (KTD-D3) — dropping the whole schema is cheap, changing `005` afterwards is not |
-| **B8 changes every existing `AttentionItem` consumer** — `dashboard.ts`, `readModel.ts`, the CLI | KTD-B6 takes that cost deliberately rather than forking a second attention queue the operator would have to watch separately |
+| **The attention milestone will change every existing `AttentionItem` consumer** — `dashboard.ts`, `readModel.ts`, the CLI | KTD-B6 records that cost and takes it deliberately, rather than forking a second attention queue the operator would have to watch separately. Deferring the unit does not defer the cost; it defers paying it |
 | The runtime flip breaks the Copilot path this repo still documents | Measure the ~118 references first; A6 documents which path is supported |
 | A5 stages stale claims into a fresh record | Per-entry `git log --grep` before staging; strip frozen pass-counts |
 | **The GSD replacement inherits the board's own failure mode** — `story-board-stale-updates-2026-06-19.md` records staleness recurring 3+ times because nothing tied a merge event to a board update | A6 must produce an **enforced** sync, not a remembered step, or the migration reproduces what it was meant to fix |
@@ -826,7 +831,7 @@ the override should be; granting it is the gate B2 waits on.
 |---|---|---|
 | **P0 — an ADR-016 §3 revisit cannot lift §1's host bar** (§3 is *"not a host decision"*) | adversarial | **Applied.** KTD-D3 rewritten: D0-4 is an explicit **override** of §1 plus the §3 revisit, and the error is left visible so it is not re-derived |
 | **A4/A5 drain the board inside the live milestone** — P0-2 surviving under new unit names | adversarial | **Applied.** Both gated on ST-088; only A1–A3 run inside the live milestone |
-| **B8 is unimplementable — `AttentionItem.packet_id` non-nullable, closed reason union** | feasibility (100) | **Applied.** New KTD-B6 names the contract change and its cost to every existing consumer; stop condition 5 added |
+| **B8 is unimplementable — `AttentionItem.packet_id` non-nullable, closed reason union** | feasibility (100) | **Applied**, then **superseded by the PO's OQ4 decision.** KTD-B6 named the contract change and its cost; attention then left the slice entirely, so KTD-B6 now carries the analysis forward to the attention milestone rather than gating a unit here |
 | **No path creates a WorkItem** | product-lens, feasibility (100), product-lens-codex — **triple** | **Applied.** New unit B2a |
 | **`work_packets.work_item_id` written by no unit** — the `node_id` defect repeated | feasibility (100) | **Applied.** B2a(b), operator-only |
 | **`observed_sessions` has no named writer** | feasibility (100), adversarial-codex | **Applied.** B2a(c), materialised inside the existing ingest transaction |
@@ -840,7 +845,7 @@ the override should be; granting it is the gate B2 waits on.
 | **B5→B2 dependency contradicts the declined branch** | coherence (100), product-lens | **Applied.** The declined branch is restated honestly: B ships nothing operator-visible |
 | **D0 lineage claim overstates `:92` and `:199`** | adversarial | **Applied.** Restated as a deliberate re-expansion justified by the 0..n need |
 | **KTD-B5 overstates the read gap** (`/overview` needs no UUID) | feasibility | **Applied.** Corrected to external-reference resolution plus completed-packet reach |
-| **OQ2/3/4 gate B3/B8 with no stop condition** | feasibility, adversarial-codex, product-lens-codex | **Applied.** Settled in KTD-B4; stop condition 6 added |
+| **OQ2/3/4 gate B3/B8 with no stop condition** | feasibility, adversarial-codex, product-lens-codex | **Applied.** Settled in KTD-B4. They stay settled after the OQ4 decision because the *events* are contract; only the threshold *value* moved to KTD-B6 |
 | **`#57` cannot travel in a path segment** | adversarial-codex, feasibility | **Applied.** `by-ref` takes query parameters |
 | **`git log -1` verifies one commit, not the population** | adversarial | **Applied.** Branch-range assertion |
 | **WorkItem status has no aggregation rule** | product-lens-codex | **Applied.** New unit D0-5 |
@@ -859,6 +864,10 @@ the override should be; granting it is the gate B2 waits on.
 | Data lifecycle / retention policy | security-lens-codex | **PO decision — OQ5.** |
 | B5 reads lack object-level authorization | security-lens-codex | **Recorded, not fixed.** Pre-existing: `/overview` already returns every active packet to any authenticated caller, deferred to Stage 2 by `001_workflow_schema.sql`. Named in KTD-B3 so the parity test is not misread as an authorization proof |
 
+**Note on this table's stop-condition references.** Round 2 added stop conditions numbered 5 and 6;
+the PO's 2026-08-24 decisions then replaced conditions 4–6 wholesale (attention creep, retention
+boundary, minting). The dispositions above are unchanged in substance — only the slot numbers moved.
+
 **Coverage.** Seven in-process reviewers returned (coherence, feasibility, product-lens,
 scope-guardian, adversarial, security-lens, design-lens). Three cross-model legs returned through
 Codex/GPT-5.6-luna with `independence_verified: true` (adversarial, product-lens, security-lens).
@@ -876,7 +885,7 @@ Every finding from that pass, dispositioned.
 | **P0-1** | KTD3's mint returns already-allocated `ST-093` | **Resolved by restructure.** KTD-A2 replaces derivation with an append-only record-at-mint registry (A2). The reviewer's own `max()`-over-history fix is also rejected — it is still a derivation, which the PO barred |
 | **P0-2** | U1/U4 rewrite live-milestone artifacts the origin bars | **Resolved.** `REQUIREMENTS.md:66` and the three ROADMAP pointers are ST-088-milestone-scoped and expire at the boundary. U1 deleted. Project-level restatements in `PROJECT.md` handled at A6 through the document's own Evolution mechanism |
 | **P1** | Packet provenance makes R2 unimplementable | **Resolved.** R2 reworded to observed session + explicit claim (KTD-B2, B3, B4). Nothing fabricates a packet or a scope; KTD-D4 removes the field |
-| **P1** | Attention queue is near-total noise on day one | **Resolved.** B8 plus a Red/Green Control, a non-vacuity guard, and positive discrimination on rules 3/4/5 |
+| **P1** | Attention queue is near-total noise on day one | **Resolved twice over.** Round 2 specified B8's Red/Green Control, non-vacuity guard, and positive discrimination on rules 3/4/5; the PO's OQ4 decision then removed attention from the slice altogether, so the noise cannot occur here at all. The controls survive in KTD-B6 for the milestone that does ship it |
 | **P1** | `999.x` is GSD's icebox, so R3's "GSD sequences it" is false | **Resolved.** KTD-A3; forward work stages as requirement candidates and converts at the boundary |
 | **P1** | ~34 migration commits omit the `Story:` trailer | **Resolved.** Trailer stated inline and verified mechanically; carried in the dispatch brief, not by reference |
 | **P1** | No `awcp` on PATH; SessionEnd never fires on a crash | **Re-scoped.** No hook shells out to `awcp`. Capture is on the node lane with the node bearer. The crash case is OQ4 |
