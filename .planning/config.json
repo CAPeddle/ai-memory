@@ -81,14 +81,38 @@
   },
   "project_code": null,
   "phase_naming": "sequential",
-  "agent_skills": {},
-  "claude_md_path": "./.github/copilot-instructions.md",
+  "agent_skills": {
+    "gsd-planner": [
+      "global:compound-engineering:ce-plan"
+    ],
+    "gsd-executor": [
+      "global:compound-engineering:ce-work",
+      "global:compound-engineering:ce-commit"
+    ],
+    "gsd-plan-checker": [
+      "global:compound-engineering:ce-doc-review"
+    ],
+    "gsd-code-reviewer": [
+      "global:compound-engineering:ce-code-review"
+    ],
+    "gsd-debugger": [
+      "global:compound-engineering:ce-debug"
+    ]
+  },
+  "claude_md_path": "./CLAUDE.md",
   "plan_review": {
     "source_grounding": true,
     "source_grounding_authority": "grep"
   },
   "resolve_model_ids": "omit",
-  "runtime": "copilot",
+  "runtime": "claude",
   "mode": "yolo",
-  "granularity": "standard"
+  "granularity": "standard",
+  "review": {
+    "default_reviewers": [
+      "codex",
+      "claude",
+      "antigravity"
+    ]
+  }
 }
