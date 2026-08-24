@@ -37,6 +37,84 @@ export const POLICY_SCOPES: readonly PolicyScope[] = [
   "public",
 ] as const;
 
+/**
+ * ADR-017 §2 — the closed set a WorkItem's provenance may name.
+ *
+ * Closed rather than open for the same reason {@link POLICY_SCOPES} is: a value
+ * outside the set is a caller error, not a new integration. Widening it is an
+ * amendment to ADR-017 §2 — its own Revisit Triggers say so explicitly — not an
+ * edit at a call site.
+ *
+ * `awcp-native` is how work AWCP itself originated is represented. It names no
+ * foreign namespace, so such items carry a null `source_ref`.
+ */
+export type SourceSystem = "jira" | "github" | "story-board" | "awcp-native";
+
+export const SOURCE_SYSTEMS: readonly SourceSystem[] = [
+  "jira",
+  "github",
+  "story-board",
+  "awcp-native",
+] as const;
+
+/**
+ * ADR-017 — one unit of *requested* work, and the optional parent of zero or more
+ * {@link WorkPacket}s.
+ *
+ * **The omissions are the contract, so they are listed rather than left to be
+ * rediscovered as gaps.**
+ *
+ *   - **No status field, and no derived status.** §6: a WorkItem has no aggregate
+ *     status and no status projection. Requested-work status stays authoritative at
+ *     its source (§2), and deriving one from packets whose own {@link PacketStatus}
+ *     cannot leave `open` would manufacture a signal the server does not hold.
+ *     There is nothing here to design later; a field added here reverses a settled
+ *     decision.
+ *   - **No {@link PolicyScope}.** §3: a Work Packet is the only authority for its
+ *     own Policy Scope. A scope-gated operation reached through a WorkItem names
+ *     the specific packet whose scope governs it — nothing is derived, defaulted or
+ *     inferred from the set of a WorkItem's packets, because choosing among several
+ *     packets' scopes implicitly would be choosing the boundary. There is no field
+ *     to fabricate.
+ *   - **No title, and no other copy of requested work.** §2 names *title*,
+ *     hierarchy, priority and status as the columns whose authority sits at the
+ *     source. The provenance pair is a reference to that authority, never a mirror
+ *     of it.
+ *   - **No attention.** §3: a WorkItem defines no attention semantics, no reasons
+ *     and no rendering. {@link AttentionReason} stays derived and packet-level.
+ *
+ * Both secondary identities are nullable and neither is a primary key (§1) — the
+ * `id` is the only identity, and both `(source_system, source_ref)` and `aw_label`
+ * resolve *to* it. `aw_label` is nullable on every row rather than on native rows
+ * only: §4 gives a dogfooded `story-board` item its own `AW-NNN` alongside its
+ * provenance, and the label stays null until the allocator that mints `AW-NNN`
+ * exists — which ADR-017 describes and deliberately does not build.
+ */
+export interface WorkItem {
+  id: string;
+  source_system: SourceSystem;
+  source_ref: string | null;
+  aw_label: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+/**
+ * What a caller may supply to create a WorkItem.
+ *
+ * Camel-cased to match `CreatePacketInput` and the other store inputs, which
+ * is the seam where the API's naming meets the row's snake_case.
+ *
+ * **`awLabel` is absent, and that absence is the point.** ADR-017 §4 allocates
+ * `AW-NNN` from AWCP's own persistence, where a database can enforce uniqueness —
+ * never from a caller and never from the `ST-NNN` development-story registry. A
+ * creation input with no label field cannot carry a minted one.
+ */
+export interface CreateWorkItemInput {
+  sourceSystem: SourceSystem;
+  sourceRef?: string | null;
+}
+
 export type PacketStatus = "open" | "in_progress" | "blocked" | "complete";
 export type RunStatus = "running" | "ended" | "failed";
 export type DecisionStatus = "open" | "resolved";

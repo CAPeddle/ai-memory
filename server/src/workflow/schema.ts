@@ -45,16 +45,27 @@
  * migration trips {@link MigrationDriftError} after nothing but a checkout, suspect
  * EOLs before suspecting a bad edit.
  *
+ * **This file now carries a SECOND, unrelated responsibility: the zod half of the
+ * ADR-017 WorkItem contract, at the bottom.** That is a collision of two senses of
+ * the word "schema" and it is recorded rather than tidied away — ADR-017's
+ * Consequences name `types.ts` and `schema.ts` as the two files the versioned
+ * WorkItem contract lands in, and this is the `schema.ts` it means. Nothing in
+ * that section touches the migration runner above it, or the database at all.
+ *
  * PROVISIONAL — not a throwaway spike; gated on ADR-016. See types.ts.
  */
+
+import { z } from "npm:zod@4.1.13";
 
 import { sql } from "../db.ts";
 import {
   MigrationApplyError,
   MigrationDiscoveryError,
   MigrationDriftError,
+  SOURCE_SYSTEMS,
   WorkflowSchemaError,
 } from "./types.ts";
+import type { SourceSystem } from "./types.ts";
 
 const WORKFLOW_MIGRATIONS_DIR = new URL("../../db/workflow/", import.meta.url);
 const DEFAULT_LEDGER_TABLE = "workflow.schema_migrations";
@@ -382,3 +393,126 @@ export async function tryEnsureWorkflowSchema(): Promise<
     return { ok: false, error: err as WorkflowSchemaError };
   }
 }
+
+
+// ---------------------------------------------------------------------------
+// ADR-017 — the WorkItem contract, zod half
+// ---------------------------------------------------------------------------
+//
+// **No DDL here, and none anywhere yet.** ADR-017 authorises types and zod only;
+// the table these schemas describe arrives in its own migration under its own
+// decision against ADR-016 §1, which this file's runner above will then apply like
+// any other. Contract-first is the whole shape of the unit: the vocabulary lands
+// before the storage, so the storage cannot quietly settle the vocabulary.
+//
+// Where the TYPES live is types.ts, beside `WorkPacket` and the rest. This file
+// takes the zod because ADR-017 names it; types.ts was the alternative and is
+// deliberately the module's only import-free leaf, so putting zod there would make
+// it a transitive dependency of every file that merely wants a type.
+
+/**
+ * The WorkItem contract's version.
+ *
+ * **The workflow module had no contract-versioning convention when this landed** —
+ * the only "version" it knew was a migration's ordinal in the ledger above — so
+ * this constant is new rather than an existing pattern being followed. It tracks
+ * ADR-017's own Revision History (1.0 → 1), because that document is the only thing
+ * that can actually change the contract; bumping it without a matching ADR revision
+ * would be a version number with nothing behind it.
+ */
+export const WORK_ITEM_CONTRACT_VERSION = 1;
+
+/**
+ * The closed provenance set, by the same rule `api.ts` applies to policy scope: a
+ * `z.enum` over the identical vocabulary the eventual CHECK constraint will hold,
+ * so an unknown `source_system` is rejected at the edge rather than deeper in.
+ */
+export const sourceSystemSchema = z.enum(
+  SOURCE_SYSTEMS as unknown as [SourceSystem, ...SourceSystem[]],
+);
+
+/**
+ * The `AW-NNN` label's FORMAT — and nothing else (ADR-017 §4).
+ *
+ * **Validating a shape is not allocating one.** `AW-NNN` is minted by AWCP's own
+ * persistence, where a database enforces uniqueness directly; never here, never by
+ * a caller, and never from the `story-ids.md` registry that governs `ST-NNN`. Those
+ * are two allocators by design. This contract mints no value at all, which is why
+ * the label appears on the row schema and not on the creation input.
+ */
+export const awLabelSchema = z.string().regex(
+  /^AW-\d+$/,
+  "an AW label is the literal prefix AW- followed by digits, e.g. AW-1",
+);
+
+/**
+ * The provenance pair's internal rule, applied wherever the pair is supplied.
+ *
+ * `awcp-native` names no foreign namespace, so it carries no `sourceRef`. Every
+ * other member names one, and a reference to it is what makes the pair a reference
+ * at all — a `jira` item with no ref is provenance pointing nowhere.
+ *
+ * **Both directions are enforced, which is a reading of §2 rather than a quotation
+ * of it.** §2 states the native half declaratively and B2a's create route takes
+ * *"a `(source_system, source_ref)` pair"*; the `UNIQUE (source_system,
+ * source_ref)` wording's "where both are present" is about how Postgres treats
+ * NULLs in a unique index, not permission to omit the ref. A contract that starts
+ * loose is harder to tighten once rows exist than one that starts tight.
+ */
+function checkProvenancePair(
+  value: { sourceSystem: SourceSystem; sourceRef?: string | null },
+  ctx: z.RefinementCtx,
+): void {
+  const ref = value.sourceRef ?? null;
+  if (value.sourceSystem === "awcp-native") {
+    if (ref !== null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["sourceRef"],
+        message: "awcp-native work names no foreign namespace: sourceRef must be absent",
+      });
+    }
+    return;
+  }
+  if (ref === null) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["sourceRef"],
+      message:
+        `source system "${value.sourceSystem}" identifies work in its own namespace: ` +
+        "sourceRef is required",
+    });
+  }
+}
+
+/**
+ * What a caller may supply to create a WorkItem — the runtime half of
+ * `CreateWorkItemInput`.
+ *
+ * **There is no `awLabel` field, deliberately.** A plain `z.object` strips unknown
+ * keys, so an input that tries to carry a minted label parses to one that does not
+ * — the "mint no identifiers" rule made structural rather than remembered. There is
+ * likewise no `policyScope` (§3: the packet is the only scope authority), no
+ * `status` (§6), and no `title` (§2: the source keeps that authority).
+ */
+export const createWorkItemSchema = z.object({
+  sourceSystem: sourceSystemSchema,
+  sourceRef: z.string().min(1).nullish(),
+}).superRefine(checkProvenancePair);
+
+/**
+ * A stored WorkItem row, mirroring the columns ADR-017 §1-§4 enumerates and no
+ * others. Snake-cased because a row schema describes the row.
+ *
+ * Kept as a plain object schema on purpose: the absences listed on `WorkItem` are
+ * checkable through `.shape`, so "a WorkItem has no status" is provable rather than
+ * merely asserted in a comment.
+ */
+export const workItemSchema = z.object({
+  id: z.uuid(),
+  source_system: sourceSystemSchema,
+  source_ref: z.string().min(1).nullable(),
+  aw_label: awLabelSchema.nullable(),
+  created_at: z.date(),
+  updated_at: z.date(),
+});
