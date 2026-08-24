@@ -61,10 +61,10 @@ with, not superseded** (KTD-A4, confirmed by the PO 2026-08-24).
 
 **Stop conditions:**
 
-1. **Stop if D0-4 does not return a PO decision on storage.** B's persistence needs *two* things
-   and they are not the same: an ADR-016 **§3** revisit (which storage layout) and an explicit PO
-   **override of ADR-016 §1**'s bar on schema work that assumes the host. See KTD-D3 — an earlier
-   draft of this plan claimed §3 alone discharged §1, and it does not.
+1. **Stop if migration `005` lands before the ADR-016 amendment is written.** The override is
+   **granted** (KTD-D3), but a granted override that is never recorded is indistinguishable from a
+   migration author deciding on their own — which is the failure `awcp-spec-evaluation.md:177`
+   names. D0-4 writes the dated Revision History entry; B2 follows it, not the reverse.
 2. **Stop if the allocator (A2) is not in place before any new `ST-NNN` is minted.** This plan mints
    none, and neither may anything downstream of it until A2 lands.
 3. **Stop if the runtime flip (A1) does not produce an *observed* CE-skill execution inside a GSD
@@ -233,8 +233,8 @@ masters with different concurrency properties, which is what made Option 2 worse
 **KTD-D3 — B2's storage needs a PO *override* of ADR-016 §1, plus a §3 revisit. They are two
 different things and only one of them is a mechanism the repository already provides.**
 
-*(session-settled: user-directed, 2026-08-24 — **narrow**. The override covers migration `005`
-only; ADR-016 §1 is not broadly lifted and ST-088 still settles the general host/storage question.
+*(session-settled: user-directed, 2026-08-24 — **GRANTED, narrow**. The PO granted the override
+for migration `005` only; ADR-016 §1 is not broadly lifted and ST-088 still settles the general host/storage question.
 Rejected alternatives: a broad override for AWCP workflow migrations generally; no override, with
 B2 onward waiting on ST-088 Phase 4. The PO's reasoning: another premature migration needing its own
 explicit decision is **desirable pressure rather than bureaucracy** at this stage.)*
@@ -251,8 +251,8 @@ So D0-4 asks for two things:
 1. **An explicit PO override of ADR-016 §1 for migration `005` and nothing else**, recorded as a
    dated amendment in ADR-016's Revision History so it is legible as an override rather than as
    compliance — and explicitly **not** as evidence that ST-088 has completed the host decision.
-   **Any later AWCP migration returns for its own decision**; the gate keeps working. This half is
-   the PO's, and it is the only half still outstanding; and
+   **Any later AWCP migration returns for its own decision**; the gate keeps working. **Granted by
+   the PO 2026-08-24**, so D0-4 is now the act of *recording* it, not of obtaining it; and
 2. **the §3 storage-layout revisit** that `awcp-spec-evaluation.md:177` requires so the decision is
    not *"silently resolved by the first migration author"*. **This half is settled here** — see
    KTD-D3a. `awcp-spec-evaluation.md:177` is explicit that storage layout is *"a module-design
@@ -285,11 +285,12 @@ correcting it is an operational change on every database that never re-runs stat
 whole schema is cheap; *changing* `005` after it applies is not. Decide the override against that
 cost, not against the disposability framing.
 
-**If the PO declines, say what actually remains: not much.** An earlier draft claimed B5–B7 would
-proceed *"against an in-memory/contract-only substrate."* No such substrate exists anywhere in
-`server/src/workflow/`, and building one means building the read model twice. **The honest decline
-branch is that Workstream B ships no operator-visible deliverable**: D0-1..D0-3 and B1 (contract and
-types) complete, and everything from B2 onward sequences behind ST-088 Phase 4.
+**The decline branch is moot, and recorded only because the reasoning still binds.** Had the PO
+declined, Workstream B would have shipped no operator-visible deliverable — D0-1..D0-3, B1 and
+A1–A3 only. An earlier draft claimed B5–B7 could proceed *"against an in-memory/contract-only
+substrate"*; no such substrate exists in `server/src/workflow/`, and building one means building the
+read model twice. That reasoning is why the override was worth asking for rather than routing
+around, and it is why the *next* migration must ask again.
 
 **KTD-D6 — A WorkItem has no aggregate authoritative status. Its components are presented
 separately, and neither client synthesises one.**
@@ -385,7 +386,7 @@ applied to persistence.
 | **D0-1** | `ADR-017 — The AWCP WorkItem contract`: identity, provenance pair, relation to packet/run/session, the ADR-013 §4(b) layering supersession with its reader instruction, and KTD-D2's settled `AW-NNN` namespace with its allocation boundary (AWCP's persistence, not A2's registry) | — |
 | **D0-2** | `CONCEPTS.md`: new **Work Item** entry; amend `:7` (the containment root is no longer the packet); amend **Work Packet** `:11-14` to name its optional parent; state the Work Item ↔ Story relation explicitly so the two vocabularies stop being adjacent-but-unlinked | D0-1 |
 | **D0-3** | Versioned TypeScript contract in `server/src/workflow/types.ts` + `schema.ts` — **types and zod only, no DDL** | D0-1 |
-| **D0-4** | **PO gate — two asks.** (a) An explicit override of ADR-016 **§1**'s host bar for migration `005`, recorded as an amendment in ADR-016's Revision History; (b) the **§3** storage-layout revisit `awcp-spec-evaluation.md:177` requires. Returns permit-or-defer for B2 | D0-1 |
+| **D0-4** | **Record the granted override.** Write the dated amendment into ADR-016's Revision History: the PO granted a narrow override of **§1** for migration `005` only, on 2026-08-24; it is not evidence that ST-088 has completed the host decision, and later migrations return for their own. Record the **§3** storage-layout outcome (KTD-D3a) in the same entry. **This unit must land before B2** | D0-1 |
 | **D0-5** | **The WorkItem status contract — settled as *no aggregate status*.** See KTD-D6. ADR-017 records the decision and its reasoning; there is no projection to design | D0-1 |
 
 ---
@@ -760,11 +761,12 @@ they do not expire together.
 | **A2** The allocator (`story-ids.md`) + `CLAUDE.md` mint procedure | Creates a new file; gates everything that mints |
 | **A3** Land or lift the two local branches | Branch hygiene |
 
-**Gated on the D0-4 override** — the one PO decision still outstanding.
+**Runnable once D0-4 records the amendment** — the override is **granted** (KTD-D3), so this is a
+sequencing dependency on a documentation unit, not a wait on a decision.
 
 | Unit | Blocked on |
 |---|---|
-| **B2** Migration `005` | The §1 override. §3 is settled (KTD-D3a) |
+| **B2** Migration `005` | D0-4's Revision History entry being written first |
 | **B2a** Write paths (create, bind, session materialisation) | B2 |
 | **B3** Observed-session lane | B2, B2a |
 | **B4** Claim route | B2, B2a, B3 |
@@ -785,10 +787,10 @@ carries no DDL.
 | **A6** Boundary handover (`PROJECT.md`, `CLAUDE.md`, WIP replacement, sync check) | ST-088, A2, A4, A5 |
 | **A7** Reference sweep | A6, ships with it |
 
-**The consequence worth naming.** If D0-4 is granted, an executor can run **D0 + A1–A3 + all of B**
-without waiting for ST-088 — the product slice never depends on the milestone boundary, only the
-governance handover does. If it is not granted, the runnable set is D0-1..D0-3, B1, and A1–A3, and
-that is a complete and coherent stopping point rather than a stalled one.
+**The consequence worth naming.** With the override granted, an executor can run **D0 + A1–A3 +
+all of B** without waiting for ST-088 — the product slice never depends on the milestone boundary,
+only the governance handover (A4–A7) does. **Nothing in this plan is now blocked on a decision.**
+The only undated wait left is ST-088 Phase 4, and it holds four units, none of them product work.
 
 **Story allocation happens during execution, not here.** Once A2 lands, the successor stories are
 minted through it (KTD-A5). No ID is pre-minted in this plan.
@@ -850,11 +852,9 @@ comment block is the inventory; its grep is explicitly "a starting point."
 
 ## Definition of Done
 
-**If D0-4 is declined, "done" means D0-1..D0-3, B1, and A1–A3** — the contract, the glossary, the
-types, the runtime flip, the allocator and the branches. Workstream B ships nothing operator-visible
-and B2 onward sequences behind ST-088 Phase 4. That is a coherent stopping point, not a stall. The
-criteria below describe the **granted** branch; the Execution sequence section above partitions the
-units either way.
+**The D0-4 override is granted** (KTD-D3, 2026-08-24), so the criteria below are the whole
+Definition of Done — there is no declined branch to describe. The Execution sequence section above
+partitions which units run now and which four wait on ST-088.
 
 D0 has a recorded contract and a PO decision on storage; `CONCEPTS.md` defines Work Item and no
 longer roots containment at the packet. A's three responsibilities are three artifacts, the
@@ -898,7 +898,7 @@ to avoid defining attention semantics over a provisional session signal.
 
 | Risk | Mitigation |
 |---|---|
-| **D0-4 is declined** and B2 cannot land | B1 and B5–B7 proceed against a contract-only substrate; B2–B4 sequence behind ST-088 Phase 4. Stated as stop condition 1 rather than discovered mid-build |
+| **The granted override is never recorded**, leaving migration `005` looking like a migration author's own decision | D0-4 writes the dated ADR-016 Revision History entry and **must land before B2**. Stop condition 1 enforces the order |
 | **Migration `005` becomes byte-frozen the moment any database applies it** — checksum is over raw bytes, drift aborts the run and exits the server before the port opens, and CI/`db-test` stay green regardless, so only the dev database and live hubs show it | Write its comments with symbol anchors and invariants, never line numbers or counts. Get them right before it lands: correcting an applied migration is an operational change on every database, and never re-runs statements. **This is also the reversal cost D0-4 must be priced against** (KTD-D3) — dropping the whole schema is cheap, changing `005` afterwards is not |
 | **The attention milestone will change every existing `AttentionItem` consumer** — `dashboard.ts`, `readModel.ts`, the CLI | KTD-B6 records that cost and takes it deliberately, rather than forking a second attention queue the operator would have to watch separately. Deferring the unit does not defer the cost; it defers paying it |
 | The runtime flip breaks the Copilot path this repo still documents | Measure the ~118 references first; A6 documents which path is supported |
