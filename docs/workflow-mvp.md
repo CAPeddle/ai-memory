@@ -111,6 +111,13 @@ the gate like every other caller.
 > completion gate refusing and naming its unmet criteria, and a 401 clearing the stored
 > key. See [Verifying the dashboard in a real browser](#verifying-the-dashboard-in-a-real-browser).
 >
+> **EXPIRED as of `585d2c9` (ST-097).** That commit added the WorkItem lane to
+> `dashboard.ts`, so the 28 checks below no longer describe the served page. They are
+> also now *under-covering*: they predate the WorkItem lane entirely and cover none of
+> it, and the lane is the page's primary surface. Re-run them against the current file
+> before treating the browser criterion as verified again, and re-anchor to the commit
+> you run them against.
+>
 > **Verified surface:** `server/src/workflow/dashboard.ts` at `0d3af13`. **Any** commit
 > touching that file — anyone's, not just yours — expires this result. Check before
 > relying on it:
