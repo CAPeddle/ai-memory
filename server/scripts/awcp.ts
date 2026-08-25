@@ -23,6 +23,7 @@
  *                  [--commit SHA | --no-commit]
  *   awcp decision  --packet ID --question Q [--rationale R] [--run ID] [--advisory]
  *   awcp end-run   --run ID [--status ended|failed]
+ *   awcp status    [--work-item ID | --source S --ref R]
  *
  * Environment: AWCP_AGENT_API_KEY, else MEMORY_API_KEY (one of the two required —
  * see below), AWCP_BASE_URL (default http://127.0.0.1:3000), AWCP_TIMEOUT_MS
@@ -164,19 +165,36 @@ function resolveApiKey(): string {
   return operatorKey;
 }
 
-async function post(path: string, body: unknown): Promise<unknown> {
+/**
+ * The one request path. `post()` and `get()` below are named wrappers over it.
+ *
+ * Kept single deliberately: the credential resolution, the timeout, the two distinct
+ * unreachable/timed-out messages and the `issues[]`/`unmetCriteria` error rendering
+ * are the CLI's whole contract with the API, and a second copy for reads would be a
+ * second place for that contract to drift. A read fails exactly the way a write
+ * fails, because it fails through the same code.
+ */
+async function send(
+  method: "GET" | "POST",
+  path: string,
+  body?: unknown,
+): Promise<unknown> {
   const key = resolveApiKey();
 
   const timeoutMs = resolveTimeoutMs();
   let res: Response;
   try {
     res = await fetch(`${API_ROOT}${path}`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${key}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
+      method,
+      headers: method === "POST"
+        ? {
+          "Authorization": `Bearer ${key}`,
+          "Content-Type": "application/json",
+        }
+        : { "Authorization": `Bearer ${key}` },
+      // A GET carries no body, and sending `undefined` is not the same as omitting
+      // the key on some runtimes — so the property is conditional, not nullable.
+      ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (err) {
@@ -228,9 +246,141 @@ async function post(path: string, body: unknown): Promise<unknown> {
   return parsed;
 }
 
+function post(path: string, body: unknown): Promise<unknown> {
+  return send("POST", path, body);
+}
+
+/**
+ * A read. Same credential, same timeout, same error rendering as {@link post}.
+ *
+ * The `status` subcommand is the only caller, and it reaches only the three
+ * `/work-items` GETs — routes `server/src/workflow/policy.ts`'s `requiresOperator`
+ * classifies agent-callable, matching `/overview`'s existing posture. See the note
+ * at the foot of this file for why a read is not a supervision action.
+ */
+function get(path: string): Promise<unknown> {
+  return send("GET", path);
+}
+
 function emit(label: string, record: Record<string, unknown>): void {
   console.log(`${label} ${record.id}`);
   console.log(JSON.stringify(record, null, 2));
+}
+
+// ---------------------------------------------------------------------------
+// The WorkItem read model, as this CLI sees it over the wire
+//
+// Structural, local, and deliberately not imported from `server/src/workflow/
+// readModel.ts`. This script talks to the API and to nothing else — importing the
+// server's types would give it a compile-time dependency on the server's internals
+// and quietly contradict the "no privileged back channel" property the file header
+// states. What it renders is the JSON the three `/work-items` GETs return; if that
+// contract changes, this breaks at the seam it actually depends on.
+//
+// The absences below are the contract, exactly as they are in the projection and on
+// the dashboard: no WorkItem status (ADR-017 §6), no WorkItem policy scope (§3, the
+// scope lives on each packet), and no attention. There is nothing here to add later.
+// ---------------------------------------------------------------------------
+
+interface WorkItemIdentity {
+  id: string;
+  source_system: string;
+  source_ref: string | null;
+  aw_label: string | null;
+}
+
+interface WorkItemPacketEntry {
+  packet: { id: string; title: string; status: string };
+  policyScope: string;
+}
+
+interface ObservedSessionEntry {
+  node_id: string;
+  session_id: string;
+  started_at: string;
+  last_heartbeat_at: string;
+  ended_at: string | null;
+  claimed_at: string;
+}
+
+interface WorkItemViewShape {
+  workItem: WorkItemIdentity;
+  packets: WorkItemPacketEntry[];
+  observedSessions: ObservedSessionEntry[];
+}
+
+/** A dash where a nullable field is null, so an absent value is visible as absent. */
+function orDash(value: string | null): string {
+  return value === null || value === "" ? "-" : value;
+}
+
+/**
+ * Render one WorkItem: identity, then the AUTHORITATIVE lane, then the OBSERVED one.
+ *
+ * The same order and the same distinctions the dashboard draws, in text. Three
+ * things this deliberately does not do, each of them a decision rather than an
+ * omission:
+ *
+ *   - **No aggregate status line.** ADR-017 §6 settles that a WorkItem has none,
+ *     stored or derived. A summary word here would be this client synthesising a
+ *     signal the server does not hold — and would make the two clients able to
+ *     disagree, which §6 exists to prevent.
+ *   - **Packet status is printed verbatim.** `in_progress` and `blocked` are declared
+ *     in the domain type and no code path can write either, so everything in flight
+ *     reads `open`. Inferring a livelier word would manufacture the signal.
+ *   - **No derived liveness for a session, and no humanised gap.** Whether silence
+ *     since the last heartbeat means abandonment is evaluation policy that travels
+ *     with the deferred attention package, so the timestamps print as themselves.
+ */
+function renderWorkItem(view: WorkItemViewShape): void {
+  const item = view.workItem;
+  console.log(
+    `work-item ${item.id}  source: ${item.source_system}  ` +
+      `ref: ${orDash(item.source_ref)}  label: ${orDash(item.aw_label)}`,
+  );
+
+  console.log("  packets (authoritative) - supervised work, each with its own policy scope");
+  if (view.packets.length === 0) {
+    console.log("    (none bound)");
+  }
+  for (const entry of view.packets) {
+    // Scope is read from THIS packet, once, per packet. A WorkItem-level scope
+    // reduced from the set would be the boundary chosen implicitly (ADR-017 §3).
+    console.log(
+      `    ${entry.packet.status}  scope: ${entry.policyScope}  ` +
+        `${entry.packet.title}  ${entry.packet.id}`,
+    );
+  }
+
+  console.log(
+    "  observed sessions - observations, not supervised work: no packet, no run, no policy scope",
+  );
+  if (view.observedSessions.length === 0) {
+    console.log("    (none claimed)");
+  }
+  for (const session of view.observedSessions) {
+    // The marker is words, not a convention: a reader who scans one line must not be
+    // able to mistake an observation for supervised work.
+    const liveness = session.ended_at === null
+      ? `last heartbeat ${session.last_heartbeat_at}`
+      : `ended ${session.ended_at}`;
+    console.log(
+      `    observed - not supervised  ${session.node_id}/${session.session_id}  ` +
+        `started ${session.started_at}  ${liveness}  claimed ${session.claimed_at}`,
+    );
+  }
+}
+
+/** Every WorkItem the lookup resolved, one block each. */
+function renderWorkItems(views: WorkItemViewShape[]): void {
+  if (views.length === 0) {
+    console.log("no work items");
+    return;
+  }
+  views.forEach((view, index) => {
+    if (index > 0) console.log("");
+    renderWorkItem(view);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -247,6 +397,7 @@ const USAGE =
                   [--blockers B] [--next N] [--commit SHA] [--no-commit]
   awcp decision   --packet ID --question Q [--rationale R] [--run ID] [--advisory]
   awcp end-run    --run ID [--status ended|failed]
+  awcp status     [--work-item ID | --source jira|github|story-board --ref REF]
 
 Environment:
   AWCP_AGENT_API_KEY  bearer key for /api/workflow, preferred when set — grants
@@ -258,7 +409,12 @@ Environment:
   AWCP_TIMEOUT_MS     request timeout in milliseconds (default 30000)
 
 --repo, --branch and --commit default to this checkout, read via fixed git commands.
---policy-scope has no default: it is a boundary value and must be stated.`;
+--policy-scope has no default: it is a boundary value and must be stated.
+
+status is a READ. With no flags it lists every work item; --source/--ref resolves one
+by its external provenance, with no uuid in hand. It prints each work item's packets
+and its claimed observed sessions separately, and no aggregate status: a work item
+has none (ADR-017 section 6), so there is none to print.`;
 
 async function main(): Promise<void> {
   const args = parseArgs(Deno.args);
@@ -363,6 +519,45 @@ async function main(): Promise<void> {
       return;
     }
 
+    // The only READ this CLI performs, and the only subcommand that prints something
+    // other than the record it just created. See the note at the foot of this file
+    // for why a read sits inside the supervision boundary the absent subcommands draw.
+    case "status": {
+      const workItemId = args.flags.get("work-item");
+      const source = args.flags.get("source");
+      const ref = args.flags.get("ref");
+
+      if (workItemId !== undefined && (source !== undefined || ref !== undefined)) {
+        die("--work-item and --source/--ref are two different lookups; pass one");
+      }
+      // Both or neither. A lone --source would silently become the listing, which is
+      // a different answer to the question that was asked.
+      if ((source === undefined) !== (ref === undefined)) {
+        die("--source and --ref name a provenance pair; pass both");
+      }
+
+      let views: WorkItemViewShape[];
+      if (workItemId !== undefined) {
+        views = [await get(
+          `/work-items/${encodeURIComponent(workItemId)}`,
+        ) as WorkItemViewShape];
+      } else if (source !== undefined && ref !== undefined) {
+        // URLSearchParams, never concatenation: KTD-B5 routes provenance lookup
+        // through the query string precisely because a `#57`-shaped ref cannot travel
+        // in a path segment, and an unencoded `?ref=#57` would truncate at the
+        // fragment and reach the server as an empty ref.
+        const query = new URLSearchParams({ source, ref });
+        views = [await get(`/work-items/by-ref?${query}`) as WorkItemViewShape];
+      } else {
+        const listing = await get("/work-items") as {
+          workItems?: WorkItemViewShape[];
+        };
+        views = listing.workItems ?? [];
+      }
+      renderWorkItems(views);
+      return;
+    }
+
     default:
       die(
         `unknown subcommand ${JSON.stringify(args.command)} — try: awcp help`,
@@ -385,5 +580,30 @@ async function main(): Promise<void> {
 // exactly those four routes with 403, whether the request comes from this CLI,
 // a different client, or a raw curl. Omitting the subcommands here keeps this
 // CLI honest about which key it needs; it is no longer what does the enforcing.
+//
+// **ST-097 B7 added `awcp status`, which is a READ — and a read does not breach that
+// boundary.** Stated here rather than assumed, because "the CLI grew a WorkItem
+// subcommand" is exactly the shape of change that erodes a boundary by increments.
+//
+// What the four absent subcommands protect is not the *information*; it is who gets
+// to make a judgement about it. Each of them writes a supervision decision: a
+// decision resolved, evidence attested, a criterion authored, a packet declared
+// complete. `status` writes nothing, decides nothing, and synthesises nothing — it
+// renders the same read model the operator's dashboard renders, from the three
+// `/work-items` GETs that `requiresOperator` classifies agent-callable (KTD-B3),
+// alongside `/overview`, which every authenticated caller of this surface could
+// already read. It prints no aggregate WorkItem status because there is none to
+// print (ADR-017 §6), it prints each packet's own policy scope rather than a
+// WorkItem-level one (§3), and it labels an observed session as an observation. An
+// output that cannot express a judgement cannot substitute for one.
+//
+// The distinction that keeps this honest is the one the paragraph above already
+// draws: the boundary is enforced by the server, on the routes, by credential — not
+// by which subcommands this file happens to expose. Adding a read changes nothing
+// about that enforcement; adding any of the four writes would still be refused with
+// 403 under the agent key regardless of what this script did. The rule this note
+// leaves behind for the next editor is therefore narrow and checkable: a subcommand
+// may be added here only if the route it calls is one `requiresOperator` classifies
+// agent-callable.
 
 await main();
