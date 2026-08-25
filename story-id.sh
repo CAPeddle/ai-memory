@@ -67,7 +67,10 @@ taken_map() {
   local ref
   while IFS= read -r ref; do
     [ -n "$ref" ] || continue
-    git show "$ref:$REGISTRY" 2>/dev/null | ids_in | sed "s|\$| $ref|" || true
+    # The refname is bound as an awk VARIABLE, never spliced into program text.
+    # Git permits ; | # > in a refname, and interpolating one into a sed program
+    # let GNU sed's `e` flag execute it as a shell command — proven, then fixed.
+    git show "$ref:$REGISTRY" 2>/dev/null | ids_in | awk -v r="$ref" '{ print $0 " " r }' || true
   done < <(refs_with_registry)
 }
 

@@ -184,6 +184,27 @@ assert_contains "conflict markers present" "$(cat "$D/.github/planning/story-ids
 git -C "$D" merge --abort
 
 echo
+echo "=== a hostile refname is DATA, never program text ==="
+D="$(make_fixture hostile)"
+PROBE=/tmp/story-id-injection-probe.$$
+rm -f "$PROBE"
+# Git permits ; | # in a refname. If any of them reaches a sed/eval program,
+# GNU sed's `e` flag executes the pattern space as a shell command.
+# Git forbids spaces in a refname but permits ; | # > — so the payload is space-free.
+HOSTILE='hostile;id>'"$PROBE"'|e;#'
+git -C "$D" branch "$HOSTILE" main 2>/dev/null || git -C "$D" checkout -q -b "$HOSTILE" main
+git -C "$D" checkout -q main
+set +e
+OUT="$(cd "$D" && ./story-id.sh --check 2>&1)"
+RC=$?
+set -e
+assert_exit "hostile refname does not break --check" 0 "$RC"
+EXECUTED=no
+if [ -e "$PROBE" ]; then EXECUTED=yes; rm -f "$PROBE"; fi
+assert_contains "a hostile refname executes nothing" "executed:$EXECUTED" "executed:no"
+assert_contains "the hostile ref's allocations are still counted" "$OUT" "ST-001..ST-003"
+
+echo
 echo "================================"
 echo "PASS: $PASS   FAIL: $FAIL"
 if [ "$FAIL" -ne 0 ]; then
