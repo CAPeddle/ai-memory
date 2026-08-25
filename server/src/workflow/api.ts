@@ -33,6 +33,7 @@ import {
 } from "./readModel.ts";
 import { createWorkItemSchema, sourceSystemSchema } from "./schema.ts";
 import * as store from "./store.ts";
+import * as workItemStore from "./workItemStore.ts";
 import {
   CompletionBlockedError,
   CriteriaFrozenError,
@@ -510,7 +511,7 @@ export function createWorkflowApi(): Hono {
   api.post(
     "/work-items",
     command(createWorkItemSchema, [], (body) =>
-      store.createWorkItem({
+      workItemStore.createWorkItem({
         sourceSystem: body.sourceSystem,
         sourceRef: body.sourceRef ?? null,
       })),
@@ -531,7 +532,7 @@ export function createWorkflowApi(): Hono {
     command(
       bindWorkItemSchema,
       ["packetId"],
-      (body, params) => store.bindPacketToWorkItem(params.packetId, body.workItemId),
+      (body, params) => workItemStore.bindPacketToWorkItem(params.packetId, body.workItemId),
       200,
     ),
   );
@@ -549,7 +550,7 @@ export function createWorkflowApi(): Hono {
    * further.
    *
    * **201 on a replay too, and that is decided rather than defaulted.** The response is
-   * the association, which exists either way, and `store.claimSessionForWorkItem`
+   * the association, which exists either way, and `workItemStore.claimSessionForWorkItem`
    * returns the identical row both times. Splitting the status on whether the INSERT
    * happened would put "did this write?" into the contract — the exact
    * exclusion-versus-report conflation the `SELECT`-derived acknowledgement exists to
@@ -564,7 +565,7 @@ export function createWorkflowApi(): Hono {
       claimSessionSchema,
       ["workItemId"],
       (body, params) =>
-        store.claimSessionForWorkItem(params.workItemId, body.nodeId, body.sessionId),
+        workItemStore.claimSessionForWorkItem(params.workItemId, body.nodeId, body.sessionId),
     ),
   );
 

@@ -42,6 +42,7 @@ import { sql } from "../src/db.ts";
 import { createWorkflowApi } from "../src/workflow/api.ts";
 import { ensureWorkflowSchema } from "../src/workflow/schema.ts";
 import * as store from "../src/workflow/store.ts";
+import * as workItemStore from "../src/workflow/workItemStore.ts";
 import {
   bootDashboard,
   byClass,
@@ -321,6 +322,77 @@ Deno.test({
   },
 });
 
+// ---------------------------------------------------------------------------
+// ST-098 Unit 1 (R2) — `last_heartbeat_at` always renders alongside `ended_at`
+//
+// R1 (the node-client fix, in awcp-node-client.mjs) stops NEW poisoning: a restarted
+// process no longer reuses a pinned session id after a clean close. But any row
+// poisoned BEFORE that fix landed — `ended_at` set, yet later heartbeats still landed
+// under the store's monotone/`GREATEST` merge — stays indistinguishable from a real
+// clean close unless the render itself carries enough data to judge. So
+// `renderWorkItemSessions` must show `last_heartbeat_at` on every row, closed or not,
+// rather than treating `ended_at` as if it made the heartbeat uninteresting.
+// ---------------------------------------------------------------------------
+
+Deno.test({
+  ...T,
+  name:
+    "ST-098 U1 R2: a session with ended_at set AND a last_heartbeat_at newer than it renders BOTH — not just \"ended\"",
+  fn: async () => {
+    const poisoned = {
+      work_item_id: "wi-1",
+      node_id: "node-alpha",
+      session_id: "sess-poisoned",
+      started_at: "2026-08-21T09:00:00.000Z",
+      // A clean close was recorded...
+      ended_at: "2026-08-21T10:00:00.000Z",
+      // ...but a heartbeat landed AFTER it — the exact shape a reused session id
+      // leaves behind under the store's monotone merge, and the reason `ended_at`
+      // alone is not trustworthy enough to hide the heartbeat.
+      last_heartbeat_at: "2026-08-21T11:00:00.000Z",
+      claimed_at: "2026-08-21T09:35:00.000Z",
+    };
+    const card = workItemCard(
+      await render(overview({
+        workItems: [workItemView({ observedSessions: [poisoned] })],
+      })),
+    );
+    const [row] = byClass(card, "wi-session");
+    assertEquals(byClass(row, "done").length, 1, "the recorded close must still render");
+    assert(
+      /heartbeat/i.test(textOf(row)),
+      "a heartbeat newer than the recorded close must still render, so the row " +
+        "reads as suspicious rather than as an indistinguishable clean close",
+    );
+    // Both timestamps must actually be present, not just the word "heartbeat".
+    assert(
+      textOf(row).includes(new Date(poisoned.ended_at).toLocaleString()),
+      "the ended_at timestamp must render",
+    );
+    assert(
+      textOf(row).includes(new Date(poisoned.last_heartbeat_at).toLocaleString()),
+      "the last_heartbeat_at timestamp must render even though ended_at is set",
+    );
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-098 U1 R2: a never-closed session (only last_heartbeat_at set) still renders exactly as before — no regression",
+  fn: async () => {
+    const card = workItemCard(await render(overview()));
+    const [open] = byClass(card, "wi-session"); // sess-open, ended: null, from sessionEntry()
+
+    assertEquals(byClass(open, "done").length, 0, "an open session must carry no done tag");
+    assert(/heartbeat/i.test(textOf(open)), "an open session must show its last heartbeat");
+    assert(
+      !/\bended\b/i.test(textOf(open)),
+      "an open session must not render an ended_at it does not have",
+    );
+  },
+});
+
 Deno.test({
   ...T,
   name: "B6(b): a packet's own status renders verbatim, and no WorkItem-level status is synthesised",
@@ -459,7 +531,7 @@ Deno.test({
   fn: async () => {
     // A live projection, built through the store and read back through the real
     // router, so the parity target is what an agent key actually receives.
-    const item = await store.createWorkItem({
+    const item = await workItemStore.createWorkItem({
       sourceSystem: "story-board",
       sourceRef: `B6-parity-${crypto.randomUUID()}`,
     });
@@ -468,7 +540,7 @@ Deno.test({
       objective: "prove the UI reads nothing the projection lacks",
       policyScope: "corporate",
     });
-    await store.bindPacketToWorkItem(packet.id, item.id);
+    await workItemStore.bindPacketToWorkItem(packet.id, item.id);
 
     const res = await api.request(`/work-items/${item.id}`, {
       headers: { "Content-Type": "application/json" },

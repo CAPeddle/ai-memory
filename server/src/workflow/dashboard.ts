@@ -470,6 +470,14 @@ function renderWorkItemPackets(entries) {
  * and no status, and gets no derived liveness word: whether a gap since the last
  * heartbeat means abandonment is evaluation policy that travels with the deferred
  * attention package, so the timestamps render as themselves.
+ *
+ * ST-098 Unit 1: last_heartbeat_at always renders, alongside ended_at when set — not
+ * instead of it. The store's session merge is monotone (GREATEST-based), so a session
+ * id reused after a clean close can leave ended_at set while later heartbeats still
+ * land — a poisoned row that a "closed, so hide the heartbeat" render would make
+ * indistinguishable from a genuine clean close. Showing both lets a reader see a
+ * heartbeat newer than the close and judge the row suspicious themselves; no
+ * liveness word is derived here, same as the open case.
  */
 function renderWorkItemSessions(sessions) {
   const wrap = el("div");
@@ -485,10 +493,9 @@ function renderWorkItemSessions(sessions) {
     row.appendChild(el("span", "muted", "started " + when(session.started_at)));
     if (session.ended_at) {
       row.appendChild(el("span", "tag done", "ended " + when(session.ended_at)));
-    } else {
-      row.appendChild(el("span", "muted",
-        "last heartbeat " + when(session.last_heartbeat_at)));
     }
+    row.appendChild(el("span", "muted",
+      "last heartbeat " + when(session.last_heartbeat_at)));
     row.appendChild(el("span", "muted", "claimed " + when(session.claimed_at)));
     wrap.appendChild(row);
   }

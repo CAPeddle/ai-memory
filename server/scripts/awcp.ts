@@ -361,12 +361,25 @@ function renderWorkItem(view: WorkItemViewShape): void {
   for (const session of view.observedSessions) {
     // The marker is words, not a convention: a reader who scans one line must not be
     // able to mistake an observation for supervised work.
-    const liveness = session.ended_at === null
-      ? `last heartbeat ${session.last_heartbeat_at}`
-      : `ended ${session.ended_at}`;
+    //
+    // ST-098 Unit 1 R2: last_heartbeat_at always prints, and ended_at prints
+    // alongside it when set — never instead of it, mirroring dashboard.ts's
+    // renderWorkItemSessions. The store's session merge is monotone
+    // (GREATEST-based), so a session id reused after a clean close can leave
+    // ended_at set while later heartbeats still land — a poisoned row that an
+    // either/or render would make indistinguishable from a genuine clean close.
+    // Printing both lets a reader see a heartbeat newer than the close and judge
+    // the row suspicious themselves; no liveness word is derived here, same as
+    // the open case.
+    const parts = [`started ${session.started_at}`];
+    if (session.ended_at !== null) {
+      parts.push(`ended ${session.ended_at}`);
+    }
+    parts.push(`last heartbeat ${session.last_heartbeat_at}`);
+    parts.push(`claimed ${session.claimed_at}`);
     console.log(
       `    observed - not supervised  ${session.node_id}/${session.session_id}  ` +
-        `started ${session.started_at}  ${liveness}  claimed ${session.claimed_at}`,
+        parts.join("  "),
     );
   }
 }

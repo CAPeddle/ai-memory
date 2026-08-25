@@ -150,6 +150,23 @@
   - [ ] Red/green control demonstrated: before merging the fix, seed a foreign pending row in `entity_extraction_queue` deliberately and confirm the *unfixed* test fails on it, then confirm the *fixed* test still passes with that foreign row present. Record the seeded-row cleanup so this control run doesn't itself leave pollution behind
 - Plan: (to be created)
 - Notes: The failure is **intermittent**, not deterministic — it depends on what, if anything, is sitting in `db-test`'s `entity_extraction_queue` when the test runs, and `db-test` is wiped only on container stop, not between runs (CLAUDE.md § Dev vs Test isolation). A story description or reviewer expecting a reliably-reproducing failure will see it pass on the first try; that is expected, not evidence the defect is gone. First test's assertion is `assertEquals(run.items_processed, 1)` at `server/tests/entity-worker-observability.test.ts:44`; the `finally` blocks (lines ~51-56, ~112-117, ~153-158) delete only each test's own `thought_id`, never touching rows left by anything else.
+  - Cross-reference added 2026-08-25 (ST-098 U3): this same test currently fails deterministically, for a different reason than the one this story was filed against — `OPENROUTER_API_KEY` returns 401 from the `mcp-test` container, so the test's own seeded (non-`__TEST_LLM_FAIL__`) content genuinely fails extraction and `items_processed` is legitimately 0 (`itemsSucceeded` in `entityWorker.ts` counts only real successes). See ST-099. This doesn't resolve or supersede ST-093's queue-pollution/wrong-row-read theory — it's a separate, currently-masking failure mode on the same test. Before trusting this story's fix (or re-confirming its symptom), re-run this test against a working OpenRouter key — right now the 401 alone is sufficient to fail it regardless of queue state.
+
+### ST-099: Restore authenticated OpenRouter egress from dev/test containers
+- Type: bug / infra
+- Source: ST-098 U3 (pre-existing test-failure triage), 2026-08-25 — all ~9 failures in `server/tests/e2e.test.ts` and `entity-worker-observability.test.ts` traced to one shared cause rather than nine independent ones
+- phase: 0
+- Value: 4 (blocks reliable signal on search-lane and entity-extraction tests; masks whether ST-093's separate queue-isolation bug is still live)
+- Blocked by: — (credential/infra action, not code)
+- Touches: `.env` (`OPENROUTER_API_KEY`), or container network egress/proxy header handling — not yet narrowed between the two; no application code is expected to change
+- Acceptance criteria:
+  - [ ] Root cause pinned down between the two candidates identified at filing: an invalid/expired `OPENROUTER_API_KEY` (26 chars in `.env`, short of OpenRouter's typical `sk-or-v1-…` ~73-char format), or a network intermediary stripping the `Authorization` header in transit (CLAUDE.md documents a Fortinet-style SSL-intercepting proxy in this environment — an in-container probe to confirm/rule this out independently was blocked by tooling at filing time: `curl` exit 77 CA-cert error, `wget` not installed)
+  - [ ] Authenticated OpenRouter egress (chat completions + embeddings) confirmed working from both the `mcp` and `mcp-test` containers
+  - [ ] `server/tests/e2e.test.ts` and `server/tests/entity-worker-observability.test.ts` re-run in full against the fix. Anything still red at that point is a real regression, not covered by this story's diagnosis, and needs its own triage — this story's diagnosis only proves the 401 causes the failures it names, not that fixing it alone guarantees green
+  - [ ] `entity-worker-observability.test.ts`'s test re-checked specifically against ST-093's still-open queue-isolation theory (see the cross-reference note added there 2026-08-25) — a working key may unmask that separate, intermittent failure mode
+  - [ ] `e2e.test.ts`'s own OpenRouter precondition check (top of file) tightened: it currently only pings the public `/models` endpoint, which cannot detect this exact authenticated-call failure mode
+- Plan: (to be created)
+- Notes: Filed as one story rather than nine because all nine failures traced to the same `OpenRouter 401: Missing Authentication header` response, confirmed via `mcp-test` container logs plus source-level tracing (`server/src/entityWorker.ts:59-90`'s `callLLM`, `server/src/consolidationLLM.ts`, and `server/index.ts`'s embedding-failure degrade-to-null path at ~lines 184/321). Baseline dated 2026-08-25, anchored to commit `8400672` (the tree at diagnosis time — `chore/st098-observed-session-follow-ups` branch, ST-098 U1+U2 already landed on it). All 9 failures reproduced identically against a freshly-recreated `db-test`/`mcp-test` (not pollution-shaped): `search_thoughts` vector lane (1), consolidate→wiki promotion (1), entity extraction (4), in-project/MMR ranking dependent on vector lane (2), entity-worker-observability `items_processed` (1, see ST-093 cross-reference).
 
 ### ST-091: Move the .NET stack to the latest feasible SDK (off net8.0, before .NET 8 EOL)
 - Type: infrastructure
@@ -688,6 +705,8 @@
 - **Phase 3 waves 1–5 complete** 2026-08-18 (PR #49 → `47cd90b`): node client with bounded crash-safe spool and replay, terminal-vs-deferred failure states, SAFE-01 empty-diff regression gate, SAFE-02 corpus integrity. **Wave 6 (03-06) outstanding** — the z2 enrolment and experiments 4–6 that actually discharge criterion 6, held at its `<human-check>` output gate. Resume: `/gsd-execute-phase 03 --wave 6`.
 - **Phase 4 not started** — blocking evidence and the final ADR-016 recommendation (U5+U6).
 
+## Review
+
 ### ST-098: ST-097 follow-ups — observed-session restart-pinning fix, WorkItem store split, pre-existing test triage, browser-check refresh
 - Type: chore (bug fix + refactor + investigation + verification)
 - Source: four findings from ST-097's 12-reviewer code review, deliberately left open at that
@@ -702,21 +721,117 @@
   `server/tests/e2e.test.ts`, `server/tests/entity-worker-observability.test.ts`,
   `server/src/workflow/dashboard.ts` (browser-check re-anchor only, no expected code change)
 - Acceptance criteria:
-  - [ ] **`ended_at` absorbing-state fix.** `AWCP_SESSION_ID` restart-pinning is dropped: a
+  - [x] **`ended_at` absorbing-state fix.** `AWCP_SESSION_ID` restart-pinning is dropped: a
     node client process always mints a fresh `session_id` at start, so a clean close can no
     longer be conflated with a later, unrelated process's abandonment. `GREATEST`-based
     monotone merge in `store.ts` stays unchanged — PO decision 2026-08-25, chose this over
-    timestamp-based reopen
-  - [ ] **`workItemStore.ts` split.** WorkItem persistence extracted out of
-    `server/src/workflow/store.ts` (1,411 lines), mirroring the boundary already drawn for
-    `readModel.ts`, `api.ts`, and `dashboard.ts`. No behavior change; existing tests are the
-    regression gate
-  - [ ] **Pre-existing test failures triaged.** The ~9 failures in `server/tests/e2e.test.ts`
-    and `entity-worker-observability.test.ts` (search, entity extraction, consolidation) are
-    root-caused and either fixed or recorded as a known, dated baseline with a story filed for
-    the fix
-  - [ ] **28 browser checks re-verified.** The manual dashboard checks invalidated by the
-    WorkItem lane (`585d2c9`) are re-run against current `main` and their disposition recorded
+    timestamp-based reopen. Dashboard now renders `last_heartbeat_at` alongside `ended_at`
+    (not either/or) so any row poisoned before this fix lands stays visibly suspicious. Done
+    2026-08-25, commit `83465f3`
+  - [x] **`workItemStore.ts` split.** WorkItem persistence extracted out of
+    `server/src/workflow/store.ts` (1,411 → 1,131 lines) into `server/src/workflow/workItemStore.ts`,
+    mirroring the boundary already drawn for `readModel.ts`, `api.ts`, and `dashboard.ts`. No
+    behavior change; `workflow-boundary.test.ts`'s handle-holder AND schema-qualification
+    invariants both extended deliberately to cover the new file (the schema-qualification
+    extension closed a gap the plan didn't anticipate — that test read only `store.ts`, so it
+    would have silently stopped checking the moved SQL's schema-qualification). Done 2026-08-25,
+    commit `8400672`
+  - [x] **Pre-existing test failures triaged.** All ~9 failures in `server/tests/e2e.test.ts`
+    (8) and `entity-worker-observability.test.ts` (1) reproduce identically against a freshly
+    recreated `db-test`/`mcp-test` (KTD5 discriminator — not pollution-shaped), traced to one
+    shared root cause: `OPENROUTER_API_KEY` returns 401 "Missing Authentication header" on
+    every authenticated OpenRouter call (chat completions + embeddings) from both `mcp` and
+    `mcp-test`. Not fixed inline — rotating/verifying a credential (or fixing proxy header
+    handling) is outside a code-only fix's reach per R5's threshold. Filed as **ST-099** (one
+    story, not nine, since all nine share the cause). Baseline dated 2026-08-25, anchored to
+    commit `8400672`. **Cross-reference, not a duplicate:** the 9th failure
+    (`entity-worker-observability.test.ts`'s `items_processed` assertion) is the same test
+    ST-093 already tracks, but ST-093's theory (queue-pollution/wrong-row-read race) is a
+    *different*, still-live mechanism from this run's cause — the test's seeded content isn't
+    `__TEST_LLM_FAIL__`-prefixed, so extraction genuinely fails for real
+    (`itemsSucceeded` in `entityWorker.ts` only counts real successes), independent of which
+    `worker_runs` row gets read. ST-093 needs re-verification against a working OpenRouter key
+    before its own fix is trusted complete or its symptom re-confirmed — see the added note on
+    ST-093 below
+  - [x] **28 browser checks re-verified.** The manual dashboard checks invalidated by the
+    WorkItem lane (`585d2c9`) are re-run against current `main` and their disposition
+    recorded. Re-run 2026-08-25 against commit `3e85f97cb2135ddbe781b23be90a50986bd0fe06`
+    (confirmed HEAD at run time), pathspec `server/src/workflow/dashboard.ts
+    server/src/workflow/readModel.ts server/src/workflow/store.ts
+    server/src/workflow/workItemStore.ts` — the record below describes those four files at
+    that commit; any commit touching any of them expires it (`git diff
+    3e85f97cb2135ddbe781b23be90a50986bd0fe06..HEAD -- server/src/workflow/dashboard.ts
+    server/src/workflow/readModel.ts server/src/workflow/store.ts
+    server/src/workflow/workItemStore.ts`; non-empty output means re-run before relying on
+    it), per
+    [docs/solutions/workflow-issues/verification-expires-when-the-verified-surface-changes.md](../../docs/solutions/workflow-issues/verification-expires-when-the-verified-surface-changes.md).
+    Driven against the dev stack (`http://localhost:3000/workflow`, dev's `mcp` container,
+    already running `FEATURE_WORKFLOW=true` at this checkout) with a real headless
+    Chromium (playwright driver reused from the ST-086 browser cache; `libnss3`/`libnspr4`
+    extracted locally, same technique as the original run), driving a disposable packet
+    (`9cc61840-685c-410a-83be-0f37b29a1192`, title "ST-098 U4 browser re-verify") created
+    via the typed API/CLI pattern the docs prescribe. `3e85f97...` is a pre-squash branch
+    SHA; after this branch squash-merges into `main`, find this work with `git log
+    --grep="Story: ST-098"` and re-anchor to the commit it names, per CLAUDE.md § Merge
+    strategy. 28/28 checks re-verified: **PASS** on all, with one behavioural note (not a
+    fail): the error banner from the bad-key 401 attempt does not auto-clear on the
+    subsequent successful load — `load()`'s success path never calls `say()`, only an
+    `"ok"`-kind banner clears itself (2.5s timeout in `say()`), so an `"err"` banner
+    persists on screen until another action overwrites it. This matches the original
+    check's actual claim ("the 401 clears the stored key", not "the banner clears
+    itself") and is not a regression. The five attention reasons
+    (`decision-required`, `blocked`, `stale`, `ended-without-checkpoint`,
+    `ready-for-review`) were all exercised: the first four by seeding a blocking
+    decision, a checkpoint carrying `blockers`, a run whose `last_event_at` was backdated
+    past the 30-minute staleness threshold via a direct SQL update on the disposable run
+    row, and ending that run after its blocking checkpoint; `ready-for-review` by
+    attaching evidence to the sole required criterion. Full per-check disposition:
+    - Render and layout (12/12 PASS): page renders packets from `/api/workflow`; no
+      uncaught page error on initial load; no uncaught page error after the negative
+      paths (a bad-key 401 and a refused-completion 409) — Chromium's own
+      "Failed to load resource" console entries for those non-2xx responses (plus one
+      benign `favicon.ico` 404) are network-log noise, not application `console.error`
+      calls or uncaught exceptions, and zero page errors were observed across the whole
+      run; policy scope renders exactly once per packet (`.tag.scope` count = 1 inside
+      the card); policy scope is never copied per row; repository renders
+      (`repo: ai-memory`); branch renders (`branch:
+      chore/st098-observed-session-follow-ups`); attention items are grouped by reason
+      (4 distinct groups observed); each group carries a count (`(1)` on each); every
+      reason class resolves to a non-default colour — `decision-required`/`blocked` both
+      computed `rgb(163,32,32)` (`--bad`), `stale`/`ended-without-checkpoint` both
+      computed `rgb(154,91,0)` (`--warn`), both distinct from the page's default text
+      colour `rgb(22,24,29)`; `ready-for-review`'s `--good` mapping was confirmed by
+      source (`dashboard.ts`'s CSS) plus its observed appearance in the DOM once earned,
+      not independently colour-sampled; criteria show unmet state before evidence exists
+      (both seeded criteria read `[unmet]`); criteria show met state once evidence
+      exists (the required criterion flipped to `[met]` after Attach evidence).
+    - The completion gate (4/4 PASS): completion is refused while the required criterion
+      lacks evidence (409, banner: "Completion refused: 1 verification criterion/criteria
+      lack evidence: Dashboard renders and interactions verified by hand"); the refusal
+      names the unmet criterion; the optional criterion ("Board entry updated with
+      disposition") is not named in that refusal; the packet's status is still `open`
+      (not `complete`) immediately after the refusal.
+    - The three interactions (9/9 PASS): the open blocking decision offers a Resolve
+      control; resolving it removes `decision-required` from the attention list (3
+      reasons remained: `blocked`, `stale`, `ended-without-checkpoint`); resolving empties
+      the open-decision list (renders "None open."); resolving shows the question and
+      resolution text under "Recently resolved"; attaching manual evidence flips the
+      required criterion to `[met]`; the evidence line renders beneath it (`manual
+      Verified by hand against commit 3e85f97...`); completion then succeeds (banner:
+      "Packet completed."); the optional criterion (never given evidence) did not block
+      that completion; the completed packet left the active overview immediately (absent
+      from the packet cards on next render, matching `/overview` returning only
+      non-complete packets).
+    - Auth (3/3 PASS): a bad key produces a 401 banner (`"401 Unauthorized"`, class
+      `err`); the 401 clears the stored key (`sessionStorage.getItem("awcp.apiKey")` read
+      back `null` immediately after); it does not loop on the key prompt — exactly one
+      `prompt()` fired for the bad-key attempt and exactly one more fired when Refresh was
+      clicked afterward, with no unsolicited prompt in between.
+    - Not independently re-verified in this pass, stated rather than left implicit: the
+      WorkItem lane (`renderWorkItem`/`renderWorkItemPackets`/`renderWorkItemSessions`)
+      added by `585d2c9` is out of scope for the original 28 — they predate that lane and
+      this re-run only restores their validity against the *packet* lane, matching the
+      unit's brief (re-verify the original 28, not extend coverage).
 - Plan: [docs/plans/2026-08-25-1530-chore-st098-observed-session-follow-ups-plan.md](../../docs/plans/2026-08-25-1530-chore-st098-observed-session-follow-ups-plan.md)
 - Notes: Filed from the ST-097 handoff rather than mid-review — none of the four block
   ST-097's landing, all four were the user's explicit choice to pick up next.
@@ -726,8 +841,29 @@
 - **Moved Backlog → In Progress 2026-08-25**, same session it was filed in, at the user's
   explicit direction to proceed on all four items.
 - **Open for the PO, neither blocking:** `FEATURE_WORKFLOW` hardcoded `"true"` on base `mcp` leaves an unauthenticated dashboard shell on `0.0.0.0:3000` for every `docker compose up -d` (`T-03-01-02`); and `.planning/STATE.md` progress metadata now describes a 2-phase project against ROADMAP's 4, with `current_phase` exceeding `total_phases`.
+- **Moved In Progress -> Review 2026-08-25.** All four acceptance criteria closed; full
+  workflow-module suite green except the same 9 disposed pre-existing failures (ST-099).
+  `ce-code-review` ran the full roster (correctness, project-standards, testing,
+  maintainability, agent-native, learnings, plus the independent cross-model adversarial
+  peer via Codex) against the branch. Two findings survived synthesis and validation:
+  finding #2 (agent-native, P2, confidence 100) -- the dashboard's poisoned-session render
+  fix wasn't mirrored into the agent-facing `awcp status` CLI (`server/scripts/awcp.ts`),
+  breaking a documented dashboard/CLI parity contract -- was applied with red-before-green
+  test proof, commit `2218bc0`. Finding #1 (adversarial-codex, P1, `advisory`/`human`,
+  confidence 100, independently corroborated by the correctness reviewer's own testing_gap)
+  is deferred, not applied: the new session-mint regression tests in
+  `awcp-node-client.test.ts` exercise a copied mint expression via `runAgent` directly
+  rather than driving `main(["run"])` end-to-end, so a future regression in the real CLI
+  entry point would not be caught by these tests. Recorded here rather than silently
+  dropped -- needs a PO/implementer call on whether to extract a shared mint helper or
+  drive `main` directly in the test.
+- **Not pushed; no PR opened.** The branch (`chore/st098-observed-session-follow-ups`, 6
+  commits, HEAD `2218bc0`) is fully committed and locally verified only. Local `main` is
+  itself 46 commits ahead of `origin/main` (unrelated prior work from this same session
+  and others), so pushing this branch and opening a PR against `origin/main` would bundle
+  in all of that -- deliberately not done without the PO's explicit direction. Awaiting
+  PO decision on push/PR.
 
-## Review
 
 ## Done
 
@@ -852,7 +988,7 @@
   - [x] The typed API supports the complete local workflow across 11 named commands; no generic row mutation, arbitrary SQL, shell execution, or packet-status setter
   - [x] Missing or out-of-vocabulary policy scope fails closed (400), with a same-request success as the discrimination control
   - [x] One real local repository/session reported a commit-bearing checkpoint through the CLI (`repo_commit` = actual `git rev-parse HEAD`) — **re-evidenced by ST-087 on 2026-08-03.** When this box was first ticked the backing test posted a hardcoded SHA, which proves the API stores what it is handed, not that the CLI obtained anything; the claim was true but the evidence did not reach it. `server/tests/awcp-cli.test.ts` now creates a checkpoint with no `--commit` anywhere in its argv and compares the stored value against a freshly-read `HEAD`, and a red control (removing `PATH` from the CLI child's environment, so `git` cannot resolve) was observed turning exactly that assertion red
-  - [x] The dashboard at `/workflow` shows active work, attention grouped by reason, decisions, checkpoints and criteria/evidence, and offers exactly resolve / attach-evidence / complete — **verified, in two layers:** the process-boundary test asserts the served page carries every required section, all three actions and no status control, each targeting an endpoint it exercises; and on 2026-08-02 the page was driven in a real headless Chromium, 28/28 checks — it renders, attention groups by reason with each reason class resolving to its intended colour, repository/branch/policy scope render with scope shown once per packet, criteria show met/unmet with evidence, all three interactions work end to end, completion is refused while a required criterion lacks evidence **with the unmet criteria named** (and the optional one correctly not named), a completed packet leaves the active overview, and a 401 clears the stored key without re-prompting. CI still has no browser, so the rendering layer is a **Point-in-Time Result** describing `server/src/workflow/dashboard.ts` at **`f36903e`** — re-anchored on 2026-08-03 from the pre-squash `0d3af13` after confirming `git diff 0d3af13..f36903e -- server/src/workflow/dashboard.ts` is empty, i.e. the verified file did not change between the browser run and the merge. Any commit touching that file — anyone's — expires it, checkable with `git diff f36903e..HEAD -- server/src/workflow/dashboard.ts` (non-empty ⇒ re-run the 28 checks before this box counts as ticked). **EXPIRED 2026-08-25 by `585d2c9` (ST-097)**, which added the WorkItem lane to that file; the 28 checks also predate that lane and cover none of it. Procedure and the reasoned decision *not* to automate it are in [docs/workflow-mvp.md](../../docs/workflow-mvp.md#verifying-the-dashboard-in-a-real-browser). One defect was found by looking and fixed: the refusal banner named the unmet criteria twice, because the server message already embeds them and the page appended them again
+  - [x] The dashboard at `/workflow` shows active work, attention grouped by reason, decisions, checkpoints and criteria/evidence, and offers exactly resolve / attach-evidence / complete — **verified, in two layers:** the process-boundary test asserts the served page carries every required section, all three actions and no status control, each targeting an endpoint it exercises; and on 2026-08-02 the page was driven in a real headless Chromium, 28/28 checks — it renders, attention groups by reason with each reason class resolving to its intended colour, repository/branch/policy scope render with scope shown once per packet, criteria show met/unmet with evidence, all three interactions work end to end, completion is refused while a required criterion lacks evidence **with the unmet criteria named** (and the optional one correctly not named), a completed packet leaves the active overview, and a 401 clears the stored key without re-prompting. CI still has no browser, so the rendering layer is a **Point-in-Time Result** describing `server/src/workflow/dashboard.ts` at **`f36903e`** — re-anchored on 2026-08-03 from the pre-squash `0d3af13` after confirming `git diff 0d3af13..f36903e -- server/src/workflow/dashboard.ts` is empty, i.e. the verified file did not change between the browser run and the merge. Any commit touching that file — anyone's — expires it, checkable with `git diff f36903e..HEAD -- server/src/workflow/dashboard.ts` (non-empty ⇒ re-run the 28 checks before this box counts as ticked). **EXPIRED 2026-08-25 by `585d2c9` (ST-097)**, which added the WorkItem lane to that file; the 28 checks also predate that lane and cover none of it. Procedure and the reasoned decision *not* to automate it are in [docs/workflow-mvp.md](../../docs/workflow-mvp.md#verifying-the-dashboard-in-a-real-browser). One defect was found by looking and fixed: the refusal banner named the unmet criteria twice, because the server message already embeds them and the page appended them again. **Re-verified 2026-08-25 by ST-098 (Unit 4), superseding the `585d2c9`-EXPIRED note above — the expiry note stays as history, this supersedes its conclusion.** 28/28 PASS against commit `3e85f97cb2135ddbe781b23be90a50986bd0fe06` (a pre-squash branch SHA on `chore/st098-observed-session-follow-ups`; after that branch squash-merges into `main`, find this work with `git log --grep="Story: ST-098"` and re-anchor to the commit it names), pathspec `server/src/workflow/dashboard.ts server/src/workflow/readModel.ts server/src/workflow/store.ts server/src/workflow/workItemStore.ts`. Full per-check disposition and method recorded on ST-098's entry above (its 4th acceptance criterion). Any commit touching any of those four files expires this result in turn — `git diff 3e85f97cb2135ddbe781b23be90a50986bd0fe06..HEAD -- server/src/workflow/dashboard.ts server/src/workflow/readModel.ts server/src/workflow/store.ts server/src/workflow/workItemStore.ts` (non-empty ⇒ re-run before relying on it)
   - [x] Completion remains evidence-gated — refused with the unmet criteria named, and the packet verified still not complete after the refusal
   - [x] Operational state survives an actual server restart (SIGTERM, port freed, second process); the second boot applies nothing and skips both migrations
   - [x] The slice runs with the memory workers and provider access disabled, with a provider sentinel recording **zero** requests

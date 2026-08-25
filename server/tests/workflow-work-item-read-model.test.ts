@@ -48,6 +48,7 @@ import { sql } from "../src/db.ts";
 import { createWorkflowApi } from "../src/workflow/api.ts";
 import { ensureWorkflowSchema } from "../src/workflow/schema.ts";
 import * as store from "../src/workflow/store.ts";
+import * as workItemStore from "../src/workflow/workItemStore.ts";
 import type { SourceSystem } from "../src/workflow/types.ts";
 
 const T = { sanitizeResources: false, sanitizeOps: false };
@@ -130,7 +131,7 @@ async function dropNode(bearer: string): Promise<void> {
  */
 async function fullFixture() {
   const sourceRef = uniqueRef("ST-097");
-  const item = await store.createWorkItem({ sourceSystem: "story-board", sourceRef });
+  const item = await workItemStore.createWorkItem({ sourceSystem: "story-board", sourceRef });
 
   const corporate = await store.createPacket({
     title: "B5 read-model probe (corporate)",
@@ -142,11 +143,11 @@ async function fullFixture() {
     objective: "prove the projection keeps scope per packet",
     policyScope: "personal",
   });
-  await store.bindPacketToWorkItem(corporate.id, item.id);
-  await store.bindPacketToWorkItem(personal.id, item.id);
+  await workItemStore.bindPacketToWorkItem(corporate.id, item.id);
+  await workItemStore.bindPacketToWorkItem(personal.id, item.id);
 
   const observed = await observeSession();
-  await store.claimSessionForWorkItem(item.id, observed.nodeId, observed.sessionId);
+  await workItemStore.claimSessionForWorkItem(item.id, observed.nodeId, observed.sessionId);
 
   return { item, sourceRef, corporate, personal, observed };
 }
@@ -157,7 +158,7 @@ async function literalWorkItem(sourceSystem: SourceSystem, sourceRef: string) {
     DELETE FROM workflow.work_items
     WHERE source_system = ${sourceSystem} AND source_ref = ${sourceRef}
   `;
-  return await store.createWorkItem({ sourceSystem, sourceRef });
+  return await workItemStore.createWorkItem({ sourceSystem, sourceRef });
 }
 
 Deno.test({

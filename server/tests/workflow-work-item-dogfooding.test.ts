@@ -34,8 +34,8 @@
  * B9's own wording asks for an item "carrying its own `AW-NNN`". Nothing may mint one.
  * ADR-017 §4 closes with "this ADR allocates nothing … no `AW-NNN` value may be minted
  * until the allocator that governs minting exists", and no such allocator exists: the
- * create route's body schema has no `awLabel` field, `store.createWorkItem` mints
- * nothing, and `005_work_items.sql` inserts no row. The label is therefore null here,
+ * create route's body schema has no `awLabel` field, `workItemStore.createWorkItem`
+ * mints nothing, and `005_work_items.sql` inserts no row. The label is therefore null here,
  * asserted rather than glossed. `uq_work_items_aw_label` is already in place waiting
  * for the allocator, so the label can be filled in later without a schema change.
  * See docs/workflow-dogfooding.md.

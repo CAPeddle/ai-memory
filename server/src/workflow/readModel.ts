@@ -2,9 +2,9 @@
  * ST-086 — the operator read model.
  *
  * One aggregate shaped for the dashboard, assembled from store reads. It holds no SQL
- * of its own (store.ts is the only file with the database handle) and no rules of its
- * own beyond selection and ordering — {@link evaluateAttention} stays the single
- * source of attention truth.
+ * of its own (store.ts and workItemStore.ts are the only files with the database
+ * handle) and no rules of its own beyond selection and ordering —
+ * {@link evaluateAttention} stays the single source of attention truth.
  *
  * **Policy scope is inherited, never copied.** The scope appears exactly once per
  * packet view, read from the packet, and runs/decisions/criteria under it carry none
@@ -24,6 +24,7 @@
 
 import { evaluateAttention } from "./attention.ts";
 import * as store from "./store.ts";
+import * as workItemStore from "./workItemStore.ts";
 import type {
   AgentRun,
   AttentionItem,
@@ -163,7 +164,7 @@ export async function buildOverview(now = new Date()): Promise<OverviewView> {
  * the caller maps absence to 404 rather than rendering an empty shell.
  */
 export async function buildWorkItemView(id: string): Promise<WorkItemView | null> {
-  const item = await store.getWorkItem(id);
+  const item = await workItemStore.getWorkItem(id);
   if (item === null) return null;
   return (await assembleWorkItems([item]))[0];
 }
@@ -176,14 +177,14 @@ export async function buildWorkItemViewByProvenance(
   sourceSystem: SourceSystem,
   sourceRef: string,
 ): Promise<WorkItemView | null> {
-  const item = await store.findWorkItemByProvenance(sourceSystem, sourceRef);
+  const item = await workItemStore.findWorkItemByProvenance(sourceSystem, sourceRef);
   if (item === null) return null;
   return (await assembleWorkItems([item]))[0];
 }
 
 /** Build every WorkItem's view — the listing, and the overview's WorkItem lane. */
 export async function buildWorkItemOverview(): Promise<WorkItemView[]> {
-  return await assembleWorkItems(await store.listWorkItems());
+  return await assembleWorkItems(await workItemStore.listWorkItems());
 }
 
 /**
@@ -202,8 +203,8 @@ async function assembleWorkItems(items: WorkItem[]): Promise<WorkItemView[]> {
   if (items.length === 0) return [];
   const ids = items.map((item) => item.id);
   const [packets, sessions] = await Promise.all([
-    store.listPacketsForWorkItems(ids),
-    store.listClaimedSessionsForWorkItems(ids),
+    workItemStore.listPacketsForWorkItems(ids),
+    workItemStore.listClaimedSessionsForWorkItems(ids),
   ]);
 
   const packetsByItem = groupBy(packets, (p) => p.work_item_id);

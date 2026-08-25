@@ -91,7 +91,7 @@ function stripComments(source: string): string {
  * module is now a deliberate, reviewable edit to this list.
  */
 const ALLOWED_IMPORTS = [
-  "../db.ts", // store.ts only — separately asserted below
+  "../db.ts", // store.ts and workItemStore.ts only — separately asserted below
   "../logging.ts",
 ];
 
@@ -220,16 +220,19 @@ Deno.test({
 });
 
 Deno.test({
-  name: "boundary: only store.ts holds the database handle",
+  name: "boundary: only store.ts, workItemStore.ts, and schema.ts hold the database handle",
   fn: async () => {
     const sources = await readWorkflowSource();
     for (const [name, raw] of sources) {
       const code = stripComments(raw);
       const importsDb = extractImportSpecifiers(code).includes("../db.ts");
-      if (name === "store.ts" || name === "schema.ts") {
+      if (name === "store.ts" || name === "workItemStore.ts" || name === "schema.ts") {
         assert(importsDb, `${name} is expected to hold the database handle`);
       } else {
-        assert(!importsDb, `${name} must not import ../db.ts — route SQL through store.ts`);
+        assert(
+          !importsDb,
+          `${name} must not import ../db.ts — route SQL through store.ts or workItemStore.ts`,
+        );
       }
     }
   },
@@ -268,38 +271,47 @@ Deno.test({
   },
 });
 
-Deno.test({
-  name: "boundary: every workflow SQL identifier is schema-qualified",
-  fn: async () => {
-    // Unqualified DML would land in whichever schema the pooled connection's
-    // sticky search_path happens to point at (AGE pollution — see 007 header).
-    const code = stripComments(await Deno.readTextFile(new URL("store.ts", WORKFLOW_DIR)));
-    // Case-INSENSITIVE deliberately: the original regex had no /i flag, so a
-    // lowercase `from thoughts` would have been skipped entirely rather than
-    // flagged — a scan that silently ignores the very style it should catch.
-    //
-    // `(?<!DO\s+)` excludes `ON CONFLICT ... DO UPDATE SET`, which is a FALSE POSITIVE
-    // and loses no coverage: `DO UPDATE` takes no table name, so the token after it is
-    // the keyword `SET`, and the upsert's real target is the `INSERT INTO
-    // workflow.<table>` this same scan already checks. Before this exclusion the
-    // artifact was load-bearing in the wrong direction — store.ts carried a note that
-    // the construct was unavailable, and appeasing the regex would have meant three
-    // statements and an advisory lock on the ingest path instead of one upsert.
-    //
-    // `\s+` rather than a single space so a `DO UPDATE` split across a line break is
-    // still excluded, and the /i flag covers a lowercase `do update`.
-    const clauses = [
-      ...code.matchAll(/\b(?:FROM|INTO|JOIN|(?<!DO\s+)UPDATE)\s+([A-Za-z_][\w.]*)/gi),
-    ];
-    assert(clauses.length > 0, "expected SQL clauses in store.ts");
-    for (const [, identifier] of clauses) {
-      assert(
-        identifier.toLowerCase().startsWith("workflow."),
-        `unqualified or non-workflow SQL identifier "${identifier}" in store.ts`,
-      );
-    }
-  },
-});
+// Scanned for schema-qualified SQL identifiers by the test below. Both files hold the
+// database handle (the boundary test above), and both are therefore in scope for the
+// same "every identifier is workflow.*-qualified" rule — a function's SQL clauses stay
+// covered by this scan regardless of which of the two files it lives in. ST-098 U2
+// split workItemStore.ts out of store.ts; before that split this list held one name.
+const FILES_WITH_SQL = ["store.ts", "workItemStore.ts"];
+
+for (const fileName of FILES_WITH_SQL) {
+  Deno.test({
+    name: `boundary: every workflow SQL identifier is schema-qualified (${fileName})`,
+    fn: async () => {
+      // Unqualified DML would land in whichever schema the pooled connection's
+      // sticky search_path happens to point at (AGE pollution — see 007 header).
+      const code = stripComments(await Deno.readTextFile(new URL(fileName, WORKFLOW_DIR)));
+      // Case-INSENSITIVE deliberately: the original regex had no /i flag, so a
+      // lowercase `from thoughts` would have been skipped entirely rather than
+      // flagged — a scan that silently ignores the very style it should catch.
+      //
+      // `(?<!DO\s+)` excludes `ON CONFLICT ... DO UPDATE SET`, which is a FALSE POSITIVE
+      // and loses no coverage: `DO UPDATE` takes no table name, so the token after it is
+      // the keyword `SET`, and the upsert's real target is the `INSERT INTO
+      // workflow.<table>` this same scan already checks. Before this exclusion the
+      // artifact was load-bearing in the wrong direction — store.ts carried a note that
+      // the construct was unavailable, and appeasing the regex would have meant three
+      // statements and an advisory lock on the ingest path instead of one upsert.
+      //
+      // `\s+` rather than a single space so a `DO UPDATE` split across a line break is
+      // still excluded, and the /i flag covers a lowercase `do update`.
+      const clauses = [
+        ...code.matchAll(/\b(?:FROM|INTO|JOIN|(?<!DO\s+)UPDATE)\s+([A-Za-z_][\w.]*)/gi),
+      ];
+      assert(clauses.length > 0, `expected SQL clauses in ${fileName}`);
+      for (const [, identifier] of clauses) {
+        assert(
+          identifier.toLowerCase().startsWith("workflow."),
+          `unqualified or non-workflow SQL identifier "${identifier}" in ${fileName}`,
+        );
+      }
+    },
+  });
+}
 
 Deno.test({
   name: "boundary: the schema-qualification scan catches lowercase and unqualified SQL",

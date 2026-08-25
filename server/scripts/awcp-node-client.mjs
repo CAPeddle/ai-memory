@@ -44,8 +44,11 @@
  *
  * Env vars read: `AWCP_HOME`, `AWCP_HUB_URL`, `AWCP_NODE_BEARER`,
  * `AWCP_NODE_ENROLMENT_SECRET`, `AWCP_SPOOL_MAX_ENTRIES`,
- * `AWCP_HEARTBEAT_INTERVAL_MS`, `AWCP_SESSION_ID` (ST-097 B3 — pins the observed
- * session this `run` announces; absent, `run` mints one per invocation).
+ * `AWCP_HEARTBEAT_INTERVAL_MS`. (ST-098 Unit 1: no env var pins the observed session
+ * `run` announces across a process restart — the store's session merge is
+ * monotone/`GREATEST`-based, so reusing a session id after a clean close made a
+ * genuinely-abandoned later session read as permanently "ended", an absorbing-state
+ * bug. `run` always mints a fresh session id per invocation instead.)
  */
 
 import {
@@ -414,8 +417,10 @@ export function resolveConfig(overrides = {}) {
     // ST-097 B3: the observed session this run announces, or null for none. Null is
     // the default so every existing caller — including `runAgent` driven directly by a
     // test — keeps exactly the event stream it had; `main`'s `run` command is what
-    // mints one when the operator has not supplied `AWCP_SESSION_ID`.
-    sessionId: overrides.sessionId ?? process.env.AWCP_SESSION_ID ?? null,
+    // mints one fresh on every invocation (ST-098 Unit 1 — no env var pins a session
+    // id across restarts; `overrides.sessionId` remains a purely programmatic/test
+    // seam, never populated by the real CLI entry point).
+    sessionId: overrides.sessionId ?? null,
     // ST-092 R1: the pid-liveness probe behind the lock's stale-reclaim decision.
     // Injectable because the in-process suite deliberately runs without --allow-run,
     // under which the real probe cannot answer (see `isPidAlive`).
@@ -1841,8 +1846,12 @@ async function runCommand(config, argv, command) {
   if (command === "run") {
     // ST-097 B3: a real `run` always announces an observed session. The id is minted
     // here rather than in `runAgent` so a test driving the loop directly still gets the
-    // pre-B3 event stream unless it asks for a session — and so an operator can pin one
-    // across restarts with `AWCP_SESSION_ID` when a session outlives a process.
+    // pre-B3 event stream unless it asks for a session. ST-098 Unit 1: this mint is now
+    // unconditional — every `run` invocation gets a fresh session id; there is no
+    // mechanism to pin one across a process restart (the store's monotone/`GREATEST`
+    // session merge made restart-pinning an absorbing-state bug: a restarted process
+    // reusing a pinned id after a clean close made a later, genuinely-abandoned session
+    // read as permanently "ended").
     const controller = runAgent({
       ...config,
       sessionId: config.sessionId ?? newSessionId(),

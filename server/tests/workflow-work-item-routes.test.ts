@@ -33,6 +33,7 @@ import { sql } from "../src/db.ts";
 import { createWorkflowApi } from "../src/workflow/api.ts";
 import { ensureWorkflowSchema } from "../src/workflow/schema.ts";
 import * as store from "../src/workflow/store.ts";
+import * as workItemStore from "../src/workflow/workItemStore.ts";
 
 const T = { sanitizeResources: false, sanitizeOps: false };
 
@@ -216,7 +217,7 @@ async function newPacket() {
 }
 
 async function newWorkItem() {
-  return await store.createWorkItem({ sourceSystem: "awcp-native" });
+  return await workItemStore.createWorkItem({ sourceSystem: "awcp-native" });
 }
 
 Deno.test({

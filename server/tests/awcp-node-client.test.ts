@@ -48,6 +48,7 @@ import {
   main,
   MAX_FLUSH_ATTEMPTS,
   MAX_PAYLOAD_BYTES,
+  newSessionId,
   readSpool,
   readState,
   releaseLock,
@@ -3193,5 +3194,127 @@ Deno.test({
       "the loser must retry into the now-free lock, not die on the winner's release",
     );
     releaseLock(handle);
+  },
+});
+
+// ---------------------------------------------------------------------------
+// ST-098 Unit 1 (R1) — no session id survives a process restart
+//
+// ST-097 B3 originally let `AWCP_SESSION_ID` pin a session id across a restart, so an
+// operator could reopen a session that outlived one process. But `store.ts`'s session
+// merge is monotone (`GREATEST`-based — see `foldSessionEvents`), so a restarted
+// process reusing a pinned id AFTER a clean close (`session_end` recorded, `ended_at`
+// set) makes a genuinely-abandoned LATER session read as permanently "ended" — an
+// absorbing state nothing can leave. The fix: `resolveConfig` no longer reads
+// `AWCP_SESSION_ID` at all, and `main`'s `run` command (the only real, non-test
+// caller — `overrides.sessionId` remains a separate, purely programmatic/test seam)
+// always mints a fresh id via `newSessionId()`.
+//
+// These tests exercise the exact expression `main`'s `run` branch uses
+// (`config.sessionId ?? newSessionId()`) through `runAgent` directly, rather than
+// through `main(["run"], ...)` itself, because driving `main`'s `run` command to
+// completion needs a real OS signal to unblock its `controller.done` — pure overhead
+// for a fact that is entirely decided by `resolveConfig` and the mint expression, both
+// exercised verbatim here.
+// ---------------------------------------------------------------------------
+
+/**
+ * Simulates one `main(["run"], overrides)` process start far enough to observe which
+ * session id it announces: resolves config exactly as `main` does, mints a session id
+ * with the identical `config.sessionId ?? newSessionId()` expression `main`'s `run`
+ * branch uses, then runs the loop only through its first flush (before any heartbeat
+ * tick) and stops — enough to capture the `session_start` event without waiting on a
+ * real interval.
+ */
+// deno-lint-ignore no-explicit-any
+async function runOneProcessStart(overrides: Record<string, unknown>, recorded: any[][]) {
+  const config = withNodeId(resolveConfig(overrides));
+  const mintedConfig = { ...config, sessionId: config.sessionId ?? newSessionId() };
+  // deno-lint-ignore no-explicit-any
+  const box: { controller?: { stop: () => void; done: Promise<any> } } = {};
+  const sleepImpl = (_ms: number) => {
+    box.controller!.stop();
+    return Promise.resolve();
+  };
+  box.controller = runAgent({
+    ...mintedConfig,
+    fetchImpl: ackingFetch(recorded),
+    sleepImpl,
+  });
+  await box.controller.done;
+  const events = recorded.flat();
+  const start = events.find((e) => e.event_type === "session_start");
+  assert(start, "a run start must announce a session_start event");
+  return start.payload.session_id as string;
+}
+
+Deno.test({
+  ...T,
+  name:
+    "ST-098 U1 R1: two separate `run` invocations (no AWCP_SESSION_ID set) mint two distinct session ids",
+  fn: async () => {
+    const original = Deno.env.get("AWCP_SESSION_ID");
+    Deno.env.delete("AWCP_SESSION_ID");
+    try {
+      // deno-lint-ignore no-explicit-any
+      const recorded1: any[][] = [];
+      // deno-lint-ignore no-explicit-any
+      const recorded2: any[][] = [];
+      const home1 = await Deno.makeTempDir();
+      const home2 = await Deno.makeTempDir();
+      const id1 = await runOneProcessStart({ home: home1 }, recorded1);
+      const id2 = await runOneProcessStart({ home: home2 }, recorded2);
+      assert(id1, "the first invocation must mint a session id");
+      assert(id2, "the second invocation must mint a session id");
+      assert(
+        id1 !== id2,
+        `two separate process starts must not share a session id (got ${id1} twice)`,
+      );
+    } finally {
+      if (original === undefined) Deno.env.delete("AWCP_SESSION_ID");
+      else Deno.env.set("AWCP_SESSION_ID", original);
+    }
+  },
+});
+
+Deno.test({
+  ...T,
+  name:
+    "ST-098 U1 R1 (regression): AWCP_SESSION_ID no longer pins a session id across a restart — resolveConfig ignores it, and two runs sharing the SAME env value still mint different ids",
+  fn: async () => {
+    const original = Deno.env.get("AWCP_SESSION_ID");
+    Deno.env.set("AWCP_SESSION_ID", "pinned-across-restarts");
+    try {
+      // The env var must not even reach `config.sessionId` — confirms the read was
+      // removed, not merely overridden downstream.
+      const config = resolveConfig({ home: await Deno.makeTempDir() });
+      assertEquals(
+        config.sessionId,
+        null,
+        "resolveConfig must no longer read AWCP_SESSION_ID",
+      );
+
+      // deno-lint-ignore no-explicit-any
+      const recorded1: any[][] = [];
+      // deno-lint-ignore no-explicit-any
+      const recorded2: any[][] = [];
+      const home1 = await Deno.makeTempDir();
+      const home2 = await Deno.makeTempDir();
+      const id1 = await runOneProcessStart({ home: home1 }, recorded1);
+      const id2 = await runOneProcessStart({ home: home2 }, recorded2);
+      assert(
+        id1 !== "pinned-across-restarts" && id2 !== "pinned-across-restarts",
+        "no run may announce the env var's value as its session id",
+      );
+      assert(
+        id1 !== id2,
+        "the bug this unit fixes: a restarted process reusing a pinned session id " +
+          "after a clean close reads a later abandonment as a permanent \"ended\" — " +
+          `got the same id (${id1}) twice with AWCP_SESSION_ID pinned`,
+      );
+    } finally {
+      if (original === undefined) Deno.env.delete("AWCP_SESSION_ID");
+      else Deno.env.set("AWCP_SESSION_ID", original);
+    }
   },
 });
