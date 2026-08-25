@@ -42,6 +42,7 @@ import { sql } from "../src/db.ts";
 import { createWorkflowApi } from "../src/workflow/api.ts";
 import { ensureWorkflowSchema } from "../src/workflow/schema.ts";
 import * as store from "../src/workflow/store.ts";
+import * as workItemStore from "../src/workflow/workItemStore.ts";
 import {
   bootDashboard,
   byClass,
@@ -530,7 +531,7 @@ Deno.test({
   fn: async () => {
     // A live projection, built through the store and read back through the real
     // router, so the parity target is what an agent key actually receives.
-    const item = await store.createWorkItem({
+    const item = await workItemStore.createWorkItem({
       sourceSystem: "story-board",
       sourceRef: `B6-parity-${crypto.randomUUID()}`,
     });
@@ -539,7 +540,7 @@ Deno.test({
       objective: "prove the UI reads nothing the projection lacks",
       policyScope: "corporate",
     });
-    await store.bindPacketToWorkItem(packet.id, item.id);
+    await workItemStore.bindPacketToWorkItem(packet.id, item.id);
 
     const res = await api.request(`/work-items/${item.id}`, {
       headers: { "Content-Type": "application/json" },

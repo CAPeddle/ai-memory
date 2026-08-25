@@ -29,6 +29,7 @@ import {
 } from "./_helpers/serverProcess.ts";
 import { sql } from "../src/db.ts";
 import * as store from "../src/workflow/store.ts";
+import * as workItemStore from "../src/workflow/workItemStore.ts";
 import type { SourceSystem } from "../src/workflow/types.ts";
 
 const DATABASE_URL = Deno.env.get("DATABASE_URL")!;
@@ -495,7 +496,7 @@ Deno.test({
             DELETE FROM workflow.work_items
             WHERE source_system = ${source} AND source_ref = ${ref}
           `;
-          const made = await store.createWorkItem({ sourceSystem: source, sourceRef: ref });
+          const made = await workItemStore.createWorkItem({ sourceSystem: source, sourceRef: ref });
           const resolved = await apiCall(
             server.baseUrl,
             AGENT_KEY,

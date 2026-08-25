@@ -64,6 +64,7 @@ import { sql } from "../src/db.ts";
 import { createWorkflowApi } from "../src/workflow/api.ts";
 import { ensureWorkflowSchema } from "../src/workflow/schema.ts";
 import * as store from "../src/workflow/store.ts";
+import * as workItemStore from "../src/workflow/workItemStore.ts";
 
 const T = { sanitizeResources: false, sanitizeOps: false };
 
@@ -122,7 +123,7 @@ async function fixture(): Promise<Fixture> {
     },
   }]);
 
-  const item = await store.createWorkItem({ sourceSystem: "awcp-native" });
+  const item = await workItemStore.createWorkItem({ sourceSystem: "awcp-native" });
   return { nodeId: node.node_id, bearer, sessionId, workItemId: item.id };
 }
 
@@ -355,7 +356,7 @@ Deno.test({
   fn: async () => {
     const f = await fixture();
     try {
-      const other = await store.createWorkItem({ sourceSystem: "awcp-native" });
+      const other = await workItemStore.createWorkItem({ sourceSystem: "awcp-native" });
 
       const first = await claim(f.workItemId, f.nodeId, f.sessionId);
       assertEquals(first.status, 201, JSON.stringify(first.body));

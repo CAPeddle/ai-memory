@@ -32,6 +32,7 @@ import {
 
 import { sql } from "../src/db.ts";
 import * as store from "../src/workflow/store.ts";
+import * as workItemStore from "../src/workflow/workItemStore.ts";
 import { startServerProcess } from "./_helpers/serverProcess.ts";
 import {
   cliGrants,
@@ -140,7 +141,7 @@ async function statusFixture() {
   // Unique, but deliberately NOT uuid-shaped: the by-provenance step asserts that no
   // argument it passes looks like a uuid, and a ref carrying one would defeat that.
   const sourceRef = `ST-097-b7-${crypto.randomUUID().replaceAll("-", "")}`;
-  const item = await store.createWorkItem({
+  const item = await workItemStore.createWorkItem({
     sourceSystem: "story-board",
     sourceRef,
   });
@@ -155,11 +156,11 @@ async function statusFixture() {
     objective: "prove the CLI keeps scope per packet",
     policyScope: "personal",
   });
-  await store.bindPacketToWorkItem(corporate.id, item.id);
-  await store.bindPacketToWorkItem(personal.id, item.id);
+  await workItemStore.bindPacketToWorkItem(corporate.id, item.id);
+  await workItemStore.bindPacketToWorkItem(personal.id, item.id);
 
   const observed = await observeSession();
-  await store.claimSessionForWorkItem(item.id, observed.nodeId, observed.sessionId);
+  await workItemStore.claimSessionForWorkItem(item.id, observed.nodeId, observed.sessionId);
 
   return { item, sourceRef, corporate, personal, observed };
 }
@@ -885,7 +886,7 @@ Deno.test({
         // than concatenation, a naive `?ref=#57` truncates at the fragment and the
         // server sees an empty ref.
         const sourceRef = `#57-${crypto.randomUUID()}`;
-        const item = await store.createWorkItem({
+        const item = await workItemStore.createWorkItem({
           sourceSystem: "github",
           sourceRef,
         });
