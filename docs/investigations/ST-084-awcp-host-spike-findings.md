@@ -1640,3 +1640,249 @@ it does that correctly. The finding is that ADR-016 §1's "actual execution bloc
 means *the system prevents further work while a blocking decision is open*, is not met by any code in
 this repository, proven now rather than surmised, and no future execution node — real or otherwise —
 changes that without a code change to add a consumer.
+
+## 18. Stage 2 Unit 6: Final Extraction Viability & ADR-016 Recommendation (criterion 7)
+
+**Verdict, stated once up front and defended below: Candidate A is technically achievable but not
+justified. The reuse that would have justified sharing a codebase went unused; the reuse that did
+happen is generic infrastructure that costs little to replicate; and co-tenancy imposes a real,
+priced, ongoing tax that a standalone AWCP would never pay. The recommendation is not "Candidate A
+can't work" — Stage 1 and Phase 2–3 prove it can. It is "we now have evidence it shouldn't."**
+
+**This section is a recommendation for PO review, not an applied decision.** Per the PO's explicit
+instruction when this section was drafted (2026-08-26), ADR-016's `status` and Decision text are
+**not changed by this commit**. §18.10 is the proposed replacement text, held for sign-off — the same
+pattern §13 already established in this document for unapplied ADR amendments.
+
+### 18.1 Re-evaluating criteria 1–7 against this interpretation
+
+| Criterion | Status | What it actually established |
+|---|---|---|
+| 1. Operational-domain separation | **Met** (Stage 1) | Evidence *for* separation, not merely for co-tenancy: WorkPackets/runs/checkpoints/decisions are cleanly their own domain even *inside* ai-memory's process. If the domain separates this cleanly at the code level while co-located, it separates at the process level too. |
+| 2. Memory-disabled operation | **Met** (Stage 1) | Same reading: a `NoopMemoryAdapter` (`ports.ts`) passes every core workflow test. AWCP's correctness never depended on the memory subsystem being present, in either topology. |
+| 3. Separate persistence/API boundaries | **Met** (Stage 1) | Operational tables and the platform MCP surface never leaked into each other. Positive evidence the boundary is real, not just declared. |
+| 4. Failure isolation | **Met** (Stage 1), with a caveat §12a/§3 already recorded | A fault in embedding/entity/consolidation workers cannot corrupt operational state — but ST-086's fail-startup wiring means a *workflow* migration fault now takes the whole memory MCP down. Failure isolation is asymmetric: memory faults can't hurt AWCP, but a shared process still lets AWCP hurt memory. |
+| 5. Policy-scope enforcement implementable | **Met, and priced** (§13/U1) | Every one of the 15 paths has a feasible mitigation (WHERE-clause addition, gating, or egress-gating) — nothing is structurally impossible. But "implementable" was never the open question; the cost was, and the cost is 64+ hours (8+ days), a number that exists *only* because AWCP and memory retrieval share a trust domain. |
+| 6. Remote-client control | **Met** (§16) | Real node, real hub, all six named elements discharged. Says nothing about *where* the hub should live — a standalone AWCP hub is exactly as capable of authenticating z2 as ai-memory's is. |
+| 7. Reuse justifies the domain-fit cost | **Not met** | See §18.2. This is the one criterion the evidence answers "no" to, and it's the deciding one — 1–6 describe a boundary that is *clean*, not a boundary that *should be shared*. |
+
+### 18.2 The reuse-vs-cost reconciliation
+
+**What was supposed to justify Candidate A, and what actually did:**
+
+- The ADR's original code-maturity argument for Candidate A named the memory engine itself — pgvector
+  storage, RRF/MMR hybrid search, append-only versioned shards, tag grammar — as the reuse case
+  (ADR-016 §1 table, "Code maturity" row). **None of it was used.** §5's per-component classification
+  found the domain-specific capabilities either *unnecessary* (hybrid retrieval, graph storage,
+  consolidation — "operational queries are keyed lookups and status filters... ranking has no role")
+  or *actively harmful to reuse* (the worker/event infrastructure's closed union type).
+- What *did* reuse — Postgres connection pooling, the transaction pattern, logging conventions,
+  container/test topology (§5's verdict: "the reuse that materialises is infrastructural") — is
+  generic. None of it is specific to being a memory-retrieval system; a well-built Deno+Postgres
+  service scaffolds the same things from a template in about the time §13.5 already estimated for
+  Candidate C's greenfield setup (3–4 days).
+- §13.5's own comparison, computed for a different purpose (pricing, not this recommendation), already
+  says the quiet part: Candidate A's reuse "savings" over Candidate C are ~4–5 days; Candidate C's
+  extra greenfield cost is ~3–4 days. **That is a wash before counting what Candidate A costs that
+  Candidate C doesn't.**
+- What Candidate A costs that Candidate C never would: the 64+ hour (8+ day) `scope.tags` enforcement
+  surface (§13, entirely a consequence of sitting inside a system with 15 memory-retrieval paths to
+  defend); a shared failure blast radius (§3, ST-086's fail-startup wiring); a shared Postgres role
+  with no real access-control isolation (§3: "a Postgres schema is namespacing, not access control");
+  and the worker-type-union coupling risk §5 flagged as actively harmful.
+- Net: the case for sharing a codebase was reuse. The reuse that would have mattered didn't happen;
+  the reuse that did happen is cheap to replicate; and the thing co-tenancy actually bought AWCP was a
+  bill, not a discount.
+
+**One thing this reconciliation does *not* say:** that the ai-memory integration attempt failed or was
+wasted effort. It answered exactly the question a spike exists to answer — Stage 1–3 discovered that
+memory is an *optional capability* AWCP can consume, not the *container* it needs to live in. That is
+a more useful, and more durable, result than either "yes, host it here" or a vague "reuse would help."
+
+### 18.3 The domain boundary is already clean at the code level — extraction is a deployment change, not a rewrite
+
+Two files already exist in exactly the shape a standalone-service split would need, built during
+Stage 1 for a different stated reason (failure isolation) that turns out to double as the extraction
+seam:
+
+- **`server/src/workflow/ports.ts`** — "the ONLY sanctioned route from Workflow Operations to the
+  memory domain," enforced by `workflow-boundary.test.ts`, not just documented. `KnowledgeSearchPort`
+  (read-side, advisory) and `KnowledgePromotionPort` (write-side) are already optional-by-construction,
+  already bounded by `PORT_TIMEOUT_MS`, and a `NoopMemoryAdapter` already proves the whole operational
+  flow completes with memory absent. **This is the `ContextPort` the recommended topology below asks
+  for — it already exists, in-process.** What changes if AWCP becomes standalone is that an adapter
+  implementing these same two interfaces makes a network call instead of an in-process one; the
+  interface contract does not need to be invented.
+- **`server/src/workflow/bootstrap.ts`** / **`schema.ts`** — the composition-root seam ("this file is
+  the ONLY thing the composition root needs to know about... one predicate, one bootstrap call") and
+  the workflow module's own self-contained migration runner, deliberately kept out of the shared
+  chain. Both were built so a workflow fault reports rather than terminates the host process — the
+  same discipline a standalone service's own boot sequence would need on day one.
+
+This matters for the recommendation's credibility: the clean boundary criteria 1–4 proved isn't
+theoretical or retrofitted for this section — it's exercised, tested code that already treats the
+memory domain as an external, optional dependency reached through exactly two named ports.
+
+### 18.4 Recommended topology
+
+AWCP as a standalone service/codebase, peer to ai-memory rather than contained by it, consuming memory
+through the existing port contract instead of an in-process call:
+
+```
+                    AWCP
+              workflow / control plane
+                       │
+         ┌─────────────┼─────────────┐
+         │              │             │
+         ▼              ▼             ▼
+   execution        ai-memory     verification
+   providers      (ContextPort)    / evals
+  (Agent Radio,                  (future work,
+   Claude, Codex,                 not this ADR)
+   OpenCode, ...)
+```
+
+- **`ContextPort`** = `KnowledgeSearchPort` + `KnowledgePromotionPort` as already specified in
+  `ports.ts` (§18.3), promoted from an in-process TypeScript interface to a real adapter boundary
+  (HTTP/MCP call to ai-memory, or another provider later). AWCP's correctness must not depend on this
+  port resolving — exactly the property `NoopMemoryAdapter` already proves.
+- **ai-memory** remains a **supported, optional** context provider, not a mandatory dependency and not
+  an AWCP host.
+- **Execution providers** (Claude, Codex, OpenCode, and — per the strategy baseline's own import queue,
+  `docs/investigations/awcp-strategy-baseline-2026-08.md` — the already-imported `cpeddle/agent-radio`
+  evidence bearing on the milestone immediately after this one, "Horizon B") sit below AWCP as
+  interchangeable runtimes, not above or beside it. **That relationship is asserted here only as
+  context for why the boundary matters, not designed here** — Horizon B is explicitly out of scope for
+  this ADR and this recommendation does not specify or commit to anything about it.
+
+### 18.5 Domain ownership inventory (current tree, not yet moved)
+
+Every file under `server/src/workflow/` is AWCP-owned; nothing there is ai-memory-domain:
+
+| File | Ownership |
+|---|---|
+| `api.ts`, `attention.ts`, `dashboard.ts`, `observedSession.ts`, `policy.ts`, `readModel.ts`, `remoteNodeHub.ts`, `schema.ts`, `service.ts`, `store.ts`, `types.ts`, `workItemStore.ts`, `bootstrap.ts` | **AWCP domain** — packets, runs, checkpoints, decisions, attention, WorkItem, observed sessions, remote-node hub, all operator/agent-facing surfaces (`server/scripts/awcp.ts`, `server/scripts/awcp-node-client.mjs`) |
+| `ports.ts` | **The seam** — already the extraction boundary (§18.3); stays with AWCP, its adapter implementation moves to point at a real ai-memory client instead of an in-process one |
+
+Generic infrastructure AWCP currently borrows in-process, reusable as a **pattern**, not as shared
+code, without weakening either side (§5's own classification):
+
+| Pattern | Source today | Reuse mode after separation |
+|---|---|---|
+| Postgres pooling / `sql.begin` transactions | `server/src/db.ts` | Copy the ~12-line pattern; no shared package needed at this scale |
+| Migration runner idiom (self-contained, reports not terminates) | `schema.ts`'s own design | Already AWCP's own; nothing to extract |
+| Bearer-auth adapter (`requireApiKey`-shaped) | `server/src/auth.ts` | Reusable behind an adapter (§5); copy the shape |
+| Structured logging (`withTiming`) | ai-memory house style | Copy the convention |
+
+Everything else in `server/` (the six MCP tools in `index.ts`, `searchQuality.ts`, `entityWorker.ts`,
+`consolidationLLM.ts`, `embeddingBackfill.ts`, `parseContext.ts`, the memory-domain `db/schema.sql`
+etc.) is **ai-memory domain** and is untouched by any of this.
+
+### 18.6 `scope.tags` after separation
+
+The 15-path, 64+ hour enforcement surface priced in §13 is a cost of **AWCP and memory retrieval
+sharing a trust domain**. Once AWCP is a separate service with its own database and its own
+authentication, none of those 15 paths are AWCP's problem — they remain exactly what they'd be if
+AWCP had never been proposed as co-tenant: ai-memory's own personal/corporate isolation obligation,
+owned and priced on ai-memory's own roadmap (ST-082), independent of AWCP's existence. If AWCP later
+calls into ai-memory through `ContextPort`, whatever scope filtering applies to *that one call* is
+ai-memory's authorization concern at its own API boundary — a single enforcement point, not 15.
+
+### 18.7 What this changes elsewhere
+
+- **ST-082** (build the `scope.tags` enforcement `ST-088` priced) does not disappear — ai-memory still
+  needs it for its own product boundary — but its framing changes from "a co-tenancy tax AWCP forces"
+  to "an ai-memory product-security item on its own merits, unconnected to AWCP." Its urgency and
+  scope should be reassessed on that basis, not as an ADR-016 side effect.
+- **ADR-016 §2 (topology), §3 (storage layout), §4 (source-lineage)** describe AWCP-internal design
+  decisions that, if AWCP becomes its own codebase, belong in an AWCP-owned ADR rather than living on
+  in ai-memory's. Not actioned here — noted as an implication for whoever plans the extraction.
+- **The B–D milestone** (`awcp-strategy-baseline-2026-08.md`, decision 1 and 3: "ADR-016 Phase 4 is the
+  immediate decision gate... nothing is planned on the wrong side of the host decision") was explicitly
+  blocked on this decision. This section's recommendation, once the PO signs off on §18.10, is what
+  unblocks it.
+
+### 18.8 Bounded extraction roadmap — sketch only, **not started**
+
+**Nothing below is executed by this commit.** No file moves, no module is renamed, no behavior
+changes. This is a shape for whoever plans the extraction, offered so the ADR decision doesn't ship
+without a credible non-big-bang path:
+
+- **Phase A — Freeze the boundary.** Confirm `ports.ts`'s two interfaces are the complete surface
+  AWCP needs from memory (workflow-boundary.test.ts already proves no other file imports it); document
+  them as the contract a real adapter must implement.
+- **Phase B — Stand up AWCP's own persistence/runtime.** New database (or database + role, at minimum
+  — see below), new process, `schema.ts`'s existing self-contained migration runner ported as-is.
+- **Phase C — Move AWCP-owned modules.** The `server/src/workflow/` tree and `server/scripts/awcp*`
+  move as a unit; nothing in §18.5's AWCP-domain list needs re-architecting first, only relocating.
+- **Phase D — Replace the in-process port implementation with a real adapter.** `NoopMemoryAdapter`'s
+  contract already defines the target shape; a real adapter calls ai-memory's MCP surface instead of
+  an in-process function.
+- **Phase E — Verify isolation and retire the co-tenancy mechanisms.** Confirm a memory-service outage
+  doesn't affect AWCP (repeat the Stage 1 failure-isolation proof against a real network boundary
+  instead of an in-process fake); remove `FEATURE_WORKFLOW`, the shared-schema fail-startup wiring, and
+  the workflow-boundary lint test once nothing depends on them.
+
+**Database/role guidance for whenever Phase B happens:** co-location on one physical Postgres server
+is an operational convenience question, separate from this decision. What matters per §3's own
+finding ("a Postgres schema is namespacing, not access control") is that AWCP and ai-memory hold
+**separate roles/databases**, so a shared instance (if chosen for cost) does not silently become a
+shared trust boundary the way the current single `ai_memory` role does.
+
+### 18.9 Missing evidence, named honestly
+
+- **No load or concurrency evidence exists for AWCP running standalone** — nothing in Stage 1–3 tested
+  AWCP's own runtime under load, isolated or co-tenant. The co-tenancy check in §16.7 is smoke-level in
+  the *other* direction (does memory notice AWCP, not does AWCP need memory's resources).
+  Not required to settle *this* decision (the decision is about coupling, not capacity), but a real gap
+  for whoever plans Phase B's infrastructure sizing.
+- **No estimate exists for the extraction effort itself** (Phases A–E above). §13's 8+ day figure prices
+  staying, not leaving. A defended extraction estimate is follow-on work, not part of this recommendation.
+- **The relationship to Horizon B / agent-radio is asserted from the strategy baseline document, not
+  independently re-verified in this session** — cited at §18.4 for context on why the boundary matters
+  to what comes next, not as evidence for the host decision itself, which rests entirely on §18.1–§18.7.
+
+### 18.10 Proposed ADR-016 decision text — FOR PO REVIEW, NOT APPLIED
+
+The following is drafted for §1 of ADR-016, replacing the current "Preferred: Candidate A —
+conditionally" framing, **pending explicit PO sign-off**. ADR-016's live `status` field and body
+remain **Proposed / Conditional** until that sign-off lands as a separate, explicit commit.
+
+> **Decision: Reject Candidate A (AWCP co-tenancy within ai-memory); select Candidate C — a standalone
+> AWCP service/codebase, consuming ai-memory as an optional context provider through the existing
+> `ports.ts` adapter contract (`KnowledgeSearchPort` / `KnowledgePromotionPort`), not as its host.**
+>
+> Stage 1 (criteria 1–4) and Phase 2–3 (criterion 6) proved AWCP's operational domain is cleanly
+> separable and functions correctly with the memory subsystem absent, degraded, or unreachable —
+> evidence *for* standalone operation, not merely for safe co-tenancy. Stage 2 priced criterion 5
+> (policy-scope enforcement: 64+ hours / 8+ days) and found it entirely a consequence of sharing a
+> trust domain with 15 memory-retrieval paths — a cost Candidate C would never incur. Criterion 7 asked
+> whether ai-memory's engine reuse justified Candidate A's domain-fit cost; it does not. The
+> domain-specific memory engine (search, graph, hybrid retrieval, consolidation) went entirely unused;
+> the reuse that did materialize is generic infrastructure, replicable at roughly the cost §13.5 already
+> priced for Candidate C's greenfield setup. Co-tenancy's ongoing costs — a shared failure blast radius,
+> a shared Postgres role with no real access-control isolation, and coupling flagged as actively
+> harmful to extend (§5) — are not offset by anything AWCP actually gained from sharing a codebase.
+>
+> **This is not a verdict that the ai-memory integration attempt failed.** It is the result the spike
+> was built to produce: memory is an optional capability AWCP can consume through an explicit port, not
+> the architectural container it must live inside. ai-memory remains a supported context provider.
+> Infrastructural patterns (connection pooling, the migration idiom, logging conventions) may still be
+> copied into a standalone AWCP codebase as patterns; nothing here characterizes that code as wasted.
+>
+> Extraction is not scoped by this decision. §18.8 of the Stage 2 findings sketches a bounded,
+> non-big-bang path (freeze the boundary → stand up standalone persistence → move AWCP-owned modules →
+> replace the in-process port with a real adapter → verify isolation) for whoever plans it next.
+
+**Gate progress, for §1's own bookkeeping once/if this is applied:** criteria 1–6 discharged as
+described above and in §16–§17; criterion 7 answered **no** — reuse does not justify the domain-fit
+cost — which is itself a complete, evidence-backed answer to the gate, not an open item.
+
+### 18.11 Verdict
+
+**ADR-016 EVIDENCE SUPPORTS STANDALONE AWCP.**
+
+The three genuinely missing pieces (§18.9 — AWCP's own load/concurrency profile, an extraction-effort
+estimate, and independent re-verification of the Horizon B relationship) bear on *how well-planned* the
+move will be, not on *whether* the host decision should change. None of them weakens criteria 1–7's
+evidence base. The recommendation in §18.10 is ready for PO sign-off as written.
