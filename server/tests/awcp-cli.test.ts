@@ -130,6 +130,54 @@ async function observeSession(): Promise<{ nodeId: string; sessionId: string }> 
 }
 
 /**
+ * ST-098 U1 R2: the same session lifecycle {@link observeSession} begins, pushed one
+ * step further into the poisoned shape the fix exists for — a `session_end` recorded,
+ * then a `session_heartbeat` that lands AFTER it. That is exactly what a reused
+ * session id leaves behind under the store's monotone/`GREATEST` merge (R1, in
+ * `awcp-node-client.mjs`, stops new rows from being poisoned this way; this fixture
+ * recreates what a row poisoned BEFORE that fix still looks like). Two separate
+ * `ingestRunEvents` calls, not one batch, because the merge this exercises is the
+ * cross-call upsert, not the intra-batch fold `foldSessionEvents` already covers.
+ */
+async function observePoisonedSession(): Promise<
+  { nodeId: string; sessionId: string; endedAt: string; heartbeatAt: string }
+> {
+  const { nodeId, sessionId } = await observeSession();
+
+  const endedAt = new Date(Date.now() - 60_000).toISOString();
+  await store.ingestRunEvents(nodeId, [{
+    client_seq: 2,
+    event_type: "session_end",
+    payload: { session_id: sessionId, node_id: nodeId, at: endedAt },
+  }]);
+
+  const heartbeatAt = new Date().toISOString();
+  await store.ingestRunEvents(nodeId, [{
+    client_seq: 3,
+    event_type: "session_heartbeat",
+    payload: { session_id: sessionId, node_id: nodeId, at: heartbeatAt },
+  }]);
+
+  const [row] = await sql<{ ended_at: Date; last_heartbeat_at: Date }[]>`
+    SELECT ended_at, last_heartbeat_at FROM workflow.observed_sessions
+    WHERE node_id = ${nodeId} AND session_id = ${sessionId}
+  `;
+  assert(row !== undefined, "the poisoned session must have materialised a row");
+  assert(row.ended_at !== null, "the poisoned session must carry a recorded close");
+  assert(
+    row.last_heartbeat_at.getTime() > row.ended_at.getTime(),
+    "the poisoned session must carry a heartbeat newer than its recorded close",
+  );
+
+  return {
+    nodeId,
+    sessionId,
+    endedAt: row.ended_at.toISOString(),
+    heartbeatAt: row.last_heartbeat_at.toISOString(),
+  };
+}
+
+/**
  * One WorkItem with TWO packets carrying DIFFERENT policy scopes, plus one claimed
  * observed session.
  *
@@ -815,6 +863,77 @@ Deno.test({
         );
         assertStringIncludes(packetLines[0], "scope: corporate");
       });
+
+      // -----------------------------------------------------------------
+      // ST-098 U1 R2 — the CLI must mirror the dashboard's poisoned-row fix
+      //
+      // dashboard.ts's renderWorkItemSessions was fixed so that ended_at rendering
+      // never suppresses last_heartbeat_at: a session id reused after a clean close
+      // can leave ended_at set while a later heartbeat still lands (the store's
+      // merge is monotone/GREATEST-based), and a "closed, so hide the heartbeat"
+      // render made that poisoned row indistinguishable from a genuine clean close.
+      // `awcp status` is the SECOND client of the same read model (ADR-017 §6), so
+      // it must show a reader the same suspicious shape rather than the old
+      // either/or that picked "ended" and threw the newer heartbeat away.
+      // -----------------------------------------------------------------
+
+      await t.step(
+        "ST-098 U1 R2: a session with ended_at set AND a newer last_heartbeat_at renders BOTH — not just \"ended\"",
+        async () => {
+          const item = await workItemStore.createWorkItem({
+            sourceSystem: "story-board",
+            sourceRef: `ST-098-u1r2-${crypto.randomUUID().replaceAll("-", "")}`,
+          });
+          const poisoned = await observePoisonedSession();
+          await workItemStore.claimSessionForWorkItem(item.id, poisoned.nodeId, poisoned.sessionId);
+
+          const result = await runAwcp(["status", "--work-item", item.id], { env: cliEnv() });
+          assertEquals(result.code, 0, `stderr: ${result.stderr}`);
+
+          const sessionLines = result.stdout.split("\n").filter((line) =>
+            line.includes(poisoned.sessionId)
+          );
+          assertEquals(
+            sessionLines.length,
+            1,
+            `the poisoned session should render on exactly one line: ${result.stdout}`,
+          );
+          const line = sessionLines[0];
+
+          // Both raw instants must be present — not just the words "ended" and
+          // "last heartbeat", but the actual timestamps, so a reader can see for
+          // themselves that the heartbeat is newer than the recorded close.
+          assertStringIncludes(line, `ended ${poisoned.endedAt}`);
+          assertStringIncludes(
+            line,
+            `last heartbeat ${poisoned.heartbeatAt}`,
+            "a heartbeat newer than the recorded close must still render, so the row " +
+              "reads as suspicious rather than as an indistinguishable clean close",
+          );
+        },
+      );
+
+      await t.step(
+        "ST-098 U1 R2: a never-closed session still renders exactly as before — no regression",
+        async () => {
+          const fixture = await statusFixture();
+          const result = await runAwcp(
+            ["status", "--source", "story-board", "--ref", fixture.sourceRef],
+            { env: cliEnv() },
+          );
+          assertEquals(result.code, 0, `stderr: ${result.stderr}`);
+
+          const sessionLines = result.stdout.split("\n").filter((line) =>
+            line.includes(fixture.observed.sessionId)
+          );
+          assertEquals(sessionLines.length, 1, `stdout: ${result.stdout}`);
+          assertStringIncludes(sessionLines[0], "last heartbeat");
+          assert(
+            !sessionLines[0].includes("ended"),
+            `an open session must not render an ended_at it does not have: ${sessionLines[0]}`,
+          );
+        },
+      );
 
       await t.step("ST-097 B7: nothing in the output is an aggregate work-item status", async () => {
         const fixture = await statusFixture();
