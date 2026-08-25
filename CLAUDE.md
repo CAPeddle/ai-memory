@@ -117,6 +117,10 @@ docker compose --profile test exec mcp-test deno test --frozen --allow-net --all
 #                       workflow-node-hub-e2e.test.ts (each proves over real HTTP
 #                       something no in-process test can: a mount, or what a boot does
 #                       and does not reach). awcp-cli.test.ts (ST-087) spawns the CLI.
+#                       workflow-work-item-dogfooding.test.ts (ST-097, B9) does BOTH:
+#                       it boots a real server and drives the real CLI, because the
+#                       end-to-end claim is that one work item travels create ->
+#                       observe -> claim -> read -> render over real HTTP.
 #                       workflow-node-client-hub-e2e.test.ts (ST-088, Phase 3) also
 #                       spawns one, to prove the real node client's spool clears
 #                       against a real hub process and that the hub's own duplicate

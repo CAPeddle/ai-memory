@@ -192,6 +192,8 @@ const idSchema = z.uuid();
 const FK_VIOLATION = "23503";
 /** Postgres SQLSTATE for a malformed literal — e.g. a non-uuid where a uuid is due. */
 const INVALID_TEXT_REPRESENTATION = "22P02";
+/** Postgres SQLSTATE for a unique-constraint violation. */
+const UNIQUE_VIOLATION = "23505";
 
 interface HttpError {
   status: 400 | 404 | 409 | 500;
@@ -278,6 +280,21 @@ export function toHttpError(err: unknown): HttpError {
     return {
       status: 400,
       body: { error: "BadRequest", message: "malformed identifier" },
+    };
+  }
+  // Same reasoning as the foreign-key branch above, for the same reason it is easy to
+  // miss: `createWorkItem` carries no existence check and relies on
+  // uq_work_items_provenance, so a second create for a pair that already exists arrives
+  // as 23505. Answering 500 would tell the caller the server is broken when the request
+  // was a duplicate, and would invite the retry that can never succeed. The message
+  // deliberately does not echo Postgres's own text, which names the index.
+  if (state === UNIQUE_VIOLATION) {
+    return {
+      status: 409,
+      body: {
+        error: "ConflictError",
+        message: "a record with these identifying values already exists",
+      },
     };
   }
 

@@ -104,6 +104,39 @@ Deno.test({
 
 Deno.test({
   ...T,
+  name: "POST /work-items: a duplicate provenance pair is a conflict, not a 500",
+  fn: async () => {
+    // uq_work_items_provenance is the invariant and the route does not pre-check it,
+    // so the second create arrives as SQLSTATE 23505. toHttpError's own docblock
+    // argues the case against answering 500 for a client mistake — "500 invites a
+    // retry, and retrying a bad id forever is exactly the wrong response" — and a
+    // duplicate pair is the same class. It is also the first mistake dogfooding
+    // makes, since re-creating the ST-097 item repeats its exact pair.
+    const sourceRef = uniqueRef("ST-097-dup");
+    const first = await call("/work-items", {
+      method: "POST",
+      body: JSON.stringify({ sourceSystem: "story-board", sourceRef }),
+    });
+    assertEquals(first.status, 201, JSON.stringify(first.body));
+
+    const second = await call("/work-items", {
+      method: "POST",
+      body: JSON.stringify({ sourceSystem: "story-board", sourceRef }),
+    });
+    assertEquals(second.status, 409, JSON.stringify(second.body));
+    assertEquals(second.body.error, "ConflictError");
+
+    // Exactly one row survives — the refusal is the database's, reported honestly.
+    const rows = await sql<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM workflow.work_items
+      WHERE source_system = 'story-board' AND source_ref = ${sourceRef}
+    `;
+    assertEquals(rows[0].n, 1);
+  },
+});
+
+Deno.test({
+  ...T,
   name: "POST /work-items: an awcp-native item names no foreign namespace",
   fn: async () => {
     const created = await call("/work-items", {
