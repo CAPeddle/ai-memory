@@ -85,7 +85,14 @@ Stories move across a continuous-flow board — backlog, in progress, in review,
 
 The commit trailer is load-bearing rather than decorative. Because a Plan records no progress, the trailer is the only thing that makes a Story's shipped work retrievable from history — so a commit that omits it still ships code, but becomes invisible to the Story that owns it.
 
-A Story is the *development* work item for this repository — an entry in its own delivery ledger — and is not the same kind of thing as a [Work Item](#work-item), which is product data a running system persists about work that was requested of it. The relation between the two runs one way only: when the system is turned on this repository's own development, the Story reaches the Work Item as provenance (`source_system = 'story-board'`, `source_ref = 'ST-097'`) and never as its identity. Nothing synchronises the two, and neither label namespace allocates from the other.
+A Story is the *development* work item for this repository — an entry in its own delivery ledger — and is not the same kind of thing as a [Work Item](#work-item), which is product data a running system persists about work that was requested of it. The relation between the two runs one way only: when the system is turned on this repository's own development, the Story reaches the Work Item as provenance — the requesting system and that system's own reference — and never as its identity. Nothing synchronises the two, and neither label namespace allocates from the other.
+
+### Allocation
+A story label reserved before any work carries it, recorded in a registry of reservations rather than of deliveries.
+
+Allocation is deliberately not derived from the board. The board records what shipped, so a label reserved and then abandoned exists only in the registry — and deriving the next label from delivered work re-issues one already spent.
+
+An allocation made on a branch is **provisional** until it reaches the trunk: it may not appear in a commit trailer, a Plan filename, a board entry, or any document before then, because until one branch lands, two can each believe they hold the same label. Refusing a duplicate at reservation time and detecting one afterwards are separate obligations, and the second must see every branch — a reserver can only refuse what its own copy of the repository can see.
 
 ### Plan
 The written decision artifact for a Story, carrying its product contract, requirements, and implementation units.
