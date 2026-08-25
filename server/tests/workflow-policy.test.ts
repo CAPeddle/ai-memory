@@ -2,7 +2,7 @@
  * Unit tests for `requiresOperator` (server/src/workflow/policy.ts) — the pure route
  * classification behind the operator/agent credential split.
  *
- * Table-driven, covering every one of the thirteen /api/workflow routes explicitly,
+ * Table-driven, covering every one of the fourteen /api/workflow routes explicitly,
  * both classifications, plus a uuid-segment case. The reporting-route assertions are a
  * discrimination control: a bug that classified everything as operator-only (e.g. a
  * `some()` that always returns true, or a stray `.test(path) || true`) would pass every
@@ -98,6 +98,18 @@ const CASES: Case[] = [
     path: `/api/workflow/packets/${UUID}/work-item`,
     expected: true,
   },
+  // ST-097 B4, KTD-D5. Only the operator knows which requested work an observed
+  // session belongs to, and the caller holds no ownership proof over the session —
+  // the node lane's cross-node defence covers `node_id` at ITS route and reaches no
+  // further. `POST /packets/:packetId/runs` is not a precedent here: it attaches
+  // execution to already-supervised work, whereas a packet-less WorkItem is by
+  // KTD-D4 not supervised at all.
+  {
+    label: "POST /work-items/:workItemId/sessions",
+    method: "POST",
+    path: `/api/workflow/work-items/${UUID}/sessions`,
+    expected: true,
+  },
 ];
 
 for (const c of CASES) {
@@ -119,6 +131,16 @@ Deno.test("requiresOperator: the work-item binding is matched on PATCH and on no
   // would answer wrongly on one of these two.
   assertEquals(requiresOperator("PATCH", `/api/workflow/packets/${UUID}/work-item`), true);
   assertEquals(requiresOperator("POST", `/api/workflow/packets/${UUID}/work-item`), false);
+});
+
+Deno.test("requiresOperator: the claim route is matched under a work item, not beside one", () => {
+  // The claim is nested under its work item, so the classifier must not match the
+  // bare collection or a sibling segment. `POST /work-items` is separately
+  // operator-only; these two are neither route and must not be swept in by a regex
+  // anchored too loosely.
+  assertEquals(requiresOperator("POST", `/api/workflow/work-items/${UUID}/sessions`), true);
+  assertEquals(requiresOperator("POST", `/api/workflow/work-items/${UUID}/packets`), false);
+  assertEquals(requiresOperator("GET", `/api/workflow/work-items/${UUID}/sessions`), false);
 });
 
 Deno.test("requiresOperator: method comparison is case-insensitive", () => {

@@ -27,6 +27,8 @@ import {
   type ServerProcess,
   startServerProcess,
 } from "./_helpers/serverProcess.ts";
+import { sql } from "../src/db.ts";
+import * as store from "../src/workflow/store.ts";
 
 const DATABASE_URL = Deno.env.get("DATABASE_URL")!;
 const OPERATOR_KEY = "operator-key-for-agent-boundary-test";
@@ -42,6 +44,53 @@ const AGENT_SPLIT_ENV: Record<string, string> = {
   FEATURE_EMBEDDING_BACKFILL: "false",
   MODEL_PROVIDER_ENABLED: "false",
 };
+
+/** SHA-256 hex, by the same rule remoteNodeHub.ts uses. */
+async function sha256Hex(input: string): Promise<string> {
+  const bytes = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest("SHA-256", bytes.slice().buffer);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
+ * Observe a session into existence for the claim leg below, in THIS process.
+ *
+ * The spawned server shares `DATABASE_URL` with the test process, so a row written
+ * here is a row that server reads. It goes in through `store.ingestRunEvents` rather
+ * than a hand-written INSERT because a session that never travelled the node lane is
+ * not the thing the claim route claims — and the node-lane HTTP route needs an
+ * enrolment secret this test deliberately does not configure.
+ *
+ * The bearer is returned so the node — and, by cascade, its session and any claim on
+ * it — can be dropped afterwards; `db-test` accumulates across runs.
+ */
+async function observeSession(): Promise<{ nodeId: string; sessionId: string; bearer: string }> {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  const bearer = Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+
+  const node = await store.upsertExecutionNode({
+    bearerTokenHash: await sha256Hex(bearer),
+    hostname: "agent-key-claim.test",
+    platform: "deno-test",
+    allowEnrolment: true,
+  });
+  assert(node !== null, "enrolment must succeed for a fresh bearer");
+
+  const sessionId = `agent-key-claim-${crypto.randomUUID()}`;
+  await store.ingestRunEvents(node.node_id, [{
+    client_seq: 1,
+    event_type: "session_start",
+    payload: {
+      session_id: sessionId,
+      node_id: node.node_id,
+      at: new Date().toISOString(),
+    },
+  }]);
+  return { nodeId: node.node_id, sessionId, bearer };
+}
 
 Deno.test({
   sanitizeResources: false,
@@ -299,6 +348,77 @@ Deno.test({
       );
       assertEquals(bindOk.status, 200, JSON.stringify(bindOk.body));
       assertEquals(bindOk.body.work_item_id, workItemId);
+
+      // ---------------------------------------------------------------
+      // ST-097 B4: the claim route. Same full triple as the two above — no key -> 401,
+      // agent key -> 403, operator key -> success — because the same silent failure
+      // mode applies: `requiresOperator` returns false by default, so a claim route
+      // merely omitted from OPERATOR_ONLY_ROUTES would be agent-reachable and nothing
+      // would report it.
+      //
+      // The 401 and 403 legs need no session fixture: the middleware refuses before
+      // any handler runs, and a fixture would let a 404 masquerade as a pass. The
+      // operator leg needs a real observed session, so this one is observed through
+      // the node lane in-process.
+      // ---------------------------------------------------------------
+      const observed = await observeSession();
+      try {
+        {
+          const noKeyClaim = await fetch(
+            `${server.baseUrl}/api/workflow/work-items/${workItemId}/sessions`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                nodeId: observed.nodeId,
+                sessionId: observed.sessionId,
+              }),
+            },
+          );
+          assertEquals(noKeyClaim.status, 401, await noKeyClaim.text());
+        }
+
+        const claimDenied = await apiCall(
+          server.baseUrl,
+          AGENT_KEY,
+          `/api/workflow/work-items/${workItemId}/sessions`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              nodeId: observed.nodeId,
+              sessionId: observed.sessionId,
+            }),
+          },
+        );
+        assertEquals(claimDenied.status, 403, JSON.stringify(claimDenied.body));
+
+        // The refused claim must not have written. A 403 that had associated anyway
+        // would satisfy a status-only assertion while breaking the invariant.
+        const afterDenial = await sql<{ n: string }[]>`
+          SELECT count(*)::text AS n FROM workflow.work_item_sessions
+          WHERE node_id = ${observed.nodeId} AND session_id = ${observed.sessionId}
+        `;
+        assertEquals(Number(afterDenial[0].n), 0, "a refused claim must write nothing");
+
+        const claimOk = await apiCall(
+          server.baseUrl,
+          OPERATOR_KEY,
+          `/api/workflow/work-items/${workItemId}/sessions`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              nodeId: observed.nodeId,
+              sessionId: observed.sessionId,
+            }),
+          },
+        );
+        assertEquals(claimOk.status, 201, JSON.stringify(claimOk.body));
+        assertEquals(claimOk.body.work_item_id, workItemId);
+        assertEquals(claimOk.body.session_id, observed.sessionId);
+      } finally {
+        const hash = await sha256Hex(observed.bearer);
+        await sql`DELETE FROM workflow.execution_nodes WHERE bearer_token_hash = ${hash}`;
+      }
 
       // ---------------------------------------------------------------
       // Discrimination control: the OPERATOR key CAN do every one of the four denied

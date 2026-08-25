@@ -74,6 +74,16 @@ interface RoutePattern {
  *   the security boundary relocated by an agent, which is precisely what removing
  *   the scope column from the WorkItem does NOT by itself prevent. This entry is the
  *   half that does.
+ * - `POST /work-items/:workItemId/sessions` — claiming an observed session for a
+ *   WorkItem. Two independent reasons, either sufficient. Only the operator knows
+ *   which requested work an observed session belongs to; the association is an
+ *   explicit act and never an inference, so an agent-reachable claim would be AWCP
+ *   deciding that on its own. And the caller holds no ownership proof over the
+ *   session it names: the node lane enforces cross-node ownership at the node's own
+ *   route precisely because a valid bearer proves you are *a* node rather than *this*
+ *   node, and this route inherits no equivalent proof. `POST /packets/:packetId/runs`
+ *   is not a precedent for the other classification — it attaches execution to work
+ *   that is already supervised, and a packet-less WorkItem is not.
  *
  * **Adding a write route WITHOUT adding it here is the failure mode this list has,
  * and it is silent.** {@link requiresOperator} returns false by default, so an
@@ -89,10 +99,11 @@ const OPERATOR_ONLY_ROUTES: RoutePattern[] = [
   { method: "POST", regex: new RegExp(`^/api/workflow/packets/${ID}/criteria$`) },
   { method: "POST", regex: /^\/api\/workflow\/work-items$/ },
   { method: "PATCH", regex: new RegExp(`^/api/workflow/packets/${ID}/work-item$`) },
+  { method: "POST", regex: new RegExp(`^/api/workflow/work-items/${ID}/sessions$`) },
 ];
 
 /**
- * True when `method`+`path` names one of the six operator-only routes above.
+ * True when `method`+`path` names one of the seven operator-only routes above.
  *
  * Every other `/api/workflow` route — including all seven reporting/read routes
  * (`POST /packets`, `POST /packets/:packetId/runs`, `POST /runs/:runId/checkpoints`,

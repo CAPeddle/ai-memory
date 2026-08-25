@@ -118,6 +118,30 @@ const bindWorkItemSchema = z.object({
   workItemId: z.uuid(),
 });
 
+/**
+ * The claim's body: the composite key of an already-observed session, and nothing else.
+ *
+ * `nodeId` and `sessionId` together are ONE reference — `observed_sessions` is keyed on
+ * the pair, because `session_id` is client-generated and explicitly non-authoritative
+ * (KTD-B4 item 3) and only means something scoped to the node whose bearer the hub
+ * proved. Accepting a bare `sessionId` would be accepting a value one node can use to
+ * name another node's session.
+ *
+ * The 256-character bound mirrors `sessionPayloadSchema` in observedSession.ts, which
+ * is the only place a `session_id` can legitimately enter the system: a claim naming a
+ * longer one is naming a session the lane could never have stored. `.min(1)` sits ahead
+ * of `observed_sessions`'s own `CHECK (session_id <> '')` so an empty id is a 400 the
+ * caller can act on rather than a 500 from a constraint deeper in.
+ *
+ * There is deliberately nothing else here — no work-item fields (the claim names an
+ * existing one, it does not describe one), and no scope, status or attention, none of
+ * which a claim may invent.
+ */
+const claimSessionSchema = z.object({
+  nodeId: z.uuid(),
+  sessionId: z.string().min(1).max(256),
+});
+
 const idSchema = z.uuid();
 
 // ---------------------------------------------------------------------------
@@ -452,6 +476,38 @@ export function createWorkflowApi(): Hono {
       ["packetId"],
       (body, params) => store.bindPacketToWorkItem(params.packetId, body.workItemId),
       200,
+    ),
+  );
+
+  /**
+   * Claim an observed session for a WorkItem. OPERATOR-ONLY — see policy.ts.
+   *
+   * **The claim is explicit; nothing infers it.** An observed session announces itself
+   * on the node lane and stays unassociated until an operator says which requested work
+   * it belongs to. `POST /packets/:packetId/runs` is not a precedent for making this
+   * agent-callable: that route attaches execution to work that is ALREADY supervised,
+   * whereas a packet-less WorkItem is by KTD-D4 not supervised at all — and the caller
+   * here holds no proof of ownership over the session it is naming, because the node
+   * lane's cross-node defence covers `node_id` at the node's own route and reaches no
+   * further.
+   *
+   * **201 on a replay too, and that is decided rather than defaulted.** The response is
+   * the association, which exists either way, and `store.claimSessionForWorkItem`
+   * returns the identical row both times. Splitting the status on whether the INSERT
+   * happened would put "did this write?" into the contract — the exact
+   * exclusion-versus-report conflation the `SELECT`-derived acknowledgement exists to
+   * keep out — and would make a caller's retry look like a failure.
+   *
+   * **No unclaim counterpart.** KTD-D5's table shape permits one; its authorization is
+   * unspecified, so it is not built here.
+   */
+  api.post(
+    "/work-items/:workItemId/sessions",
+    command(
+      claimSessionSchema,
+      ["workItemId"],
+      (body, params) =>
+        store.claimSessionForWorkItem(params.workItemId, body.nodeId, body.sessionId),
     ),
   );
 

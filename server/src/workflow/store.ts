@@ -35,6 +35,7 @@ import {
   RunConflictError,
   type VerificationCriterion,
   type WorkItem,
+  type WorkItemSessionClaim,
   type WorkPacket,
   WorkflowNotFoundError,
 } from "./types.ts";
@@ -120,6 +121,100 @@ export async function bindPacketToWorkItem(
       throw new WorkflowNotFoundError("work packet", packetId);
     }
     return updated[0];
+  });
+}
+
+/**
+ * Claim an observed session for a WorkItem (ST-097 B4, KTD-D5).
+ *
+ * **The exclusion is `uq_work_item_sessions_claim`, and the acknowledgement is a
+ * report.** Those are two different mechanisms and conflating them is the failure this
+ * function is shaped to avoid. The unique index on the
+ * `(node_id, session_id, work_item_id)` triple is what makes a second association
+ * impossible; the `SELECT` below only says which association exists. An
+ * application-level "does this claim already exist?" check ahead of the INSERT would
+ * be neither — two callers can both pass it — so there is none.
+ *
+ * **The ack is read back rather than taken from the INSERT, and that is
+ * `004_run_events.sql`'s `EVENT-01` precedent applied to a claim.** A duplicate insert
+ * returns no row, so `INSERT ... ON CONFLICT DO NOTHING RETURNING *` answers nothing on
+ * exactly the request a replaying caller is retrying — and a caller that never sees its
+ * claim acknowledged retries forever. Selecting afterwards covers the freshly-inserted
+ * and the already-present alike, and returns the SAME `id` and `claimed_at` both times.
+ *
+ * **Under a genuine race the read-back is still correct, and it is correct because of
+ * how the conflict is resolved rather than by luck.** `ON CONFLICT DO NOTHING` waits on
+ * a conflicting insert that is still in flight; when that transaction commits, the
+ * loser skips its own insert and its subsequent `SELECT` — a new statement snapshot
+ * under READ COMMITTED — sees the winner's committed row. So both callers are
+ * acknowledged with one association rather than one of them being told nothing exists.
+ *
+ * **That claim contradicts `upsertExecutionNode`'s advisory-lock comment below, so it
+ * was measured rather than reasoned.** Against this Postgres, two transactions issuing
+ * this exact statement shape park on the conflicting insert with
+ * `wait_event_type = 'Lock'`, and the loser's read-back sees the winner's committed
+ * row — which is what the concurrency test in workflow-work-item-claim.test.ts
+ * observes directly, by holding a conflicting row uncommitted and watching both claims
+ * block on it. Nothing here changes that other function: its lock is harmless, and
+ * whether its stated reason still holds is a question for whoever revisits it, not a
+ * thing to settle from this call site.
+ *
+ * **Both parents are checked explicitly, for `bindPacketToWorkItem`'s reason.** The
+ * foreign keys would refuse an unknown work item or an unobserved session anyway, but
+ * an FK violation reports only that *some* constraint failed — at the HTTP edge that
+ * becomes a 404 that cannot say which of the two ids was wrong, and a caller holding
+ * both and told one of them is bad is told nothing. The constraints stay as the race
+ * backstop for a parent deleted between the check and the insert; the checks narrow the
+ * common case, they do not replace them.
+ *
+ * **THIS FUNCTION PROMOTES NOTHING.** It writes one row in
+ * `workflow.work_item_sessions` and touches no other table. It creates no packet, no
+ * `agent_runs` row and no policy scope — there is no column within its reach to put one
+ * in (ADR-017 §3, KTD-D4) — so a claimed session remains an observation.
+ *
+ * **There is deliberately no unclaim beside this one.** KTD-D5's table shape permits
+ * one and this slice does not build it: its authorization is unspecified, and a delete
+ * path whose credential rule was chosen at the call site is the same class of error as
+ * a route omitted from `OPERATOR_ONLY_ROUTES`.
+ */
+export async function claimSessionForWorkItem(
+  workItemId: string,
+  nodeId: string,
+  sessionId: string,
+): Promise<WorkItemSessionClaim> {
+  return await sql.begin(async (tx: SqlExecutor) => {
+    const items = await tx<{ id: string }[]>`
+      SELECT id FROM workflow.work_items WHERE id = ${workItemId}
+    `;
+    if (items[0] === undefined) {
+      throw new WorkflowNotFoundError("work item", workItemId);
+    }
+
+    const sessions = await tx<{ session_id: string }[]>`
+      SELECT session_id FROM workflow.observed_sessions
+      WHERE node_id = ${nodeId} AND session_id = ${sessionId}
+    `;
+    if (sessions[0] === undefined) {
+      // Named as the composite it is. A session id alone identifies nothing — it is
+      // client-generated and node-scoped — so a 404 quoting only half of the key would
+      // send the caller looking for the wrong thing.
+      throw new WorkflowNotFoundError("observed session", `${nodeId}/${sessionId}`);
+    }
+
+    await tx`
+      INSERT INTO workflow.work_item_sessions (work_item_id, node_id, session_id)
+      VALUES (${workItemId}, ${nodeId}, ${sessionId})
+      ON CONFLICT (node_id, session_id, work_item_id) DO NOTHING
+    `;
+
+    const claims = await tx<WorkItemSessionClaim[]>`
+      SELECT id, work_item_id, node_id, session_id, claimed_at
+      FROM workflow.work_item_sessions
+      WHERE node_id = ${nodeId}
+        AND session_id = ${sessionId}
+        AND work_item_id = ${workItemId}
+    `;
+    return claims[0];
   });
 }
 

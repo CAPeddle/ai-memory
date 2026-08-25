@@ -115,6 +115,36 @@ export interface CreateWorkItemInput {
   sourceRef?: string | null;
 }
 
+/**
+ * One CLAIM: an observed session associated with a WorkItem (ADR-017, KTD-D5).
+ *
+ * **An explicit operator act, never an inference.** Nothing derives this row from an
+ * observation — `ingestRunEvents` materialises `observed_sessions` and stops there,
+ * and a session that is never claimed stays observed forever, which is a legitimate
+ * terminal state rather than a gap.
+ *
+ * **A claim does not promote the session.** A claimed session is still an
+ * OBSERVATION: it carries no run, no packet and no policy scope, and this row adds
+ * none of the three. An authoritative execution is an `agent_runs` row under a
+ * packet, and nothing converts one into the other.
+ *
+ * `(node_id, session_id)` is the composite reference to `observed_sessions`, not two
+ * independent fields — `session_id` is client-generated and explicitly
+ * non-authoritative (KTD-B4 item 3), so it is only ever meaningful scoped to the node
+ * whose bearer the hub actually proved.
+ *
+ * **There is no `released_at`, and no unclaim.** KTD-D5's table shape permits one, but
+ * its authorization is unspecified; a column added ahead of that decision would be the
+ * lifecycle chosen by whoever wrote the row type first.
+ */
+export interface WorkItemSessionClaim {
+  id: string;
+  work_item_id: string;
+  node_id: string;
+  session_id: string;
+  claimed_at: Date;
+}
+
 export type PacketStatus = "open" | "in_progress" | "blocked" | "complete";
 export type RunStatus = "running" | "ended" | "failed";
 export type DecisionStatus = "open" | "resolved";
