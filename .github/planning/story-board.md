@@ -717,7 +717,7 @@
     the fix
   - [ ] **28 browser checks re-verified.** The manual dashboard checks invalidated by the
     WorkItem lane (`585d2c9`) are re-run against current `main` and their disposition recorded
-- Plan: to be created under `docs/plans/` at implementation time
+- Plan: [docs/plans/2026-08-25-1530-chore-st098-observed-session-follow-ups-plan.md](../../docs/plans/2026-08-25-1530-chore-st098-observed-session-follow-ups-plan.md)
 - Notes: Filed from the ST-097 handoff rather than mid-review — none of the four block
   ST-097's landing, all four were the user's explicit choice to pick up next.
   **WIP-limit note:** ST-088 already holds the sole "In Progress" slot; this story starts
