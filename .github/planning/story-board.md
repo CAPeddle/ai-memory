@@ -751,8 +751,85 @@
     `worker_runs` row gets read. ST-093 needs re-verification against a working OpenRouter key
     before its own fix is trusted complete or its symptom re-confirmed — see the added note on
     ST-093 below
-  - [ ] **28 browser checks re-verified.** The manual dashboard checks invalidated by the
-    WorkItem lane (`585d2c9`) are re-run against current `main` and their disposition recorded
+  - [x] **28 browser checks re-verified.** The manual dashboard checks invalidated by the
+    WorkItem lane (`585d2c9`) are re-run against current `main` and their disposition
+    recorded. Re-run 2026-08-25 against commit `3e85f97cb2135ddbe781b23be90a50986bd0fe06`
+    (confirmed HEAD at run time), pathspec `server/src/workflow/dashboard.ts
+    server/src/workflow/readModel.ts server/src/workflow/store.ts
+    server/src/workflow/workItemStore.ts` — the record below describes those four files at
+    that commit; any commit touching any of them expires it (`git diff
+    3e85f97cb2135ddbe781b23be90a50986bd0fe06..HEAD -- server/src/workflow/dashboard.ts
+    server/src/workflow/readModel.ts server/src/workflow/store.ts
+    server/src/workflow/workItemStore.ts`; non-empty output means re-run before relying on
+    it), per
+    [docs/solutions/workflow-issues/verification-expires-when-the-verified-surface-changes.md](../../docs/solutions/workflow-issues/verification-expires-when-the-verified-surface-changes.md).
+    Driven against the dev stack (`http://localhost:3000/workflow`, dev's `mcp` container,
+    already running `FEATURE_WORKFLOW=true` at this checkout) with a real headless
+    Chromium (playwright driver reused from the ST-086 browser cache; `libnss3`/`libnspr4`
+    extracted locally, same technique as the original run), driving a disposable packet
+    (`9cc61840-685c-410a-83be-0f37b29a1192`, title "ST-098 U4 browser re-verify") created
+    via the typed API/CLI pattern the docs prescribe. `3e85f97...` is a pre-squash branch
+    SHA; after this branch squash-merges into `main`, find this work with `git log
+    --grep="Story: ST-098"` and re-anchor to the commit it names, per CLAUDE.md § Merge
+    strategy. 28/28 checks re-verified: **PASS** on all, with one behavioural note (not a
+    fail): the error banner from the bad-key 401 attempt does not auto-clear on the
+    subsequent successful load — `load()`'s success path never calls `say()`, only an
+    `"ok"`-kind banner clears itself (2.5s timeout in `say()`), so an `"err"` banner
+    persists on screen until another action overwrites it. This matches the original
+    check's actual claim ("the 401 clears the stored key", not "the banner clears
+    itself") and is not a regression. The five attention reasons
+    (`decision-required`, `blocked`, `stale`, `ended-without-checkpoint`,
+    `ready-for-review`) were all exercised: the first four by seeding a blocking
+    decision, a checkpoint carrying `blockers`, a run whose `last_event_at` was backdated
+    past the 30-minute staleness threshold via a direct SQL update on the disposable run
+    row, and ending that run after its blocking checkpoint; `ready-for-review` by
+    attaching evidence to the sole required criterion. Full per-check disposition:
+    - Render and layout (12/12 PASS): page renders packets from `/api/workflow`; no
+      uncaught page error on initial load; no uncaught page error after the negative
+      paths (a bad-key 401 and a refused-completion 409) — Chromium's own
+      "Failed to load resource" console entries for those non-2xx responses (plus one
+      benign `favicon.ico` 404) are network-log noise, not application `console.error`
+      calls or uncaught exceptions, and zero page errors were observed across the whole
+      run; policy scope renders exactly once per packet (`.tag.scope` count = 1 inside
+      the card); policy scope is never copied per row; repository renders
+      (`repo: ai-memory`); branch renders (`branch:
+      chore/st098-observed-session-follow-ups`); attention items are grouped by reason
+      (4 distinct groups observed); each group carries a count (`(1)` on each); every
+      reason class resolves to a non-default colour — `decision-required`/`blocked` both
+      computed `rgb(163,32,32)` (`--bad`), `stale`/`ended-without-checkpoint` both
+      computed `rgb(154,91,0)` (`--warn`), both distinct from the page's default text
+      colour `rgb(22,24,29)`; `ready-for-review`'s `--good` mapping was confirmed by
+      source (`dashboard.ts`'s CSS) plus its observed appearance in the DOM once earned,
+      not independently colour-sampled; criteria show unmet state before evidence exists
+      (both seeded criteria read `[unmet]`); criteria show met state once evidence
+      exists (the required criterion flipped to `[met]` after Attach evidence).
+    - The completion gate (4/4 PASS): completion is refused while the required criterion
+      lacks evidence (409, banner: "Completion refused: 1 verification criterion/criteria
+      lack evidence: Dashboard renders and interactions verified by hand"); the refusal
+      names the unmet criterion; the optional criterion ("Board entry updated with
+      disposition") is not named in that refusal; the packet's status is still `open`
+      (not `complete`) immediately after the refusal.
+    - The three interactions (9/9 PASS): the open blocking decision offers a Resolve
+      control; resolving it removes `decision-required` from the attention list (3
+      reasons remained: `blocked`, `stale`, `ended-without-checkpoint`); resolving empties
+      the open-decision list (renders "None open."); resolving shows the question and
+      resolution text under "Recently resolved"; attaching manual evidence flips the
+      required criterion to `[met]`; the evidence line renders beneath it (`manual
+      Verified by hand against commit 3e85f97...`); completion then succeeds (banner:
+      "Packet completed."); the optional criterion (never given evidence) did not block
+      that completion; the completed packet left the active overview immediately (absent
+      from the packet cards on next render, matching `/overview` returning only
+      non-complete packets).
+    - Auth (3/3 PASS): a bad key produces a 401 banner (`"401 Unauthorized"`, class
+      `err`); the 401 clears the stored key (`sessionStorage.getItem("awcp.apiKey")` read
+      back `null` immediately after); it does not loop on the key prompt — exactly one
+      `prompt()` fired for the bad-key attempt and exactly one more fired when Refresh was
+      clicked afterward, with no unsolicited prompt in between.
+    - Not independently re-verified in this pass, stated rather than left implicit: the
+      WorkItem lane (`renderWorkItem`/`renderWorkItemPackets`/`renderWorkItemSessions`)
+      added by `585d2c9` is out of scope for the original 28 — they predate that lane and
+      this re-run only restores their validity against the *packet* lane, matching the
+      unit's brief (re-verify the original 28, not extend coverage).
 - Plan: [docs/plans/2026-08-25-1530-chore-st098-observed-session-follow-ups-plan.md](../../docs/plans/2026-08-25-1530-chore-st098-observed-session-follow-ups-plan.md)
 - Notes: Filed from the ST-097 handoff rather than mid-review — none of the four block
   ST-097's landing, all four were the user's explicit choice to pick up next.
@@ -888,7 +965,7 @@
   - [x] The typed API supports the complete local workflow across 11 named commands; no generic row mutation, arbitrary SQL, shell execution, or packet-status setter
   - [x] Missing or out-of-vocabulary policy scope fails closed (400), with a same-request success as the discrimination control
   - [x] One real local repository/session reported a commit-bearing checkpoint through the CLI (`repo_commit` = actual `git rev-parse HEAD`) — **re-evidenced by ST-087 on 2026-08-03.** When this box was first ticked the backing test posted a hardcoded SHA, which proves the API stores what it is handed, not that the CLI obtained anything; the claim was true but the evidence did not reach it. `server/tests/awcp-cli.test.ts` now creates a checkpoint with no `--commit` anywhere in its argv and compares the stored value against a freshly-read `HEAD`, and a red control (removing `PATH` from the CLI child's environment, so `git` cannot resolve) was observed turning exactly that assertion red
-  - [x] The dashboard at `/workflow` shows active work, attention grouped by reason, decisions, checkpoints and criteria/evidence, and offers exactly resolve / attach-evidence / complete — **verified, in two layers:** the process-boundary test asserts the served page carries every required section, all three actions and no status control, each targeting an endpoint it exercises; and on 2026-08-02 the page was driven in a real headless Chromium, 28/28 checks — it renders, attention groups by reason with each reason class resolving to its intended colour, repository/branch/policy scope render with scope shown once per packet, criteria show met/unmet with evidence, all three interactions work end to end, completion is refused while a required criterion lacks evidence **with the unmet criteria named** (and the optional one correctly not named), a completed packet leaves the active overview, and a 401 clears the stored key without re-prompting. CI still has no browser, so the rendering layer is a **Point-in-Time Result** describing `server/src/workflow/dashboard.ts` at **`f36903e`** — re-anchored on 2026-08-03 from the pre-squash `0d3af13` after confirming `git diff 0d3af13..f36903e -- server/src/workflow/dashboard.ts` is empty, i.e. the verified file did not change between the browser run and the merge. Any commit touching that file — anyone's — expires it, checkable with `git diff f36903e..HEAD -- server/src/workflow/dashboard.ts` (non-empty ⇒ re-run the 28 checks before this box counts as ticked). **EXPIRED 2026-08-25 by `585d2c9` (ST-097)**, which added the WorkItem lane to that file; the 28 checks also predate that lane and cover none of it. Procedure and the reasoned decision *not* to automate it are in [docs/workflow-mvp.md](../../docs/workflow-mvp.md#verifying-the-dashboard-in-a-real-browser). One defect was found by looking and fixed: the refusal banner named the unmet criteria twice, because the server message already embeds them and the page appended them again
+  - [x] The dashboard at `/workflow` shows active work, attention grouped by reason, decisions, checkpoints and criteria/evidence, and offers exactly resolve / attach-evidence / complete — **verified, in two layers:** the process-boundary test asserts the served page carries every required section, all three actions and no status control, each targeting an endpoint it exercises; and on 2026-08-02 the page was driven in a real headless Chromium, 28/28 checks — it renders, attention groups by reason with each reason class resolving to its intended colour, repository/branch/policy scope render with scope shown once per packet, criteria show met/unmet with evidence, all three interactions work end to end, completion is refused while a required criterion lacks evidence **with the unmet criteria named** (and the optional one correctly not named), a completed packet leaves the active overview, and a 401 clears the stored key without re-prompting. CI still has no browser, so the rendering layer is a **Point-in-Time Result** describing `server/src/workflow/dashboard.ts` at **`f36903e`** — re-anchored on 2026-08-03 from the pre-squash `0d3af13` after confirming `git diff 0d3af13..f36903e -- server/src/workflow/dashboard.ts` is empty, i.e. the verified file did not change between the browser run and the merge. Any commit touching that file — anyone's — expires it, checkable with `git diff f36903e..HEAD -- server/src/workflow/dashboard.ts` (non-empty ⇒ re-run the 28 checks before this box counts as ticked). **EXPIRED 2026-08-25 by `585d2c9` (ST-097)**, which added the WorkItem lane to that file; the 28 checks also predate that lane and cover none of it. Procedure and the reasoned decision *not* to automate it are in [docs/workflow-mvp.md](../../docs/workflow-mvp.md#verifying-the-dashboard-in-a-real-browser). One defect was found by looking and fixed: the refusal banner named the unmet criteria twice, because the server message already embeds them and the page appended them again. **Re-verified 2026-08-25 by ST-098 (Unit 4), superseding the `585d2c9`-EXPIRED note above — the expiry note stays as history, this supersedes its conclusion.** 28/28 PASS against commit `3e85f97cb2135ddbe781b23be90a50986bd0fe06` (a pre-squash branch SHA on `chore/st098-observed-session-follow-ups`; after that branch squash-merges into `main`, find this work with `git log --grep="Story: ST-098"` and re-anchor to the commit it names), pathspec `server/src/workflow/dashboard.ts server/src/workflow/readModel.ts server/src/workflow/store.ts server/src/workflow/workItemStore.ts`. Full per-check disposition and method recorded on ST-098's entry above (its 4th acceptance criterion). Any commit touching any of those four files expires this result in turn — `git diff 3e85f97cb2135ddbe781b23be90a50986bd0fe06..HEAD -- server/src/workflow/dashboard.ts server/src/workflow/readModel.ts server/src/workflow/store.ts server/src/workflow/workItemStore.ts` (non-empty ⇒ re-run before relying on it)
   - [x] Completion remains evidence-gated — refused with the unmet criteria named, and the packet verified still not complete after the refusal
   - [x] Operational state survives an actual server restart (SIGTERM, port freed, second process); the second boot applies nothing and skips both migrations
   - [x] The slice runs with the memory workers and provider access disabled, with a provider sentinel recording **zero** requests
