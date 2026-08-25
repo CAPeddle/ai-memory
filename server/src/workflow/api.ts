@@ -266,7 +266,7 @@ export function toHttpError(err: unknown): HttpError {
       body: {
         error: "WorkflowNotFoundError",
         message:
-          "a referenced work packet, agent run or verification criterion does not exist",
+          "a referenced work packet, agent run, verification criterion, work item or observed session does not exist",
         // Unlike the WorkflowNotFoundError branch above, the FK violation does not
         // tell us WHICH id was missing — Postgres reports only that some constraint
         // was violated. `null` rather than omitting the key: every WorkflowNotFoundError

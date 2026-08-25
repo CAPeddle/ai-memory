@@ -145,7 +145,9 @@ docker compose --profile test exec mcp-test deno test --frozen --allow-net --all
 #                       by running git and there is no honest way to prove that without
 #                       giving it a repository.
 #   --allow-write=/tmp  that throwaway repository, plus (ST-088, Phase 3)
-#                       awcp-node-client.test.ts and workflow-node-client-hub-e2e.test.ts:
+#                       awcp-node-client.test.ts, workflow-node-client-hub-e2e.test.ts
+#                       and workflow-observed-session-lane.test.ts (ST-097, B3, which
+#                       drives the real node client against an injected AWCP_HOME):
 #                       the node client's every persisted path (spool, state, node_id)
 #                       is injectable specifically so its tests point at a
 #                       Deno.makeTempDir() under /tmp instead of the runner's real

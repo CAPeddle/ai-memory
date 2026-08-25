@@ -295,10 +295,11 @@ operator knows which requested work an observed session belongs to, and the call
 no ownership proof over the session it names.
 
 Failures map deliberately: **400** malformed input or missing/invalid policy scope ·
-**404** unknown packet, run, decision or criterion (including a foreign-key miss, which
-is a client mistake, not a server fault) · **409** completion blocked, criteria frozen,
-a decision re-resolved with a different answer, or a run re-ended with a different
-terminal status · **500** only for genuine infrastructure failure.
+**404** unknown packet, run, decision, criterion, work item or observed session
+(including a foreign-key miss, which is a client mistake, not a server fault) ·
+**409** completion blocked, criteria frozen, a decision re-resolved with a different
+answer, a run re-ended with a different terminal status, or a work item created for a
+provenance pair that already exists · **500** only for genuine infrastructure failure.
 
 ## Verify it
 

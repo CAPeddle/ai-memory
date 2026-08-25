@@ -184,6 +184,23 @@ assert_contains "conflict markers present" "$(cat "$D/.github/planning/story-ids
 git -C "$D" merge --abort
 
 echo
+echo "=== a branch carrying BOTH its allocation and its board entry passes from main ==="
+D="$(make_fixture coverage)"
+git -C "$D" checkout -q -b storyX
+(cd "$D" && ./story-id.sh --mint "X's story" >/dev/null)
+printf '\n### ST-004: X\n' >> "$D/.github/planning/story-board.md"
+git -C "$D" add -A
+git -C "$D" -c user.email=t@example.com -c user.name=t commit -q -m "X allocates and files ST-004"
+git -C "$D" checkout -q main
+# From main the board entry is visible across refs; so must the allocation be, or the
+# ordinary state of any unmerged story reads as an unallocated board entry.
+set +e
+COV_OUT="$(cd "$D" && ./story-id.sh --check 2>&1)"
+COV_RC=$?
+set -e
+assert_exit "an unmerged story does not read as unallocated" 0 "$COV_RC"
+
+echo
 echo "=== the SAME id allocated on two refs is a --check failure ==="
 D="$(make_fixture crossref)"
 # Two branches each mint ST-004 independently. --mint refuses this only when the

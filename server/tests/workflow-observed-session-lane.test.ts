@@ -379,6 +379,11 @@ Deno.test({
     const { nodeId, bearer } = await newNode();
     const sid = crypto.randomUUID();
 
+    // db-test is shared and accumulating (CLAUDE.md), so a whole-table census races
+    // anything else touching these tables and was observed flaking on exactly that.
+    // The guard's claim is about what THIS lifecycle fabricated, so bound it to rows
+    // that could not predate it: every count below must be zero, not merely unchanged.
+    const since = new Date();
     const census = async () => {
       const rows = await sql<
         {
@@ -390,17 +395,27 @@ Deno.test({
         }[]
       >`
         SELECT
-          (SELECT count(*)::text FROM workflow.work_packets)                     AS packets,
-          (SELECT count(*)::text FROM workflow.work_items)                       AS items,
-          (SELECT count(*)::text FROM workflow.work_item_sessions)               AS claims,
-          (SELECT count(*)::text FROM workflow.agent_runs)                       AS runs,
-          (SELECT count(DISTINCT policy_scope)::text FROM workflow.work_packets) AS scopes
+          (SELECT count(*)::text FROM workflow.work_packets
+             WHERE created_at >= ${since})                                       AS packets,
+          (SELECT count(*)::text FROM workflow.work_items
+             WHERE created_at >= ${since})                                       AS items,
+          (SELECT count(*)::text FROM workflow.work_item_sessions
+             WHERE claimed_at >= ${since})                                       AS claims,
+          (SELECT count(*)::text FROM workflow.agent_runs
+             WHERE started_at >= ${since})                                       AS runs,
+          (SELECT count(DISTINCT policy_scope)::text FROM workflow.work_packets
+             WHERE created_at >= ${since})                                       AS scopes
       `;
       return rows[0];
     };
 
     try {
       const before = await census();
+      assertEquals(
+        before,
+        { packets: "0", items: "0", claims: "0", runs: "0", scopes: "0" },
+        "nothing attributable to this test exists before it runs",
+      );
 
       const at = (m: number) => `2026-08-25T11:${String(m).padStart(2, "0")}:00.000Z`;
       const res = await postEvents(app, nodeId, [

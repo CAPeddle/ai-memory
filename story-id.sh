@@ -202,8 +202,13 @@ cmd_check() {
 
   # 4. Coverage — every ST-NNN carrying a board entry, on ANY ref, must be
   #    allocated. This is a coverage assertion, not a source of identity.
+  # The union, not the worktree alone — board_ids below gathers across every ref, and
+  # comparing an all-refs left side against a one-ref right side reports a branch's own
+  # freshly-filed board entry as unallocated when its allocator line is sitting on that
+  # same branch. CI runs --check from main, where that is the ordinary state of any
+  # unmerged story.
   local registry_ids ref board_ids missing
-  registry_ids="$(ids_in < "$REGISTRY" | sort -u)"
+  registry_ids="$(taken_map | grep -oE '^ST-[0-9]{3}' | sort -u)"
 
   board_ids="$(
     { [ -f "$BOARD" ] && grep -oE '^### ST-[0-9]{3}' "$BOARD" | grep -oE 'ST-[0-9]{3}' || true
