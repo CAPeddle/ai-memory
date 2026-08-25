@@ -788,9 +788,16 @@ export async function upsertExecutionNode(
 
     // COALESCE so a re-registering node refreshes hostname/platform (it may have been
     // renamed or upgraded) while a payload that omits them keeps what was recorded,
-    // rather than nulling it. Note for anyone editing: `ON CONFLICT ... DO UPDATE SET`
-    // is NOT available here — the boundary scan captures the token after UPDATE and
-    // reads `SET` as an unqualified identifier.
+    // rather than nulling it.
+    //
+    // Note for anyone editing, CORRECTED by ST-097: `ON CONFLICT ... DO UPDATE SET` was
+    // barred here because the boundary scan captured the token after UPDATE and read
+    // `SET` as an unqualified identifier. That false positive is fixed — the scan now
+    // excludes `DO UPDATE` (workflow-boundary.test.ts), and `upsertObservedSessions`
+    // below uses the construct. This function keeps its UPDATE-then-INSERT shape for
+    // its own reasons, which the scanner never had anything to do with: the enrolment
+    // gate sits BETWEEN the two statements, and the advisory lock above exists for the
+    // read-back race that `ON CONFLICT DO NOTHING` cannot close.
     const updated = await tx<{ node_id: string }[]>`
       UPDATE workflow.execution_nodes
       SET last_seen_at = now(),
@@ -881,6 +888,133 @@ export interface RunEventInput {
 }
 
 /**
+ * The event types that carry observed-session lifecycle (ST-097, KTD-B4 item 4).
+ *
+ * The EVENT TYPE is what decides whether an event is a session event — never the
+ * presence of a payload key. That is the whole difference between this and the
+ * rejected jsonb-grep view over `run_events`: a grep makes the claim (B4) and any
+ * later abandonment evaluation depend on a payload field, and the abandonment case —
+ * a `SIGKILL` that never writes a stop record — is the one most likely to omit it.
+ *
+ * B3 owns emitting these. This module owns only what they materialise into.
+ */
+const SESSION_EVENT_TYPES = new Set([
+  "session_start",
+  "session_heartbeat",
+  "session_end",
+]);
+
+/**
+ * The observed-session payload field set, read here and closed by KTD-B4 item 6.
+ *
+ * **ASSUMPTION ON B3, recorded rather than left implicit.** Item 6 closes the payload
+ * at `session_id`, an event timestamp and `node_id`, but does not name the keys. These
+ * are the keys this materialisation reads:
+ *
+ *   - `session_id` — a non-empty string. Client-generated, opaque and explicitly
+ *     NON-AUTHORITATIVE (item 2).
+ *   - `at` — the event's own instant, ISO 8601. Named for the `*_at` convention of the
+ *     columns it lands in.
+ *   - `node_id` — present because item 6 puts it there, and DELIBERATELY IGNORED here.
+ *     Identity is the node the bearer proved at the route, not one a payload asserts
+ *     (item 3): the hub's forgery defence covers `node_id`, and it cannot cover a
+ *     payload field.
+ *
+ * Anything else in the payload is stored on the raw lane and read by nothing.
+ */
+interface SessionEventFacts {
+  session_id: string;
+  at: Date;
+}
+
+/**
+ * Read the session facts out of one event's payload, or null if it carries none.
+ *
+ * Null is "not materialisable", not an error. The run event is still stored: the lane
+ * of record records what arrived, and REJECTING a malformed session event belongs at
+ * the edge, which is B3's. Failing here instead would abort the whole multi-row INSERT
+ * — the batch is one statement — and the read-back acknowledgement would then turn one
+ * bad payload into a permanent retry loop for every event beside it.
+ *
+ * `at` falls back to the caller's ingest instant when absent or unparseable, which is
+ * the closest thing to the truth this layer holds. That fallback is safe against replay
+ * only because materialisation is gated on the INSERT's `RETURNING` — see
+ * {@link ingestRunEventsTx}.
+ */
+function sessionFactsOf(event: RunEventInput, fallbackAt: Date): SessionEventFacts | null {
+  if (!SESSION_EVENT_TYPES.has(event.event_type)) return null;
+  const payload = event.payload;
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return null;
+
+  const { session_id: sessionId, at } = payload as Record<string, unknown>;
+  if (typeof sessionId !== "string" || sessionId === "") return null;
+
+  const parsed = typeof at === "string" ? new Date(at) : null;
+  return {
+    session_id: sessionId,
+    at: parsed !== null && !Number.isNaN(parsed.getTime()) ? parsed : fallbackAt,
+  };
+}
+
+interface ObservedSessionRow {
+  session_id: string;
+  started_at: Date;
+  last_heartbeat_at: Date;
+  ended_at: Date | null;
+}
+
+/**
+ * Fold a batch down to one row per session, by the SAME monotone rule the upsert
+ * applies against the stored row.
+ *
+ * One row per session is a requirement, not a tidiness: `ON CONFLICT DO UPDATE` refuses
+ * a multi-row VALUES that conflicts on the same key twice ("cannot affect row a second
+ * time"), and one batch legitimately carries a whole start/heartbeat/end lifecycle.
+ *
+ * The rule is min/max, never last-write-wins, and that is what makes the stored row a
+ * pure function of the SET of events observed rather than of their arrival order — so a
+ * spool draining out of order after a reconnect converges on the same row as an
+ * in-order delivery.
+ *
+ * `session_end` also advances `last_heartbeat_at`: receiving a close IS an observation
+ * that the session was alive at that instant.
+ */
+function foldSessionEvents(
+  events: RunEventInput[],
+  fallbackAt: Date,
+): ObservedSessionRow[] {
+  const folded = new Map<string, ObservedSessionRow>();
+
+  for (const event of events) {
+    const facts = sessionFactsOf(event, fallbackAt);
+    if (facts === null) continue;
+
+    const endedAt = event.event_type === "session_end" ? facts.at : null;
+    const existing = folded.get(facts.session_id);
+    if (existing === undefined) {
+      folded.set(facts.session_id, {
+        session_id: facts.session_id,
+        // A heartbeat or a close arriving with no start seen is materialised anyway,
+        // with the earliest instant actually observed as `started_at`. A lost
+        // `session_start` must not cost the session its row — that is precisely the
+        // case the rejected grep-on-read would have handled worst.
+        started_at: facts.at,
+        last_heartbeat_at: facts.at,
+        ended_at: endedAt,
+      });
+      continue;
+    }
+    if (facts.at < existing.started_at) existing.started_at = facts.at;
+    if (facts.at > existing.last_heartbeat_at) existing.last_heartbeat_at = facts.at;
+    if (endedAt !== null && (existing.ended_at === null || endedAt > existing.ended_at)) {
+      existing.ended_at = endedAt;
+    }
+  }
+
+  return [...folded.values()];
+}
+
+/**
  * Persist a batch, ignoring anything already stored.
  *
  * `ON CONFLICT (node_id, client_seq) DO NOTHING` is what makes a node's retry safe:
@@ -891,15 +1025,18 @@ export interface RunEventInput {
  * to 500 sequential round trips while holding a connection from a pool of 10 that is
  * shared with search, capture, and every background worker — so a single authorised
  * node sending maximum batches could starve the memory API that is this process's
- * actual job. A single statement is also atomic on its own, which is why the explicit
- * transaction is gone rather than merely shortened: it was buying nothing.
+ * actual job.
+ *
+ * `RETURNING client_seq` names exactly the events this INSERT actually STORED — a
+ * conflicting row returns nothing. That is what {@link ingestRunEventsTx} gates
+ * materialisation on, so `EVENT-01`'s duplicate suppression and the observed-session
+ * row are carried by ONE mechanism rather than two that can drift apart.
  */
-export async function ingestRunEvents(
+async function insertRunEvents(
+  exec: SqlExecutor,
   nodeId: string,
   events: RunEventInput[],
-): Promise<void> {
-  if (events.length === 0) return;
-
+): Promise<Set<number>> {
   const rows = events.map((event) => ({
     node_id: nodeId,
     client_seq: event.client_seq,
@@ -907,15 +1044,135 @@ export async function ingestRunEvents(
     // sql.json() rather than the bare value: it marks the parameter as JSON explicitly,
     // which is both what the multi-row helper's types accept and what keeps an object
     // from being handed to the generic serialiser.
-    payload: sql.json(event.payload as never),
+    payload: exec.json(event.payload as never),
   }));
 
-  await sql`
+  // The row type is a VARIABLE ANNOTATION, not the usual `exec<T[]>` type argument.
+  // Supplying the type argument pins the template's parameter type to
+  // `ParameterOrFragment<never>`, which the multi-row helper is then not assignable to
+  // — and the failure surfaces as an unrelated complaint about awaiting a non-promise.
+  // Every other typed query in this file reads `sql<T[]>` because none of them also
+  // interpolates the helper.
+  const stored: { client_seq: string }[] = await exec`
     INSERT INTO workflow.run_events ${
-    sql(rows, "node_id", "client_seq", "event_type", "payload")
+    exec(rows, "node_id", "client_seq", "event_type", "payload")
   }
     ON CONFLICT (node_id, client_seq) DO NOTHING
+    RETURNING client_seq
   `;
+
+  // Number(), for the reason acknowledgeSeqs documents at length: `client_seq` is
+  // bigint and postgres.js hands bigint back as a STRING. A Set of strings tested with
+  // the batch's numbers matches nothing, and materialisation would silently never fire.
+  return new Set(stored.map((r) => Number(r.client_seq)));
+}
+
+/**
+ * Merge observed sessions, monotonically, in one statement.
+ *
+ * LEAST/GREATEST rather than assignment is the whole idempotency argument: re-applying
+ * the same values is a no-op, and a value that arrives late and small cannot roll the
+ * row backwards. Postgres GREATEST/LEAST ignore NULLs, so `GREATEST(ended_at, EXCLUDED
+ * .ended_at)` leaves a closed session closed when a later heartbeat carries no close —
+ * a late heartbeat can never reopen a session.
+ *
+ * There is no status column to set (005's header says why): a session's state is READ
+ * from these three instants, and the abandonment threshold that interprets the gap is
+ * evaluation policy that deliberately does not live here.
+ *
+ * This statement touches `workflow.observed_sessions` and nothing else. It creates no
+ * packet, no work item and no claim, and there is no `policy_scope` column within its
+ * reach — a WorkItem is bound to a session only by B4's explicit operator claim, never
+ * by inference from an observation.
+ */
+async function upsertObservedSessions(
+  exec: SqlExecutor,
+  nodeId: string,
+  sessions: ObservedSessionRow[],
+): Promise<void> {
+  const rows = sessions.map((s) => ({
+    node_id: nodeId,
+    session_id: s.session_id,
+    started_at: s.started_at,
+    last_heartbeat_at: s.last_heartbeat_at,
+    ended_at: s.ended_at,
+  }));
+
+  // NO `AS os` ALIAS, and that is a postgres.js constraint rather than a style choice.
+  // The multi-row helper picks its builder from the LAST keyword appearing before the
+  // interpolation, and postgres.js maps `as` to its SELECT builder — so
+  // `INSERT INTO ... AS os ${helper}` hands an array of row objects to an identifier
+  // escaper and fails at runtime with `str.replace is not a function`, nowhere near the
+  // alias. The stored row is therefore named in full instead. The arbiter is inferred
+  // from the `(node_id, session_id)` primary key.
+  await exec`
+    INSERT INTO workflow.observed_sessions ${
+    exec(rows, "node_id", "session_id", "started_at", "last_heartbeat_at", "ended_at")
+  }
+    ON CONFLICT (node_id, session_id) DO UPDATE
+    SET started_at        =
+          LEAST(workflow.observed_sessions.started_at, EXCLUDED.started_at),
+        last_heartbeat_at =
+          GREATEST(workflow.observed_sessions.last_heartbeat_at, EXCLUDED.last_heartbeat_at),
+        ended_at          =
+          GREATEST(workflow.observed_sessions.ended_at, EXCLUDED.ended_at)
+  `;
+}
+
+/**
+ * Ingest a batch and materialise its observed sessions, on a caller-supplied executor.
+ *
+ * **The executor parameter is the atomicity contract, expressed in the type.** The
+ * `run_events` write and the `observed_sessions` write are two statements that must
+ * either both land or neither; taking the executor is what makes "inside the ingest
+ * transaction" structural rather than a claim in a comment. It is also what lets a test
+ * roll the caller's transaction back and observe that nothing survived — nothing
+ * follows materialisation in this function, so no natural failure could prove it.
+ *
+ * MATERIALISATION IS GATED ON WHAT THE INSERT ACTUALLY STORED. A replayed event
+ * conflicts, returns no row, and materialises nothing — so `EVENT-01`'s contract covers
+ * the session row for free, and the ingest-instant fallback in {@link sessionFactsOf}
+ * cannot drift a `last_heartbeat_at` forward on every retry.
+ */
+export async function ingestRunEventsTx(
+  exec: SqlExecutor,
+  nodeId: string,
+  events: RunEventInput[],
+): Promise<void> {
+  if (events.length === 0) return;
+
+  const stored = await insertRunEvents(exec, nodeId, events);
+  const fresh = events.filter((e) => stored.has(e.client_seq));
+  if (fresh.length === 0) return;
+
+  const sessions = foldSessionEvents(fresh, new Date());
+  if (sessions.length === 0) return;
+
+  await upsertObservedSessions(exec, nodeId, sessions);
+}
+
+/**
+ * Persist a batch, ignoring anything already stored, and materialise any observed
+ * sessions it announces (ST-097 B2a(c)).
+ *
+ * A BATCH CARRYING NO SESSION EVENT TAKES NO TRANSACTION, and that is deliberate rather
+ * than an oversight. Its single multi-row statement is atomic on its own, which is why
+ * the explicit transaction was removed here in the first place — it was buying nothing.
+ * It buys something now only when there is a second statement to be atomic WITH, so the
+ * ordinary node lane keeps exactly the cost it had.
+ */
+export async function ingestRunEvents(
+  nodeId: string,
+  events: RunEventInput[],
+): Promise<void> {
+  if (events.length === 0) return;
+
+  if (!events.some((e) => SESSION_EVENT_TYPES.has(e.event_type))) {
+    await insertRunEvents(sql, nodeId, events);
+    return;
+  }
+
+  await sql.begin((tx: SqlExecutor) => ingestRunEventsTx(tx, nodeId, events));
 }
 
 /**

@@ -277,7 +277,20 @@ Deno.test({
     // Case-INSENSITIVE deliberately: the original regex had no /i flag, so a
     // lowercase `from thoughts` would have been skipped entirely rather than
     // flagged — a scan that silently ignores the very style it should catch.
-    const clauses = [...code.matchAll(/\b(?:FROM|INTO|UPDATE|JOIN)\s+([A-Za-z_][\w.]*)/gi)];
+    //
+    // `(?<!DO\s+)` excludes `ON CONFLICT ... DO UPDATE SET`, which is a FALSE POSITIVE
+    // and loses no coverage: `DO UPDATE` takes no table name, so the token after it is
+    // the keyword `SET`, and the upsert's real target is the `INSERT INTO
+    // workflow.<table>` this same scan already checks. Before this exclusion the
+    // artifact was load-bearing in the wrong direction — store.ts carried a note that
+    // the construct was unavailable, and appeasing the regex would have meant three
+    // statements and an advisory lock on the ingest path instead of one upsert.
+    //
+    // `\s+` rather than a single space so a `DO UPDATE` split across a line break is
+    // still excluded, and the /i flag covers a lowercase `do update`.
+    const clauses = [
+      ...code.matchAll(/\b(?:FROM|INTO|JOIN|(?<!DO\s+)UPDATE)\s+([A-Za-z_][\w.]*)/gi),
+    ];
     assert(clauses.length > 0, "expected SQL clauses in store.ts");
     for (const [, identifier] of clauses) {
       assert(
@@ -293,8 +306,11 @@ Deno.test({
   fn: () => {
     // Red/green control on the scan above, for the same reason as the allowlist
     // control: prove the mechanism fires, not just that it stayed quiet.
+    // The regex is duplicated from the scan above deliberately — a control that shared
+    // the production copy could not tell a scan that changed from one that did not.
+    // Both copies must be edited together; that is the cost of the control.
     const scan = (code: string) =>
-      [...code.matchAll(/\b(?:FROM|INTO|UPDATE|JOIN)\s+([A-Za-z_][\w.]*)/gi)]
+      [...code.matchAll(/\b(?:FROM|INTO|JOIN|(?<!DO\s+)UPDATE)\s+([A-Za-z_][\w.]*)/gi)]
         .map(([, id]) => id)
         .filter((id) => !id.toLowerCase().startsWith("workflow."));
 
@@ -303,6 +319,25 @@ Deno.test({
     assertEquals(scan("SELECT * FROM thoughts"), ["thoughts"], "uppercase, unqualified");
     assertEquals(scan("select * from thoughts"), ["thoughts"], "lowercase, unqualified");
     assertEquals(scan("INSERT INTO public.thoughts"), ["public.thoughts"], "wrong schema");
+
+    // The `DO UPDATE` exclusion, both halves. It must swallow the upsert's `SET`
+    // keyword — on one line and across a line break, upper and lower case — and it must
+    // NOT have widened into ignoring a real unqualified UPDATE, which is the way an
+    // exclusion like this fails silently.
+    assertEquals(scan("ON CONFLICT (a) DO UPDATE SET x = LEAST(x, 1)"), [], "upsert SET");
+    assertEquals(scan("ON CONFLICT (a) DO UPDATE\n  SET x = 1"), [], "upsert SET, wrapped");
+    assertEquals(scan("on conflict (a) do update\n  set x = 1"), [], "upsert SET, lowercase");
+    assertEquals(scan("UPDATE thoughts SET a = 1"), ["thoughts"], "a real UPDATE still fires");
+    assertEquals(
+      scan(
+        "INSERT INTO workflow.observed_sessions (a) VALUES (1)\n" +
+          "  ON CONFLICT (node_id, session_id) DO UPDATE\n" +
+          "  SET started_at =\n" +
+          "        LEAST(workflow.observed_sessions.started_at, EXCLUDED.started_at)",
+      ),
+      [],
+      "the whole upsert this exclusion exists for",
+    );
   },
 });
 
