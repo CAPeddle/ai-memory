@@ -4,14 +4,25 @@ Shared domain vocabulary for this project — entities, named processes, and sta
 
 ## Relationships
 
-A Work Packet owns everything beneath it. It has many Agent Runs, many Operational Decisions, and many Verification Criteria. An Agent Run has many Checkpoints. A Verification Criterion has many Evidence Items. Every one of those relationships is contained — nothing under a Work Packet points into the Memory Domain, and the single link that does point outward, Promotion, is a nullable, non-authoritative pointer rather than a dependency.
+A Work Item owns everything beneath it, and it — not the Work Packet — is what sits at the containment root, because a Work Packet has an optional parent above it. A Work Item has zero or more Work Packets. A Work Packet owns everything beneath *it*: many Agent Runs, many Operational Decisions, and many Verification Criteria. An Agent Run has many Checkpoints. A Verification Criterion has many Evidence Items. Nothing beneath the Packet gains a reference to the Work Item, so a Checkpoint reaches the root transitively, through its Run and its Packet, and never directly.
+
+Every one of those relationships is contained — nothing under a Work Item points into the Memory Domain, and the single link that does point that way, Promotion, is a nullable, non-authoritative pointer rather than a dependency. The one reference that leaves the containment altogether is the Work Item's own provenance pair, and it is outward in the same weak sense: it records the identity of whatever system requested the work rather than depending on it or claiming authority over it.
 
 ## Workflow Operations
 
-### Work Packet
-The unit of supervised agent work: one objective, with its scope, constraints, an optional repository and branch binding, and a Policy Scope.
+### Work Item
+One unit of *requested* work — the thing Work Packets are opened to serve — carrying the identity of whatever system requested it rather than replacing it.
 
-A Work Packet is the only authority for its own Policy Scope — nothing beneath it carries one independently. Lifecycle: open, in progress, blocked, complete. It reaches complete only through the Completion Gate.
+Identity is an immutable internal id, and nothing else is the primary identity. Beside it sits a provenance pair: the requesting system, drawn from a closed set, and that system's own reference in that system's namespace. The pair is a reference and never an authority — a Work Item is not where the requesting system's title, hierarchy, priority or status is decided. Work raised natively is recorded as native rather than as carrying an external reference. Independently of that, a Work Item takes a human-facing label from a namespace of its own — an item carrying external provenance still has one, so the label and the reference coexist rather than substituting for each other — allocated by the operational store where uniqueness is a database constraint rather than from the development-story registry. The two allocators are separate by design.
+
+A Work Item is the parent of zero or more Work Packets, and a Packet has zero or one. It holds no Policy Scope: a scope-gated operation reached through a Work Item names the specific Packet whose scope governs it, and no scope is ever derived, defaulted, or inferred from the set of its Packets — choosing among Packets implicitly would be choosing the boundary. A Work Item with no Packet therefore has no scope at all, and can promote nothing. It has no aggregate status either, derived or stored: requested-work status stays authoritative at its source, and the state a Work Item does own is presented component by component rather than reduced to a single word.
+
+*Compare* [Story](#story) — the development counterpart, which reaches a Work Item as provenance rather than as identity.
+
+### Work Packet
+The unit of supervised agent work: one objective, with its scope, constraints, an optional repository and branch binding, an optional parent Work Item, and a Policy Scope.
+
+A Work Packet is the only authority for its own Policy Scope — nothing beneath it carries one independently, and the Work Item above it carries none to inherit. That parent is optional in the strict sense: a Packet has zero or one Work Item above it and is entirely valid with none, while one Work Item may own many Packets, each stating its own scope. Lifecycle: open, in progress, blocked, complete. It reaches complete only through the Completion Gate.
 
 ### Agent Run
 One agent's working session against a Work Packet.
@@ -73,6 +84,15 @@ The tracked unit of deliverable work, identified by a stable label that appears 
 Stories move across a continuous-flow board — backlog, in progress, in review, done — under strict limits on how many may occupy the working states at once, rather than through sprint boundaries. Implementation is gated: a Story needs a board entry and a written Plan before work on it begins.
 
 The commit trailer is load-bearing rather than decorative. Because a Plan records no progress, the trailer is the only thing that makes a Story's shipped work retrievable from history — so a commit that omits it still ships code, but becomes invisible to the Story that owns it.
+
+A Story is the *development* work item for this repository — an entry in its own delivery ledger — and is not the same kind of thing as a [Work Item](#work-item), which is product data a running system persists about work that was requested of it. The relation between the two runs one way only: when the system is turned on this repository's own development, the Story reaches the Work Item as provenance — the requesting system and that system's own reference — and never as its identity. Nothing synchronises the two, and neither label namespace allocates from the other.
+
+### Allocation
+A story label reserved before any work carries it, recorded in a registry of reservations rather than of deliveries.
+
+Allocation is deliberately not derived from the board. The board records what shipped, so a label reserved and then abandoned exists only in the registry — and deriving the next label from delivered work re-issues one already spent.
+
+An allocation made on a branch is **provisional** until it reaches the trunk: it may not appear in a commit trailer, a Plan filename, a board entry, or any document before then, because until one branch lands, two can each believe they hold the same label. Refusing a duplicate at reservation time and detecting one afterwards are separate obligations, and the second must see every branch — a reserver can only refuse what its own copy of the repository can see.
 
 ### Plan
 The written decision artifact for a Story, carrying its product contract, requirements, and implementation units.

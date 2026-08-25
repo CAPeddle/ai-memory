@@ -111,6 +111,13 @@ the gate like every other caller.
 > completion gate refusing and naming its unmet criteria, and a 401 clearing the stored
 > key. See [Verifying the dashboard in a real browser](#verifying-the-dashboard-in-a-real-browser).
 >
+> **EXPIRED as of `585d2c9` (ST-097).** That commit added the WorkItem lane to
+> `dashboard.ts`, so the 28 checks below no longer describe the served page. They are
+> also now *under-covering*: they predate the WorkItem lane entirely and cover none of
+> it, and the lane is the page's primary surface. Re-run them against the current file
+> before treating the browser criterion as verified again, and re-anchor to the commit
+> you run them against.
+>
 > **Verified surface:** `server/src/workflow/dashboard.ts` at `0d3af13`. **Any** commit
 > touching that file — anyone's, not just yours — expires this result. Check before
 > relying on it:
@@ -246,24 +253,53 @@ applied by the composition root's `/api/workflow` middleware in `server/index.ts
 | POST | `/packets/:packetId/decisions` | reporting/read |
 | GET | `/overview` | reporting/read |
 | GET | `/packets/:packetId` | reporting/read |
+| GET | `/work-items` | reporting/read |
+| GET | `/work-items/by-ref?source=&ref=` | reporting/read |
+| GET | `/work-items/:workItemId` | reporting/read |
 | POST | `/decisions/:decisionId/resolve` | **operator-only** |
 | POST | `/packets/:packetId/criteria` | **operator-only** |
 | POST | `/criteria/:criterionId/evidence` | **operator-only** |
 | POST | `/packets/:packetId/complete` | **operator-only** |
+| POST | `/work-items` | **operator-only** |
+| PATCH | `/packets/:packetId/work-item` | **operator-only** |
+| POST | `/work-items/:workItemId/sessions` | **operator-only** |
 
-The two `GET` routes are deliberately reporting/read: a resuming agent otherwise has no
-way to check whether a blocking decision it raised was ever resolved.
+The five `GET` routes are deliberately reporting/read: a resuming agent otherwise has no
+way to check whether a blocking decision it raised was ever resolved, and an agent
+reporting into a WorkItem must be able to read the one it is reporting into. What that
+posture inherits is worth stating rather than implying — retrieval-time scope
+enforcement is deferred to Stage 2, so an agent key reads the whole surface. These
+routes add no new exposure and no object-level authorization either.
+
+`/work-items/by-ref` takes **query parameters, not path segments**, and that is a
+contract rather than a style choice: a `source_ref` may legitimately be `#57`, which no
+path segment can carry — `#` opens a fragment the client never sends — and a key
+containing a slash would split into two segments.
 
 `/packets/:packetId/criteria` is operator-only for a reason worth stating explicitly:
 criteria define the verification contract the agent will be judged against, so
 authoring that contract is supervision, not reporting — the same self-certification
 concern that puts `/complete` on the operator side, one step earlier in the process.
 
+The two WorkItem writes (ST-097) are operator-only for a related but distinct reason.
+A WorkItem records *requested* work and its external provenance, and only the operator
+knows what was requested — so `POST /work-items` is supervision, and an agent minting
+one would be AWCP inventing a unit of work nobody asked for. `PATCH
+/packets/:packetId/work-item` follows from that plus scope: a packet is the only
+authority for its own Policy Scope, an agent key may legitimately create a packet, and
+an agent-authored packet parented to a WorkItem would become the scope authority for
+anything reached through it. For the same reason `work_item_id` is **not** accepted by
+`POST /packets` — binding is only ever the PATCH above, never a field on creation.
+`POST /work-items/:workItemId/sessions` joins them on two independent grounds: only the
+operator knows which requested work an observed session belongs to, and the caller holds
+no ownership proof over the session it names.
+
 Failures map deliberately: **400** malformed input or missing/invalid policy scope ·
-**404** unknown packet, run, decision or criterion (including a foreign-key miss, which
-is a client mistake, not a server fault) · **409** completion blocked, criteria frozen,
-a decision re-resolved with a different answer, or a run re-ended with a different
-terminal status · **500** only for genuine infrastructure failure.
+**404** unknown packet, run, decision, criterion, work item or observed session
+(including a foreign-key miss, which is a client mistake, not a server fault) ·
+**409** completion blocked, criteria frozen, a decision re-resolved with a different
+answer, a run re-ended with a different terminal status, or a work item created for a
+provenance pair that already exists · **500** only for genuine infrastructure failure.
 
 ## Verify it
 

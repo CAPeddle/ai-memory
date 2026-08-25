@@ -136,12 +136,13 @@ Deno.test({
         const ledger = await sql<{ version: number; filename: string }[]>`
           SELECT version, filename FROM workflow.schema_migrations ORDER BY version
         `;
-        assertEquals(ledger.map((r) => r.version), [1, 2, 3, 4]);
+        assertEquals(ledger.map((r) => r.version), [1, 2, 3, 4, 5]);
         assertEquals(ledger.map((r) => r.filename), [
           "001_workflow_schema.sql",
           "002_decision_run_packet_integrity.sql",
           "003_execution_nodes.sql",
           "004_run_events.sql",
+          "005_work_items.sql",
         ]);
 
         // ...and the composition root said so, from inside the process.
@@ -157,6 +158,7 @@ Deno.test({
           "002_decision_run_packet_integrity.sql",
           "003_execution_nodes.sql",
           "004_run_events.sql",
+          "005_work_items.sql",
         ]);
       });
 
@@ -464,6 +466,11 @@ Deno.test({
         // by hand on 2026-08-02 in a real headless Chromium — 28 checks including the
         // completion gate refusing and naming its unmet criteria.
         //
+        // EXPIRED 2026-08-25 by 585d2c9 (ST-097), which added the WorkItem lane to
+        // dashboard.ts. Those 28 checks also predate that lane and cover none of it,
+        // so the procedure now under-covers the page's primary surface. Re-run and
+        // re-anchor before treating the criterion as verified again.
+        //
         // That result describes server/src/workflow/dashboard.ts at 0d3af13. ANY commit
         // touching that file — anyone's, not just yours — expires it:
         //
@@ -581,6 +588,7 @@ Deno.test({
           "002_decision_run_packet_integrity.sql",
           "003_execution_nodes.sql",
           "004_run_events.sql",
+          "005_work_items.sql",
         ]);
 
         const view = await apiCall(server.baseUrl, API_KEY, `/api/workflow/packets/${packetId}`);

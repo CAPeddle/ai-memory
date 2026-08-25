@@ -429,7 +429,7 @@ Deno.test({
 
 Deno.test({
   ...T,
-  name: "migrations: the REAL workflow directory discovers 001 through 004 in order",
+  name: "migrations: the REAL workflow directory discovers 001 through 005 in order",
   fn: async () => {
     // Discovery against the actual tree — the half the hermetic tests deliberately
     // do not cover. Enumeration is directory-driven, so a new NNN_*.sql file is
@@ -437,13 +437,15 @@ Deno.test({
     //
     // The expected list is EXACT and ordered on purpose. A subset or length check
     // would let a future migration land undiscovered, which is the one failure this
-    // test exists to catch. ST-088 added 003/004; extend the list, never relax it.
+    // test exists to catch. ST-088 added 003/004 and ST-097 added 005; extend the
+    // list, never relax it.
     const found = await discoverMigrations();
-    assertEquals(found.map((m) => m.version), [1, 2, 3, 4], "versions in ascending order");
+    assertEquals(found.map((m) => m.version), [1, 2, 3, 4, 5], "versions in ascending order");
     assertEquals(found[0].filename, "001_workflow_schema.sql");
     assertEquals(found[1].filename, "002_decision_run_packet_integrity.sql");
     assertEquals(found[2].filename, "003_execution_nodes.sql");
     assertEquals(found[3].filename, "004_run_events.sql");
+    assertEquals(found[4].filename, "005_work_items.sql");
     for (const m of found) {
       assert(m.checksum.length === 64, "SHA-256 hex");
       assert(m.statements.length > 0, `${m.filename} is empty`);
@@ -460,15 +462,16 @@ Deno.test({
     await runWorkflowMigrations();
     const report = await runWorkflowMigrations();
     assertEquals(report.applied, [], "a second run must apply nothing");
-    assertEquals(report.skipped.map((s) => s.version), [1, 2, 3, 4]);
+    assertEquals(report.skipped.map((s) => s.version), [1, 2, 3, 4, 5]);
 
     const ledger = await ledgerRows("workflow.schema_migrations");
-    assertEquals(ledger.map((r) => r.version), [1, 2, 3, 4]);
+    assertEquals(ledger.map((r) => r.version), [1, 2, 3, 4, 5]);
     assertEquals(ledger.map((r) => r.filename), [
       "001_workflow_schema.sql",
       "002_decision_run_packet_integrity.sql",
       "003_execution_nodes.sql",
       "004_run_events.sql",
+      "005_work_items.sql",
     ]);
   },
 });

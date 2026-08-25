@@ -17,6 +17,28 @@
  * Only three interactions exist, matching the three the slice needs: resolve a
  * decision, attach manual evidence, complete a packet. There is deliberately no
  * status-editing control — completion goes through the gate like every other caller.
+ *
+ * **ST-097 B6 added the WorkItem lane, and made it the lane the reader meets first.**
+ * Three shape decisions are recorded here because each of them is a decision a helpful
+ * later edit would quietly reverse:
+ *
+ *   1. **Packets nest inside the WorkItem card; observed sessions are a FLAT
+ *      WorkItem-level list.** The nesting is not a layout preference on either side.
+ *      A packet carries `work_item_id`, so it belongs under exactly one WorkItem. A
+ *      claim carries `work_item_id` and no packet reference at all, so rendering a
+ *      session underneath a packet would assert an association this server has no way
+ *      to hold. Every packet renders, unranked and untruncated — a "top N" would need
+ *      a priority, and ADR-017 §6 settles that there is none to derive.
+ *   2. **Observed is visibly not authoritative.** The two subsections are separately
+ *      headed, every packet entry carries its own `.tag.scope`, and every session
+ *      entry carries a `.tag.observed` reading "not supervised" and carries no scope
+ *      and no status. KTD-D5 makes the distinction structural in the projection; this
+ *      is what makes it structural on the page, which is the only place a human looks.
+ *   3. **No attention, and no aggregate status.** KTD-B1 defers attention to the
+ *      post-continuity boundary, and ADR-017 §6 settles that a WorkItem has no
+ *      aggregate status. So this lane renders neither. Rendering "the reasons we
+ *      already compute" under a WorkItem is the exact addition the stop condition
+ *      exists to catch; the packet lane below is where attention lives, untouched.
  */
 
 export const DASHBOARD_HTML = String.raw`<!DOCTYPE html>
@@ -58,13 +80,20 @@ export const DASHBOARD_HTML = String.raw`<!DOCTYPE html>
     font: inherit; padding: .3rem .45rem; border: 1px solid var(--line);
     border-radius: 5px; background: var(--bg); color: var(--fg); max-width: 100%;
   }
-  .packet { border: 1px solid var(--line); border-radius: 8px; padding: .9rem 1rem;
+  .packet, .workitem { border: 1px solid var(--line); border-radius: 8px; padding: .9rem 1rem;
             margin-bottom: 1rem; background: var(--card); }
+  h2.lane { font-size: 1.05rem; margin: 1.4rem 0 .6rem; padding-bottom: .25rem;
+            border-bottom: 1px solid var(--line); }
+  .wi-packet, .wi-session { margin: .25rem 0; }
   .meta { display: flex; flex-wrap: wrap; gap: .4rem; margin: .35rem 0 .1rem; }
   .tag { font-size: .75rem; padding: .1rem .5rem; border: 1px solid var(--line);
          border-radius: 999px; color: var(--muted); white-space: nowrap; }
   .tag.scope { color: var(--accent); border-color: var(--accent); font-weight: 600; }
   .tag.done { color: var(--good); border-color: var(--good); }
+  /* OBSERVED, never authoritative. A different colour from .tag.scope on purpose:
+     an unclaimed observation read as a supervised run at the one place a human
+     looks is exactly what KTD-D5 designs against. */
+  .tag.observed { color: var(--warn); border-color: var(--warn); }
   ul { margin: .2rem 0; padding-left: 1.1rem; }
   li { margin: .18rem 0; }
   .reason { font-weight: 600; }
@@ -371,6 +400,129 @@ function renderPacket(view, reload) {
   return card;
 }
 
+/**
+ * One WorkItem card: identity, then the AUTHORITATIVE lane, then the OBSERVED lane.
+ *
+ * No attention and no aggregate status — see the module header. The heading is the
+ * item's own identity rendered verbatim (label, else the provenance pair), never a
+ * title: ADR-017 §2 keeps title authoritative at the source, so there is nothing here
+ * to mirror.
+ */
+function renderWorkItem(view) {
+  const workItem = view.workItem;
+  const card = el("div", "workitem");
+  card.appendChild(el("h2", null, workItem.aw_label ||
+    (workItem.source_ref ? workItem.source_system + " " + workItem.source_ref
+                         : workItem.source_system)));
+
+  const meta = el("div", "meta wi-identity");
+  meta.appendChild(el("span", "tag", "source: " + workItem.source_system));
+  meta.appendChild(el("span", "tag", "ref: " + (workItem.source_ref || "-")));
+  meta.appendChild(el("span", "tag", "label: " + (workItem.aw_label || "-")));
+  card.appendChild(meta);
+  card.appendChild(el("div", "mono muted", workItem.id));
+
+  // Authoritative first, observed second. A reader who stops after the first
+  // subsection has read only supervised work, which is the safe half to stop at.
+  card.appendChild(renderWorkItemPackets(view.packets));
+  card.appendChild(renderWorkItemSessions(view.observedSessions));
+  return card;
+}
+
+/** The AUTHORITATIVE lane: every packet bound to this WorkItem, each with its own scope. */
+function renderWorkItemPackets(entries) {
+  const wrap = el("div");
+  wrap.appendChild(el("h3", null, "Packets"));
+  wrap.appendChild(el("div", "muted",
+    "Supervised work. Each packet carries its own policy scope."));
+  if (!entries.length) {
+    wrap.appendChild(el("p", "empty", "No packets bound to this work item."));
+    return wrap;
+  }
+  // Projection order, unranked and untruncated: ordering or trimming this list
+  // would need a priority the server does not hold.
+  for (const entry of entries) {
+    const packet = entry.packet;
+    const row = el("div", "wi-packet row");
+    row.appendChild(el("strong", null, packet.title));
+    // Rendered verbatim. "in_progress" and "blocked" exist in the domain type but no
+    // code path can write either, so everything in flight reads "open". Inferring a
+    // livelier word here would manufacture a signal this server does not hold.
+    row.appendChild(el("span", packet.status === "complete" ? "tag done" : "tag",
+      packet.status));
+    // Read from THIS packet, once, per packet — exactly as renderPacket does. A
+    // WorkItem-level scope would be the boundary chosen implicitly (ADR-017 §3).
+    row.appendChild(el("span", "tag scope", "scope: " + entry.policyScope));
+    row.appendChild(el("span", "mono muted", packet.id));
+    wrap.appendChild(row);
+  }
+  return wrap;
+}
+
+/**
+ * The OBSERVED lane: sessions an operator claimed onto this WorkItem.
+ *
+ * **Flat at WorkItem level, never nested under a packet.** A claim names a WorkItem
+ * and no packet, so a session rendered beneath one would put an association on the
+ * page that nothing in the store can hold.
+ *
+ * Each entry says "not supervised" in words as well as in a class, carries no scope
+ * and no status, and gets no derived liveness word: whether a gap since the last
+ * heartbeat means abandonment is evaluation policy that travels with the deferred
+ * attention package, so the timestamps render as themselves.
+ */
+function renderWorkItemSessions(sessions) {
+  const wrap = el("div");
+  wrap.appendChild(el("h3", null, "Observed sessions"));
+  if (!sessions.length) {
+    wrap.appendChild(el("p", "empty", "No observed sessions claimed."));
+    return wrap;
+  }
+  for (const session of sessions) {
+    const row = el("div", "wi-session row");
+    row.appendChild(el("span", "tag observed", "observed - not supervised"));
+    row.appendChild(el("span", "mono", session.node_id + " / " + session.session_id));
+    row.appendChild(el("span", "muted", "started " + when(session.started_at)));
+    if (session.ended_at) {
+      row.appendChild(el("span", "tag done", "ended " + when(session.ended_at)));
+    } else {
+      row.appendChild(el("span", "muted",
+        "last heartbeat " + when(session.last_heartbeat_at)));
+    }
+    row.appendChild(el("span", "muted", "claimed " + when(session.claimed_at)));
+    wrap.appendChild(row);
+  }
+  return wrap;
+}
+
+/** The WorkItem lane — B6's primary surface, so it renders above the packet lane. */
+function renderWorkItemLane(views) {
+  const wrap = el("div");
+  wrap.appendChild(el("h2", "lane", "Work items"));
+  if (!views.length) {
+    wrap.appendChild(el("p", "empty", "No work items."));
+    return wrap;
+  }
+  for (const view of views) wrap.appendChild(renderWorkItem(view));
+  return wrap;
+}
+
+/**
+ * The packet lane, unchanged in every respect that matters — attention included --
+ * and now wrapped in its own heading and its own empty state so that an empty packet
+ * lane no longer takes the whole page with it and hides the WorkItem lane above.
+ */
+function renderPacketLane(views, reload) {
+  const wrap = el("div");
+  wrap.appendChild(el("h2", "lane", "Work packets"));
+  if (!views.length) {
+    wrap.appendChild(el("p", "empty", "No active work packets."));
+    return wrap;
+  }
+  for (const view of views) wrap.appendChild(renderPacket(view, reload));
+  return wrap;
+}
+
 let loadGeneration = 0;
 
 async function load() {
@@ -382,11 +534,8 @@ async function load() {
     if (generation !== loadGeneration) return;
     document.getElementById("stamp").textContent = "as of " + when(data.generatedAt);
     root.replaceChildren();
-    if (!data.packets.length) {
-      root.appendChild(el("p", "empty", "No active work packets."));
-      return;
-    }
-    for (const view of data.packets) root.appendChild(renderPacket(view, load));
+    root.appendChild(renderWorkItemLane(data.workItems || []));
+    root.appendChild(renderPacketLane(data.packets, load));
   } catch (e) {
     if (generation !== loadGeneration) return;
     say(e.message, "err");

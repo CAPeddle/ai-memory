@@ -103,10 +103,24 @@ Whether you get the right object depends on whether the connection you were hand
 previously served a graph query. The same code passes locally, passes in CI, and
 then resolves differently in production once the entity worker has run.
 
-It is also a **growing** trap. Every new schema added to this repo inherits it, and
-nothing in the codebase warns you: there is no lint rule, no `search_path` reset on
-checkout, and no test that would catch an unqualified reference. `docs/solutions/`
-had no learning on it before this one despite four live sites.
+It is also a **growing** trap, and the guard against it is narrower than it looks.
+
+`server/tests/workflow-boundary.test.ts` — *"boundary: every workflow SQL identifier is
+schema-qualified"* — regex-scans the workflow store and fails the build on an unqualified
+`FROM` / `INTO` / `JOIN` / `UPDATE` target. It carries its own red/green self-test, and it
+demonstrably shapes code: one store function is written UPDATE-then-INSERT specifically to
+avoid tripping it, and the scanner itself was later corrected to exclude `DO UPDATE SET`.
+So for that one file the rule is **enforced**, not merely followed.
+
+Everywhere else it is unguarded. The scanner reads a single file. The server entrypoint,
+the entity worker, every memory-domain statement against `public.*`, and any future
+workflow file that grows raw SQL have no lint rule, no `search_path` reset on checkout,
+and no test that would catch an unqualified reference.
+
+*(Corrected 2026-08-25: this passage previously said no test existed at all. That was
+inaccurate when written rather than later — the scanner landed in the same commit as this
+learning. `docs/solutions/` genuinely had no learning on the trap before this one, despite
+four live sites.)*
 
 ## When to Apply
 

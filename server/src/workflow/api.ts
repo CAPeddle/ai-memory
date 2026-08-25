@@ -24,7 +24,14 @@ import { Hono } from "npm:hono@4.9.2";
 import type { Context } from "npm:hono@4.9.2";
 import { z } from "npm:zod@4.1.13";
 
-import { buildOverview, buildPacketView } from "./readModel.ts";
+import {
+  buildOverview,
+  buildPacketView,
+  buildWorkItemOverview,
+  buildWorkItemView,
+  buildWorkItemViewByProvenance,
+} from "./readModel.ts";
+import { createWorkItemSchema, sourceSystemSchema } from "./schema.ts";
 import * as store from "./store.ts";
 import {
   CompletionBlockedError,
@@ -105,6 +112,76 @@ const evidenceSchema = z.object({
   recordedCommit: z.string().nullish(),
 });
 
+/**
+ * The WorkItem binding's body — one id and nothing else.
+ *
+ * Deliberately NOT `createWorkItemSchema`: binding names an existing WorkItem, it
+ * does not describe one. A route that accepted a provenance pair here would be a
+ * second creation path wearing an update's name, and the WorkItem it minted would
+ * bypass whatever the create route later grows.
+ */
+const bindWorkItemSchema = z.object({
+  workItemId: z.uuid(),
+});
+
+/**
+ * The claim's body: the composite key of an already-observed session, and nothing else.
+ *
+ * `nodeId` and `sessionId` together are ONE reference — `observed_sessions` is keyed on
+ * the pair, because `session_id` is client-generated and explicitly non-authoritative
+ * (KTD-B4 item 3) and only means something scoped to the node whose bearer the hub
+ * proved. Accepting a bare `sessionId` would be accepting a value one node can use to
+ * name another node's session.
+ *
+ * The 256-character bound mirrors `sessionPayloadSchema` in observedSession.ts, which
+ * is the only place a `session_id` can legitimately enter the system: a claim naming a
+ * longer one is naming a session the lane could never have stored. `.min(1)` sits ahead
+ * of `observed_sessions`'s own `CHECK (session_id <> '')` so an empty id is a 400 the
+ * caller can act on rather than a 500 from a constraint deeper in.
+ *
+ * There is deliberately nothing else here — no work-item fields (the claim names an
+ * existing one, it does not describe one), and no scope, status or attention, none of
+ * which a claim may invent.
+ */
+const claimSessionSchema = z.object({
+  nodeId: z.uuid(),
+  sessionId: z.string().min(1).max(256),
+});
+
+/**
+ * The provenance lookup's QUERY STRING — `?source=<s>&ref=<r>` (KTD-B5).
+ *
+ * **Query parameters rather than path segments, and that is a contract rather than a
+ * style choice.** ADR-017 §2's own example refs include `#57`, which no path segment
+ * can carry — `#` opens a fragment the client never sends — and a Jira-style key
+ * containing a slash would split into two segments. Percent-encoding in a query
+ * parameter round-trips both, so the route resolves the identifiers the source
+ * systems actually use rather than the subset a path happens to tolerate.
+ *
+ * `source` reuses `sourceSystemSchema` for the same reason the create route reuses
+ * `createWorkItemSchema`: §2's closed set is the versioned contract, and a second
+ * declaration of it here would be a second place for the vocabulary to drift.
+ *
+ * **`awcp-native` is refused rather than left to miss.** The pair rule gives every
+ * native row a null `source_ref`, so no ref can ever resolve one — the request is
+ * itself the mistake, and a 404 would send the caller looking for a row that cannot
+ * exist. The message is `checkProvenancePair`'s, deliberately, so the same
+ * impossibility reads the same way whether it is met on the way in or on the way out.
+ */
+const byRefQuerySchema = z.object({
+  source: sourceSystemSchema,
+  ref: z.string().min(1),
+}).superRefine((value, ctx) => {
+  if (value.source === "awcp-native") {
+    ctx.addIssue({
+      code: "custom",
+      path: ["source"],
+      message:
+        "awcp-native work names no foreign namespace: it carries no sourceRef and cannot be resolved by one",
+    });
+  }
+});
+
 const idSchema = z.uuid();
 
 // ---------------------------------------------------------------------------
@@ -115,6 +192,8 @@ const idSchema = z.uuid();
 const FK_VIOLATION = "23503";
 /** Postgres SQLSTATE for a malformed literal — e.g. a non-uuid where a uuid is due. */
 const INVALID_TEXT_REPRESENTATION = "22P02";
+/** Postgres SQLSTATE for a unique-constraint violation. */
+const UNIQUE_VIOLATION = "23505";
 
 interface HttpError {
   status: 400 | 404 | 409 | 500;
@@ -187,7 +266,7 @@ export function toHttpError(err: unknown): HttpError {
       body: {
         error: "WorkflowNotFoundError",
         message:
-          "a referenced work packet, agent run or verification criterion does not exist",
+          "a referenced work packet, agent run, verification criterion, work item or observed session does not exist",
         // Unlike the WorkflowNotFoundError branch above, the FK violation does not
         // tell us WHICH id was missing — Postgres reports only that some constraint
         // was violated. `null` rather than omitting the key: every WorkflowNotFoundError
@@ -201,6 +280,21 @@ export function toHttpError(err: unknown): HttpError {
     return {
       status: 400,
       body: { error: "BadRequest", message: "malformed identifier" },
+    };
+  }
+  // Same reasoning as the foreign-key branch above, for the same reason it is easy to
+  // miss: `createWorkItem` carries no existence check and relies on
+  // uq_work_items_provenance, so a second create for a pair that already exists arrives
+  // as 23505. Answering 500 would tell the caller the server is broken when the request
+  // was a duplicate, and would invite the retry that can never succeed. The message
+  // deliberately does not echo Postgres's own text, which names the index.
+  if (state === UNIQUE_VIOLATION) {
+    return {
+      status: 409,
+      body: {
+        error: "ConflictError",
+        message: "a record with these identifying values already exists",
+      },
     };
   }
 
@@ -398,8 +492,95 @@ export function createWorkflowApi(): Hono {
       return c.json(result as Json, successStatus);
     });
 
+  // --- Work items ---------------------------------------------------------
+
+  /**
+   * Create a WorkItem (ADR-017 §1-§4). OPERATOR-ONLY — see policy.ts.
+   *
+   * The body schema is `createWorkItemSchema` from schema.ts rather than a private
+   * copy declared here beside the others. That is the one deliberate break from this
+   * file's own idiom, and it is the ADR's instruction: §2's closed provenance set and
+   * the pair rule that goes with it are the versioned contract, so a second
+   * declaration of them at the HTTP edge would be a second place for the vocabulary
+   * to drift. Everything the schema does NOT accept is load-bearing too — no
+   * `awLabel` (§4 mints nothing here), no `policyScope` (§3), no `status` (§6), no
+   * `title` (§2) — and a plain `z.object` strips all four rather than smuggling them
+   * through.
+   */
+  api.post(
+    "/work-items",
+    command(createWorkItemSchema, [], (body) =>
+      store.createWorkItem({
+        sourceSystem: body.sourceSystem,
+        sourceRef: body.sourceRef ?? null,
+      })),
+  );
+
+  /**
+   * Bind a packet to a WorkItem. OPERATOR-ONLY — see policy.ts.
+   *
+   * PATCH rather than POST because this sets one field on an existing packet;
+   * it is the module's only non-POST write, which is why policy.ts's classification
+   * has to be method-aware for it and not merely path-aware.
+   *
+   * 200 rather than 201: nothing is created. The updated packet comes back so the
+   * caller can see the binding it just made without a second read.
+   */
+  api.patch(
+    "/packets/:packetId/work-item",
+    command(
+      bindWorkItemSchema,
+      ["packetId"],
+      (body, params) => store.bindPacketToWorkItem(params.packetId, body.workItemId),
+      200,
+    ),
+  );
+
+  /**
+   * Claim an observed session for a WorkItem. OPERATOR-ONLY — see policy.ts.
+   *
+   * **The claim is explicit; nothing infers it.** An observed session announces itself
+   * on the node lane and stays unassociated until an operator says which requested work
+   * it belongs to. `POST /packets/:packetId/runs` is not a precedent for making this
+   * agent-callable: that route attaches execution to work that is ALREADY supervised,
+   * whereas a packet-less WorkItem is by KTD-D4 not supervised at all — and the caller
+   * here holds no proof of ownership over the session it is naming, because the node
+   * lane's cross-node defence covers `node_id` at the node's own route and reaches no
+   * further.
+   *
+   * **201 on a replay too, and that is decided rather than defaulted.** The response is
+   * the association, which exists either way, and `store.claimSessionForWorkItem`
+   * returns the identical row both times. Splitting the status on whether the INSERT
+   * happened would put "did this write?" into the contract — the exact
+   * exclusion-versus-report conflation the `SELECT`-derived acknowledgement exists to
+   * keep out — and would make a caller's retry look like a failure.
+   *
+   * **No unclaim counterpart.** KTD-D5's table shape permits one; its authorization is
+   * unspecified, so it is not built here.
+   */
+  api.post(
+    "/work-items/:workItemId/sessions",
+    command(
+      claimSessionSchema,
+      ["workItemId"],
+      (body, params) =>
+        store.claimSessionForWorkItem(params.workItemId, body.nodeId, body.sessionId),
+    ),
+  );
+
   // --- Work packets -------------------------------------------------------
 
+  /**
+   * Create a packet.
+   *
+   * **`workItemId` is not in `createPacketSchema`, and its absence is the contract**
+   * (ADR-017 §3, KTD-D4). A plain `z.object` strips an unknown key, so a body
+   * carrying one parses to a body that does not, and `store.createPacket` never
+   * names the column. Binding is the operator-only PATCH above; if it were reachable
+   * here, an agent key — which may legitimately create packets — could mint a packet
+   * already parented to a WorkItem and become the scope authority for anything
+   * reached through it.
+   */
   api.post(
     "/packets",
     command(createPacketSchema, [], (body) =>
@@ -576,6 +757,99 @@ export function createWorkflowApi(): Hono {
           {
             error: "WorkflowNotFoundError",
             message: `No such work packet: ${parsed.data}`,
+            id: parsed.data,
+          },
+          404,
+        );
+      }
+      return c.json(view as unknown as Json, 200);
+    }),
+  );
+
+  // --- Work item reads (ST-097 B5) ----------------------------------------
+  //
+  // These three are READS, so they are deliberately NOT in `OPERATOR_ONLY_ROUTES`
+  // — they match `/overview`'s existing posture, and an agent key must be able to
+  // GET them. The read-authorization limit that comes with that posture is real and
+  // is stated rather than implied: every authenticated caller of `/api/workflow`
+  // already sees every active packet through `/overview`, because retrieval-time
+  // scope enforcement was deferred to Stage 2. These routes inherit that and add no
+  // object-level authorization of their own. Closing it is ST-082's job.
+  //
+  // What they add over `/overview`, which is the whole reason they exist: resolution
+  // by an EXTERNAL reference with no uuid in hand, and reach into COMPLETE packets,
+  // which `buildOverview`'s active-only packet lane excludes.
+
+  /**
+   * Every WorkItem, under the projection ADR-017 §6 settles.
+   *
+   * Wrapped in `{ workItems: [...] }` rather than returned as a bare array: a
+   * top-level JSON array is awkward to extend without breaking every consumer, and
+   * this is the one surface the CLI and the web UI both read.
+   */
+  api.get(
+    "/work-items",
+    withErrorMapping(async (c) => {
+      return c.json({ workItems: await buildWorkItemOverview() } as unknown as Json, 200);
+    }),
+  );
+
+  /**
+   * Resolve a WorkItem by its provenance pair — `ST-097`, `PROJ-1234`, `#57`.
+   *
+   * **Registered BEFORE `/work-items/:workItemId`, and the order is load-bearing.**
+   * `by-ref` is a literal segment sitting where a uuid parameter also matches; if the
+   * parameter route won, `by-ref` would be parsed as an id, fail the uuid check, and
+   * answer 400 — a route that exists and is unreachable.
+   *
+   * A miss is a 404 whose body carries `id: null`, matching `toHttpError`'s
+   * foreign-key branch: every `WorkflowNotFoundError`-discriminated body keeps the
+   * same key set, so a consumer trusting the discriminator to imply a shape does not
+   * break on the one branch that has no id to name.
+   */
+  api.get(
+    "/work-items/by-ref",
+    withErrorMapping(async (c) => {
+      const parsed = byRefQuerySchema.safeParse({
+        source: c.req.query("source"),
+        ref: c.req.query("ref"),
+      });
+      if (!parsed.success) {
+        return c.json({
+          error: "BadRequest",
+          message: "source and ref must name a provenance pair from ADR-017 §2's closed set",
+          issues: normalizeZodIssues(parsed.error.issues),
+        }, 400);
+      }
+
+      const view = await buildWorkItemViewByProvenance(parsed.data.source, parsed.data.ref);
+      if (view === null) {
+        return c.json({
+          error: "WorkflowNotFoundError",
+          message: `No work item with provenance ${parsed.data.source}/${parsed.data.ref}`,
+          id: null,
+        }, 404);
+      }
+      return c.json(view as unknown as Json, 200);
+    }),
+  );
+
+  api.get(
+    "/work-items/:workItemId",
+    withErrorMapping(async (c) => {
+      const parsed = idSchema.safeParse(c.req.param("workItemId"));
+      if (!parsed.success) {
+        return c.json({
+          error: "BadRequest",
+          message: "workItemId must be a uuid",
+        }, 400);
+      }
+      const view = await buildWorkItemView(parsed.data);
+      if (view === null) {
+        return c.json(
+          {
+            error: "WorkflowNotFoundError",
+            message: `No such work item: ${parsed.data}`,
             id: parsed.data,
           },
           404,

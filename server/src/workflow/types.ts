@@ -37,6 +37,142 @@ export const POLICY_SCOPES: readonly PolicyScope[] = [
   "public",
 ] as const;
 
+/**
+ * ADR-017 §2 — the closed set a WorkItem's provenance may name.
+ *
+ * Closed rather than open for the same reason {@link POLICY_SCOPES} is: a value
+ * outside the set is a caller error, not a new integration. Widening it is an
+ * amendment to ADR-017 §2 — its own Revisit Triggers say so explicitly — not an
+ * edit at a call site.
+ *
+ * `awcp-native` is how work AWCP itself originated is represented. It names no
+ * foreign namespace, so such items carry a null `source_ref`.
+ */
+export type SourceSystem = "jira" | "github" | "story-board" | "awcp-native";
+
+export const SOURCE_SYSTEMS: readonly SourceSystem[] = [
+  "jira",
+  "github",
+  "story-board",
+  "awcp-native",
+] as const;
+
+/**
+ * ADR-017 — one unit of *requested* work, and the optional parent of zero or more
+ * {@link WorkPacket}s.
+ *
+ * **The omissions are the contract, so they are listed rather than left to be
+ * rediscovered as gaps.**
+ *
+ *   - **No status field, and no derived status.** §6: a WorkItem has no aggregate
+ *     status and no status projection. Requested-work status stays authoritative at
+ *     its source (§2), and deriving one from packets whose own {@link PacketStatus}
+ *     cannot leave `open` would manufacture a signal the server does not hold.
+ *     There is nothing here to design later; a field added here reverses a settled
+ *     decision.
+ *   - **No {@link PolicyScope}.** §3: a Work Packet is the only authority for its
+ *     own Policy Scope. A scope-gated operation reached through a WorkItem names
+ *     the specific packet whose scope governs it — nothing is derived, defaulted or
+ *     inferred from the set of a WorkItem's packets, because choosing among several
+ *     packets' scopes implicitly would be choosing the boundary. There is no field
+ *     to fabricate.
+ *   - **No title, and no other copy of requested work.** §2 names *title*,
+ *     hierarchy, priority and status as the columns whose authority sits at the
+ *     source. The provenance pair is a reference to that authority, never a mirror
+ *     of it.
+ *   - **No attention.** §3: a WorkItem defines no attention semantics, no reasons
+ *     and no rendering. {@link AttentionReason} stays derived and packet-level.
+ *
+ * Both secondary identities are nullable and neither is a primary key (§1) — the
+ * `id` is the only identity, and both `(source_system, source_ref)` and `aw_label`
+ * resolve *to* it. `aw_label` is nullable on every row rather than on native rows
+ * only: §4 gives a dogfooded `story-board` item its own `AW-NNN` alongside its
+ * provenance, and the label stays null until the allocator that mints `AW-NNN`
+ * exists — which ADR-017 describes and deliberately does not build.
+ */
+export interface WorkItem {
+  id: string;
+  source_system: SourceSystem;
+  source_ref: string | null;
+  aw_label: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+/**
+ * What a caller may supply to create a WorkItem.
+ *
+ * Camel-cased to match `CreatePacketInput` and the other store inputs, which
+ * is the seam where the API's naming meets the row's snake_case.
+ *
+ * **`awLabel` is absent, and that absence is the point.** ADR-017 §4 allocates
+ * `AW-NNN` from AWCP's own persistence, where a database can enforce uniqueness —
+ * never from a caller and never from the `ST-NNN` development-story registry. A
+ * creation input with no label field cannot carry a minted one.
+ */
+export interface CreateWorkItemInput {
+  sourceSystem: SourceSystem;
+  sourceRef?: string | null;
+}
+
+/**
+ * One CLAIM: an observed session associated with a WorkItem (ADR-017, KTD-D5).
+ *
+ * **An explicit operator act, never an inference.** Nothing derives this row from an
+ * observation — `ingestRunEvents` materialises `observed_sessions` and stops there,
+ * and a session that is never claimed stays observed forever, which is a legitimate
+ * terminal state rather than a gap.
+ *
+ * **A claim does not promote the session.** A claimed session is still an
+ * OBSERVATION: it carries no run, no packet and no policy scope, and this row adds
+ * none of the three. An authoritative execution is an `agent_runs` row under a
+ * packet, and nothing converts one into the other.
+ *
+ * `(node_id, session_id)` is the composite reference to `observed_sessions`, not two
+ * independent fields — `session_id` is client-generated and explicitly
+ * non-authoritative (KTD-B4 item 3), so it is only ever meaningful scoped to the node
+ * whose bearer the hub actually proved.
+ *
+ * **There is no `released_at`, and no unclaim.** KTD-D5's table shape permits one, but
+ * its authorization is unspecified; a column added ahead of that decision would be the
+ * lifecycle chosen by whoever wrote the row type first.
+ */
+export interface WorkItemSessionClaim {
+  id: string;
+  work_item_id: string;
+  node_id: string;
+  session_id: string;
+  claimed_at: Date;
+}
+
+/**
+ * A claimed observed session as the read model presents it (ST-097 B5): the claim
+ * joined to the `observed_sessions` row it names.
+ *
+ * **This is the OBSERVED half of a WorkItem's state, and its shape is what says so.**
+ * It carries no packet, no run and no {@link PolicyScope} — the same three absences
+ * `workflow.observed_sessions` itself has — so a consumer cannot read it as
+ * supervised work by mistake. An authoritative execution is an {@link AgentRun} under
+ * a {@link WorkPacket}; nothing converts one into the other, and the read model does
+ * not blur the two by presenting them under one key.
+ *
+ * **There is no status, and none is derived.** `ended_at IS NOT NULL` is a clean
+ * close; abandonment is a gap since `last_heartbeat_at`. The gap THRESHOLD is
+ * evaluation policy that travels with the deferred attention package (KTD-B4 item 5),
+ * so this type carries the timestamps and reduces none of them to a word. A boolean
+ * like `active` or `abandoned` added here would be that deferred decision taken by
+ * whoever wrote the projection first.
+ */
+export interface ClaimedObservedSession {
+  work_item_id: string;
+  node_id: string;
+  session_id: string;
+  started_at: Date;
+  last_heartbeat_at: Date;
+  ended_at: Date | null;
+  claimed_at: Date;
+}
+
 export type PacketStatus = "open" | "in_progress" | "blocked" | "complete";
 export type RunStatus = "running" | "ended" | "failed";
 export type DecisionStatus = "open" | "resolved";
@@ -52,6 +188,16 @@ export interface WorkPacket {
   branch: string | null;
   policy_scope: PolicyScope;
   status: PacketStatus;
+  /**
+   * The optional parent {@link WorkItem} (ADR-017 §3), added by migration 005.
+   *
+   * **Nullable is the contract, not a convenience.** A packet is entirely valid with
+   * no parent, and every packet that predates the WorkItem layer stays valid,
+   * unchanged and unparented. Binding is its own operator-only write and is never
+   * settable at creation — `CreatePacketInput` deliberately has no counterpart to
+   * this field, so a packet cannot arrive already parented.
+   */
+  work_item_id: string | null;
   created_at: Date;
   updated_at: Date;
   completed_at: Date | null;

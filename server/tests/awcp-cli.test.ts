@@ -31,6 +31,7 @@ import {
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 
 import { sql } from "../src/db.ts";
+import * as store from "../src/workflow/store.ts";
 import { startServerProcess } from "./_helpers/serverProcess.ts";
 import {
   cliGrants,
@@ -80,6 +81,87 @@ function cliEnv(extra: Record<string, string> = {}): Record<string, string> {
     MEMORY_API_KEY: OPERATOR_KEY,
     ...extra,
   };
+}
+
+// ---------------------------------------------------------------------------
+// ST-097 B7 — fixtures for `awcp status`
+//
+// The CLI has no subcommand that creates a WorkItem, binds a packet to one, or
+// claims an observed session: all three are operator writes it deliberately does
+// not expose. The fixture therefore builds them through the store, exactly as the
+// read-model tests do, and the CLI is driven only over the read routes it does
+// expose — which is the whole point of the subcommand under test.
+// ---------------------------------------------------------------------------
+
+async function sha256Hex(input: string): Promise<string> {
+  const bytes = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest("SHA-256", bytes.slice().buffer);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
+ * Observe a session into existence through `ingestRunEvents`, not through a
+ * hand-written INSERT — a session that never travelled the node lane is not the
+ * thing a claim claims.
+ */
+async function observeSession(): Promise<{ nodeId: string; sessionId: string }> {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  const bearer = Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+
+  const node = await store.upsertExecutionNode({
+    bearerTokenHash: await sha256Hex(bearer),
+    hostname: "b7-awcp-status.test",
+    platform: "deno-test",
+    allowEnrolment: true,
+  });
+  assert(node !== null, "enrolment must succeed for a fresh bearer");
+
+  const sessionId = `b7-awcp-status-${crypto.randomUUID()}`;
+  await store.ingestRunEvents(node.node_id, [{
+    client_seq: 1,
+    event_type: "session_start",
+    payload: { session_id: sessionId, node_id: node.node_id, at: new Date().toISOString() },
+  }]);
+  return { nodeId: node.node_id, sessionId };
+}
+
+/**
+ * One WorkItem with TWO packets carrying DIFFERENT policy scopes, plus one claimed
+ * observed session.
+ *
+ * The two scopes are what make the per-packet-scope assertion non-vacuous: a
+ * renderer that aggregated to a single WorkItem-level scope — by any rule — could
+ * not print both.
+ */
+async function statusFixture() {
+  // Unique, but deliberately NOT uuid-shaped: the by-provenance step asserts that no
+  // argument it passes looks like a uuid, and a ref carrying one would defeat that.
+  const sourceRef = `ST-097-b7-${crypto.randomUUID().replaceAll("-", "")}`;
+  const item = await store.createWorkItem({
+    sourceSystem: "story-board",
+    sourceRef,
+  });
+
+  const corporate = await store.createPacket({
+    title: "B7 probe (corporate)",
+    objective: "prove the CLI keeps scope per packet",
+    policyScope: "corporate",
+  });
+  const personal = await store.createPacket({
+    title: "B7 probe (personal)",
+    objective: "prove the CLI keeps scope per packet",
+    policyScope: "personal",
+  });
+  await store.bindPacketToWorkItem(corporate.id, item.id);
+  await store.bindPacketToWorkItem(personal.id, item.id);
+
+  const observed = await observeSession();
+  await store.claimSessionForWorkItem(item.id, observed.nodeId, observed.sessionId);
+
+  return { item, sourceRef, corporate, personal, observed };
 }
 
 // ---------------------------------------------------------------------------
@@ -654,6 +736,238 @@ Deno.test({
           stall.abort();
         }
       });
+      // ------------------------------------------------------------------
+      // ST-097 B7 — `awcp status`, the SECONDARY read surface
+      //
+      // What is at stake here is not "the CLI can print": it is that the second
+      // client of the WorkItem read model renders the same distinctions the web UI
+      // renders, and synthesises nothing the projection does not hold. ADR-017 §6
+      // says both clients consume the same read model and neither computes anything;
+      // these steps are what makes that checkable on the CLI side.
+      // ------------------------------------------------------------------
+
+      await t.step("ST-097 B7: status resolves a work item by provenance, holding no uuid", async () => {
+        const fixture = await statusFixture();
+
+        // The lookup names ST-097's provenance pair and NOTHING else. No uuid is
+        // passed, which is the property B9 will depend on: an agent that knows only
+        // the story it is working on can reach the item.
+        const result = await runAwcp(
+          ["status", "--source", "story-board", "--ref", fixture.sourceRef],
+          { env: cliEnv() },
+        );
+
+        assertEquals(result.code, 0, `stderr: ${result.stderr}`);
+        const passed = ["status", "--source", "story-board", "--ref", fixture.sourceRef];
+        assert(
+          !passed.some((arg) =>
+            /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/.test(arg)
+          ),
+          "the lookup passed a uuid, so it did not prove resolution by provenance",
+        );
+        assert(
+          !passed.some((arg) => arg.includes(fixture.item.id)),
+          "the lookup named the item's own id, so it did not resolve by provenance",
+        );
+        assertStringIncludes(result.stdout, fixture.item.id);
+        assertStringIncludes(result.stdout, fixture.sourceRef);
+
+        // Both packets, each carrying ITS OWN scope. A renderer that reduced the set
+        // to one WorkItem-level scope could not print both.
+        assertStringIncludes(result.stdout, fixture.corporate.id);
+        assertStringIncludes(result.stdout, fixture.personal.id);
+        assertStringIncludes(result.stdout, "scope: corporate");
+        assertStringIncludes(result.stdout, "scope: personal");
+      });
+
+      await t.step("ST-097 B7: observed sessions are textually distinguishable from packets", async () => {
+        const fixture = await statusFixture();
+        const result = await runAwcp(
+          ["status", "--source", "story-board", "--ref", fixture.sourceRef],
+          { env: cliEnv() },
+        );
+        assertEquals(result.code, 0, `stderr: ${result.stderr}`);
+
+        const lines = result.stdout.split("\n");
+        const sessionLines = lines.filter((line) => line.includes(fixture.observed.sessionId));
+        assertEquals(
+          sessionLines.length,
+          1,
+          `the claimed session should render on exactly one line: ${result.stdout}`,
+        );
+
+        // The same words the dashboard puts on the page, so a human reading either
+        // surface is told the same thing.
+        assertStringIncludes(sessionLines[0], "observed - not supervised");
+        assert(
+          !sessionLines[0].includes("scope:"),
+          `an observed session carries no policy scope, so its line must not print one: ${sessionLines[0]}`,
+        );
+
+        // And the discrimination in the other direction: a packet line never wears
+        // the observed marker.
+        const packetLines = lines.filter((line) => line.includes(fixture.corporate.id));
+        assertEquals(packetLines.length, 1, `stdout: ${result.stdout}`);
+        assert(
+          !packetLines[0].includes("observed"),
+          `a supervised packet must not read as an observation: ${packetLines[0]}`,
+        );
+        assertStringIncludes(packetLines[0], "scope: corporate");
+      });
+
+      await t.step("ST-097 B7: nothing in the output is an aggregate work-item status", async () => {
+        const fixture = await statusFixture();
+        const result = await runAwcp(
+          ["status", "--source", "story-board", "--ref", fixture.sourceRef],
+          { env: cliEnv() },
+        );
+        assertEquals(result.code, 0, `stderr: ${result.stderr}`);
+
+        // The identity line carries identity and nothing else. Pinned as an exact
+        // shape rather than sampled, because the failure this guards against is a
+        // helpful summary word appended to it later.
+        const identity = result.stdout.split("\n")
+          .find((line) => line.startsWith("work-item "));
+        assert(identity !== undefined, `no work-item line in: ${result.stdout}`);
+        assertEquals(
+          identity,
+          `work-item ${fixture.item.id}  source: story-board  ref: ${fixture.sourceRef}  label: -`,
+        );
+
+        // Non-vacuous for this fixture: both packets are `open` and the session is
+        // live, so no honest rendering can emit any of these.
+        for (
+          const banned of [
+            "in_progress",
+            "in progress",
+            "blocked",
+            "complete",
+            "done",
+            "stalled",
+            "healthy",
+            "attention",
+          ]
+        ) {
+          assert(
+            !result.stdout.toLowerCase().includes(banned),
+            `"${banned}" is a status word this server does not hold: ${result.stdout}`,
+          );
+        }
+
+        // Packet status renders VERBATIM, once per packet. `in_progress` and
+        // `blocked` are declared but unwritable, so everything in flight reads
+        // `open`; inferring a livelier word would manufacture a signal.
+        assertEquals(
+          result.stdout.split(/\bopen\b/).length - 1,
+          2,
+          `each of the two packets should print its own verbatim status: ${result.stdout}`,
+        );
+      });
+
+      await t.step("ST-097 B7: the uuid lookup and the provenance lookup render identically", async () => {
+        const fixture = await statusFixture();
+        const byRef = await runAwcp(
+          ["status", "--source", "story-board", "--ref", fixture.sourceRef],
+          { env: cliEnv() },
+        );
+        const byId = await runAwcp(["status", "--work-item", fixture.item.id], {
+          env: cliEnv(),
+        });
+
+        assertEquals(byId.code, 0, `stderr: ${byId.stderr}`);
+        // One renderer over one read model: two ways in cannot disagree.
+        assertEquals(byId.stdout, byRef.stdout);
+      });
+
+      await t.step("ST-097 B7: a '#'-prefixed github ref survives the query encoding", async () => {
+        // KTD-B5 routed provenance lookup through query parameters precisely because
+        // `#57` cannot travel in a path segment. Built with URLSearchParams rather
+        // than concatenation, a naive `?ref=#57` truncates at the fragment and the
+        // server sees an empty ref.
+        const sourceRef = `#57-${crypto.randomUUID()}`;
+        const item = await store.createWorkItem({
+          sourceSystem: "github",
+          sourceRef,
+        });
+
+        const result = await runAwcp(
+          ["status", "--source", "github", "--ref", sourceRef],
+          { env: cliEnv() },
+        );
+        assertEquals(result.code, 0, `stderr: ${result.stderr}`);
+        assertStringIncludes(result.stdout, item.id);
+        assertStringIncludes(result.stdout, sourceRef);
+      });
+
+      await t.step("ST-097 B7: the listing names every work item, and an absent one is a 404", async () => {
+        const fixture = await statusFixture();
+
+        const listing = await runAwcp(["status"], { env: cliEnv() });
+        assertEquals(listing.code, 0, `stderr: ${listing.stderr}`);
+        assertStringIncludes(listing.stdout, fixture.item.id);
+
+        const missing = await runAwcp(
+          ["status", "--source", "jira", "--ref", `PROJ-${crypto.randomUUID()}`],
+          { env: cliEnv() },
+        );
+        assertEquals(missing.code, 2);
+        assertStringIncludes(missing.stderr, "404");
+      });
+
+      await t.step("ST-097 B7: status handles credentials exactly as the reporting subcommands do", async () => {
+        const fixture = await statusFixture();
+
+        // No credential at all. Built directly rather than through cliEnv(), which
+        // always supplies the operator key — an absent-key test written with it would
+        // prove nothing.
+        const absent = await runAwcp(
+          ["status", "--source", "story-board", "--ref", fixture.sourceRef],
+          { env: { AWCP_BASE_URL: serverBaseUrl } },
+        );
+        assertEquals(absent.code, 2);
+        assertStringIncludes(
+          absent.stderr,
+          "neither AWCP_AGENT_API_KEY nor MEMORY_API_KEY is set",
+        );
+
+        // A wrong key fails the way a wrong key fails for `packet` — same status,
+        // same shape — so the read route inherits the credential contract rather than
+        // inventing one.
+        const wrongEnv = { AWCP_BASE_URL: serverBaseUrl, MEMORY_API_KEY: "not-the-key" };
+        const wrongRead = await runAwcp(
+          ["status", "--source", "story-board", "--ref", fixture.sourceRef],
+          { env: wrongEnv },
+        );
+        const wrongWrite = await runAwcp([
+          "packet",
+          "--title",
+          "ST-097 B7 wrong key",
+          "--objective",
+          "the credential contract is the same on both",
+          "--policy-scope",
+          "personal",
+        ], { env: wrongEnv });
+        assertEquals(wrongRead.code, wrongWrite.code);
+        assertStringIncludes(wrongRead.stderr, "401");
+        assertStringIncludes(wrongWrite.stderr, "401");
+
+        // And the narrower agent key reads it: KTD-B3 classifies the three
+        // `/work-items` GETs agent-callable, matching /overview's posture.
+        const agent = await runAwcp(
+          ["status", "--source", "story-board", "--ref", fixture.sourceRef],
+          { env: { AWCP_BASE_URL: serverBaseUrl, AWCP_AGENT_API_KEY: AGENT_KEY } },
+        );
+        assertEquals(agent.code, 0, `stderr: ${agent.stderr}`);
+        assertStringIncludes(agent.stdout, fixture.item.id);
+      });
+
+      await t.step("ST-097 B7: usage documents the subcommand it now ships", async () => {
+        const help = await runAwcp(["help"], { env: cliEnv() });
+        assertEquals(help.code, 0, `stderr: ${help.stderr}`);
+        assertStringIncludes(help.stdout, "awcp status");
+        assertStringIncludes(help.stdout, "--source");
+      });
+
     } finally {
       await server.stop();
     }

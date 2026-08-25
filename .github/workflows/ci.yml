@@ -101,6 +101,45 @@ jobs:
         working-directory: contact-memory
         run: deno task test
 
+  story-id-registry:
+    # Mechanical check for the ST-NNN allocator (.github/planning/story-ids.md).
+    # Verifies registry integrity (no duplicate or malformed allocation lines)
+    # and coverage: every `### ST-NNN` board entry on every fetched ref, and
+    # every `story:` in docs/plans/ frontmatter, must be allocated.
+    #
+    # fetch-depth: 0 is load-bearing, not a habit: the authoritative set is the
+    # union of the registry across all refs, and the coverage assertion should
+    # see board entries on branches that are pushed but not yet merged. A
+    # shallow single-ref checkout would still pass, having checked less.
+    #
+    # It does NOT reach a branch that was never pushed — on a runner, origin is
+    # GitHub, and no fetch depth conjures a ref that only exists on someone's
+    # laptop. `docs/gsd-ce-drive-direction`, which today is the only home of
+    # ST-095's board entry, is exactly such a branch. That is not a hole in this
+    # job; it is why the registry rather than the scan is the authority. ST-095
+    # is protected because its line is IN .github/planning/story-ids.md, not
+    # because CI can see the branch it came from.
+    #
+    # What this job CANNOT enforce: the mint-time refusal that stops a second
+    # branch taking an ID a first branch already claimed. That depends on seeing
+    # branches that were never pushed, so it lives in ./story-id.sh and runs on
+    # the developer's machine. CI catches the wreckage; the script prevents it.
+    # ./tests/story-id.test.sh is what keeps the refusal itself honest — it
+    # builds throwaway repos in a temp dir and needs no services or secrets.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify the story-ID registry
+        run: ./story-id.sh --check
+
+      - name: Allocator self-tests
+        run: ./tests/story-id.test.sh
+
   dotnet-build:
     # Builds src/AiMemory.sln (includes GovernanceAssetValidator, AiMemory.Core,
     # AiMemory.Server, AiMemory.Tests). No secrets needed — independent of Deno jobs.

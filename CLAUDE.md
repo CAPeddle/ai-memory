@@ -46,7 +46,7 @@ Implementation work is gated by a written plan and tracked on the board — rega
 **Canonical plan format:** [docs/plans/*.md](docs/plans/) — the compound-engineering unified plan artifact (Product Contract / Requirements / Implementation Units, produced by `ce-brainstorm`/`ce-plan` or authored by hand in the same shape). Every plan's YAML frontmatter must include `story: ST-NNN` linking it to its board entry. This is now the canonical format for **new** plans, superseding `.github/planning/execplans/exec-plan-ST-NNN.md` — existing ExecPlans stay in place as historical record and are not retroactively converted.
 
 **Before starting implementation** (via `ce-brainstorm`/`ce-plan`/`ce-work`, ad hoc, or any other path):
-1. Confirm a story-board entry exists for the work; create one if it doesn't (next available `ST-NNN`).
+1. Confirm a story-board entry exists for the work; create one if it doesn't — **mint the `ST-NNN` through the allocator** (`./story-id.sh --mint`), never by reading the board for the highest number. See [Story IDs — mint, never derive](#story-ids--mint-never-derive) below.
 2. Move it Backlog → In Progress, respecting **WIP limits: 1 In Progress, 1 in Review** on [.github/planning/story-board.md](.github/planning/story-board.md).
 3. Once the plan file exists, cross-link it: the plan's `story:` frontmatter and the board entry's `Plan:` field must point at each other.
 
@@ -55,6 +55,44 @@ This is a **soft gate** — session discipline, not mechanical enforcement. Triv
 **VS Code Copilot workflow (legacy, pending migration — ST-066):** `/plan-new`, `/plan`, `/continue`, and `/recover` in [.github/prompts/](.github/prompts/) still target the retired ExecPlan format and its §-numbered sections (Recovery Ledger, Execution Log), which have no equivalent in the unified `docs/plans/` format — execution progress there is derived from git history, not stored in the plan body. These prompts remain usable for existing In Progress ExecPlan-driven stories but should not be used to start new work until ST-066 migrates them.
 
 Session handoff lives in [FollowUpSessionLog.txt](FollowUpSessionLog.txt) — replace (not append), max 40 lines, parseable by a fresh agent.
+
+### Story IDs — mint, never derive
+
+**The authoritative set of allocated `ST-NNN` identifiers is [.github/planning/story-ids.md](.github/planning/story-ids.md), and the only operation that writes to it is a mint append performed by [`story-id.sh`](story-id.sh).** Nothing else allocates an ID. The registry is append-only, one line per allocation, seeded with `ST-001`…`ST-097`:
+
+```
+ST-098  2026-08-24  branch:docs/awcp-strategy-baseline  short purpose
+```
+
+**Never derive an ID from a record of completed work** — not the story board, not `docs/plans/`, not `git log --grep`, not `max()` over any of them. Those record *delivery*; the registry records *allocation*, and the difference is exactly the IDs that were reserved and never shipped. `ST-069` is the worked example: it has a plan file and a merged PR (#22) but no board entry at all, so "next after the highest on the board" would have re-issued a number already in use. `ST-023`, `ST-025`, `ST-027`, `ST-033`, `ST-046` and `ST-095` are absent from the board for their own reasons too — all seven are reserved in the registry.
+
+**The authoritative set is the union across every ref, not just `main`.** A mint scans the registry on all local branches, all remote-tracking branches, and the working tree, then takes `max + 1`. That is what lets it refuse an ID another branch has already claimed but not yet merged.
+
+```bash
+./story-id.sh --mint "short purpose"          # allocate the next unused ID
+./story-id.sh --mint --id ST-NNN "purpose"    # ask for a specific ID; refused if taken (exit 3)
+./story-id.sh --check                         # read-only: registry integrity + board/plan coverage
+./story-id.sh --list                          # read-only: dump the authoritative set and where each line lives
+./tests/story-id.test.sh                      # the allocator's own tests
+```
+
+**Allocation is provisional until its line reaches `main`.** An `ST-NNN` minted on a branch may not be used anywhere else — not in a `Story:` trailer, a plan filename, a board entry, or a document — until the commit carrying its allocator line is merged to `main`. So the mint is a two-step:
+
+1. `./story-id.sh --mint "…"` — appends one line and reads it back.
+2. Commit **that file alone**, e.g. `git commit -m 'chore(planning): allocate ST-NNN' .github/planning/story-ids.md`, and land it. Only then does the ID become usable. (An allocator commit carries no `Story:` trailer — it precedes the story it allocates. Every *other* commit for board-tracked work still ends with `Story: ST-NNN` as its final trailer block, and no branch commit may carry a `Co-authored-by:` trailer — see [Merge strategy](#merge-strategy--squash-and-keep-the-trailer).)
+
+If two branches somehow claim the same ID — only possible by bypassing `story-id.sh` — the losing branch is **reallocated and its references updated** before it is accepted. Retaining both lines duplicates the ID; renumbering the winner strands every reference to it.
+
+**Why rejection happens at mint and not at merge.** The append-only shape means two hand-written claims on the same ID collide as a merge conflict, and that backstop is real. But a conflict fires at *integration* time: by then both branches have worked under the duplicate for days, and it has propagated into trailers, filenames and board entries that a one-line file conflict cannot undo. The all-refs scan moves the detection to the moment of allocation, where the cost of being wrong is re-running one command:
+
+```
+$ ./story-id.sh --mint --id ST-098 "…"
+ERROR: ST-098 is already allocated. Refusing to mint a duplicate.
+         claimed by: refs/heads/X  (PROVISIONAL — not yet merged to main)
+         Next unused ID is ST-099. Re-run without --id to take it.
+```
+
+**`--check` runs in CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)) and enforces registry integrity plus coverage: every `### ST-NNN` board entry on any fetched ref, and every `story:` in `docs/plans/` frontmatter, must be allocated. **The mint-time refusal is local-only** — it depends on seeing branches that were never pushed, so CI cannot enforce it. Mint through the script; CI catches the wreckage, not the mistake.
 
 ## Common commands
 
@@ -79,6 +117,10 @@ docker compose --profile test exec mcp-test deno test --frozen --allow-net --all
 #                       workflow-node-hub-e2e.test.ts (each proves over real HTTP
 #                       something no in-process test can: a mount, or what a boot does
 #                       and does not reach). awcp-cli.test.ts (ST-087) spawns the CLI.
+#                       workflow-work-item-dogfooding.test.ts (ST-097, B9) does BOTH:
+#                       it boots a real server and drives the real CLI, because the
+#                       end-to-end claim is that one work item travels create ->
+#                       observe -> claim -> read -> render over real HTTP.
 #                       workflow-node-client-hub-e2e.test.ts (ST-088, Phase 3) also
 #                       spawns one, to prove the real node client's spool clears
 #                       against a real hub process and that the hub's own duplicate
@@ -103,7 +145,9 @@ docker compose --profile test exec mcp-test deno test --frozen --allow-net --all
 #                       by running git and there is no honest way to prove that without
 #                       giving it a repository.
 #   --allow-write=/tmp  that throwaway repository, plus (ST-088, Phase 3)
-#                       awcp-node-client.test.ts and workflow-node-client-hub-e2e.test.ts:
+#                       awcp-node-client.test.ts, workflow-node-client-hub-e2e.test.ts
+#                       and workflow-observed-session-lane.test.ts (ST-097, B3, which
+#                       drives the real node client against an injected AWCP_HOME):
 #                       the node client's every persisted path (spool, state, node_id)
 #                       is injectable specifically so its tests point at a
 #                       Deno.makeTempDir() under /tmp instead of the runner's real

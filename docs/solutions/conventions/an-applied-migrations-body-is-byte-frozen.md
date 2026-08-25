@@ -111,6 +111,22 @@ $ sed 's|server/index.ts:941, :997|server/index.ts:1033, :1089|' \
 Different digest, therefore `MigrationDriftError`, therefore exit 1 before the
 port opens — on every database that already holds the `4b06c583…` row.
 
+**A freeze vector that is not a restart, and not on the test database.** Several
+workflow end-to-end tests boot a *real* server child process with the workflow feature
+enabled, and that child reads `DATABASE_URL` from the environment it inherits — not from
+anything the test pins. The test-database guard does not cover this: it is called only by
+the two files that perform their own destructive teardown, and never on the server-boot
+path. So running one of those e2e files **natively**, against the shared dev Postgres this
+repo's own inner-loop documentation says native tests use, applies and permanently freezes
+every pending migration there. It looks like a test run, not a deployment.
+
+Before querying the dev ledger to decide whether a file is still editable, account for
+that: a test run, not only a server restart, may already have applied it.
+
+*(Checked and does not hold: starting the dev server alone is not a freeze vector. The
+documented dev env file does not enable the workflow feature, and the bootstrap defaults
+it off, so a bare dev start never touches the workflow schema.)*
+
 **Why the trap is quiet — in CI, and in a freshly recreated test stack.**
 `db-test` is tmpfs (`docker-compose.yml:86-87`), and tmpfs is wiped when its
 **container** stops, not between commands run against it — CLAUDE.md documents

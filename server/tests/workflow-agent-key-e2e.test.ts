@@ -27,6 +27,9 @@ import {
   type ServerProcess,
   startServerProcess,
 } from "./_helpers/serverProcess.ts";
+import { sql } from "../src/db.ts";
+import * as store from "../src/workflow/store.ts";
+import type { SourceSystem } from "../src/workflow/types.ts";
 
 const DATABASE_URL = Deno.env.get("DATABASE_URL")!;
 const OPERATOR_KEY = "operator-key-for-agent-boundary-test";
@@ -42,6 +45,53 @@ const AGENT_SPLIT_ENV: Record<string, string> = {
   FEATURE_EMBEDDING_BACKFILL: "false",
   MODEL_PROVIDER_ENABLED: "false",
 };
+
+/** SHA-256 hex, by the same rule remoteNodeHub.ts uses. */
+async function sha256Hex(input: string): Promise<string> {
+  const bytes = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest("SHA-256", bytes.slice().buffer);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
+ * Observe a session into existence for the claim leg below, in THIS process.
+ *
+ * The spawned server shares `DATABASE_URL` with the test process, so a row written
+ * here is a row that server reads. It goes in through `store.ingestRunEvents` rather
+ * than a hand-written INSERT because a session that never travelled the node lane is
+ * not the thing the claim route claims — and the node-lane HTTP route needs an
+ * enrolment secret this test deliberately does not configure.
+ *
+ * The bearer is returned so the node — and, by cascade, its session and any claim on
+ * it — can be dropped afterwards; `db-test` accumulates across runs.
+ */
+async function observeSession(): Promise<{ nodeId: string; sessionId: string; bearer: string }> {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  const bearer = Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+
+  const node = await store.upsertExecutionNode({
+    bearerTokenHash: await sha256Hex(bearer),
+    hostname: "agent-key-claim.test",
+    platform: "deno-test",
+    allowEnrolment: true,
+  });
+  assert(node !== null, "enrolment must succeed for a fresh bearer");
+
+  const sessionId = `agent-key-claim-${crypto.randomUUID()}`;
+  await store.ingestRunEvents(node.node_id, [{
+    client_seq: 1,
+    event_type: "session_start",
+    payload: {
+      session_id: sessionId,
+      node_id: node.node_id,
+      at: new Date().toISOString(),
+    },
+  }]);
+  return { nodeId: node.node_id, sessionId, bearer };
+}
 
 Deno.test({
   sanitizeResources: false,
@@ -195,6 +245,270 @@ Deno.test({
       const stillOpen = await apiCall(server.baseUrl, OPERATOR_KEY, `/api/workflow/packets/${packetId}`);
       assertEquals(stillOpen.body.packet.status, "open");
       assertEquals(stillOpen.body.openDecisions.length, 1, "the decision must still be unresolved");
+
+      // ---------------------------------------------------------------
+      // ST-097 B2a: the two WorkItem write routes. An agent must never create a
+      // WorkItem, and must never bind a packet to one — so both are operator-only,
+      // and each gets the full triple: no key -> 401, agent key -> 403, operator key
+      // -> success. The 401/403 pair is the load-bearing distinction: 403 means the
+      // credential authenticated and the ROUTE refused it, which is a different fact
+      // from "we did not recognise you" and must not be collapsed into it.
+      //
+      // These run on their own fresh packet rather than the one above, which is
+      // completed a few lines further down. Binding to a completed packet is
+      // undefined territory and nothing here should depend on it.
+      // ---------------------------------------------------------------
+      {
+        const noKeyCreate = await fetch(`${server.baseUrl}/api/workflow/work-items`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sourceSystem: "awcp-native" }),
+        });
+        assertEquals(noKeyCreate.status, 401, await noKeyCreate.text());
+      }
+
+      const createItemDenied = await apiCall(
+        server.baseUrl,
+        AGENT_KEY,
+        "/api/workflow/work-items",
+        { method: "POST", body: JSON.stringify({ sourceSystem: "awcp-native" }) },
+      );
+      assertEquals(createItemDenied.status, 403, JSON.stringify(createItemDenied.body));
+
+      const createItemOk = await apiCall(
+        server.baseUrl,
+        OPERATOR_KEY,
+        "/api/workflow/work-items",
+        { method: "POST", body: JSON.stringify({ sourceSystem: "awcp-native" }) },
+      );
+      assertEquals(createItemOk.status, 201, JSON.stringify(createItemOk.body));
+      const workItemId = createItemOk.body.id;
+
+      const bindTarget = await apiCall(server.baseUrl, AGENT_KEY, "/api/workflow/packets", {
+        method: "POST",
+        body: JSON.stringify({
+          title: "binding target",
+          objective: "an agent may still create a packet; it may not parent one",
+          policyScope: "personal",
+        }),
+      });
+      assertEquals(bindTarget.status, 201, JSON.stringify(bindTarget.body));
+      const bindTargetId = bindTarget.body.id;
+
+      // KTD-D4: `work_item_id` is never settable through POST /packets. The agent key
+      // creating a packet is legal; the packet arriving parented would not be.
+      const smuggled = await apiCall(server.baseUrl, AGENT_KEY, "/api/workflow/packets", {
+        method: "POST",
+        body: JSON.stringify({
+          title: "smuggled binding",
+          objective: "prove work_item_id cannot ride in on packet creation",
+          policyScope: "personal",
+          workItemId,
+        }),
+      });
+      assertEquals(smuggled.status, 201, JSON.stringify(smuggled.body));
+      assertEquals(
+        smuggled.body.work_item_id,
+        null,
+        "an agent-created packet must never arrive already parented",
+      );
+
+      {
+        const noKeyBind = await fetch(
+          `${server.baseUrl}/api/workflow/packets/${bindTargetId}/work-item`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ workItemId }),
+          },
+        );
+        assertEquals(noKeyBind.status, 401, await noKeyBind.text());
+      }
+
+      const bindDenied = await apiCall(
+        server.baseUrl,
+        AGENT_KEY,
+        `/api/workflow/packets/${bindTargetId}/work-item`,
+        { method: "PATCH", body: JSON.stringify({ workItemId }) },
+      );
+      assertEquals(bindDenied.status, 403, JSON.stringify(bindDenied.body));
+
+      // The refused bind must not have written. Read it back with the operator key.
+      const stillUnparented = await apiCall(
+        server.baseUrl,
+        OPERATOR_KEY,
+        `/api/workflow/packets/${bindTargetId}`,
+      );
+      assertEquals(stillUnparented.body.packet.work_item_id, null);
+
+      const bindOk = await apiCall(
+        server.baseUrl,
+        OPERATOR_KEY,
+        `/api/workflow/packets/${bindTargetId}/work-item`,
+        { method: "PATCH", body: JSON.stringify({ workItemId }) },
+      );
+      assertEquals(bindOk.status, 200, JSON.stringify(bindOk.body));
+      assertEquals(bindOk.body.work_item_id, workItemId);
+
+      // ---------------------------------------------------------------
+      // ST-097 B4: the claim route. Same full triple as the two above — no key -> 401,
+      // agent key -> 403, operator key -> success — because the same silent failure
+      // mode applies: `requiresOperator` returns false by default, so a claim route
+      // merely omitted from OPERATOR_ONLY_ROUTES would be agent-reachable and nothing
+      // would report it.
+      //
+      // The 401 and 403 legs need no session fixture: the middleware refuses before
+      // any handler runs, and a fixture would let a 404 masquerade as a pass. The
+      // operator leg needs a real observed session, so this one is observed through
+      // the node lane in-process.
+      // ---------------------------------------------------------------
+      const observed = await observeSession();
+      try {
+        {
+          const noKeyClaim = await fetch(
+            `${server.baseUrl}/api/workflow/work-items/${workItemId}/sessions`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                nodeId: observed.nodeId,
+                sessionId: observed.sessionId,
+              }),
+            },
+          );
+          assertEquals(noKeyClaim.status, 401, await noKeyClaim.text());
+        }
+
+        const claimDenied = await apiCall(
+          server.baseUrl,
+          AGENT_KEY,
+          `/api/workflow/work-items/${workItemId}/sessions`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              nodeId: observed.nodeId,
+              sessionId: observed.sessionId,
+            }),
+          },
+        );
+        assertEquals(claimDenied.status, 403, JSON.stringify(claimDenied.body));
+
+        // The refused claim must not have written. A 403 that had associated anyway
+        // would satisfy a status-only assertion while breaking the invariant.
+        const afterDenial = await sql<{ n: string }[]>`
+          SELECT count(*)::text AS n FROM workflow.work_item_sessions
+          WHERE node_id = ${observed.nodeId} AND session_id = ${observed.sessionId}
+        `;
+        assertEquals(Number(afterDenial[0].n), 0, "a refused claim must write nothing");
+
+        const claimOk = await apiCall(
+          server.baseUrl,
+          OPERATOR_KEY,
+          `/api/workflow/work-items/${workItemId}/sessions`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              nodeId: observed.nodeId,
+              sessionId: observed.sessionId,
+            }),
+          },
+        );
+        assertEquals(claimOk.status, 201, JSON.stringify(claimOk.body));
+        assertEquals(claimOk.body.work_item_id, workItemId);
+        assertEquals(claimOk.body.session_id, observed.sessionId);
+
+        // ---------------------------------------------------------------
+        // ST-097 B5: the three WorkItem READS. Unlike everything above them in this
+        // block they are NOT operator-only, so the credential expectation inverts —
+        // agent key -> 200 on all three — and the discrimination control inverts with
+        // it: no key is still 401, which is what proves the 200s are the
+        // classification answering "agent-reachable" rather than the middleware
+        // having been skipped for this prefix altogether.
+        //
+        // Run inside the observed-session fixture on purpose: the work item here is
+        // bound to a packet AND carries a claimed session, so the projection under
+        // test is the full one rather than an empty shell that would satisfy a
+        // status-only assertion.
+        // ---------------------------------------------------------------
+        {
+          const noKeyRead = await fetch(`${server.baseUrl}/api/workflow/work-items`);
+          assertEquals(noKeyRead.status, 401, await noKeyRead.text());
+        }
+
+        const listAsAgent = await apiCall(server.baseUrl, AGENT_KEY, "/api/workflow/work-items");
+        assertEquals(listAsAgent.status, 200, JSON.stringify(listAsAgent.body));
+        assert(
+          listAsAgent.body.workItems.some((v: { workItem: { id: string } }) =>
+            v.workItem.id === workItemId
+          ),
+          "the agent key must see the work item in the listing",
+        );
+
+        const byIdAsAgent = await apiCall(
+          server.baseUrl,
+          AGENT_KEY,
+          `/api/workflow/work-items/${workItemId}`,
+        );
+        assertEquals(byIdAsAgent.status, 200, JSON.stringify(byIdAsAgent.body));
+
+        // B6's UI/agent read-parity row, asserted on the FIELD SET rather than on a
+        // sample response: every key the operator's read returns — which is every key
+        // the web UI can render — is present in the agent's. A projection that
+        // redacted a field for the agent key would break the UI's only data source
+        // for that field while every status assertion above still passed.
+        const byIdAsOperator = await apiCall(
+          server.baseUrl,
+          OPERATOR_KEY,
+          `/api/workflow/work-items/${workItemId}`,
+        );
+        assertEquals(byIdAsOperator.status, 200, JSON.stringify(byIdAsOperator.body));
+        assertEquals(
+          Object.keys(byIdAsAgent.body).sort(),
+          Object.keys(byIdAsOperator.body).sort(),
+        );
+        assertEquals(
+          Object.keys(byIdAsAgent.body.packets[0]).sort(),
+          Object.keys(byIdAsOperator.body.packets[0]).sort(),
+        );
+        assertEquals(
+          Object.keys(byIdAsAgent.body.observedSessions[0]).sort(),
+          Object.keys(byIdAsOperator.body.observedSessions[0]).sort(),
+        );
+        // Non-vacuity: the field-set comparison above is only worth anything if the
+        // two lanes are actually populated. An empty `packets` or `observedSessions`
+        // would make both sides `[]` and the assertions trivially true.
+        assertEquals(byIdAsAgent.body.packets.length, 1);
+        assertEquals(byIdAsAgent.body.observedSessions.length, 1);
+        assertEquals(byIdAsAgent.body.packets[0].policyScope, "personal");
+
+        // The provenance lookup over the wire, with the ref that motivated the query
+        // parameter in the first place. `#57` cannot travel in a path segment — the
+        // client never sends what follows `#` — so this leg is the one that proves
+        // the shape of the route, not just its handler.
+        const provenanceCases: { source: SourceSystem; ref: string }[] = [
+          { source: "github", ref: "#57" },
+          { source: "jira", ref: "PROJ-1234" },
+          { source: "story-board", ref: "ST-097" },
+        ];
+        for (const { source, ref } of provenanceCases) {
+          await sql`
+            DELETE FROM workflow.work_items
+            WHERE source_system = ${source} AND source_ref = ${ref}
+          `;
+          const made = await store.createWorkItem({ sourceSystem: source, sourceRef: ref });
+          const resolved = await apiCall(
+            server.baseUrl,
+            AGENT_KEY,
+            `/api/workflow/work-items/by-ref?source=${source}&ref=${encodeURIComponent(ref)}`,
+          );
+          assertEquals(resolved.status, 200, `${source}/${ref}: ${JSON.stringify(resolved.body)}`);
+          assertEquals(resolved.body.workItem.id, made.id);
+          assertEquals(resolved.body.workItem.source_ref, ref);
+        }
+      } finally {
+        const hash = await sha256Hex(observed.bearer);
+        await sql`DELETE FROM workflow.execution_nodes WHERE bearer_token_hash = ${hash}`;
+      }
 
       // ---------------------------------------------------------------
       // Discrimination control: the OPERATOR key CAN do every one of the four denied

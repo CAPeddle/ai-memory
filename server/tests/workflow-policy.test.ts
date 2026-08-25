@@ -2,8 +2,8 @@
  * Unit tests for `requiresOperator` (server/src/workflow/policy.ts) — the pure route
  * classification behind the operator/agent credential split.
  *
- * Table-driven, covering every one of the eleven /api/workflow routes explicitly, both
- * classifications, plus a uuid-segment case. The reporting-route assertions are a
+ * Table-driven, covering every one of the seventeen /api/workflow routes explicitly,
+ * both classifications, plus a uuid-segment case. The reporting-route assertions are a
  * discrimination control: a bug that classified everything as operator-only (e.g. a
  * `some()` that always returns true, or a stray `.test(path) || true`) would pass every
  * operator-only assertion below and be caught only by these.
@@ -56,6 +56,26 @@ const CASES: Case[] = [
     path: `/api/workflow/packets/${UUID}`,
     expected: false,
   },
+  // ST-097 B5. Reads, matching `/overview`'s posture: an agent reporting into a
+  // WorkItem must be able to read the one it is reporting into. These three assert
+  // `false` — which is also `requiresOperator`'s default — so they are a REGRESSION
+  // guard rather than a proof: what they catch is a later edit sweeping the
+  // `/work-items` prefix into OPERATOR_ONLY_ROUTES and silently locking an agent out
+  // of the read surface. The proof that reads actually answer 200 to an agent key
+  // lives at the process boundary, in workflow-agent-key-e2e.test.ts.
+  { label: "GET /work-items", method: "GET", path: "/api/workflow/work-items", expected: false },
+  {
+    label: "GET /work-items/by-ref",
+    method: "GET",
+    path: "/api/workflow/work-items/by-ref",
+    expected: false,
+  },
+  {
+    label: "GET /work-items/:workItemId",
+    method: "GET",
+    path: `/api/workflow/work-items/${UUID}`,
+    expected: false,
+  },
 
   // --- Operator-only routes ------------------------------------------------
   {
@@ -82,6 +102,34 @@ const CASES: Case[] = [
     path: `/api/workflow/packets/${UUID}/criteria`,
     expected: true,
   },
+  // ST-097 B2a. Both are WRITES INTO the WorkItem layer, and `requiresOperator`
+  // returns false by default — so a route merely omitted from OPERATOR_ONLY_ROUTES
+  // is silently agent-reachable. These two cases are what makes that omission fail
+  // loudly rather than pass quietly.
+  {
+    label: "POST /work-items",
+    method: "POST",
+    path: "/api/workflow/work-items",
+    expected: true,
+  },
+  {
+    label: "PATCH /packets/:packetId/work-item",
+    method: "PATCH",
+    path: `/api/workflow/packets/${UUID}/work-item`,
+    expected: true,
+  },
+  // ST-097 B4, KTD-D5. Only the operator knows which requested work an observed
+  // session belongs to, and the caller holds no ownership proof over the session —
+  // the node lane's cross-node defence covers `node_id` at ITS route and reaches no
+  // further. `POST /packets/:packetId/runs` is not a precedent here: it attaches
+  // execution to already-supervised work, whereas a packet-less WorkItem is by
+  // KTD-D4 not supervised at all.
+  {
+    label: "POST /work-items/:workItemId/sessions",
+    method: "POST",
+    path: `/api/workflow/work-items/${UUID}/sessions`,
+    expected: true,
+  },
 ];
 
 for (const c of CASES) {
@@ -95,6 +143,24 @@ Deno.test("requiresOperator: method matters, not just path — GET on an operato
   // rather than path-only (a GET can never collide with it in this router, but the
   // function itself must not silently ignore method).
   assertEquals(requiresOperator("GET", `/api/workflow/packets/${UUID}/complete`), false);
+});
+
+Deno.test("requiresOperator: the work-item binding is matched on PATCH and on nothing else", () => {
+  // The binding route is the module's only non-POST write. A classifier that ignored
+  // method, or that was copied from a POST entry without its method being changed,
+  // would answer wrongly on one of these two.
+  assertEquals(requiresOperator("PATCH", `/api/workflow/packets/${UUID}/work-item`), true);
+  assertEquals(requiresOperator("POST", `/api/workflow/packets/${UUID}/work-item`), false);
+});
+
+Deno.test("requiresOperator: the claim route is matched under a work item, not beside one", () => {
+  // The claim is nested under its work item, so the classifier must not match the
+  // bare collection or a sibling segment. `POST /work-items` is separately
+  // operator-only; these two are neither route and must not be swept in by a regex
+  // anchored too loosely.
+  assertEquals(requiresOperator("POST", `/api/workflow/work-items/${UUID}/sessions`), true);
+  assertEquals(requiresOperator("POST", `/api/workflow/work-items/${UUID}/packets`), false);
+  assertEquals(requiresOperator("GET", `/api/workflow/work-items/${UUID}/sessions`), false);
 });
 
 Deno.test("requiresOperator: method comparison is case-insensitive", () => {
