@@ -20,7 +20,7 @@ delivery; `docs/plans/` and the story board remain the canonical delivery record
 
 - [x] **Phase 1: Policy-Scope Pricing** - Classify and price all 15 retrieval/egress paths; discharge the ADR-016 gate (U1)
 - [x] **Phase 2: Remote Node Identity & Hub** - Add hub-side tables, node registration, and event ingestion endpoint (U2)
-- [ ] **Phase 3: Node Client, Reliable Delivery & Regression Safety** - Implement the node client with spool/replay and run disconnection, duplicate, and invalid-auth experiments (U3+U4)
+- [x] **Phase 3: Node Client, Reliable Delivery & Regression Safety** - Implement the node client with spool/replay and run disconnection, duplicate, and invalid-auth experiments (U3+U4)
 - [ ] **Phase 4: Blocking Evidence & ADR-016 Host Decision** - Prove or report UNPROVEN execution blocking; write the final ADR-016 recommendation (U5+U6)
 
 ## Phase Details
@@ -84,7 +84,9 @@ delivery; `docs/plans/` and the story board remain the canonical delivery record
   4. When spool capacity is exceeded the oldest event is dropped and a visible counter increments rather than silently filling disk.
   5. Authenticated MCP memory tools and workflow operations pass their existing tests unmodified after all node changes are applied.
 
-**Plans**: 5/6 plans executed
+**Status**: ✅ Complete — Wave 6 commit `b32b6ab` (PR #50, 2026-08-18)
+
+**Plans**: 6/6 plans executed
 
 **Wave 1**
 
@@ -108,7 +110,7 @@ delivery; `docs/plans/` and the story board remain the canonical delivery record
 
 **Wave 6** *(blocked on Wave 5 — the last destructive full-suite run must precede enrolment)*
 
-- [ ] 03-06-PLAN.md — Real-node leg on z2: enrolment opened/used/closed with a closure proof, experiments 4–6, and the criterion-6 findings section — EVENT-01, EVENT-02, EVENT-03, EVENT-04
+- [x] 03-06-PLAN.md — Real-node leg on z2: enrolment opened/used/closed with a closure proof, experiments 4–6, and the criterion-6 findings section — EVENT-01, EVENT-02, EVENT-03, EVENT-04 — complete 2026-08-18, PR #50 → `b32b6ab`, findings `docs/investigations/ST-084-awcp-host-spike-findings.md` §16
 
 **Waves are strictly sequential.** Plans 02–04 all modify `server/scripts/awcp-node-client.mjs`, so
 `files_modified` overlap forces the ordering; the shared, accumulating `db-test` database is a
@@ -142,7 +144,7 @@ supporting reason, not the primary one.
 |-------|----------------|--------|-----------|
 | 1. Policy-Scope Pricing | — | Complete | 2026-08-05 |
 | 2. Remote Node Identity & Hub | 2/2 | Complete | 2026-08-06 |
-| 3. Node Client, Reliable Delivery & Regression Safety | 5/6 | In Progress|  |
+| 3. Node Client, Reliable Delivery & Regression Safety | 6/6 | Complete | 2026-08-18 |
 | 4. Blocking Evidence & ADR-016 Host Decision | 0/TBD | Not started | - |
 
 ---
@@ -156,12 +158,12 @@ supporting reason, not the primary one.
 | NODE-01 | Phase 2 | Complete |
 | NODE-02 | Phase 2 | Complete |
 | NODE-03 | Phase 2 | Complete |
-| EVENT-01 | Phase 3 | Pending |
-| EVENT-02 | Phase 3 | Pending |
-| EVENT-03 | Phase 3 | Pending |
-| EVENT-04 | Phase 3 | Pending |
-| SAFE-01 | Phase 3 | Pending |
-| SAFE-02 | Phase 3 | Pending |
+| EVENT-01 | Phase 3 | Complete |
+| EVENT-02 | Phase 3 | Complete |
+| EVENT-03 | Phase 3 | Complete |
+| EVENT-04 | Phase 3 | Complete |
+| SAFE-01 | Phase 3 | Complete |
+| SAFE-02 | Phase 3 | Complete |
 | BLOCK-01 | Phase 4 | Pending |
 | HOST-01 | Phase 4 | Pending |
 | HOST-02 | Phase 4 | Pending |
