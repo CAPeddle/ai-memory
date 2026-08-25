@@ -707,6 +707,8 @@
 
 ## Review
 
+## Done
+
 ### ST-098: ST-097 follow-ups — observed-session restart-pinning fix, WorkItem store split, pre-existing test triage, browser-check refresh
 - Type: chore (bug fix + refactor + investigation + verification)
 - Source: four findings from ST-097's 12-reviewer code review, deliberately left open at that
@@ -715,7 +717,9 @@
   Review disposition table
 - phase: 0 (workflow module hardening, no product surface change)
 - Value: 3
+- Completed: 2026-08-25
 - Blocked by: — (ST-097 merged to `main` at `af84b03`)
+- Branch: `chore/st098-observed-session-follow-ups` — **squash-merged to `main` as `3caaa8d` on 2026-08-25 via PR #58.** `git log -1 --format='%(trailers:key=Story,valueonly)' 3caaa8d` resolves to `ST-098`, so the trailer parses and `git log --grep="Story: ST-098"` finds this story's shipped work
 - Touches: `server/scripts/awcp-node-client.mjs`, `server/src/workflow/observedSession.ts`,
   `server/src/workflow/store.ts` (split into `server/src/workflow/workItemStore.ts`),
   `server/tests/e2e.test.ts`, `server/tests/entity-worker-observability.test.ts`,
@@ -857,15 +861,21 @@
   entry point would not be caught by these tests. Recorded here rather than silently
   dropped -- needs a PO/implementer call on whether to extract a shared mint helper or
   drive `main` directly in the test.
-- **Not pushed; no PR opened.** The branch (`chore/st098-observed-session-follow-ups`, 6
-  commits, HEAD `2218bc0`) is fully committed and locally verified only. Local `main` is
-  itself 46 commits ahead of `origin/main` (unrelated prior work from this same session
-  and others), so pushing this branch and opening a PR against `origin/main` would bundle
-  in all of that -- deliberately not done without the PO's explicit direction. Awaiting
-  PO decision on push/PR.
-
-
-## Done
+- **Not pushed; no PR opened at ce-work handoff.** The branch (6 commits, HEAD `2218bc0`) was
+  fully committed and locally verified only; local `main` was itself 46 commits ahead of
+  `origin/main`, so pushing needed the PO's explicit direction before it could be bundled in.
+- **Moved Review → Done on 2026-08-25.** PO directed pushing local `main` (fast-forward, no PR)
+  then the branch; opened as PR #58 (`fix(workflow): close ST-097's four deferred follow-ups`).
+  Cross-model review (Codex, via the PR bot) surfaced two findings on the pushed branch: the PR
+  body lacked its `Story: ST-098` trailer (this repo's squash-merge sets the squash message to the
+  PR body verbatim, so the trailer had to live there, not just on individual commits) — fixed
+  before merge; and the ST-099 allocator commit (`32da81d`) sat mid-branch, referenced before
+  landing on `main` — resolved per the PO's explicit direction by cherry-picking it onto `main`
+  alone (`8187601`) and rebasing the branch to drop the now-duplicate commit. One CI failure
+  (`server-integration-tests`, the known-flaky `awcp-node-client-lock.test.ts` ST-092 R1 test,
+  unrelated to this diff) cleared on rerun. PO squash-merged as `3caaa8d`;
+  `git log -1 --format='%(trailers:key=Story,valueonly)' 3caaa8d` resolves to `ST-098` and no
+  `Co-authored-by` trailer was appended.
 
 ### ST-092: Node-client hardening and test-suite operational safety
 - Type: bug / hardening (client durability + test isolation)
