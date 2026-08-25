@@ -687,6 +687,44 @@
 - **Phase 1 complete** (policy-scope pricing, U1). **Phase 2 complete** 2026-08-14 — hub-side tables, registration, idempotent event ingestion (PR #47 → `47284cc`, merged not squashed).
 - **Phase 3 waves 1–5 complete** 2026-08-18 (PR #49 → `47cd90b`): node client with bounded crash-safe spool and replay, terminal-vs-deferred failure states, SAFE-01 empty-diff regression gate, SAFE-02 corpus integrity. **Wave 6 (03-06) outstanding** — the z2 enrolment and experiments 4–6 that actually discharge criterion 6, held at its `<human-check>` output gate. Resume: `/gsd-execute-phase 03 --wave 6`.
 - **Phase 4 not started** — blocking evidence and the final ADR-016 recommendation (U5+U6).
+
+### ST-098: ST-097 follow-ups — observed-session restart-pinning fix, WorkItem store split, pre-existing test triage, browser-check refresh
+- Type: chore (bug fix + refactor + investigation + verification)
+- Source: four findings from ST-097's 12-reviewer code review, deliberately left open at that
+  review as non-blocking for the merge — see the handoff at
+  `docs/plans/2026-08-23-2245-chore-st097-gsd-pivot-board-split-awcp-status-slice-plan.md`'s
+  Review disposition table
+- phase: 0 (workflow module hardening, no product surface change)
+- Value: 3
+- Blocked by: — (ST-097 merged to `main` at `af84b03`)
+- Touches: `server/scripts/awcp-node-client.mjs`, `server/src/workflow/observedSession.ts`,
+  `server/src/workflow/store.ts` (split into `server/src/workflow/workItemStore.ts`),
+  `server/tests/e2e.test.ts`, `server/tests/entity-worker-observability.test.ts`,
+  `server/src/workflow/dashboard.ts` (browser-check re-anchor only, no expected code change)
+- Acceptance criteria:
+  - [ ] **`ended_at` absorbing-state fix.** `AWCP_SESSION_ID` restart-pinning is dropped: a
+    node client process always mints a fresh `session_id` at start, so a clean close can no
+    longer be conflated with a later, unrelated process's abandonment. `GREATEST`-based
+    monotone merge in `store.ts` stays unchanged — PO decision 2026-08-25, chose this over
+    timestamp-based reopen
+  - [ ] **`workItemStore.ts` split.** WorkItem persistence extracted out of
+    `server/src/workflow/store.ts` (1,411 lines), mirroring the boundary already drawn for
+    `readModel.ts`, `api.ts`, and `dashboard.ts`. No behavior change; existing tests are the
+    regression gate
+  - [ ] **Pre-existing test failures triaged.** The ~9 failures in `server/tests/e2e.test.ts`
+    and `entity-worker-observability.test.ts` (search, entity extraction, consolidation) are
+    root-caused and either fixed or recorded as a known, dated baseline with a story filed for
+    the fix
+  - [ ] **28 browser checks re-verified.** The manual dashboard checks invalidated by the
+    WorkItem lane (`585d2c9`) are re-run against current `main` and their disposition recorded
+- Plan: to be created under `docs/plans/` at implementation time
+- Notes: Filed from the ST-097 handoff rather than mid-review — none of the four block
+  ST-097's landing, all four were the user's explicit choice to pick up next.
+  **WIP-limit note:** ST-088 already holds the sole "In Progress" slot; this story starts
+  concurrently anyway at the user's explicit direction to proceed now, so the 1-In-Progress
+  limit is knowingly exceeded rather than silently violated. Record here, not hidden.
+- **Moved Backlog → In Progress 2026-08-25**, same session it was filed in, at the user's
+  explicit direction to proceed on all four items.
 - **Open for the PO, neither blocking:** `FEATURE_WORKFLOW` hardcoded `"true"` on base `mcp` leaves an unauthenticated dashboard shell on `0.0.0.0:3000` for every `docker compose up -d` (`T-03-01-02`); and `.planning/STATE.md` progress metadata now describes a 2-phase project against ROADMAP's 4, with `current_phase` exceeding `total_phases`.
 
 ## Review
