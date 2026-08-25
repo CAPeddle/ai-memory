@@ -184,6 +184,42 @@ assert_contains "conflict markers present" "$(cat "$D/.github/planning/story-ids
 git -C "$D" merge --abort
 
 echo
+echo "=== the SAME id allocated on two refs is a --check failure ==="
+D="$(make_fixture crossref)"
+# Two branches each mint ST-004 independently. --mint refuses this only when the
+# minting clone can SEE the other branch; a developer who has not fetched cannot,
+# so CI — where every ref is visible at once — is the only place it can be caught.
+git -C "$D" checkout -q -b ref-a
+printf 'ST-004  2026-01-02  branch:ref-a  A believes it owns ST-004\n' >> "$D/.github/planning/story-ids.md"
+git -C "$D" add -A
+git -C "$D" -c user.email=t@example.com -c user.name=t commit -q -m "ref-a mints ST-004"
+git -C "$D" checkout -q -b ref-b main
+printf 'ST-004  2026-01-02  branch:ref-b  B believes it owns ST-004\n' >> "$D/.github/planning/story-ids.md"
+git -C "$D" add -A
+git -C "$D" -c user.email=t@example.com -c user.name=t commit -q -m "ref-b mints ST-004"
+git -C "$D" checkout -q main
+set +e
+CROSS_OUT="$(cd "$D" && ./story-id.sh --check 2>&1)"
+CROSS_RC=$?
+set -e
+assert_exit "a cross-ref duplicate fails --check" 2 "$CROSS_RC"
+assert_contains "it names the id" "$CROSS_OUT" "ST-004"
+assert_contains "it names both claimants" "$CROSS_OUT" "branch:ref-b"
+
+echo
+echo "=== an annotation-only edit is NOT a duplicate (discrimination control) ==="
+D="$(make_fixture annot)"
+git -C "$D" checkout -q -b annotated
+sed -i 's|^ST-002  2026-01-01  branch:main  fixture$|ST-002  2026-01-01  branch:main  fixture — annotated later, same allocation|' "$D/.github/planning/story-ids.md"
+git -C "$D" add -A
+git -C "$D" -c user.email=t@example.com -c user.name=t commit -q -m "annotate an existing allocation"
+set +e
+ANNOT_OUT="$(cd "$D" && ./story-id.sh --check 2>&1)"
+ANNOT_RC=$?
+set -e
+assert_exit "an annotation edit does not read as a collision" 0 "$ANNOT_RC"
+
+echo
 echo "=== a hostile refname is DATA, never program text ==="
 D="$(make_fixture hostile)"
 PROBE=/tmp/story-id-injection-probe.$$

@@ -51,6 +51,10 @@ ALLOC_RE="^${ALLOC_BODY}"
 
 # ids_in <file-or-stdin-stream>: emit the ST-NNN of every allocation line.
 ids_in() { grep -E "$ALLOC_RE" | grep -oE '^ST-[0-9]{3}'; }
+# lines_in: the WHOLE allocation line, not just its id. A cross-ref duplicate is only
+# visible here: two branches that legitimately carry one allocation carry the same
+# bytes, while two that each minted the id independently differ in their branch column.
+lines_in() { grep -E "$ALLOC_RE"; }
 
 # refs_with_registry: every ref whose tree contains the registry.
 refs_with_registry() {
@@ -71,6 +75,19 @@ taken_map() {
     # Git permits ; | # > in a refname, and interpolating one into a sed program
     # let GNU sed's `e` flag execute it as a shell command — proven, then fixed.
     git show "$ref:$REGISTRY" 2>/dev/null | ids_in | awk -v r="$ref" '{ print $0 " " r }' || true
+  done < <(refs_with_registry)
+}
+
+# taken_lines: "<ID>\t<WHOLE LINE>" for every allocation visible on any ref. The id
+# alone cannot distinguish propagation from collision; the line can.
+taken_lines() {
+  if [ -f "$REGISTRY" ]; then
+    lines_in < "$REGISTRY" | awk '{ print $1 "\t" $0 }'
+  fi
+  local ref
+  while IFS= read -r ref; do
+    [ -n "$ref" ] || continue
+    git show "$ref:$REGISTRY" 2>/dev/null | lines_in | awk '{ print $1 "\t" $0 }' || true
   done < <(refs_with_registry)
 }
 
@@ -117,6 +134,30 @@ cmd_check() {
   if [ -n "$dups" ]; then
     err "duplicate allocation(s) in $REGISTRY:"
     echo "$dups" >&2
+    problems=$((problems + 1))
+  fi
+
+  # 2b. The SAME id allocated differently on two refs. This is the failure the
+  #     intra-file check above cannot see and the one CI is uniquely placed to
+  #     catch, because CI is where every branch is visible at once. --mint can only
+  #     refuse what its own clone can see, so a developer who has not fetched mints
+  #     a live id without being told. Byte-identical lines across refs are ordinary
+  #     propagation; differing lines mean two branches each believe they own the id,
+  #     and `git log --grep` would resolve it to two unrelated stories.
+  # The key is the identity columns only — id, date, branch — never the trailing
+  # free text. Two branches that each minted the id differ in the branch column; an
+  # editor who merely annotates an existing line does not, and must not be accused of
+  # a collision for it. (ST-095's own line was annotated exactly that way.)
+  local cross
+  cross="$(taken_lines | awk -F'\t' '{ n = split($2, f, /[ \t]+/); print $1 "\t" f[1] " " f[2] " " f[3] }' \
+    | sort -u | cut -f1 | uniq -d || true)"
+  if [ -n "$cross" ]; then
+    err "the same ID is allocated differently on more than one ref:"
+    while IFS= read -r id; do
+      [ -n "$id" ] || continue
+      printf '  %s\n' "$id" >&2
+      taken_lines | sort -u | awk -F'\t' -v want="$id" '$1 == want { print "    " $2 }' >&2
+    done <<< "$cross"
     problems=$((problems + 1))
   fi
 
