@@ -1578,3 +1578,65 @@ counter is refused rather than read as zero.
 
 This subsection records only what ST-092 proved. ADR-016 remains **Proposed/Conditional**; Phase 4
 still owns the final recommendation, and none of the above discharges the §6.1 pricing gate.
+
+## 17. Stage 2 Unit 5: Actual Execution Blocking Assessment (§8 follow-up)
+
+**Verdict: UNPROVEN — `blocking` state does not gate execution anywhere in the codebase. It is read
+in exactly two places, both purely observational, and its absence from every operational write path
+is exhaustive, not merely unchecked.**
+
+§8 originally recorded this as UNPROVEN on the grounds that no execution node yet existed against
+which actual halting could be measured. That premise is now stale — z2 has been enrolled and
+exercised for real (§16) — but the verdict does not change, because the reason has moved: it was
+never a measurement gap. `blocking` has no consumer capable of halting anything, node-side or
+hub-side, so there is nothing for a real node to prove or disprove.
+
+**What `blocking` actually is.** A boolean field on `OperationalDecision`
+(`server/src/workflow/types.ts:239`), set when a decision is created
+(`server/src/workflow/store.ts:302-316`, exposed via `POST /packets/:packetId/decisions` in
+`server/src/workflow/api.ts:94-98,647-660`; the CLI sets it as `!--advisory` at
+`server/scripts/awcp.ts:510`).
+
+**Every read of `.blocking` in the repository, found by grepping the field name across
+`server/src/workflow/`, `server/scripts/`, and `server/index.ts` — two production sites, both
+observational:**
+
+| Site | Effect |
+|---|---|
+| `server/src/workflow/attention.ts:49-58` (Rule 1 of `evaluateAttention`) | An open decision with `blocking: true` is projected into a `decision-required` `AttentionItem`. Attention is explicitly a **derived, read-only projection** (see the file's own docblock) — nothing consumes it to stop anything. |
+| `server/src/workflow/dashboard.ts:273` | Renders a `<span class="tag">blocking</span>` badge next to the decision in the operator dashboard. Display only. |
+
+**What was checked and does *not* read `.blocking`, confirming the absence is exhaustive rather than
+an oversight not yet found:**
+
+- **Packet completion** — `store.completePacket` (`server/src/workflow/store.ts:562-593`) is the
+  actual completion gate; it checks only `verification_criteria`/`evidence_items` for unmet required
+  criteria (`CompletionBlockedError`) and never queries `operational_decisions` at all. A packet with
+  an open, `blocking: true` decision completes exactly as freely as one with none.
+- **Decision resolution** — `store.resolveDecision` (`server/src/workflow/store.ts:349-378`) and
+  `service.resolveAndPromoteDecision` (`server/src/workflow/service.ts:91-`) resolve a decision and
+  optionally promote it into memory; neither branches on `.blocking`.
+- **The remote-node client** (`server/scripts/awcp-node-client.mjs`) — zero references to
+  `blocking` (verified by grep against the full file). Its only concerns are event
+  spool/replay/heartbeat/checkpoint (§16); it has no path that reads decision state at all, so the
+  real node §16 enrolled cannot halt on this field even in principle.
+- **The agent-facing CLI** (`server/scripts/awcp.ts`) — the only other reference beyond the create
+  call is the CLI's own decision-creation flag; no command refuses or halts based on an existing
+  decision's `blocking` value.
+
+**Why "modelled state, attention-only" (the plan's original framing) undersold it slightly.** The
+plan and the story-board criterion text both describe `blocking`'s "only implemented consequence"
+as "the attention item... and a dashboard tag" — which this investigation confirms precisely, with
+file:line citations, against the *current* code (post-ST-097/ST-098 refactor, i.e. re-verified after
+`store.ts` was split into `workItemStore.ts` and the WorkItem lane was added — neither touched this
+mechanism). The two attention rules for "blocked" state (`decision-required` from `.blocking`, and
+the separate `blocked` reason from a checkpoint's free-text `blockers` field, `attention.ts:60-71`)
+are easy to conflate; both are equally non-enforcing, and neither gates a claim, a run, a completion,
+or a CLI command.
+
+**No overclaiming, per the plan's own instruction:** this is not "blocking is broken" — it was never
+built to halt anything; it is a signal to a human or agent reading the dashboard/attention feed, and
+it does that correctly. The finding is that ADR-016 §1's "actual execution blocking" criterion, if it
+means *the system prevents further work while a blocking decision is open*, is not met by any code in
+this repository, proven now rather than surmised, and no future execution node — real or otherwise —
+changes that without a code change to add a consumer.
