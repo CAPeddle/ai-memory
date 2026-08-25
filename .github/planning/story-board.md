@@ -150,6 +150,23 @@
   - [ ] Red/green control demonstrated: before merging the fix, seed a foreign pending row in `entity_extraction_queue` deliberately and confirm the *unfixed* test fails on it, then confirm the *fixed* test still passes with that foreign row present. Record the seeded-row cleanup so this control run doesn't itself leave pollution behind
 - Plan: (to be created)
 - Notes: The failure is **intermittent**, not deterministic — it depends on what, if anything, is sitting in `db-test`'s `entity_extraction_queue` when the test runs, and `db-test` is wiped only on container stop, not between runs (CLAUDE.md § Dev vs Test isolation). A story description or reviewer expecting a reliably-reproducing failure will see it pass on the first try; that is expected, not evidence the defect is gone. First test's assertion is `assertEquals(run.items_processed, 1)` at `server/tests/entity-worker-observability.test.ts:44`; the `finally` blocks (lines ~51-56, ~112-117, ~153-158) delete only each test's own `thought_id`, never touching rows left by anything else.
+  - Cross-reference added 2026-08-25 (ST-098 U3): this same test currently fails deterministically, for a different reason than the one this story was filed against — `OPENROUTER_API_KEY` returns 401 from the `mcp-test` container, so the test's own seeded (non-`__TEST_LLM_FAIL__`) content genuinely fails extraction and `items_processed` is legitimately 0 (`itemsSucceeded` in `entityWorker.ts` counts only real successes). See ST-099. This doesn't resolve or supersede ST-093's queue-pollution/wrong-row-read theory — it's a separate, currently-masking failure mode on the same test. Before trusting this story's fix (or re-confirming its symptom), re-run this test against a working OpenRouter key — right now the 401 alone is sufficient to fail it regardless of queue state.
+
+### ST-099: Restore authenticated OpenRouter egress from dev/test containers
+- Type: bug / infra
+- Source: ST-098 U3 (pre-existing test-failure triage), 2026-08-25 — all ~9 failures in `server/tests/e2e.test.ts` and `entity-worker-observability.test.ts` traced to one shared cause rather than nine independent ones
+- phase: 0
+- Value: 4 (blocks reliable signal on search-lane and entity-extraction tests; masks whether ST-093's separate queue-isolation bug is still live)
+- Blocked by: — (credential/infra action, not code)
+- Touches: `.env` (`OPENROUTER_API_KEY`), or container network egress/proxy header handling — not yet narrowed between the two; no application code is expected to change
+- Acceptance criteria:
+  - [ ] Root cause pinned down between the two candidates identified at filing: an invalid/expired `OPENROUTER_API_KEY` (26 chars in `.env`, short of OpenRouter's typical `sk-or-v1-…` ~73-char format), or a network intermediary stripping the `Authorization` header in transit (CLAUDE.md documents a Fortinet-style SSL-intercepting proxy in this environment — an in-container probe to confirm/rule this out independently was blocked by tooling at filing time: `curl` exit 77 CA-cert error, `wget` not installed)
+  - [ ] Authenticated OpenRouter egress (chat completions + embeddings) confirmed working from both the `mcp` and `mcp-test` containers
+  - [ ] `server/tests/e2e.test.ts` and `server/tests/entity-worker-observability.test.ts` re-run in full against the fix. Anything still red at that point is a real regression, not covered by this story's diagnosis, and needs its own triage — this story's diagnosis only proves the 401 causes the failures it names, not that fixing it alone guarantees green
+  - [ ] `entity-worker-observability.test.ts`'s test re-checked specifically against ST-093's still-open queue-isolation theory (see the cross-reference note added there 2026-08-25) — a working key may unmask that separate, intermittent failure mode
+  - [ ] `e2e.test.ts`'s own OpenRouter precondition check (top of file) tightened: it currently only pings the public `/models` endpoint, which cannot detect this exact authenticated-call failure mode
+- Plan: (to be created)
+- Notes: Filed as one story rather than nine because all nine failures traced to the same `OpenRouter 401: Missing Authentication header` response, confirmed via `mcp-test` container logs plus source-level tracing (`server/src/entityWorker.ts:59-90`'s `callLLM`, `server/src/consolidationLLM.ts`, and `server/index.ts`'s embedding-failure degrade-to-null path at ~lines 184/321). Baseline dated 2026-08-25, anchored to commit `8400672` (the tree at diagnosis time — `chore/st098-observed-session-follow-ups` branch, ST-098 U1+U2 already landed on it). All 9 failures reproduced identically against a freshly-recreated `db-test`/`mcp-test` (not pollution-shaped): `search_thoughts` vector lane (1), consolidate→wiki promotion (1), entity extraction (4), in-project/MMR ranking dependent on vector lane (2), entity-worker-observability `items_processed` (1, see ST-093 cross-reference).
 
 ### ST-091: Move the .NET stack to the latest feasible SDK (off net8.0, before .NET 8 EOL)
 - Type: infrastructure
@@ -702,19 +719,38 @@
   `server/tests/e2e.test.ts`, `server/tests/entity-worker-observability.test.ts`,
   `server/src/workflow/dashboard.ts` (browser-check re-anchor only, no expected code change)
 - Acceptance criteria:
-  - [ ] **`ended_at` absorbing-state fix.** `AWCP_SESSION_ID` restart-pinning is dropped: a
+  - [x] **`ended_at` absorbing-state fix.** `AWCP_SESSION_ID` restart-pinning is dropped: a
     node client process always mints a fresh `session_id` at start, so a clean close can no
     longer be conflated with a later, unrelated process's abandonment. `GREATEST`-based
     monotone merge in `store.ts` stays unchanged — PO decision 2026-08-25, chose this over
-    timestamp-based reopen
-  - [ ] **`workItemStore.ts` split.** WorkItem persistence extracted out of
-    `server/src/workflow/store.ts` (1,411 lines), mirroring the boundary already drawn for
-    `readModel.ts`, `api.ts`, and `dashboard.ts`. No behavior change; existing tests are the
-    regression gate
-  - [ ] **Pre-existing test failures triaged.** The ~9 failures in `server/tests/e2e.test.ts`
-    and `entity-worker-observability.test.ts` (search, entity extraction, consolidation) are
-    root-caused and either fixed or recorded as a known, dated baseline with a story filed for
-    the fix
+    timestamp-based reopen. Dashboard now renders `last_heartbeat_at` alongside `ended_at`
+    (not either/or) so any row poisoned before this fix lands stays visibly suspicious. Done
+    2026-08-25, commit `83465f3`
+  - [x] **`workItemStore.ts` split.** WorkItem persistence extracted out of
+    `server/src/workflow/store.ts` (1,411 → 1,131 lines) into `server/src/workflow/workItemStore.ts`,
+    mirroring the boundary already drawn for `readModel.ts`, `api.ts`, and `dashboard.ts`. No
+    behavior change; `workflow-boundary.test.ts`'s handle-holder AND schema-qualification
+    invariants both extended deliberately to cover the new file (the schema-qualification
+    extension closed a gap the plan didn't anticipate — that test read only `store.ts`, so it
+    would have silently stopped checking the moved SQL's schema-qualification). Done 2026-08-25,
+    commit `8400672`
+  - [x] **Pre-existing test failures triaged.** All ~9 failures in `server/tests/e2e.test.ts`
+    (8) and `entity-worker-observability.test.ts` (1) reproduce identically against a freshly
+    recreated `db-test`/`mcp-test` (KTD5 discriminator — not pollution-shaped), traced to one
+    shared root cause: `OPENROUTER_API_KEY` returns 401 "Missing Authentication header" on
+    every authenticated OpenRouter call (chat completions + embeddings) from both `mcp` and
+    `mcp-test`. Not fixed inline — rotating/verifying a credential (or fixing proxy header
+    handling) is outside a code-only fix's reach per R5's threshold. Filed as **ST-099** (one
+    story, not nine, since all nine share the cause). Baseline dated 2026-08-25, anchored to
+    commit `8400672`. **Cross-reference, not a duplicate:** the 9th failure
+    (`entity-worker-observability.test.ts`'s `items_processed` assertion) is the same test
+    ST-093 already tracks, but ST-093's theory (queue-pollution/wrong-row-read race) is a
+    *different*, still-live mechanism from this run's cause — the test's seeded content isn't
+    `__TEST_LLM_FAIL__`-prefixed, so extraction genuinely fails for real
+    (`itemsSucceeded` in `entityWorker.ts` only counts real successes), independent of which
+    `worker_runs` row gets read. ST-093 needs re-verification against a working OpenRouter key
+    before its own fix is trusted complete or its symptom re-confirmed — see the added note on
+    ST-093 below
   - [ ] **28 browser checks re-verified.** The manual dashboard checks invalidated by the
     WorkItem lane (`585d2c9`) are re-run against current `main` and their disposition recorded
 - Plan: [docs/plans/2026-08-25-1530-chore-st098-observed-session-follow-ups-plan.md](../../docs/plans/2026-08-25-1530-chore-st098-observed-session-follow-ups-plan.md)
