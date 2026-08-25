@@ -145,6 +145,34 @@ export interface WorkItemSessionClaim {
   claimed_at: Date;
 }
 
+/**
+ * A claimed observed session as the read model presents it (ST-097 B5): the claim
+ * joined to the `observed_sessions` row it names.
+ *
+ * **This is the OBSERVED half of a WorkItem's state, and its shape is what says so.**
+ * It carries no packet, no run and no {@link PolicyScope} — the same three absences
+ * `workflow.observed_sessions` itself has — so a consumer cannot read it as
+ * supervised work by mistake. An authoritative execution is an {@link AgentRun} under
+ * a {@link WorkPacket}; nothing converts one into the other, and the read model does
+ * not blur the two by presenting them under one key.
+ *
+ * **There is no status, and none is derived.** `ended_at IS NOT NULL` is a clean
+ * close; abandonment is a gap since `last_heartbeat_at`. The gap THRESHOLD is
+ * evaluation policy that travels with the deferred attention package (KTD-B4 item 5),
+ * so this type carries the timestamps and reduces none of them to a word. A boolean
+ * like `active` or `abandoned` added here would be that deferred decision taken by
+ * whoever wrote the projection first.
+ */
+export interface ClaimedObservedSession {
+  work_item_id: string;
+  node_id: string;
+  session_id: string;
+  started_at: Date;
+  last_heartbeat_at: Date;
+  ended_at: Date | null;
+  claimed_at: Date;
+}
+
 export type PacketStatus = "open" | "in_progress" | "blocked" | "complete";
 export type RunStatus = "running" | "ended" | "failed";
 export type DecisionStatus = "open" | "resolved";

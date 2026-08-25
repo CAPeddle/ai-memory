@@ -246,15 +246,28 @@ applied by the composition root's `/api/workflow` middleware in `server/index.ts
 | POST | `/packets/:packetId/decisions` | reporting/read |
 | GET | `/overview` | reporting/read |
 | GET | `/packets/:packetId` | reporting/read |
+| GET | `/work-items` | reporting/read |
+| GET | `/work-items/by-ref?source=&ref=` | reporting/read |
+| GET | `/work-items/:workItemId` | reporting/read |
 | POST | `/decisions/:decisionId/resolve` | **operator-only** |
 | POST | `/packets/:packetId/criteria` | **operator-only** |
 | POST | `/criteria/:criterionId/evidence` | **operator-only** |
 | POST | `/packets/:packetId/complete` | **operator-only** |
 | POST | `/work-items` | **operator-only** |
 | PATCH | `/packets/:packetId/work-item` | **operator-only** |
+| POST | `/work-items/:workItemId/sessions` | **operator-only** |
 
-The two `GET` routes are deliberately reporting/read: a resuming agent otherwise has no
-way to check whether a blocking decision it raised was ever resolved.
+The five `GET` routes are deliberately reporting/read: a resuming agent otherwise has no
+way to check whether a blocking decision it raised was ever resolved, and an agent
+reporting into a WorkItem must be able to read the one it is reporting into. What that
+posture inherits is worth stating rather than implying — retrieval-time scope
+enforcement is deferred to Stage 2, so an agent key reads the whole surface. These
+routes add no new exposure and no object-level authorization either.
+
+`/work-items/by-ref` takes **query parameters, not path segments**, and that is a
+contract rather than a style choice: a `source_ref` may legitimately be `#57`, which no
+path segment can carry — `#` opens a fragment the client never sends — and a key
+containing a slash would split into two segments.
 
 `/packets/:packetId/criteria` is operator-only for a reason worth stating explicitly:
 criteria define the verification contract the agent will be judged against, so
@@ -270,6 +283,9 @@ authority for its own Policy Scope, an agent key may legitimately create a packe
 an agent-authored packet parented to a WorkItem would become the scope authority for
 anything reached through it. For the same reason `work_item_id` is **not** accepted by
 `POST /packets` — binding is only ever the PATCH above, never a field on creation.
+`POST /work-items/:workItemId/sessions` joins them on two independent grounds: only the
+operator knows which requested work an observed session belongs to, and the caller holds
+no ownership proof over the session it names.
 
 Failures map deliberately: **400** malformed input or missing/invalid policy scope ·
 **404** unknown packet, run, decision or criterion (including a foreign-key miss, which

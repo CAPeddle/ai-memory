@@ -29,6 +29,7 @@ import {
 } from "./_helpers/serverProcess.ts";
 import { sql } from "../src/db.ts";
 import * as store from "../src/workflow/store.ts";
+import type { SourceSystem } from "../src/workflow/types.ts";
 
 const DATABASE_URL = Deno.env.get("DATABASE_URL")!;
 const OPERATOR_KEY = "operator-key-for-agent-boundary-test";
@@ -415,6 +416,95 @@ Deno.test({
         assertEquals(claimOk.status, 201, JSON.stringify(claimOk.body));
         assertEquals(claimOk.body.work_item_id, workItemId);
         assertEquals(claimOk.body.session_id, observed.sessionId);
+
+        // ---------------------------------------------------------------
+        // ST-097 B5: the three WorkItem READS. Unlike everything above them in this
+        // block they are NOT operator-only, so the credential expectation inverts —
+        // agent key -> 200 on all three — and the discrimination control inverts with
+        // it: no key is still 401, which is what proves the 200s are the
+        // classification answering "agent-reachable" rather than the middleware
+        // having been skipped for this prefix altogether.
+        //
+        // Run inside the observed-session fixture on purpose: the work item here is
+        // bound to a packet AND carries a claimed session, so the projection under
+        // test is the full one rather than an empty shell that would satisfy a
+        // status-only assertion.
+        // ---------------------------------------------------------------
+        {
+          const noKeyRead = await fetch(`${server.baseUrl}/api/workflow/work-items`);
+          assertEquals(noKeyRead.status, 401, await noKeyRead.text());
+        }
+
+        const listAsAgent = await apiCall(server.baseUrl, AGENT_KEY, "/api/workflow/work-items");
+        assertEquals(listAsAgent.status, 200, JSON.stringify(listAsAgent.body));
+        assert(
+          listAsAgent.body.workItems.some((v: { workItem: { id: string } }) =>
+            v.workItem.id === workItemId
+          ),
+          "the agent key must see the work item in the listing",
+        );
+
+        const byIdAsAgent = await apiCall(
+          server.baseUrl,
+          AGENT_KEY,
+          `/api/workflow/work-items/${workItemId}`,
+        );
+        assertEquals(byIdAsAgent.status, 200, JSON.stringify(byIdAsAgent.body));
+
+        // B6's UI/agent read-parity row, asserted on the FIELD SET rather than on a
+        // sample response: every key the operator's read returns — which is every key
+        // the web UI can render — is present in the agent's. A projection that
+        // redacted a field for the agent key would break the UI's only data source
+        // for that field while every status assertion above still passed.
+        const byIdAsOperator = await apiCall(
+          server.baseUrl,
+          OPERATOR_KEY,
+          `/api/workflow/work-items/${workItemId}`,
+        );
+        assertEquals(byIdAsOperator.status, 200, JSON.stringify(byIdAsOperator.body));
+        assertEquals(
+          Object.keys(byIdAsAgent.body).sort(),
+          Object.keys(byIdAsOperator.body).sort(),
+        );
+        assertEquals(
+          Object.keys(byIdAsAgent.body.packets[0]).sort(),
+          Object.keys(byIdAsOperator.body.packets[0]).sort(),
+        );
+        assertEquals(
+          Object.keys(byIdAsAgent.body.observedSessions[0]).sort(),
+          Object.keys(byIdAsOperator.body.observedSessions[0]).sort(),
+        );
+        // Non-vacuity: the field-set comparison above is only worth anything if the
+        // two lanes are actually populated. An empty `packets` or `observedSessions`
+        // would make both sides `[]` and the assertions trivially true.
+        assertEquals(byIdAsAgent.body.packets.length, 1);
+        assertEquals(byIdAsAgent.body.observedSessions.length, 1);
+        assertEquals(byIdAsAgent.body.packets[0].policyScope, "personal");
+
+        // The provenance lookup over the wire, with the ref that motivated the query
+        // parameter in the first place. `#57` cannot travel in a path segment — the
+        // client never sends what follows `#` — so this leg is the one that proves
+        // the shape of the route, not just its handler.
+        const provenanceCases: { source: SourceSystem; ref: string }[] = [
+          { source: "github", ref: "#57" },
+          { source: "jira", ref: "PROJ-1234" },
+          { source: "story-board", ref: "ST-097" },
+        ];
+        for (const { source, ref } of provenanceCases) {
+          await sql`
+            DELETE FROM workflow.work_items
+            WHERE source_system = ${source} AND source_ref = ${ref}
+          `;
+          const made = await store.createWorkItem({ sourceSystem: source, sourceRef: ref });
+          const resolved = await apiCall(
+            server.baseUrl,
+            AGENT_KEY,
+            `/api/workflow/work-items/by-ref?source=${source}&ref=${encodeURIComponent(ref)}`,
+          );
+          assertEquals(resolved.status, 200, `${source}/${ref}: ${JSON.stringify(resolved.body)}`);
+          assertEquals(resolved.body.workItem.id, made.id);
+          assertEquals(resolved.body.workItem.source_ref, ref);
+        }
       } finally {
         const hash = await sha256Hex(observed.bearer);
         await sql`DELETE FROM workflow.execution_nodes WHERE bearer_token_hash = ${hash}`;

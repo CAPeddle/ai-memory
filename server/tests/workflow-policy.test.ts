@@ -2,7 +2,7 @@
  * Unit tests for `requiresOperator` (server/src/workflow/policy.ts) — the pure route
  * classification behind the operator/agent credential split.
  *
- * Table-driven, covering every one of the fourteen /api/workflow routes explicitly,
+ * Table-driven, covering every one of the seventeen /api/workflow routes explicitly,
  * both classifications, plus a uuid-segment case. The reporting-route assertions are a
  * discrimination control: a bug that classified everything as operator-only (e.g. a
  * `some()` that always returns true, or a stray `.test(path) || true`) would pass every
@@ -54,6 +54,26 @@ const CASES: Case[] = [
     label: "GET /packets/:packetId",
     method: "GET",
     path: `/api/workflow/packets/${UUID}`,
+    expected: false,
+  },
+  // ST-097 B5. Reads, matching `/overview`'s posture: an agent reporting into a
+  // WorkItem must be able to read the one it is reporting into. These three assert
+  // `false` — which is also `requiresOperator`'s default — so they are a REGRESSION
+  // guard rather than a proof: what they catch is a later edit sweeping the
+  // `/work-items` prefix into OPERATOR_ONLY_ROUTES and silently locking an agent out
+  // of the read surface. The proof that reads actually answer 200 to an agent key
+  // lives at the process boundary, in workflow-agent-key-e2e.test.ts.
+  { label: "GET /work-items", method: "GET", path: "/api/workflow/work-items", expected: false },
+  {
+    label: "GET /work-items/by-ref",
+    method: "GET",
+    path: "/api/workflow/work-items/by-ref",
+    expected: false,
+  },
+  {
+    label: "GET /work-items/:workItemId",
+    method: "GET",
+    path: `/api/workflow/work-items/${UUID}`,
     expected: false,
   },
 

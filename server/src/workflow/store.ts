@@ -24,6 +24,7 @@ import { SESSION_EVENT_TYPES } from "./observedSession.ts";
 import {
   type AgentRun,
   type Checkpoint,
+  type ClaimedObservedSession,
   CompletionBlockedError,
   type CreateWorkItemInput,
   CriteriaFrozenError,
@@ -33,6 +34,7 @@ import {
   type OperationalDecision,
   type PolicyScope,
   RunConflictError,
+  type SourceSystem,
   type VerificationCriterion,
   type WorkItem,
   type WorkItemSessionClaim,
@@ -216,6 +218,107 @@ export async function claimSessionForWorkItem(
     `;
     return claims[0];
   });
+}
+
+// --------------------------------------------------------------------------
+// Work item reads (ST-097 B5) — the provenance lookup and the projection's parts
+// --------------------------------------------------------------------------
+
+/** One WorkItem by its primary identity. Null when it does not exist. */
+export async function getWorkItem(id: string): Promise<WorkItem | null> {
+  const rows = await sql<WorkItem[]>`
+    SELECT * FROM workflow.work_items WHERE id = ${id}
+  `;
+  return rows[0] ?? null;
+}
+
+/**
+ * Every WorkItem, newest first.
+ *
+ * **There is no active/inactive filter here, and its absence is the contract rather
+ * than an omission.** `listActivePackets` can filter because a packet has a status
+ * column; a WorkItem has none and never will (ADR-017 §6), so there is nothing to
+ * filter on. Inventing a liveness rule — "has an open packet", "was claimed
+ * recently" — would be synthesising exactly the aggregate state §6 settles does not
+ * exist, one layer up from the field it forbids.
+ */
+export async function listWorkItems(): Promise<WorkItem[]> {
+  return await sql<WorkItem[]>`
+    SELECT * FROM workflow.work_items
+    ORDER BY created_at DESC
+  `;
+}
+
+/**
+ * Resolve a WorkItem by its ADR-017 §2 provenance pair.
+ *
+ * The pair is the lookup key, never `source_ref` alone: the same `#57` is a different
+ * unit of work in a different source system, and `uq_work_items_provenance` is over
+ * both columns. `awcp-native` can never resolve here — the pair CHECK gives every
+ * native row a null `source_ref` — which the edge refuses ahead of this call rather
+ * than leaving it to return an unexplained miss.
+ */
+export async function findWorkItemByProvenance(
+  sourceSystem: SourceSystem,
+  sourceRef: string,
+): Promise<WorkItem | null> {
+  const rows = await sql<WorkItem[]>`
+    SELECT * FROM workflow.work_items
+    WHERE source_system = ${sourceSystem} AND source_ref = ${sourceRef}
+  `;
+  return rows[0] ?? null;
+}
+
+/**
+ * The packets parented to any of `workItemIds`, newest first.
+ *
+ * Batched over the whole set rather than queried per item, so the overview's WorkItem
+ * lane costs two statements regardless of how many items it renders. `= ANY(...)`
+ * follows `acknowledgeSeqs`'s precedent in this file.
+ */
+export async function listPacketsForWorkItems(
+  workItemIds: string[],
+): Promise<WorkPacket[]> {
+  if (workItemIds.length === 0) return [];
+  return await sql<WorkPacket[]>`
+    SELECT * FROM workflow.work_packets
+    WHERE work_item_id = ANY(${workItemIds}::uuid[])
+    ORDER BY created_at DESC
+  `;
+}
+
+/**
+ * The observed sessions CLAIMED by any of `workItemIds`, newest claim first.
+ *
+ * **The join is the whole point.** An observed session is reachable from a WorkItem
+ * only through `work_item_sessions`, which is an explicit operator claim; an
+ * unclaimed session has no row there and is therefore reachable from no WorkItem at
+ * all. That is KTD-D5's "never an inference" expressed as the query's own shape —
+ * there is no predicate here that could match a session nobody claimed.
+ *
+ * The projection selects columns rather than `*`: `observed_sessions` carries no
+ * packet, run or scope today, and naming the columns keeps that true of this read
+ * even if a later migration adds something to the table.
+ */
+export async function listClaimedSessionsForWorkItems(
+  workItemIds: string[],
+): Promise<ClaimedObservedSession[]> {
+  if (workItemIds.length === 0) return [];
+  return await sql<ClaimedObservedSession[]>`
+    SELECT
+      c.work_item_id,
+      c.node_id,
+      c.session_id,
+      s.started_at,
+      s.last_heartbeat_at,
+      s.ended_at,
+      c.claimed_at
+    FROM workflow.work_item_sessions c
+    JOIN workflow.observed_sessions s
+      ON s.node_id = c.node_id AND s.session_id = c.session_id
+    WHERE c.work_item_id = ANY(${workItemIds}::uuid[])
+    ORDER BY c.claimed_at DESC
+  `;
 }
 
 // --------------------------------------------------------------------------

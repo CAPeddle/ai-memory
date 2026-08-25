@@ -105,10 +105,21 @@ const OPERATOR_ONLY_ROUTES: RoutePattern[] = [
 /**
  * True when `method`+`path` names one of the seven operator-only routes above.
  *
- * Every other `/api/workflow` route — including all seven reporting/read routes
+ * Every other `/api/workflow` route — including all ten reporting/read routes
  * (`POST /packets`, `POST /packets/:packetId/runs`, `POST /runs/:runId/checkpoints`,
  * `POST /runs/:runId/end`, `POST /packets/:packetId/decisions`, `GET /overview`,
- * `GET /packets/:packetId`) — returns `false`, so either credential may call it.
+ * `GET /packets/:packetId`, and ST-097 B5's `GET /work-items`,
+ * `GET /work-items/by-ref`, `GET /work-items/:workItemId`) — returns `false`, so
+ * either credential may call it.
+ *
+ * **The three WorkItem GETs are reads, and their classification is as deliberate as
+ * the writes' above.** An agent reporting into a WorkItem must be able to read the
+ * one it is reporting into, which is the same posture `/overview` has carried since
+ * ST-086. What that inherits, stated rather than implied: retrieval-time scope
+ * enforcement is deferred to Stage 2, so an agent key reads the whole WorkItem
+ * surface. That is a known open limit (ST-082), not a property these routes
+ * establish — a credential-parity test over them proves the classification is wired,
+ * never that the data is authorised per object.
  *
  * The match is method-aware as well as path-aware, and that stopped being a
  * theoretical nicety when the binding route arrived: it is the module's only
