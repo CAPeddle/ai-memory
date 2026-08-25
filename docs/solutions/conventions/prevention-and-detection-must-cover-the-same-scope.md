@@ -135,6 +135,15 @@ at exit 2. A guard never observed failing is not known to work — see
 
 ## Related
 
+- [fix-the-assumption-not-the-symptom.md](fix-the-assumption-not-the-symptom.md) **Guidance
+  #2 is the general rule this is a worked instance of** — *"the second place the same
+  invariant is enforced... does the second copy compare everything the first one
+  compares?"*, with pre-lock scan versus under-lock recheck as its own example. What this
+  entry adds: the question is not only whether the second copy compares the same things but
+  **what each half can see**, which is a property of where it runs rather than of what it
+  does; that one root cause produces a mirrored pair, a false negative one way and a false
+  positive the other; and that "CI enforces this" is a claim about scope, and testable.
+
 - [verification-mechanisms-need-adversarial-review.md](verification-mechanisms-need-adversarial-review.md)
   — review the mechanism as hard as the code. This entry is the two-mechanism case: each
   survives that review alone, and the defect is in the seam.

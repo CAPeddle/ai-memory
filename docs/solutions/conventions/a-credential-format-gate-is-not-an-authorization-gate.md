@@ -162,6 +162,14 @@ Two supporting decisions worth carrying:
   exist. This case is its sharper form, where the *test fixture* was the
   demonstration.
 - [Fix the assumption, not the symptom](fix-the-assumption-not-the-symptom.md)
+- **A second authorization gap in the same module, of a different shape.** The
+  workflow route classifier defaults *permissive*, so a write route merely omitted
+  from its operator list is agent-reachable rather than unclassified — observed live,
+  with an agent credential creating a record it should never have been able to. That
+  is allowlist-completeness, not format-versus-provenance, and it is governed by
+  [verification mechanisms need adversarial review](verification-mechanisms-need-adversarial-review.md)
+  §1. A board story exists to derive the classification from the router instead of a
+  hand-kept list, and it already cites this doc; the link is now bidirectional.
 - [ADR-016 §2](../../design/adr/ADR-016-awcp-consolidation-host-topology.md) —
   the hub-and-client topology this credential exists to protect. Nodes hold no
   authoritative state, so the hub's node table is the only place "which machines

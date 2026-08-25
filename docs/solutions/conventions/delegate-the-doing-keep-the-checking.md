@@ -133,6 +133,22 @@ copying); and honest-but-surprising deviations, such as executors in this phase 
 prohibited `git stash` and an amended commit. Honest agents disclose these. A less careful one would not,
 and the mechanical checks above are what close that gap.
 
+**A third failure mode, and the checks above do not close it: the worker dies without
+reporting.** Both modes named above presuppose that a report exists. A transport error or a
+usage-limit kill leaves partial work on disk and no report at all — the checking half
+survives, but there is nothing to check a claim *against*. Treat such a unit as unverified
+and reconstruct what the diff, the log and the artifacts can carry.
+
+What they cannot carry is the point. An observation only the worker witnessed — a test seen
+failing on its assertion *before* the fix, a control that discriminated — lived solely in a
+transcript that is now gone. No mechanical check recovers it, and re-deriving it from the
+finished tree is not the same claim. Record it as unverified rather than inferring it.
+
+Two mitigations, both cheap and both learned by losing the work: split a large unit before
+dispatching it, so a mid-run death costs half rather than all of it; and tell the worker in
+its brief to report partial progress on the piece it is holding rather than only a final
+summary, since a partial report honestly given is worth more than a lost complete one.
+
 **Running a subagent-based skill inline inverts its design.** Those subagents usually exist *for* context
 efficiency. Collapsing them into a single pass lowers total token spend slightly while sharply raising
 main-window burn — optimising the variable that is not constrained at the expense of the one that is.
