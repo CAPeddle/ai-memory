@@ -30,7 +30,7 @@ type: chore
 
 ### Summary
 
-Fix an observed-session bug where a node-client restart under a pinned session id makes an abandoned session look permanently closed. Split WorkItem persistence out of `store.ts` into its own module. Root-cause and disposition the workflow module's ~9 pre-existing test failures. Re-verify the 28 manual dashboard checks a prior commit invalidated. No product-surface, API, or ADR change.
+Fix an observed-session bug where a node-client restart under a pinned session id makes an abandoned session look permanently closed. Split WorkItem persistence out of `store.ts` into its own module. Root-cause and disposition ~9 pre-existing test failures unrelated to the workflow module. Re-verify the 28 manual dashboard checks a prior commit invalidated. No product-surface, API, or ADR change.
 
 ### Problem Frame
 
@@ -50,7 +50,7 @@ ST-097 merged to `main` at `af84b03` with its review clean but four findings del
 
 **Test-suite health**
 
-- R5. Each of the ~9 pre-existing failures in `server/tests/e2e.test.ts` and `server/tests/entity-worker-observability.test.ts` is root-caused. A failure whose fix is small and isolated to its own test/module is fixed in this story; any other failure is recorded as a dated, commit-anchored baseline with its own follow-up story filed.
+- R5. Each of the ~9 pre-existing failures in `server/tests/e2e.test.ts` and `server/tests/entity-worker-observability.test.ts` is root-caused. A failure is fixed in this story only when the fix touches nothing outside its own failing test file plus its direct production dependency; a fix reaching into shared infrastructure (the consolidation worker, `db-test` seeding, entity-extraction shared code) is recorded as a dated, commit-anchored baseline with its own follow-up story filed instead.
 
 **Verification currency**
 
@@ -73,7 +73,7 @@ ST-097 merged to `main` at `af84b03` with its review clean but four findings del
 
 ### Key Technical Decisions
 
-- KTD1. **Remove `AWCP_SESSION_ID` entirely from `server/scripts/awcp-node-client.mjs`**, rather than keeping it as a same-process override. (session-settled: user-directed — chosen over keeping the env var for single-process use: no code path uses it for anything except restart-pinning, and no test references it by name, so partial retention would keep dead surface area for no benefit.) Governs R1. Three sites change: the module docblock's "Env vars read" list (~line 47-48), the `resolveConfig` fallback `sessionId: overrides.sessionId ?? process.env.AWCP_SESSION_ID ?? null` (~line 418), and the `run` command's comment on pinning across restarts (~line 1841-1848).
+- KTD1. **Remove `AWCP_SESSION_ID` entirely from `server/scripts/awcp-node-client.mjs`**, rather than keeping it as a same-process override. (session-settled: user-directed — chosen over keeping the env var for single-process use: no code path uses it for anything except restart-pinning, and no test references it by name, so partial retention would keep dead surface area for no benefit.) Governs R1. Three sites change: the module docblock's "Env vars read" list (~line 47-48), the `resolveConfig` fallback `sessionId: overrides.sessionId ?? process.env.AWCP_SESSION_ID ?? null` (~line 418), and the `run` command's comment on pinning across restarts (~line 1841-1848). `resolveConfig`'s `overrides.sessionId` is a separate, unrelated seam: `main(argv, overrides)`'s `overrides` parameter exists only for programmatic (test) callers — the real CLI entry point calls `main(process.argv.slice(2))` with no second argument, and no CLI flag populates it. It is not a second restart-pinning path and is out of this unit's scope.
 - KTD2. **`server/src/workflow/dashboard.ts`'s session render shows both `ended_at` and `last_heartbeat_at`** wherever it currently shows one or the other (~`renderWorkItemSessions`, lines 474-491). Governs R2. No change to `claimSessionForWorkItem` — it still accepts a claim regardless of `ended_at`, per `observedSession.ts`'s "evaluation policy stays out of the store" design; only the render gains data.
 - KTD3. **`workItemStore.ts` joins the boundary test's allowed-handle-holder set, mirroring `schema.ts`'s existing precedent, rather than importing the `sql` executor from `store.ts`.** Governs R3, R4. The alternative (having `workItemStore.ts` import `sql`/`SqlExecutor` from `./store.ts` instead of `../db.ts`) passes `server/tests/workflow-boundary.test.ts` unmodified, but only in letter: the test's own stated purpose — "only `store.ts` holds the database handle... route SQL through `store.ts`" — would be false in spirit while the test stays green. Editing the test's allowlist deliberately (as `schema.ts` already does, for its own documented reason) keeps the boundary test meaning what it says.
 - KTD4. **All 9 call sites of the moved functions (`server/src/workflow/api.ts`, `server/src/workflow/readModel.ts`, and 7 test files) are renamed to `workItemStore.xxx(...)` in the same unit, with no `store.ts` re-export bridge.** No precedent for a barrel/re-export exists anywhere in `server/src/workflow/*.ts` today — every current consumer does a direct namespace import (`import * as store from "./store.ts"`). Introducing a bridge would be a first for this module and would leave `store.ts` calling into code it no longer contains, for no benefit once the rename lands in the same commit.
@@ -84,7 +84,7 @@ ST-097 merged to `main` at `af84b03` with its review clean but four findings del
 ### Assumptions
 
 - The `docker compose --profile test` stack (or the WSL2-native `./dev.sh` path against a scratch database) is available in the executing environment to run the fresh-container discriminator in U3 and the full suite in the Verification Contract below.
-- No other repo, script, or CI job outside `server/` reads `AWCP_SESSION_ID` — confirmed by research (no match in `server/tests/`), but not exhaustively checked outside `server/`.
+- `AWCP_SESSION_ID` usage was checked within `server/tests/` (no match); usage elsewhere in `server/` or outside it has not been exhaustively checked.
 
 ---
 
@@ -130,7 +130,7 @@ ST-097 merged to `main` at `af84b03` with its review clean but four findings del
 **Dependencies:** None.
 
 **Files:**
-- `server/src/workflow/store.ts` (remove lines ~47-323; export `sql`/`SqlExecutor` if `workItemStore.ts` needs to receive it, per KTD3's chosen shape)
+- `server/src/workflow/store.ts` (remove lines ~47-323; no new export needed — `workItemStore.ts` imports `sql` from `../db.ts` directly, per KTD3)
 - `server/src/workflow/workItemStore.ts` (new)
 - `server/src/workflow/api.ts`, `server/src/workflow/readModel.ts` (update `store.xxx(...)` call sites to `workItemStore.xxx(...)`)
 - `server/tests/workflow-boundary.test.ts` (add `workItemStore.ts` to the allowed-handle-holder assertion and the relevant allowlist)
@@ -163,13 +163,13 @@ ST-097 merged to `main` at `af84b03` with its review clean but four findings del
 
 **Files:**
 - `server/tests/e2e.test.ts`, `server/tests/entity-worker-observability.test.ts` (diagnosis; fixes only if small and isolated)
-- Production file(s) the root cause points to — not knowable until diagnosis runs; record under deferred/implementation-time notes per Phase 3.6, do not guess here.
+- Production file(s) the root cause points to — not knowable until diagnosis runs; record under this unit's disposition notes in the ST-098 board entry, do not guess here.
 - `.github/planning/story-board.md` (record the disposition on ST-098's entry, or file a new story for any failure not fixed inline)
 
 **Approach:**
 1. Run the fresh-container discriminator first (KTD5): a clean `docker compose --profile test up` followed by one full test run, before any other diagnosis step.
 2. For each of the ~9 failures, classify as environmental (background worker/consolidation timing, `db-test` pollution — see `docs/solutions/test-failures/corpus-seed-consolidation-interference.md`) or a real regression.
-3. Fix inline only when the root cause is small and isolated to its own test/module; otherwise record the dated, SHA-anchored baseline and file a follow-up story.
+3. Fix inline only when the root cause is small and isolated to its own test/module (per R5's threshold); otherwise record the dated, SHA-anchored baseline and file a follow-up story with its `ST-NNN` allocated through `./story-id.sh --mint`, never hand-derived.
 
 **Execution note:** Start with the fresh-container run before any other diagnostic step — it is the cheapest discriminator between environmental pollution and a real regression, and skipping it risks spending this unit's effort chasing pollution a clean run would have ruled out immediately.
 
@@ -191,11 +191,11 @@ ST-097 merged to `main` at `af84b03` with its review clean but four findings del
 
 **Files:**
 - `server/src/workflow/dashboard.ts` (surface under test; no expected code change from this unit)
-- Wherever the 28 checks are currently documented (research did not pin this down exactly — likely `docs/workflow-mvp.md` or a prior plan's verification section; locate at execution time)
-- `.github/planning/story-board.md` (record the new disposition)
+- `.github/planning/story-board.md` (ST-086's entry enumerates the 28 checks inline and already records `EXPIRED 2026-08-25 by 585d2c9 (ST-097)`; record the new disposition there)
+- `docs/workflow-mvp.md#verifying-the-dashboard-in-a-real-browser` (the check procedure)
 
 **Approach:**
-1. Locate the existing 28-check list.
+1. Read the existing 28-check list from ST-086's board entry.
 2. Re-run each check against the post-U1/U2 tree, using the Docker dev stack (`mcp` on `:3000`) per the confirmed scope.
 3. Record the result third-person and file-anchored: the commit SHA the checks were run against, and the pathspec (`server/src/workflow/dashboard.ts`, `readModel.ts`, `store.ts`, `workItemStore.ts`) whose future changes would expire this result — per KTD6, not a date-only or second-person record.
 
