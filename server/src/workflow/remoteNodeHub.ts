@@ -61,6 +61,7 @@ import {
   withErrorMapping,
 } from "./api.ts";
 import { checksumOfText } from "./schema.ts";
+import { isSessionEventType, sessionPayloadSchema } from "./observedSession.ts";
 
 /**
  * The required shape of a per-node bearer: 32 random bytes as 64 lowercase hex
@@ -270,6 +271,14 @@ function stripNulChars(value: unknown): unknown {
 interface NormalizedBatch {
   accepted: store.RunEventInput[];
   oversized: { client_seq: number; bytes: number }[];
+  /**
+   * Session events whose payload broke the closed field set (ST-097 B3). Shaped like
+   * `oversized` — one entry per offending event, each carrying its numeric
+   * `client_seq` — because that is the 400 shape the node client classifies as a
+   * per-event rejection and drops-and-counts (D-15), instead of retrying a permanent
+   * rejection forever.
+   */
+  invalidSession: { client_seq: number; path: string; message: string }[];
 }
 
 /**
@@ -293,6 +302,7 @@ function normalizeBatch(
 ): NormalizedBatch {
   const accepted: store.RunEventInput[] = [];
   const oversized: { client_seq: number; bytes: number }[] = [];
+  const invalidSession: NormalizedBatch["invalidSession"] = [];
   const seen = new Set<number>();
 
   for (const event of events) {
@@ -313,6 +323,23 @@ function normalizeBatch(
       ? stripNulChars(event.payload)
       : event.payload;
 
+    // ST-097 B3 — the observed-session payload is a CLOSED set, and this is the edge
+    // that closes it. Scoped to the session event types on purpose: `checkpoint` and
+    // `heartbeat` already ship rich payloads, and B3 must not retroactively close a
+    // lane it did not open.
+    //
+    // Checked on the SANITISED value, which is what would be stored — validating the
+    // pre-strip payload would let the two disagree about a key containing a NUL.
+    if (isSessionEventType(event.event_type)) {
+      const payload = sessionPayloadSchema.safeParse(sanitised);
+      if (!payload.success) {
+        for (const issue of normalizeZodIssues(payload.error.issues)) {
+          invalidSession.push({ client_seq: event.client_seq, ...issue });
+        }
+        continue;
+      }
+    }
+
     accepted.push({
       client_seq: event.client_seq,
       event_type: event.event_type,
@@ -320,7 +347,7 @@ function normalizeBatch(
     });
   }
 
-  return { accepted, oversized };
+  return { accepted, oversized, invalidSession };
 }
 
 function badRequest(c: Context, message: string, issues?: unknown) {
@@ -398,9 +425,20 @@ export function createRemoteNodeHubRoutes(): Hono {
 
       // Every check below precedes the store call, so a rejected batch leaves no
       // partial write. Ordering within them is deliberate.
-      const { accepted, oversized } = normalizeBatch(parsed.data.events);
+      const { accepted, oversized, invalidSession } = normalizeBatch(parsed.data.events);
       if (oversized.length > 0) {
         return badRequest(c, `event payload exceeds ${MAX_PAYLOAD_BYTES} bytes`, oversized);
+      }
+      // The WHOLE batch is refused, matching the oversized branch above rather than
+      // silently accepting the rest: both branches return before the store call, so a
+      // refused batch leaves no partial write on either lane. The client drops exactly
+      // the named seqs, counts them visibly, and re-sends everything else.
+      if (invalidSession.length > 0) {
+        return badRequest(
+          c,
+          "session event payload must carry exactly {session_id, node_id, at}",
+          invalidSession,
+        );
       }
 
       const node = await store.findExecutionNode(nodeId.data);

@@ -43,7 +43,9 @@
  *     disk, at mode 0600 inside a 0700 directory (D-16).
  *
  * Env vars read: `AWCP_HOME`, `AWCP_HUB_URL`, `AWCP_NODE_BEARER`,
- * `AWCP_NODE_ENROLMENT_SECRET`.
+ * `AWCP_NODE_ENROLMENT_SECRET`, `AWCP_SPOOL_MAX_ENTRIES`,
+ * `AWCP_HEARTBEAT_INTERVAL_MS`, `AWCP_SESSION_ID` (ST-097 B3 — pins the observed
+ * session this `run` announces; absent, `run` mints one per invocation).
  */
 
 import {
@@ -63,7 +65,7 @@ import {
 import { basename, dirname, join } from "node:path";
 import { homedir, hostname as osHostname } from "node:os";
 import { pathToFileURL } from "node:url";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 /**
  * Client-side per-flush cap. Matches the hub's `eventsBody.max(500)`
@@ -112,6 +114,31 @@ export const BACKOFF_CAP_MS = 30_000;
  * via `AWCP_HEARTBEAT_INTERVAL_MS`.
  */
 export const DEFAULT_HEARTBEAT_INTERVAL_MS = 60_000;
+
+/**
+ * ST-097 B3 — the observed-session lane, MIRRORED from
+ * `server/src/workflow/observedSession.ts`.
+ *
+ * A mirror rather than an import because this file is plain Node `.mjs` shipped to the
+ * node and cannot import a `.ts` module. Both ends name each other, and the mirror is
+ * kept honest by the hub REFUSING a payload that breaks the closed field set: a client
+ * that drifts gets a 400 naming its `client_seq`, not a quietly stored extra field.
+ *
+ * The abandonment threshold is deliberately NOT mirrored here. It is evaluation policy
+ * and this client evaluates nothing — it only emits the signal an evaluator will read.
+ */
+const SESSION_EVENT_TYPES = Object.freeze({
+  start: "session_start",
+  heartbeat: "session_heartbeat",
+  end: "session_end",
+});
+
+/**
+ * Emission cadence for `session_heartbeat`. Equal to the node heartbeat's own tick, and
+ * that is why `runAgent` rides the existing tick instead of adding a second timer — one
+ * cadence is one thing to reason about when a gap has to mean something.
+ */
+export const SESSION_HEARTBEAT_INTERVAL_MS = DEFAULT_HEARTBEAT_INTERVAL_MS;
 
 /**
  * Default tick source for `flush()`'s backoff and `runAgent`'s heartbeat interval.
@@ -384,6 +411,11 @@ export function resolveConfig(overrides = {}) {
     // prove the rename was made durable rather than merely performed is to count the
     // calls. Defaulted here so production behaviour never depends on a test setting it.
     fsyncDirImpl: overrides.fsyncDirImpl ?? fsyncDir,
+    // ST-097 B3: the observed session this run announces, or null for none. Null is
+    // the default so every existing caller — including `runAgent` driven directly by a
+    // test — keeps exactly the event stream it had; `main`'s `run` command is what
+    // mints one when the operator has not supplied `AWCP_SESSION_ID`.
+    sessionId: overrides.sessionId ?? process.env.AWCP_SESSION_ID ?? null,
     // ST-092 R1: the pid-liveness probe behind the lock's stale-reclaim decision.
     // Injectable because the in-process suite deliberately runs without --allow-run,
     // under which the real probe cannot answer (see `isPidAlive`).
@@ -1500,6 +1532,78 @@ export function emitCheckpoint(config, payload = {}) {
 }
 
 /**
+ * Mint a session id (ST-097 B3, KTD-B4 items 1-2).
+ *
+ * Client-generated, opaque, and explicitly NON-AUTHORITATIVE — no round trip, which is
+ * what keeps it consistent with the spool's offline-first design: a session that starts
+ * while the hub is unreachable still has an identity, and its events still spool.
+ *
+ * IN PROCESS, NEVER PERSISTED under `AWCP_HOME`. `client_seq` is per-NODE, so two
+ * concurrent sessions on one machine share one counter and interleave
+ * indistinguishably; the session id is the only thing that tells them apart, and a
+ * persisted one would hand both of them the same answer. A v4 uuid rather than a
+ * counter for the same reason — nothing coordinates the two processes.
+ *
+ * It is NOT a security boundary. Identity is node-bound: the hub keys every session on
+ * `(node_id, session_id)` using the node the BEARER proved, never the one a payload
+ * asserts.
+ */
+export function newSessionId() {
+  return randomUUID();
+}
+
+/**
+ * Append one typed session-lifecycle event carrying the CLOSED payload field set
+ * (KTD-B4 item 6): `session_id`, `node_id`, `at`, and nothing else.
+ *
+ * Deliberately unlike `emitCheckpoint`, which merges caller-supplied JSON and adds
+ * hostname and counters. Session events take no caller payload at all — there is no
+ * parameter through which one could arrive — because payload content is unresolved
+ * under the permanent retention these events inherit (KTD-B7), and a closed set is only
+ * closed if there is no way to widen it. Repository and branch belong on the WorkItem's
+ * provenance, not on the node lane.
+ *
+ * `node_id` is read from disk and may be `null` (never `undefined` — `JSON.stringify`
+ * drops undefined-valued keys and the key must always be present, the same rule
+ * `emitCheckpoint` follows). The hub ignores the value: it is in the set because item 6
+ * puts it there.
+ *
+ * `at` is stamped HERE, at append time, not at flush time. A spooled backlog delivered
+ * after a reconnection therefore carries the instants that actually happened, which is
+ * what lets a heartbeat gap close retroactively instead of being an artefact of when
+ * the network came back.
+ */
+function emitSessionEvent(config, eventType, sessionId) {
+  return appendEvent(config, {
+    event_type: eventType,
+    payload: {
+      session_id: sessionId,
+      node_id: readNodeIdOrNull(config),
+      at: new Date().toISOString(),
+    },
+  });
+}
+
+/** A session announcing itself. Returns the allocated `client_seq`. */
+export function emitSessionStart(config, sessionId) {
+  return emitSessionEvent(config, SESSION_EVENT_TYPES.start, sessionId);
+}
+
+/** A periodic liveness beat. The GAP between these is what abandonment is decided on. */
+export function emitSessionHeartbeat(config, sessionId) {
+  return emitSessionEvent(config, SESSION_EVENT_TYPES.heartbeat, sessionId);
+}
+
+/**
+ * A CLEAN close — and its absence is meaningful. A `SIGKILL` never reaches this
+ * function, which is exactly why abandonment is decided by a heartbeat gap rather than
+ * by the absence of this event (KTD-B4 item 4).
+ */
+export function emitSessionEnd(config, sessionId) {
+  return emitSessionEvent(config, SESSION_EVENT_TYPES.end, sessionId);
+}
+
+/**
  * The long-running loop: emit a start checkpoint, flush; then on every tick emit a
  * heartbeat and flush again; on a stop signal, emit a stop checkpoint, flush once
  * more, and finish. Exits immediately — no further tick, no stop checkpoint — if any
@@ -1559,6 +1663,7 @@ export function emitCheckpoint(config, payload = {}) {
 export function runAgent(config) {
   const sleepImpl = config.sleepImpl ?? defaultSleep;
   const interval = config.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
+  const sessionId = config.sessionId ?? null;
   const startedAtMs = Date.now();
   let stopped = false;
   // Two halves of the same signal, and both are needed.
@@ -1579,6 +1684,11 @@ export function runAgent(config) {
   const stopController = new AbortController();
 
   async function loop() {
+    // ST-097 B3 — the observed session announces itself BEFORE anything else this loop
+    // does, so a session that dies in its first flush is still an observed one.
+    // `sessionId` absent means no session lane at all: the node agent runs exactly as
+    // it did before B3, and a session is an observation someone opted into.
+    if (sessionId !== null) emitSessionStart(config, sessionId);
     emitCheckpoint(config, { phase: "start" });
     // The in-loop flushes carry the stop signal so a shutdown interrupts them; the
     // FINAL flush below deliberately does not, so it still gets its bounded delivery
@@ -1601,6 +1711,9 @@ export function runAgent(config) {
       ]);
       if (stopped) break;
       emitHeartbeat(config, startedAtMs);
+      // The SAME tick, deliberately. A second timer would be a second cadence to
+      // reason about when a heartbeat gap has to carry a verdict.
+      if (sessionId !== null) emitSessionHeartbeat(config, sessionId);
       flushResult = await flush(interruptibleConfig);
       if (TERMINAL_FLUSH_OUTCOMES.has(flushResult.outcome)) {
         return { exitCode: flushExitCode(flushResult.outcome), terminal: true };
@@ -1608,6 +1721,10 @@ export function runAgent(config) {
     }
 
     emitCheckpoint(config, { phase: "stop" });
+    // The typed close is the LAST thing on the lane, and only on the graceful path:
+    // every terminal return above skips it, as does a SIGKILL. That absence is the
+    // signal — it is what makes a crash distinguishable from a clean close.
+    if (sessionId !== null) emitSessionEnd(config, sessionId);
     flushResult = await flush(config);
     if (TERMINAL_FLUSH_OUTCOMES.has(flushResult.outcome)) {
       return { exitCode: flushExitCode(flushResult.outcome), terminal: true };
@@ -1722,7 +1839,14 @@ async function runCommand(config, argv, command) {
     return;
   }
   if (command === "run") {
-    const controller = runAgent(config);
+    // ST-097 B3: a real `run` always announces an observed session. The id is minted
+    // here rather than in `runAgent` so a test driving the loop directly still gets the
+    // pre-B3 event stream unless it asks for a session — and so an operator can pin one
+    // across restarts with `AWCP_SESSION_ID` when a session outlives a process.
+    const controller = runAgent({
+      ...config,
+      sessionId: config.sessionId ?? newSessionId(),
+    });
     // The only real (non-test) registration of a live signal handler — runAgent
     // itself never does this (see its docblock: a live SIGINT handler inside a test
     // process is a runtime hazard, not merely a testability seam).

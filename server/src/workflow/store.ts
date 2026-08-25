@@ -20,6 +20,7 @@
  */
 
 import { sql } from "../db.ts";
+import { SESSION_EVENT_TYPES } from "./observedSession.ts";
 import {
   type AgentRun,
   type Checkpoint,
@@ -896,13 +897,12 @@ export interface RunEventInput {
  * later abandonment evaluation depend on a payload field, and the abandonment case —
  * a `SIGKILL` that never writes a stop record — is the one most likely to omit it.
  *
- * B3 owns emitting these. This module owns only what they materialise into.
+ * B3 owns emitting these and refusing a payload that breaks the closed field set at
+ * the edge; this module owns only what they materialise into. The set itself is
+ * IMPORTED rather than restated (B3, `observedSession.ts`): the hub's refusal and this
+ * materialisation must agree about which types are session types, and two copies of
+ * that answer is one place for it to drift.
  */
-const SESSION_EVENT_TYPES = new Set([
-  "session_start",
-  "session_heartbeat",
-  "session_end",
-]);
 
 /**
  * The observed-session payload field set, read here and closed by KTD-B4 item 6.
