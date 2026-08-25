@@ -705,6 +705,8 @@
 - **Phase 3 waves 1–5 complete** 2026-08-18 (PR #49 → `47cd90b`): node client with bounded crash-safe spool and replay, terminal-vs-deferred failure states, SAFE-01 empty-diff regression gate, SAFE-02 corpus integrity. **Wave 6 (03-06) outstanding** — the z2 enrolment and experiments 4–6 that actually discharge criterion 6, held at its `<human-check>` output gate. Resume: `/gsd-execute-phase 03 --wave 6`.
 - **Phase 4 not started** — blocking evidence and the final ADR-016 recommendation (U5+U6).
 
+## Review
+
 ### ST-098: ST-097 follow-ups — observed-session restart-pinning fix, WorkItem store split, pre-existing test triage, browser-check refresh
 - Type: chore (bug fix + refactor + investigation + verification)
 - Source: four findings from ST-097's 12-reviewer code review, deliberately left open at that
@@ -839,8 +841,29 @@
 - **Moved Backlog → In Progress 2026-08-25**, same session it was filed in, at the user's
   explicit direction to proceed on all four items.
 - **Open for the PO, neither blocking:** `FEATURE_WORKFLOW` hardcoded `"true"` on base `mcp` leaves an unauthenticated dashboard shell on `0.0.0.0:3000` for every `docker compose up -d` (`T-03-01-02`); and `.planning/STATE.md` progress metadata now describes a 2-phase project against ROADMAP's 4, with `current_phase` exceeding `total_phases`.
+- **Moved In Progress -> Review 2026-08-25.** All four acceptance criteria closed; full
+  workflow-module suite green except the same 9 disposed pre-existing failures (ST-099).
+  `ce-code-review` ran the full roster (correctness, project-standards, testing,
+  maintainability, agent-native, learnings, plus the independent cross-model adversarial
+  peer via Codex) against the branch. Two findings survived synthesis and validation:
+  finding #2 (agent-native, P2, confidence 100) -- the dashboard's poisoned-session render
+  fix wasn't mirrored into the agent-facing `awcp status` CLI (`server/scripts/awcp.ts`),
+  breaking a documented dashboard/CLI parity contract -- was applied with red-before-green
+  test proof, commit `2218bc0`. Finding #1 (adversarial-codex, P1, `advisory`/`human`,
+  confidence 100, independently corroborated by the correctness reviewer's own testing_gap)
+  is deferred, not applied: the new session-mint regression tests in
+  `awcp-node-client.test.ts` exercise a copied mint expression via `runAgent` directly
+  rather than driving `main(["run"])` end-to-end, so a future regression in the real CLI
+  entry point would not be caught by these tests. Recorded here rather than silently
+  dropped -- needs a PO/implementer call on whether to extract a shared mint helper or
+  drive `main` directly in the test.
+- **Not pushed; no PR opened.** The branch (`chore/st098-observed-session-follow-ups`, 6
+  commits, HEAD `2218bc0`) is fully committed and locally verified only. Local `main` is
+  itself 46 commits ahead of `origin/main` (unrelated prior work from this same session
+  and others), so pushing this branch and opening a PR against `origin/main` would bundle
+  in all of that -- deliberately not done without the PO's explicit direction. Awaiting
+  PO decision on push/PR.
 
-## Review
 
 ## Done
 
