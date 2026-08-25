@@ -151,3 +151,4 @@ ST-095  2026-08-24  branch:docs/gsd-ce-drive-direction  seed:branch — allocate
 ST-096  2026-08-24  branch:main  seed:board — story-board.md entry
 ST-097  2026-08-24  branch:main  seed:board — story-board.md entry
 ST-098  2026-08-25  branch:main  st097 followups: observed-session restart-pinning fix, store.ts split, pre-existing test triage, browser-check refresh
+ST-099  2026-08-25  branch:chore/st098-observed-session-follow-ups  restore authenticated OpenRouter egress from dev/test containers
