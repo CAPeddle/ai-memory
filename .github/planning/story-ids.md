@@ -150,3 +150,4 @@ ST-094  2026-08-24  branch:main  seed:board — story-board.md entry
 ST-095  2026-08-24  branch:docs/gsd-ce-drive-direction  seed:branch — allocated on an unmerged branch; main has never seen it; its board entry was carried onto docs/awcp-strategy-baseline by merge on 2026-08-24, so that branch holds it too
 ST-096  2026-08-24  branch:main  seed:board — story-board.md entry
 ST-097  2026-08-24  branch:main  seed:board — story-board.md entry
+ST-098  2026-08-25  branch:main  st097 followups: observed-session restart-pinning fix, store.ts split, pre-existing test triage, browser-check refresh
