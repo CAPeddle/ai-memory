@@ -1130,7 +1130,18 @@ Candidate C (separate operational application, no memory co-tenancy):
 - **No fingerprint-dedup interaction:** No tag-merging logic to reason about. Content is not deduplicated across scopes.
 - **No egress ambiguity:** Workflow produces no extracted entities and no consolidated output. Embeddings are not required. Egress paths are zero.
 
-**Net savings for Candidate C: 4–5 days** in implementation complexity and ongoing maintenance. Offset by 3–4 days of greenfield setup (schema design, application skeleton, test infrastructure). **Candidate C breaks even on effort, but wins on simplicity and maintainability.**
+~~**Net savings for Candidate C: 4–5 days** in implementation complexity and ongoing maintenance. Offset by 3–4 days of greenfield setup (schema design, application skeleton, test infrastructure). **Candidate C breaks even on effort, but wins on simplicity and maintainability.**~~
+
+> **WITHDRAWN 2026-08-26 — do not cite this figure, here or anywhere downstream.** Every one of the
+> five bullets above is `scope.tags` **enforcement** work, and §18.2 establishes that this work is
+> ai-memory's own personal/corporate isolation obligation — owned by ST-082 and required in *either*
+> topology. So "4–5 days saved by Candidate C" and §13.2's "64+ hours owed regardless" are the same
+> quantity counted from opposite ends; netting one against the other double-counts it. The pricing
+> table at §13.1–§13.2 stands as U1's record of what enforcement costs **ai-memory**. The
+> cross-topology *comparison* built on top of it does not, and no part of the §18 recommendation
+> rests on it. The five bullets themselves remain a valid *qualitative* contrast — keyed lookups
+> versus semantic retrieval, one enforcement layer versus fifteen — and that is the only form in
+> which §18 uses them. See §18.2 and the standing PO direction recorded in §18's opening note.
 
 ---
 
@@ -1148,7 +1159,7 @@ Candidate C (separate operational application, no memory co-tenancy):
 
 5. **ADR-016 §1 is updated with this pricing table and per-path classification** — so the boundary-enforcement cost is visible to operators, reviewers, and future maintenance planners. The gate is not "can we do this?" but "do we know what it costs?"
 
-**Candidate C (clean umbrella) remains less expensive in implementation effort** (by 4–5 days), but does not eliminate the greenfield setup cost (3–4 days). The decision between them should be made on product/operational grounds (shared vs. separate persistence, operational coupling, future extensibility) rather than on implementation effort alone.
+~~**Candidate C (clean umbrella) remains less expensive in implementation effort** (by 4–5 days), but does not eliminate the greenfield setup cost (3–4 days).~~ **Effort clause withdrawn 2026-08-26 — see the note in §13.5.** What survives is the half of this recommendation that never depended on the figure, and it has since been made binding for the whole evaluation (§18's opening note): the decision between them is made on product and operational grounds — shared versus separate persistence, operational coupling, future extensibility — and not on implementation effort at all.
 
 ---
 
@@ -1417,6 +1428,10 @@ this host: authenticated remote event ingestion with spooled replay."* Element b
 | Experiments 4–6 | **Discharged** | §16.3, all three on the real node against the real hub |
 | Repo-rescan | **Not implemented — an adjacent U3 capability, not a criterion-6 element** | Criterion 6's text names authenticated ingestion with spooled replay; repo-rescan is not among the things it names. It is listed under U3 in the canonical plan, and `03-CONTEXT.md:251` leaves its Phase 3 membership explicitly open. It was not built. Recorded here so Phase 4 inherits the question rather than a silence |
 
+**RATIFIED 2026-08-26 by the PO — see §19**, which discharges `03-CONTEXT.md:250-252`'s instruction
+that Phase 4 record criterion 6 against the canonical-plan definition, and carries repo-rescan forward
+as an owned scope item rather than an unattributed question.
+
 **Overall: criterion 6 is discharged for every element it names** — authentication, heartbeat,
 checkpoint, spool, replay, and experiments 4-6, each with evidence above. Repo-rescan does not qualify
 that discharge: criterion 6's text does not name it, so its absence is a **U3 scope gap, not a
@@ -1643,12 +1658,22 @@ changes that without a code change to add a consumer.
 
 ## 18. Stage 2 Unit 6: Final Extraction Viability & ADR-016 Recommendation (criterion 7)
 
+**Standing PO direction, 2026-08-26 — this governs how the whole section argues.** Effort and elapsed
+time are **discounted entirely** as evaluation inputs: the deciding axes are design quality and
+functional fit. A figure may appear here only as a record of what some unit measured (§13 priced
+ai-memory's own enforcement obligation, and that record stands) — never as support for choosing one
+topology over another. Every cross-topology cost comparison this section previously carried has been
+withdrawn on that basis, not merely because one of them turned out to be unsound. Where a withdrawal
+removed the only quantitative support for a claim, the claim is now stated qualitatively or not at all.
+
 **Verdict, stated once up front and defended below: Candidate A is technically achievable but not
 justified. The reuse that would have justified sharing a codebase went unused; the reuse that did
-happen is generic infrastructure that costs little to replicate — a wash on §13.5's own numbers, which
-is what criterion 7 actually asks. On top of that wash, co-tenancy adds costs that are real but
-deliberately *unpriced* here: a wider surface AWCP must trust (fifteen hand-written enforcement points
-rather than one adapter boundary), a shared failure domain, and a shared database role. The
+happen is generic infrastructure — connection pooling, a migration idiom, logging, container topology
+— that any competent Deno+Postgres service scaffolds for itself, which is what criterion 7 actually
+asks — and the answer is that the engine was never inherited. On top of a reuse case that did not
+materialise, co-tenancy adds coupling that is real and deliberately *unpriced* here: a wider surface
+AWCP must trust (fifteen hand-written enforcement points rather than one adapter boundary), a shared
+failure domain, and a shared database role. Each is a design-fit objection, not a cost estimate. The
 recommendation is not "Candidate A can't work" — Stage 1 and Phase 2–3 prove it can. It is "we now
 have evidence it shouldn't."**
 
@@ -1671,7 +1696,7 @@ pattern §13 already established in this document for unapplied ADR amendments.
 | 3. Separate persistence/API boundaries | **Met** (Stage 1) | Operational tables and the platform MCP surface never leaked into each other. Positive evidence the boundary is real, not just declared. |
 | 4. Failure isolation | **Met** (Stage 1), with a caveat §12a/§3 already recorded | A fault in embedding/entity/consolidation workers cannot corrupt operational state — but ST-086's fail-startup wiring means a *workflow* migration fault now takes the whole memory MCP down. Failure isolation is asymmetric: memory faults can't hurt AWCP, but a shared process still lets AWCP hurt memory. |
 | 5. Policy-scope enforcement | **NOT met — priced, not enforced** (§13/U1) | ADR-016 §1's actual wording is *"the Q9 isolation controls (policy-scope field, default-deny retrieval/provider routing) are implementable at this boundary"*, and the board states it as **default-deny; every enabled retrieval/graph/context/export/provider path enforces or fails closed**. U1 established that every one of the 15 paths has a feasible mitigation and priced the total at 64+ hours (8+ days) — but *feasible and priced* is not *enforced*. `scope.tags` is still enforced in **zero** retrieval paths (§6.1, unchanged); ST-082 owns the build. An earlier draft of this row restated the criterion as "implementable" and marked it met on the pricing alone — corrected 2026-08-26 after review; **the criterion stays unproven, and the board's own checkbox for it correctly remains unticked.** |
-| 6. Remote-client control | **Met** (§16) | Real node, real hub, all six named elements discharged. Says nothing about *where* the hub should live — a standalone AWCP hub is exactly as capable of authenticating z2 as ai-memory's is. |
+| 6. Remote-client control | **Met** (§16), definition ratified (§19) | Real node, real hub, all six named elements discharged. The conflict between ADR-016 §1's wording and the board's wider clause is settled in §19, in favour of the ADR's: repo-state is not an element of this criterion. Says nothing about *where* the hub should live — a standalone AWCP hub is exactly as capable of authenticating z2 as ai-memory's is. |
 | 7. Reuse justifies the domain-fit cost | **Not met** | See §18.2. This is the criterion whose answer decides the host question, and the evidence answers "no" — criteria 1–4 and 6 describe a boundary that is *clean*, not a boundary that *should be shared*, and criterion 5 is an outstanding bill rather than a discharged one. |
 
 ### 18.2 The reuse-vs-cost reconciliation
@@ -1686,13 +1711,20 @@ pattern §13 already established in this document for unapplied ADR amendments.
   or *actively harmful to reuse* (the worker/event infrastructure's closed union type).
 - What *did* reuse — Postgres connection pooling, the transaction pattern, logging conventions,
   container/test topology (§5's verdict: "the reuse that materialises is infrastructural") — is
-  generic. None of it is specific to being a memory-retrieval system; a well-built Deno+Postgres
-  service scaffolds the same things from a template in about the time §13.5 already estimated for
-  Candidate C's greenfield setup (3–4 days).
-- §13.5's own comparison, computed for a different purpose (pricing, not this recommendation), already
-  says the quiet part: Candidate A's reuse "savings" over Candidate C are ~4–5 days; Candidate C's
-  extra greenfield cost is ~3–4 days. **That is already a wash on reuse alone**, before any
-  topology-specific cost enters the comparison.
+  generic. None of it is specific to being a memory-retrieval system — a well-built Deno+Postgres
+  service scaffolds the same things for itself, from templates and conventions that are not
+  ai-memory's to lend. This is the whole of criterion 7's answer, and it is a statement about *kind*,
+  not about *quantity*: what AWCP inherited by sharing this codebase was nothing it could not have
+  had on its own terms.
+- **The day-count comparison this bullet used to make has been withdrawn (2026-08-26).** It read
+  §13.5's "~4–5 days saved" against its "~3–4 days greenfield" and concluded the reuse case was a
+  wash. Two things were wrong with leaning on it. It was **unsound**: §13.5's savings are built
+  entirely from `scope.tags` enforcement bullets, which the next bullet establishes are owed in either
+  topology, so the figure netted a quantity against itself. And it was **the wrong kind of argument**
+  — per §18's opening note, effort is not an axis this decision is decided on. Criterion 7 asks
+  whether inheriting ai-memory's *engine* justifies the domain-fit cost of living inside it. The
+  answer does not need a number: the engine was not inherited at all (§5), and what was inherited is
+  not the engine.
 - **What is genuinely topology-specific — corrected 2026-08-26 after review, because an earlier draft
   of this bullet inflated it.** That draft counted the whole 64+ hour (8+ day) `scope.tags`
   enforcement surface (§13) as a cost separation avoids. **It does not, and §18.6 of this same section
@@ -1712,8 +1744,12 @@ pattern §13 already established in this document for unapplied ADR amendments.
   - **The worker-type-union coupling** §5 flagged as actively harmful to extend. Wholly
     topology-specific.
 
-  No defended hour figure exists for that incremental set, and this section does not invent one —
-  see §18.9. The reuse wash above, not a cost differential, is what carries the recommendation.
+  No defended hour figure exists for that incremental set, this section does not invent one, and
+  under §18's opening note it would not be the deciding evidence even if one did — see §18.9. What
+  carries the recommendation is the shape of the finding, not its size: the reuse criterion 7 named
+  did not occur, and the coupling that co-tenancy adds in its place is structural — a wider trusted
+  surface, a shared failure domain, a shared database role, a union type flagged as harmful to
+  extend. Each of those is a design-fit objection that stands whatever it costs to remedy.
 - Net: the case for sharing a codebase was reuse. The reuse that would have mattered didn't happen,
   and the reuse that did happen is generic and cheap to replicate — so the justification for
   co-tenancy is absent on its own terms, before any cost differential is argued. What co-tenancy adds
@@ -1933,10 +1969,17 @@ shared trust boundary the way the current single `ai_memory` role does.
   simplicity, retirement path) — see §18.4. This is the single largest gap in the *select* half of the
   recommendation, and it is named rather than filled deliberately: scoring a topology in the same pass
   that proposes it is how the overclaims this section already had to correct got in.
-- **No topology-specific cost figure exists.** §18.2 now states which costs are genuinely
-  topology-specific (trusted-surface width, shared blast radius, shared role, worker-union coupling)
-  after removing the `scope.tags` work that ST-082 owns either way — but it does not price that
-  remaining set, and no defended number should be attributed to it.
+- **No topology-specific cost figure exists — and none is now sought.** §18.2 states which costs are
+  genuinely topology-specific (trusted-surface width, shared blast radius, shared role, worker-union
+  coupling) after removing the `scope.tags` work that ST-082 owns either way, but it does not price
+  that remaining set and no defended number should be attributed to it. This was recorded as a gap
+  in the recommendation's support; under the standing PO direction at §18's opening note it is no
+  longer one, because effort is not an input to this decision. It remains a genuine **planning**
+  gap for whoever schedules the work.
+- **The cross-topology day-count comparison has been withdrawn, not merely left unfilled.** §13.5's
+  "4–5 days saved / 3–4 days greenfield" netted the same `scope.tags` quantity against itself; the
+  note there marks it unusable. Anything downstream that cites a Candidate A/C effort delta is citing
+  a withdrawn figure.
 - **The relationship to Horizon B / agent-radio is asserted from the strategy baseline document, not
   independently re-verified in this session** — cited at §18.4 for context on why the boundary matters
   to what comes next, not as evidence for the host decision itself, which rests entirely on §18.1–§18.7.
@@ -1978,8 +2021,9 @@ remain **Proposed / Conditional** until that sign-off lands as a separate, expli
 > is a precondition of the adapter contract this decision names**, not follow-on work. Criterion 7 asked
 > whether ai-memory's engine reuse justified Candidate A's domain-fit cost; it does not. The
 > domain-specific memory engine (search, graph, hybrid retrieval, consolidation) went entirely unused;
-> the reuse that did materialize is generic infrastructure, replicable at roughly the cost §13.5 already
-> priced for Candidate C's greenfield setup. Co-tenancy's ongoing costs — a shared failure blast radius,
+> the reuse that did materialize is generic infrastructure — connection pooling, a migration idiom,
+> logging, container topology — which any competent Deno+Postgres service scaffolds for itself and
+> which is not ai-memory's to lend. Co-tenancy's ongoing costs — a shared failure blast radius,
 > a shared Postgres role with no real access-control isolation, and coupling flagged as actively
 > harmful to extend (§5) — are not offset by anything AWCP actually gained from sharing a codebase.
 >
@@ -2010,8 +2054,11 @@ the open it is stated plainly rather than blurred:
 
 - **Reject Candidate A — settled.** Criteria 1–4 and 6 met; criterion 5 outstanding and neutral
   between topologies; criterion 7 answered **no**. The reuse that justified co-tenancy did not
-  materialize (§18.2), and no cost differential is needed to reach that conclusion — the reuse wash
-  alone does it.
+  materialize (§18.2). No cost differential is needed to reach that conclusion, and per §18's opening
+  note none is offered: the domain-specific engine went unused, what was reused is generic and not
+  ai-memory's to lend, and what co-tenancy adds in its place is structural coupling — a wider trusted
+  surface, a shared failure domain, a shared role. That is a design-fit answer, and it is the only
+  kind of answer criterion 7 was ever going to get from this evidence.
 - **Select a standalone peer service — directional.** Argued from the same evidence, but never put
   through the six-criteria scoring A, B, and C each received, and explicitly *not* Candidate C, whose
   defining donor-retirement condition this recommendation does not meet (§18.4).
@@ -2023,3 +2070,101 @@ topology-specific cost figure, and the Horizon B relationship remain planning-qu
 **§18.10 is ready for PO sign-off as a two-part decision** — settle the rejection, direct the
 replacement and its scoring. It is **not** ready to be read as a scored selection of a named
 candidate, and it now says so in its own text.
+
+---
+
+## 19. Criterion-6 definition ratified, and repo-rescan carried forward with an owner
+
+`03-CONTEXT.md:250-252` left one instruction for this phase: *"Whether repo-rescan is in Phase 3 scope
+at all remains open — the canonical plan lists it under U3, so Phase 4 must record criterion 6 against
+that definition."* Phase 4 inherited it, §18.1 assumed §16.5's answer without discharging it, and PR #59
+review caught the omission. This section discharges it.
+
+### 19.1 The conflict, and the ratification
+
+Two definitions of criterion 6 were in circulation:
+
+| Source | Wording | Includes repo-state? |
+|---|---|---|
+| `ADR-016-awcp-consolidation-host-topology.md:54` (the criterion itself) | *"authenticated remote event ingestion with spooled replay"* | **No** |
+| `.github/planning/story-board.md`, ST-088 entry — **wording as it stood before this ratification** | *"authenticated registration, heartbeat, checkpoint, repo-state; offline spool + idempotent replay"* | **Yes** |
+| Canonical plan U3 (`2026-08-04-002-…-plan.md:109`) | *"Implements spool, heartbeat, checkpoint, and repo-rescan"* | Yes, as U3 scope |
+
+**Ratified 2026-08-26 by the PO: ADR-016 §1's wording governs the criterion.** §16.5's disposition —
+that repo-rescan is an adjacent U3 capability rather than a criterion-6 element — is the accepted
+reading, and the board clause has been corrected to match rather than the criterion widened to match
+the board. The reasoning is textual and does not depend on effort: a gate criterion is discharged
+against the things it names, and ADR-016 §1 names authenticated ingestion with spooled replay. Where a
+board paraphrase of a Tier-1 artifact and the artifact disagree, the artifact wins — the ordinary
+source-of-truth precedence in `CLAUDE.md`, applied to a case where the drift was inside a single
+checklist line.
+
+**Criterion 6 is therefore discharged, unqualified.** Repo-rescan does not qualify it.
+
+### 19.2 Repo-rescan is a real U3 gap — carried forward, not closed
+
+Ratifying the criterion settles the *gate*. It does not make the capability unnecessary, and it must
+not be read as retiring it. Recorded here with an owner so it stops arriving in each phase unattributed
+(`03-VERIFICATION.md:218`).
+
+**What it is.** `request-repo-rescan`, one of five allow-listed control messages in the AWCP spec
+(`2026-07-29-001-awcp-ai-memory-host-spike.md:174-180`; restated at `2026-08-04-002-…-plan.md:95`
+alongside `request-status`, `request-checkpoint`, `pause-reporting`, `resume-reporting`). The hub asks a
+node to re-read its working tree *now* and report repository, branch and commit, rather than waiting on
+that node's own cadence.
+
+**The local case is already solved and is not part of this gap.** `server/scripts/awcp.ts` runs where
+the repository is and derives repo/branch/commit from `git` directly — shebang `--allow-run=git`,
+narrowed to that one binary, with a fixed allow-listed command set (`:1`, `:81-84`, `:457-486`). Those
+values land in permanent hub columns: `workflow.agent_runs.repository` / `.branch`
+(`001_workflow_schema.sql:44-47`), `workflow.checkpoints.repo_commit` (`:94`). Only the **remote-node**
+path has a gap.
+
+**The gap splits in two, and only one half needs new protocol.** The framing that made repo-rescan look
+expensive is that the spec specifies it as a *pull* — hub asks, node answers — which requires an
+inbound channel the node client does not have (`awcp-node-client.mjs:1512`: *"no control channel, no new
+hub route"*). Separating the halves removes most of that:
+
+1. **Push half — the node's checkpoints omit a field the spec's own checkpoint contract already
+   requires.** Spike plan §4 lists "repository commit" among a checkpoint's fields. The node client's
+   payloads are deliberately synthetic — *"nothing derived from the machine's working directory or
+   repository contents"* (`awcp-node-client.mjs:1515-1516`) — so for the remote path the hub's picture
+   of a node's commit is not stale, it is **absent**. Filling it is a payload change on the existing
+   emitter over the existing push path: no new route, no new direction, no control channel. The hub
+   columns to receive it already exist.
+2. **Pull half — `request-repo-rescan` proper**, the on-demand "tell me now." *Only* this half needs the
+   inbound channel, and it may not be wanted at all if a short push cadence suffices. It is separable
+   and should be decided on its own merits.
+
+**PO design direction, 2026-08-26 (a direction for whoever plans this, not a decision taken here):**
+prefer the push recast. It delivers the same information over a path that already exists, and it does
+not open a hub→node direction to get it.
+
+**Rejected alternative — SSH from hub to node for a direct `git status`.** Considered and rejected on
+design grounds, recorded so it is not re-proposed:
+
+- The spike plan states plainly, immediately before enumerating the five narrow control messages:
+  *"The product spike shall not implement a general-purpose remote shell"*
+  (`2026-07-29-001-awcp-ai-memory-host-spike.md:172`). SSH-for-git-status is that shell by a side door.
+- It **inverts the trust direction.** Today a node holds a bearer letting it *talk to* the hub;
+  compromising the hub reveals nothing about any node's filesystem. SSH would have the hub hold a
+  credential granting shell *on* every node it manages — a strictly worse failure domain than the
+  narrow control message it was meant to avoid, and a direct regression against criterion 4's own
+  concern.
+
+A node-side side-service that reports repo state is better than SSH — it keeps the push direction — but
+worse than (1): a second process to deploy, authenticate and keep alive, to carry data the existing
+checkpoint path can already carry.
+
+**The D-03 objection is weaker than previously recorded.** §16.5 and `03-CONTEXT.md` treat node-side
+`git` as reopening D-03's parked question of what content leaves a node under permanent retention. That
+holds for *arbitrary* working-directory content, but not for these three fields: `awcp.ts` already lands
+repo/branch/commit in permanent hub columns (cited above), so repository, branch and commit are an
+**already-retained data class**, not a new one. The remaining delta for the node client is mechanism —
+importing `node:child_process`, and the `--allow-run` grant this forces onto the in-process test file
+(D-09) — with `awcp.ts`'s narrow single-binary allow-list as the precedent for doing it safely. D-03
+still owns any proposal to send content beyond those three fields.
+
+**Owner:** unassigned at the U3/AWCP-roadmap level, and deliberately **not** folded into ST-088, which
+this closes. It survives the host decision: both halves are node-client work that a standalone AWCP
+peer service inherits unchanged, since neither depends on where the hub lives.

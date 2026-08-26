@@ -57,17 +57,22 @@ all future GSD planning here.**
 
 ## Claims checked against the tree
 
-The revision's factual claims were verified rather than accepted. All four hold.
+The revision's factual claims were verified rather than accepted. Three hold; the fourth held when
+checked and has since been **withdrawn at source** — see the row below.
 
 | Claim | Verdict | Evidence |
 |---|---|---|
 | ADR-013 §4(b) is stale and contradicts ADR-016's conditional gate | **Holds** | `ADR-013:116` — *"now that the host decision places AWCP in the same codebase as the Storyboard it replaces"*. `:102` and `:110` use correct conditional wording (*"Proposed/Conditional"*, co-deployment *"permitted, not mandated"*) |
-| Policy-scope enforcement priced at 64+ hours / 8+ days; Candidate C saves 4–5 days, costs 3–4 in greenfield setup, breaks even | **Holds verbatim** | findings `:1086`, `:1133`, `:1151` |
-| Criterion 6 is discharged | **Holds, with the findings' own qualifier** | findings `:1420` — *"criterion 6 is discharged for every element it names"*, plus a named **U3 scope gap** (repo-rescan, not a criterion-6 element, `:1418`) |
+| Policy-scope enforcement priced at 64+ hours / 8+ days | **Holds** | findings §13.2 (`:1086`) — a record of what enforcement costs **ai-memory**, owed under ST-082 in any topology |
+| ~~Candidate C saves 4–5 days, costs 3–4 in greenfield setup, breaks even~~ | **WITHDRAWN 2026-08-26 — do not cite** | The comparison was quoted accurately when checked, but it has since been withdrawn at source: findings §13.5's note records that all five bullets deriving the "saving" are the same `scope.tags` enforcement work as the 64+ hour figure above, so the comparison netted a quantity against itself. Compounding it, the PO has made effort a **non-input** to this evaluation (findings §18's opening note) — so even a sound figure would not carry the topology decision. Nothing downstream should restate a Candidate A/C effort delta |
+| Criterion 6 is discharged | **Holds — and the qualifier is now settled rather than open** | findings §16.5 (`:1435`) — *"criterion 6 is discharged for every element it names"*. The definition conflict behind that hedge was ratified by the PO 2026-08-26 in favour of `ADR-016:54`'s wording (findings **§19.1**), and the board clause that had widened it to include repo-state was corrected to match. Repo-rescan remains a real **U3 scope gap**, now carried forward with a design direction and an owner rather than as an open question (findings §19.2) |
 | Derived planning state has drifted from evidence | **Holds** | `ROADMAP.md:111` still shows `- [ ] 03-06-PLAN.md` unchecked; `REQUIREMENTS.md` traceability still lists NODE-01/02/03 **Pending** though `840a90c` discharged them |
 
 **Carry the criterion-6 qualifier forward.** "Discharged for every element it names" launders into
-"criterion 6 done" in one careless restatement, and the U3 scope gap is real.
+"criterion 6 done" in one careless restatement, and the U3 scope gap is real. Since 2026-08-26 the
+*criterion* half of that qualifier is settled — the phrase now means what §19.1 ratified, not an
+unresolved conflict between two definitions — but the *scope-gap* half still needs carrying: nothing
+has been built, and §19.2 is where it now lives.
 
 ### What the synthesis proposed that already exists
 

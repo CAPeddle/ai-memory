@@ -125,7 +125,7 @@ supporting reason, not the primary one.
 **Goal**: The product owner receives an honest account of whether `blocking` WorkPacket state gates actual execution, and ADR-016 records a final, evidence-based host recommendation that reconciles all ST-088 evidence.
 **Depends on**: Phase 3
 **Requirements**: BLOCK-01, HOST-01, HOST-02
-**Delivery artifacts**: `docs/investigations/ST-084-awcp-host-spike-findings.md` §17 (U5 finding) and §18 (U6 recommendation) — not §13, corrected 2026-08-26 for the same reason §16's own header note gives above. `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` itself is **not yet updated**: §18.10 carries the proposed replacement text, held for PO sign-off (success criterion 2 below)
+**Delivery artifacts**: `docs/investigations/ST-084-awcp-host-spike-findings.md` §17 (U5 finding), §18 (U6 recommendation) and §19 (criterion-6 definition ratified; repo-rescan carried forward with an owner — discharges `03-CONTEXT.md:250-252`) — not §13, corrected 2026-08-26 for the same reason §16's own header note gives above. `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` itself is **not yet updated**: §18.10 carries the proposed replacement text, held for PO sign-off (success criterion 2 below)
 **Success Criteria** (what must be TRUE):
 
   1. The Stage 2 findings document records a PROVEN or UNPROVEN verdict for `blocking` WorkPacket state with a specific file:line citation for the implemented consequence (or explicit absence of one).
