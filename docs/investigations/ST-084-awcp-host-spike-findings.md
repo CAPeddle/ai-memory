@@ -1645,9 +1645,17 @@ changes that without a code change to add a consumer.
 
 **Verdict, stated once up front and defended below: Candidate A is technically achievable but not
 justified. The reuse that would have justified sharing a codebase went unused; the reuse that did
-happen is generic infrastructure that costs little to replicate; and co-tenancy imposes a real,
-priced, ongoing tax that a standalone AWCP would never pay. The recommendation is not "Candidate A
-can't work" — Stage 1 and Phase 2–3 prove it can. It is "we now have evidence it shouldn't."**
+happen is generic infrastructure that costs little to replicate — a wash on §13.5's own numbers, which
+is what criterion 7 actually asks. On top of that wash, co-tenancy adds costs that are real but
+deliberately *unpriced* here: a wider surface AWCP must trust (fifteen hand-written enforcement points
+rather than one adapter boundary), a shared failure domain, and a shared database role. The
+recommendation is not "Candidate A can't work" — Stage 1 and Phase 2–3 prove it can. It is "we now
+have evidence it shouldn't."**
+
+**What this verdict does NOT rest on:** the 64+ hour `scope.tags` figure. That work is ai-memory's own
+obligation under ST-082 either way (§18.2, §18.6), so it is not a tax separation avoids and is not
+counted as one. **Nor does the verdict select a replacement** — it rejects Candidate A; the
+peer-service topology it points to is a direction, unscored, and explicitly not Candidate C (§18.4).
 
 **This section is a recommendation for PO review, not an applied decision.** Per the PO's explicit
 instruction when this section was drafted (2026-08-26), ADR-016's `status` and Decision text are
@@ -1747,8 +1755,13 @@ seam:
 - **`server/src/workflow/bootstrap.ts`** / **`schema.ts`** — the composition-root seam ("this file is
   the ONLY thing the composition root needs to know about... one predicate, one bootstrap call") and
   the workflow module's own self-contained migration runner, deliberately kept out of the shared
-  chain. Both were built so a workflow fault reports rather than terminates the host process — the
-  same discipline a standalone service's own boot sequence would need on day one.
+  chain. **State this precisely, because an earlier draft overstated it:** the *module* reports rather
+  than exits — it returns a discriminated result and never calls `Deno.exit` itself. The *deployed
+  host still terminates*: under `FEATURE_WORKFLOW=true` the composition root reads that result and
+  calls `Deno.exit(1)` before the port opens (`server/index.ts:77-91`), which is exactly the shared
+  blast radius §18.1's criterion-4 row and §6.2/§12a record. What transfers to a standalone service is
+  the module-level reporting contract — a boot sequence that decides its own process lifetime rather
+  than inheriting someone else's — not a claim that faults are already non-fatal today.
 
 This matters for the recommendation's credibility: the clean boundary criteria 1–4 proved isn't
 theoretical or retrofitted for this section — it's exercised, tested code that already treats the
