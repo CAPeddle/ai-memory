@@ -1683,16 +1683,34 @@ pattern §13 already established in this document for unapplied ADR amendments.
   Candidate C's greenfield setup (3–4 days).
 - §13.5's own comparison, computed for a different purpose (pricing, not this recommendation), already
   says the quiet part: Candidate A's reuse "savings" over Candidate C are ~4–5 days; Candidate C's
-  extra greenfield cost is ~3–4 days. **That is a wash before counting what Candidate A costs that
-  Candidate C doesn't.**
-- What Candidate A costs that Candidate C never would: the 64+ hour (8+ day) `scope.tags` enforcement
-  surface (§13, entirely a consequence of sitting inside a system with 15 memory-retrieval paths to
-  defend); a shared failure blast radius (§6.2/§12a, ST-086's fail-startup wiring); a shared Postgres
-  role with no real access-control isolation (§6.3: "a Postgres schema is namespacing, not access
-  control"); and the worker-type-union coupling risk §5 flagged as actively harmful.
-- Net: the case for sharing a codebase was reuse. The reuse that would have mattered didn't happen;
-  the reuse that did happen is cheap to replicate; and the thing co-tenancy actually bought AWCP was a
-  bill, not a discount.
+  extra greenfield cost is ~3–4 days. **That is already a wash on reuse alone**, before any
+  topology-specific cost enters the comparison.
+- **What is genuinely topology-specific — corrected 2026-08-26 after review, because an earlier draft
+  of this bullet inflated it.** That draft counted the whole 64+ hour (8+ day) `scope.tags`
+  enforcement surface (§13) as a cost separation avoids. **It does not, and §18.6 of this same section
+  already said so:** those 15 paths are ai-memory's own personal/corporate isolation obligation, owned
+  by ST-082, and that work is required whether or not AWCP ever shared the codebase. Counting all
+  eight days against Candidate A double-counts work the delivered system pays for either way. What
+  separation actually changes:
+  - **How many enforcement points AWCP must trust** — 15 hand-written retrieval paths with no
+    chokepoint, versus one scoped adapter boundary. The hardening work is the same work; AWCP's
+    exposure to getting any one of the fifteen wrong is not. §13's own risk table calls a single
+    missed path "a latent breach," and §6.1 puts it plainly: getting 14 of 15 right is the same as
+    getting it wrong.
+  - **A shared failure blast radius** (§6.2/§12a, ST-086's fail-startup wiring) — a failed *workflow*
+    migration currently stops the memory MCP from opening its port. Wholly topology-specific.
+  - **A shared Postgres role with no real access-control isolation** (§6.3: "a Postgres schema is
+    namespacing, not access control"). Wholly topology-specific.
+  - **The worker-type-union coupling** §5 flagged as actively harmful to extend. Wholly
+    topology-specific.
+
+  No defended hour figure exists for that incremental set, and this section does not invent one —
+  see §18.9. The reuse wash above, not a cost differential, is what carries the recommendation.
+- Net: the case for sharing a codebase was reuse. The reuse that would have mattered didn't happen,
+  and the reuse that did happen is generic and cheap to replicate — so the justification for
+  co-tenancy is absent on its own terms, before any cost differential is argued. What co-tenancy adds
+  on top is not a bill AWCP would otherwise escape, but a wider surface it has to trust and a failure
+  domain it has to share.
 
 **One thing this reconciliation does *not* say:** that the ai-memory integration attempt failed or was
 wasted effort. It answered exactly the question a spike exists to answer — Stage 1–3 discovered that
@@ -1736,10 +1754,40 @@ This matters for the recommendation's credibility: the clean boundary criteria 1
 theoretical or retrofitted for this section — it's exercised, tested code that already treats the
 memory domain as an external, optional dependency reached through exactly two named ports.
 
-### 18.4 Recommended topology
+### 18.4 Recommended topology — and why it is NOT Candidate C
+
+**Naming correction, 2026-08-26 after review.** Earlier drafts of this section called the
+recommendation "Candidate C." That was wrong, and the error mattered: **Candidate C is defined by
+donor retirement**, and this recommendation deliberately does not retire ai-memory.
+
+> `awcp-spec-evaluation.md:185` — C is "the *replacement product*, importing selected packages/data
+> from both donors **and retiring them on a dated plan**… defensible only with an explicit retirement
+> path for both donors — without one it degenerates into a third managed system."
+>
+> ADR-016 §1's own scoring row agrees: C "is the retirement path for the other two — defensible only
+> with a dated supersession plan for both donors."
+
+What follows keeps ai-memory as a **live product and a supported optional provider** — no
+retirement, no supersession plan, and none intended. By the evaluation's own definition that is not
+Candidate C. Calling it C would have put the PO's signature on an option whose defining condition
+this recommendation does not meet.
+
+**So name it for what it is: a standalone AWCP peer service — a topology the original six-criteria
+scoring never evaluated as a host candidate.** The evaluation's Candidate D rejection explicitly
+left the door open for it (*"The rejection is of three workflow products; separately deployed
+components/services under one product remain an open topology option"*), but "left open" is not
+"scored." Two honest consequences, both of which belong in front of the PO rather than buried:
+
+1. **The reject half and the select half of this recommendation carry different weight.** Rejecting
+   Candidate A is backed by the full spike — criteria 1–7, three phases of evidence, §18.1–§18.2.
+   Selecting a peer-service topology is a *direction*, argued from the same evidence but **not put
+   through the six-criteria scoring A, B, and C each received.**
+2. **That scoring is the obvious next step**, and it is deliberately not attempted here — inventing a
+   score for a topology in the same pass that proposes it would repeat the overclaim this section was
+   just corrected for. §18.9 records it as missing evidence.
 
 AWCP as a standalone service/codebase, peer to ai-memory rather than contained by it, consuming memory
-through the existing port contract instead of an in-process call:
+through an adapter derived from the existing port contract instead of an in-process call:
 
 ```
                     AWCP
@@ -1867,6 +1915,15 @@ shared trust boundary the way the current single `ai_memory` role does.
   for whoever plans Phase B's infrastructure sizing.
 - **No estimate exists for the extraction effort itself** (Phases A–E above). §13's 8+ day figure prices
   staying, not leaving. A defended extraction estimate is follow-on work, not part of this recommendation.
+- **The recommended peer-service topology has not been scored against the six criteria** that A, B,
+  and C each went through (domain fit, security model, code maturity, migration effort, operational
+  simplicity, retirement path) — see §18.4. This is the single largest gap in the *select* half of the
+  recommendation, and it is named rather than filled deliberately: scoring a topology in the same pass
+  that proposes it is how the overclaims this section already had to correct got in.
+- **No topology-specific cost figure exists.** §18.2 now states which costs are genuinely
+  topology-specific (trusted-surface width, shared blast radius, shared role, worker-union coupling)
+  after removing the `scope.tags` work that ST-082 owns either way — but it does not price that
+  remaining set, and no defended number should be attributed to it.
 - **The relationship to Horizon B / agent-radio is asserted from the strategy baseline document, not
   independently re-verified in this session** — cited at §18.4 for context on why the boundary matters
   to what comes next, not as evidence for the host decision itself, which rests entirely on §18.1–§18.7.
@@ -1877,21 +1934,35 @@ The following is drafted for §1 of ADR-016, replacing the current "Preferred: C
 conditionally" framing, **pending explicit PO sign-off**. ADR-016's live `status` field and body
 remain **Proposed / Conditional** until that sign-off lands as a separate, explicit commit.
 
-> **Decision: Reject Candidate A (AWCP co-tenancy within ai-memory); select Candidate C — a standalone
-> AWCP service/codebase, consuming ai-memory as an optional context provider through an adapter
-> contract derived from the existing `ports.ts` boundary (`KnowledgeSearchPort` /
-> `KnowledgePromotionPort`), not as its host.**
+> **Decision, in two parts of unequal weight.**
+>
+> **(a) Reject Candidate A** — AWCP co-tenancy within ai-memory. This half is settled on the spike's
+> full evidence.
+>
+> **(b) Direct a standalone AWCP peer service** — its own codebase and runtime, consuming ai-memory as
+> an optional context provider through an adapter derived from the existing `ports.ts` boundary
+> (`KnowledgeSearchPort` / `KnowledgePromotionPort`), with `PolicyScope` threaded through its read
+> side. **This is a direction, not a scored selection.**
+>
+> **This is explicitly NOT Candidate C.** Candidate C is defined by donor retirement — "importing
+> selected packages/data from both donors and retiring them on a dated plan… defensible only with an
+> explicit retirement path for both donors" (`awcp-spec-evaluation.md:185`; ADR-016 §1's own
+> retirement-path row says the same). ai-memory is **not** retired here; it stays a live product and a
+> supported optional provider. The peer-service topology was never scored against the six criteria
+> that A, B, and C each went through, and this decision does not pretend otherwise: **scoring it is
+> the next step, and part (b) should be read as directing that work rather than concluding it.**
 >
 > Stage 1 (criteria 1–4) and Phase 2–3 (criterion 6) proved AWCP's operational domain is cleanly
 > separable and functions correctly with the memory subsystem absent, degraded, or unreachable —
 > evidence *for* standalone operation, not merely for safe co-tenancy. **Criterion 5 is not
 > discharged by this decision and must not be read as discharged by it:** Stage 2 priced the
-> policy-scope enforcement surface (64+ hours / 8+ days) and found it entirely a consequence of
-> sharing a trust domain with 15 memory-retrieval paths — a cost Candidate C would never incur — but
-> `scope.tags` remains enforced in zero retrieval paths, and the read-side port carries no
-> `PolicyScope` at all. Separation reduces that obligation from fifteen enforcement points to one; it
-> does not satisfy it. **Threading scope through the read side, default-deny, is a precondition of the
-> adapter contract this decision names**, not follow-on work. Criterion 7 asked
+> policy-scope enforcement surface at 64+ hours / 8+ days, but `scope.tags` remains enforced in zero
+> retrieval paths and the read-side port carries no `PolicyScope` at all. **That work is not a cost
+> separation avoids** — it is ai-memory's own personal/corporate isolation obligation, owned by
+> ST-082, required whether or not AWCP ever shared the codebase. Separation narrows the surface AWCP
+> must trust from fifteen hand-written enforcement points to one adapter boundary; it does not
+> discharge the obligation or reduce the work. **Threading scope through the read side, default-deny,
+> is a precondition of the adapter contract this decision names**, not follow-on work. Criterion 7 asked
 > whether ai-memory's engine reuse justified Candidate A's domain-fit cost; it does not. The
 > domain-specific memory engine (search, graph, hybrid retrieval, consolidation) went entirely unused;
 > the reuse that did materialize is generic infrastructure, replicable at roughly the cost §13.5 already
@@ -1913,14 +1984,29 @@ remain **Proposed / Conditional** until that sign-off lands as a separate, expli
 described above and in §16–§17. **Criterion 5 is NOT discharged** — U1 priced the enforcement surface
 (64+ hours) but `scope.tags` is still enforced in zero retrieval paths, so it remains an outstanding
 obligation ST-082 owns, not a met criterion. Criterion 7 answered **no** — reuse does not justify the
-domain-fit cost. Note that criterion 5's outstanding status *strengthens* rather than weakens the
-recommendation: that bill is the cost co-tenancy imposes and separation avoids (§18.6).
+domain-fit cost. Criterion 5's outstanding status is **neutral** between the two topologies, not an
+argument for either: the work is required either way (§18.2, §18.6). What separation changes is the
+width of the surface AWCP must trust, not the size of the bill.
 
 ### 18.11 Verdict
 
-**ADR-016 EVIDENCE SUPPORTS STANDALONE AWCP.**
+**ADR-016 EVIDENCE SUPPORTS REJECTING CANDIDATE A. It does not, on its own, select a replacement.**
 
-The three genuinely missing pieces (§18.9 — AWCP's own load/concurrency profile, an extraction-effort
-estimate, and independent re-verification of the Horizon B relationship) bear on *how well-planned* the
-move will be, not on *whether* the host decision should change. None of them weakens criteria 1–7's
-evidence base. The recommendation in §18.10 is ready for PO sign-off as written.
+The two halves are not equally supported, and after two review rounds forced that distinction into
+the open it is stated plainly rather than blurred:
+
+- **Reject Candidate A — settled.** Criteria 1–4 and 6 met; criterion 5 outstanding and neutral
+  between topologies; criterion 7 answered **no**. The reuse that justified co-tenancy did not
+  materialize (§18.2), and no cost differential is needed to reach that conclusion — the reuse wash
+  alone does it.
+- **Select a standalone peer service — directional.** Argued from the same evidence, but never put
+  through the six-criteria scoring A, B, and C each received, and explicitly *not* Candidate C, whose
+  defining donor-retirement condition this recommendation does not meet (§18.4).
+
+Of §18.9's gaps, one now bears directly on the *select* half rather than only on planning quality:
+**the peer-service topology is unscored.** AWCP's load profile, the extraction estimate, the
+topology-specific cost figure, and the Horizon B relationship remain planning-quality gaps.
+
+**§18.10 is ready for PO sign-off as a two-part decision** — settle the rejection, direct the
+replacement and its scoring. It is **not** ready to be read as a scored selection of a named
+candidate, and it now says so in its own text.
