@@ -57,8 +57,10 @@ all future GSD planning here.**
 
 ## Claims checked against the tree
 
-The revision's factual claims were verified rather than accepted. Three hold; the fourth held when
-checked and has since been **withdrawn at source** — see the row below.
+The revision's factual claims were verified rather than accepted. **All four held when checked.** One
+of them — the Candidate A/C effort comparison — has since been **withdrawn at source**; its claim is
+split across two rows below so that the pricing half, which still stands, is not withdrawn along with
+the comparison built on top of it.
 
 | Claim | Verdict | Evidence |
 |---|---|---|
