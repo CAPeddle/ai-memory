@@ -1130,7 +1130,18 @@ Candidate C (separate operational application, no memory co-tenancy):
 - **No fingerprint-dedup interaction:** No tag-merging logic to reason about. Content is not deduplicated across scopes.
 - **No egress ambiguity:** Workflow produces no extracted entities and no consolidated output. Embeddings are not required. Egress paths are zero.
 
-**Net savings for Candidate C: 4–5 days** in implementation complexity and ongoing maintenance. Offset by 3–4 days of greenfield setup (schema design, application skeleton, test infrastructure). **Candidate C breaks even on effort, but wins on simplicity and maintainability.**
+~~**Net savings for Candidate C: 4–5 days** in implementation complexity and ongoing maintenance. Offset by 3–4 days of greenfield setup (schema design, application skeleton, test infrastructure). **Candidate C breaks even on effort, but wins on simplicity and maintainability.**~~
+
+> **WITHDRAWN 2026-08-26 — do not cite this figure, here or anywhere downstream.** Every one of the
+> five bullets above is `scope.tags` **enforcement** work, and §18.2 establishes that this work is
+> ai-memory's own personal/corporate isolation obligation — owned by ST-082 and required in *either*
+> topology. So "4–5 days saved by Candidate C" and §13.2's "64+ hours owed regardless" are the same
+> quantity counted from opposite ends; netting one against the other double-counts it. The pricing
+> table at §13.1–§13.2 stands as U1's record of what enforcement costs **ai-memory**. The
+> cross-topology *comparison* built on top of it does not, and no part of the §18 recommendation
+> rests on it. The five bullets themselves remain a valid *qualitative* contrast — keyed lookups
+> versus semantic retrieval, one enforcement layer versus fifteen — and that is the only form in
+> which §18 uses them. See §18.2 and the standing PO direction recorded in §18's opening note.
 
 ---
 
@@ -1148,7 +1159,7 @@ Candidate C (separate operational application, no memory co-tenancy):
 
 5. **ADR-016 §1 is updated with this pricing table and per-path classification** — so the boundary-enforcement cost is visible to operators, reviewers, and future maintenance planners. The gate is not "can we do this?" but "do we know what it costs?"
 
-**Candidate C (clean umbrella) remains less expensive in implementation effort** (by 4–5 days), but does not eliminate the greenfield setup cost (3–4 days). The decision between them should be made on product/operational grounds (shared vs. separate persistence, operational coupling, future extensibility) rather than on implementation effort alone.
+~~**Candidate C (clean umbrella) remains less expensive in implementation effort** (by 4–5 days), but does not eliminate the greenfield setup cost (3–4 days).~~ **Effort clause withdrawn 2026-08-26 — see the note in §13.5.** What survives is the half of this recommendation that never depended on the figure, and it has since been made binding for the whole evaluation (§18's opening note): the decision between them is made on product and operational grounds — shared versus separate persistence, operational coupling, future extensibility — and not on implementation effort at all.
 
 ---
 
@@ -1417,6 +1428,10 @@ this host: authenticated remote event ingestion with spooled replay."* Element b
 | Experiments 4–6 | **Discharged** | §16.3, all three on the real node against the real hub |
 | Repo-rescan | **Not implemented — an adjacent U3 capability, not a criterion-6 element** | Criterion 6's text names authenticated ingestion with spooled replay; repo-rescan is not among the things it names. It is listed under U3 in the canonical plan, and `03-CONTEXT.md:251` leaves its Phase 3 membership explicitly open. It was not built. Recorded here so Phase 4 inherits the question rather than a silence |
 
+**RATIFIED 2026-08-26 by the PO — see §19**, which discharges `03-CONTEXT.md:250-252`'s instruction
+that Phase 4 record criterion 6 against the canonical-plan definition, and carries repo-rescan forward
+as an owned scope item rather than an unattributed question.
+
 **Overall: criterion 6 is discharged for every element it names** — authentication, heartbeat,
 checkpoint, spool, replay, and experiments 4-6, each with evidence above. Repo-rescan does not qualify
 that discharge: criterion 6's text does not name it, so its absence is a **U3 scope gap, not a
@@ -1578,3 +1593,578 @@ counter is refused rather than read as zero.
 
 This subsection records only what ST-092 proved. ADR-016 remains **Proposed/Conditional**; Phase 4
 still owns the final recommendation, and none of the above discharges the §6.1 pricing gate.
+
+## 17. Stage 2 Unit 5: Actual Execution Blocking Assessment (§8 follow-up)
+
+**Verdict: UNPROVEN — `blocking` state does not gate execution anywhere in the codebase. It is read
+in exactly two places, both purely observational, and its absence from every operational write path
+is exhaustive, not merely unchecked.**
+
+§8 originally recorded this as UNPROVEN on the grounds that no execution node yet existed against
+which actual halting could be measured. That premise is now stale — z2 has been enrolled and
+exercised for real (§16) — but the verdict does not change, because the reason has moved: it was
+never a measurement gap. `blocking` has no consumer capable of halting anything, node-side or
+hub-side, so there is nothing for a real node to prove or disprove.
+
+**What `blocking` actually is.** A boolean field on `OperationalDecision`
+(`server/src/workflow/types.ts:239`), set when a decision is created
+(`server/src/workflow/store.ts:302-316`, exposed via `POST /packets/:packetId/decisions` in
+`server/src/workflow/api.ts:94-98,647-660`; the CLI sets it as `!--advisory` at
+`server/scripts/awcp.ts:510`).
+
+**Every read of `.blocking` in the repository, found by grepping the field name across
+`server/src/workflow/`, `server/scripts/`, and `server/index.ts` — two production sites, both
+observational:**
+
+| Site | Effect |
+|---|---|
+| `server/src/workflow/attention.ts:49-58` (Rule 1 of `evaluateAttention`) | An open decision with `blocking: true` is projected into a `decision-required` `AttentionItem`. Attention is explicitly a **derived, read-only projection** (see the file's own docblock) — nothing consumes it to stop anything. |
+| `server/src/workflow/dashboard.ts:273` | Renders a `<span class="tag">blocking</span>` badge next to the decision in the operator dashboard. Display only. |
+
+**What was checked and does *not* read `.blocking`, confirming the absence is exhaustive rather than
+an oversight not yet found:**
+
+- **Packet completion** — `store.completePacket` (`server/src/workflow/store.ts:562-593`) is the
+  actual completion gate; it checks only `verification_criteria`/`evidence_items` for unmet required
+  criteria (`CompletionBlockedError`) and never queries `operational_decisions` at all. A packet with
+  an open, `blocking: true` decision completes exactly as freely as one with none.
+- **Decision resolution** — `store.resolveDecision` (`server/src/workflow/store.ts:349-378`) and
+  `service.resolveAndPromoteDecision` (`server/src/workflow/service.ts:91-`) resolve a decision and
+  optionally promote it into memory; neither branches on `.blocking`.
+- **The remote-node client** (`server/scripts/awcp-node-client.mjs`) — zero references to
+  `blocking` (verified by grep against the full file). Its only concerns are event
+  spool/replay/heartbeat/checkpoint (§16); it has no path that reads decision state at all, so the
+  real node §16 enrolled cannot halt on this field even in principle.
+- **The agent-facing CLI** (`server/scripts/awcp.ts`) — the only other reference beyond the create
+  call is the CLI's own decision-creation flag; no command refuses or halts based on an existing
+  decision's `blocking` value.
+
+**Why "modelled state, attention-only" (the plan's original framing) undersold it slightly.** The
+plan and the story-board criterion text both describe `blocking`'s "only implemented consequence"
+as "the attention item... and a dashboard tag" — which this investigation confirms precisely, with
+file:line citations, against the *current* code (post-ST-097/ST-098 refactor, i.e. re-verified after
+`store.ts` was split into `workItemStore.ts` and the WorkItem lane was added — neither touched this
+mechanism). The two attention rules for "blocked" state (`decision-required` from `.blocking`, and
+the separate `blocked` reason from a checkpoint's free-text `blockers` field, `attention.ts:60-71`)
+are easy to conflate; both are equally non-enforcing, and neither gates a claim, a run, a completion,
+or a CLI command.
+
+**No overclaiming, per the plan's own instruction:** this is not "blocking is broken" — it was never
+built to halt anything; it is a signal to a human or agent reading the dashboard/attention feed, and
+it does that correctly. The finding is that ADR-016 §1's "actual execution blocking" criterion, if it
+means *the system prevents further work while a blocking decision is open*, is not met by any code in
+this repository, proven now rather than surmised, and no future execution node — real or otherwise —
+changes that without a code change to add a consumer.
+
+## 18. Stage 2 Unit 6: Final Extraction Viability & ADR-016 Recommendation (criterion 7)
+
+**Standing PO direction, 2026-08-26 — this governs how the whole section argues.** Effort and elapsed
+time are **discounted entirely** as evaluation inputs: the deciding axes are design quality and
+functional fit. A figure may appear here only as a record of what some unit measured (§13 priced
+ai-memory's own enforcement obligation, and that record stands) — never as support for choosing one
+topology over another. Every cross-topology cost comparison this section previously carried has been
+withdrawn on that basis, not merely because one of them turned out to be unsound. Where a withdrawal
+removed the only quantitative support for a claim, the claim is now stated qualitatively or not at all.
+
+**Verdict, stated once up front and defended below: Candidate A is technically achievable but not
+justified. The reuse that would have justified sharing a codebase went unused; the reuse that did
+happen is generic infrastructure — connection pooling, a migration idiom, logging, container topology
+— that any competent Deno+Postgres service scaffolds for itself, which is what criterion 7 actually
+asks — and the answer is that the engine was never inherited. On top of a reuse case that did not
+materialise, co-tenancy adds coupling that is real and deliberately *unpriced* here: a wider surface
+AWCP must trust (fifteen hand-written enforcement points rather than one adapter boundary), a shared
+failure domain, and a shared database role. Each is a design-fit objection, not a cost estimate. The
+recommendation is not "Candidate A can't work" — Stage 1 and Phase 2–3 prove it can. It is "we now
+have evidence it shouldn't."**
+
+**What this verdict does NOT rest on:** the 64+ hour `scope.tags` figure. That work is ai-memory's own
+obligation under ST-082 either way (§18.2, §18.6), so it is not a tax separation avoids and is not
+counted as one. **Nor does the verdict select a replacement** — it rejects Candidate A; the
+peer-service topology it points to is a direction, unscored, and explicitly not Candidate C (§18.4).
+
+**This section is a recommendation for PO review, not an applied decision.** Per the PO's explicit
+instruction when this section was drafted (2026-08-26), ADR-016's `status` and Decision text are
+**not changed by this commit**. §18.10 is the proposed replacement text, held for sign-off — the same
+pattern §13 already established in this document for unapplied ADR amendments.
+
+### 18.1 Re-evaluating criteria 1–7 against this interpretation
+
+| Criterion | Status | What it actually established |
+|---|---|---|
+| 1. Operational-domain separation | **Met** (Stage 1) | Evidence *for* separation, not merely for co-tenancy: WorkPackets/runs/checkpoints/decisions are cleanly their own domain even *inside* ai-memory's process. If the domain separates this cleanly at the code level while co-located, it separates at the process level too. |
+| 2. Memory-disabled operation | **Met** (Stage 1) | Same reading: a `NoopMemoryAdapter` (`ports.ts`) passes every core workflow test. AWCP's correctness never depended on the memory subsystem being present, in either topology. |
+| 3. Separate persistence/API boundaries | **Met** (Stage 1) | Operational tables and the platform MCP surface never leaked into each other. Positive evidence the boundary is real, not just declared. |
+| 4. Failure isolation | **Met** (Stage 1), with a caveat §12a/§3 already recorded | A fault in embedding/entity/consolidation workers cannot corrupt operational state — but ST-086's fail-startup wiring means a *workflow* migration fault now takes the whole memory MCP down. Failure isolation is asymmetric: memory faults can't hurt AWCP, but a shared process still lets AWCP hurt memory. |
+| 5. Policy-scope enforcement | **NOT met — priced, not enforced** (§13/U1) | ADR-016 §1's actual wording is *"the Q9 isolation controls (policy-scope field, default-deny retrieval/provider routing) are implementable at this boundary"*, and the board states it as **default-deny; every enabled retrieval/graph/context/export/provider path enforces or fails closed**. U1 established that every one of the 15 paths has a feasible mitigation and priced the total at 64+ hours (8+ days) — but *feasible and priced* is not *enforced*. `scope.tags` is still enforced in **zero** retrieval paths (§6.1, unchanged); ST-082 owns the build. An earlier draft of this row restated the criterion as "implementable" and marked it met on the pricing alone — corrected 2026-08-26 after review; **the criterion stays unproven, and the board's own checkbox for it correctly remains unticked.** |
+| 6. Remote-client control | **Met** (§16), definition ratified (§19) | Real node, real hub, all six named elements discharged. The conflict between ADR-016 §1's wording and the board's wider clause is settled in §19, in favour of the ADR's: repo-state is not an element of this criterion. Says nothing about *where* the hub should live — a standalone AWCP hub is exactly as capable of authenticating z2 as ai-memory's is. |
+| 7. Reuse justifies the domain-fit cost | **Not met** | See §18.2. This is the criterion whose answer decides the host question, and the evidence answers "no" — criteria 1–4 and 6 describe a boundary that is *clean*, not a boundary that *should be shared*, and criterion 5 is an outstanding bill rather than a discharged one. |
+
+### 18.2 The reuse-vs-cost reconciliation
+
+**What was supposed to justify Candidate A, and what actually did:**
+
+- The ADR's original code-maturity argument for Candidate A named the memory engine itself — pgvector
+  storage, RRF/MMR hybrid search, append-only versioned shards, tag grammar — as the reuse case
+  (ADR-016 §1 table, "Code maturity" row). **None of it was used.** §5's per-component classification
+  found the domain-specific capabilities either *unnecessary* (hybrid retrieval, graph storage,
+  consolidation — "operational queries are keyed lookups and status filters... ranking has no role")
+  or *actively harmful to reuse* (the worker/event infrastructure's closed union type).
+- What *did* reuse — Postgres connection pooling, the transaction pattern, logging conventions,
+  container/test topology (§5's verdict: "the reuse that materialises is infrastructural") — is
+  generic. None of it is specific to being a memory-retrieval system — a well-built Deno+Postgres
+  service scaffolds the same things for itself, from templates and conventions that are not
+  ai-memory's to lend. This is the whole of criterion 7's answer, and it is a statement about *kind*,
+  not about *quantity*: what AWCP inherited by sharing this codebase was nothing it could not have
+  had on its own terms.
+- **The day-count comparison this bullet used to make has been withdrawn (2026-08-26).** It read
+  §13.5's "~4–5 days saved" against its "~3–4 days greenfield" and concluded the reuse case was a
+  wash. Two things were wrong with leaning on it. It was **unsound**: §13.5's savings are built
+  entirely from `scope.tags` enforcement bullets, which the next bullet establishes are owed in either
+  topology, so the figure netted a quantity against itself. And it was **the wrong kind of argument**
+  — per §18's opening note, effort is not an axis this decision is decided on. Criterion 7 asks
+  whether inheriting ai-memory's *engine* justifies the domain-fit cost of living inside it. The
+  answer does not need a number: the engine was not inherited at all (§5), and what was inherited is
+  not the engine.
+- **What is genuinely topology-specific — corrected 2026-08-26 after review, because an earlier draft
+  of this bullet inflated it.** That draft counted the whole 64+ hour (8+ day) `scope.tags`
+  enforcement surface (§13) as a cost separation avoids. **It does not, and §18.6 of this same section
+  already said so:** those 15 paths are ai-memory's own personal/corporate isolation obligation, owned
+  by ST-082, and that work is required whether or not AWCP ever shared the codebase. Counting all
+  eight days against Candidate A double-counts work the delivered system pays for either way. What
+  separation actually changes:
+  - **How many enforcement points AWCP must trust** — 15 hand-written retrieval paths with no
+    chokepoint, versus one scoped adapter boundary. The hardening work is the same work; AWCP's
+    exposure to getting any one of the fifteen wrong is not. §13's own risk table calls a single
+    missed path "a latent breach," and §6.1 puts it plainly: getting 14 of 15 right is the same as
+    getting it wrong.
+  - **A shared failure blast radius** (§6.2/§12a, ST-086's fail-startup wiring) — a failed *workflow*
+    migration currently stops the memory MCP from opening its port. Wholly topology-specific.
+  - **A shared Postgres role with no real access-control isolation** (§6.3: "a Postgres schema is
+    namespacing, not access control"). Wholly topology-specific.
+  - **The worker-type-union coupling** §5 flagged as actively harmful to extend. Wholly
+    topology-specific.
+
+  No defended hour figure exists for that incremental set, this section does not invent one, and
+  under §18's opening note it would not be the deciding evidence even if one did — see §18.9. What
+  carries the recommendation is the shape of the finding, not its size: the reuse criterion 7 named
+  did not occur, and the coupling that co-tenancy adds in its place is structural — a wider trusted
+  surface, a shared failure domain, a shared database role, a union type flagged as harmful to
+  extend. Each of those is a design-fit objection that stands whatever it costs to remedy.
+- Net: the case for sharing a codebase was reuse. The reuse that would have mattered didn't happen,
+  and the reuse that did happen is generic and cheap to replicate — so the justification for
+  co-tenancy is absent on its own terms, before any cost differential is argued. What co-tenancy adds
+  on top is not a bill AWCP would otherwise escape, but a wider surface it has to trust and a failure
+  domain it has to share.
+
+**One thing this reconciliation does *not* say:** that the ai-memory integration attempt failed or was
+wasted effort. It answered exactly the question a spike exists to answer — Stage 1–3 discovered that
+memory is an *optional capability* AWCP can consume, not the *container* it needs to live in. That is
+a more useful, and more durable, result than either "yes, host it here" or a vague "reuse would help."
+
+### 18.3 The domain boundary is already clean at the code level — extraction is a deployment change, not a rewrite
+
+Two files already exist in exactly the shape a standalone-service split would need, built during
+Stage 1 for a different stated reason (failure isolation) that turns out to double as the extraction
+seam:
+
+- **`server/src/workflow/ports.ts`** — "the ONLY sanctioned route from Workflow Operations to the
+  memory domain," enforced by `workflow-boundary.test.ts`, not just documented. `KnowledgeSearchPort`
+  (read-side, advisory) and `KnowledgePromotionPort` (write-side) are already optional-by-construction,
+  already bounded by `PORT_TIMEOUT_MS`, and a `NoopMemoryAdapter` already proves the whole operational
+  flow completes with memory absent. **This is the structural shape the recommended `ContextPort`
+  needs — the boundary and its enforcement already exist, in-process.** What changes if AWCP becomes
+  standalone is that an adapter implementing these interfaces makes a network call instead of an
+  in-process one; the boundary does not need to be invented.
+
+  **One gap in that contract, and it is load-bearing for the recommendation — recorded 2026-08-26
+  after review.** The two ports are asymmetric on policy scope. The write side already carries it:
+  `PromotionInput.policyScope` is typed to the closed `PolicyScope` union (`ports.ts:162`), deliberately
+  narrowed after an earlier implementation hardcoded `"personal"` for every packet. **The read side
+  does not** — `KnowledgeSearchPort.search(query: string, limit: number)` (`ports.ts:109`) takes no
+  scope parameter at all, and neither does `service.ts`'s `gatherAdvisoryContext`. So an adapter
+  implementing this interface as-is cannot distinguish a personal, corporate, mixed, or public packet's
+  advisory retrieval, and separation alone would not fix that: it would move a scope-blind read across
+  a network boundary rather than closing it. **`ContextPort` must thread `PolicyScope` through the
+  read side (or enforce it at an equivalent mandatory boundary on the memory service) before any
+  cross-scope traffic flows through it** — this is Phase A's real content (§18.8), not a detail
+  deferred to Phase D, and it is the same enforcement obligation criterion 5 leaves outstanding.
+- **`server/src/workflow/bootstrap.ts`** / **`schema.ts`** — the composition-root seam ("this file is
+  the ONLY thing the composition root needs to know about... one predicate, one bootstrap call") and
+  the workflow module's own self-contained migration runner, deliberately kept out of the shared
+  chain. **State this precisely, because an earlier draft overstated it:** the *module* reports rather
+  than exits — it returns a discriminated result and never calls `Deno.exit` itself. The *deployed
+  host still terminates*: under `FEATURE_WORKFLOW=true` the composition root reads that result and
+  calls `Deno.exit(1)` before the port opens (`server/index.ts:77-91`), which is exactly the shared
+  blast radius §18.1's criterion-4 row and §6.2/§12a record. What transfers to a standalone service is
+  the module-level reporting contract — a boot sequence that decides its own process lifetime rather
+  than inheriting someone else's — not a claim that faults are already non-fatal today.
+
+This matters for the recommendation's credibility: the clean boundary criteria 1–4 proved isn't
+theoretical or retrofitted for this section — it's exercised, tested code that already treats the
+memory domain as an external, optional dependency reached through exactly two named ports.
+
+### 18.4 Recommended topology — and why it is NOT Candidate C
+
+**Naming correction, 2026-08-26 after review.** Earlier drafts of this section called the
+recommendation "Candidate C." That was wrong, and the error mattered: **Candidate C is defined by
+donor retirement**, and this recommendation deliberately does not retire ai-memory.
+
+> `awcp-spec-evaluation.md:185` — C is "the *replacement product*, importing selected packages/data
+> from both donors **and retiring them on a dated plan**… defensible only with an explicit retirement
+> path for both donors — without one it degenerates into a third managed system."
+>
+> ADR-016 §1's own scoring row agrees: C "is the retirement path for the other two — defensible only
+> with a dated supersession plan for both donors."
+
+What follows keeps ai-memory as a **live product and a supported optional provider** — no
+retirement, no supersession plan, and none intended. By the evaluation's own definition that is not
+Candidate C. Calling it C would have put the PO's signature on an option whose defining condition
+this recommendation does not meet.
+
+**So name it for what it is: a standalone AWCP peer service — a topology the original six-criteria
+scoring never evaluated as a host candidate.** The evaluation's Candidate D rejection explicitly
+left the door open for it (*"The rejection is of three workflow products; separately deployed
+components/services under one product remain an open topology option"*), but "left open" is not
+"scored." Two honest consequences, both of which belong in front of the PO rather than buried:
+
+1. **The reject half and the select half of this recommendation carry different weight.** Rejecting
+   Candidate A is backed by the full spike — criteria 1–7, three phases of evidence, §18.1–§18.2.
+   Selecting a peer-service topology is a *direction*, argued from the same evidence but **not put
+   through the six-criteria scoring A, B, and C each received.**
+2. **That scoring is the obvious next step**, and it is deliberately not attempted here — inventing a
+   score for a topology in the same pass that proposes it would repeat the overclaim this section was
+   just corrected for. §18.9 records it as missing evidence.
+
+AWCP as a standalone service/codebase, peer to ai-memory rather than contained by it, consuming memory
+through an adapter derived from the existing port contract instead of an in-process call:
+
+```
+                    AWCP
+              workflow / control plane
+                       │
+         ┌─────────────┼─────────────┐
+         │              │             │
+         ▼              ▼             ▼
+   execution        ai-memory     verification
+   providers      (ContextPort)    / evals
+  (Agent Radio,                  (future work,
+   Claude, Codex,                 not this ADR)
+   OpenCode, ...)
+```
+
+- **`ContextPort`** = `KnowledgeSearchPort` + `KnowledgePromotionPort` as specified in `ports.ts`
+  (§18.3), promoted from an in-process TypeScript interface to a real adapter boundary (HTTP/MCP call
+  to ai-memory, or another provider later) — **and with `PolicyScope` threaded through the read side,
+  which today's `search(query, limit)` lacks (§18.3).** That threading is a precondition of the port,
+  not a later refinement: without it the adapter cannot tell a corporate packet's advisory retrieval
+  from a personal one. AWCP's correctness must not depend on this port resolving — exactly the
+  property `NoopMemoryAdapter` already proves.
+- **ai-memory** remains a **supported, optional** context provider, not a mandatory dependency and not
+  an AWCP host.
+- **Execution providers** (Claude, Codex, OpenCode, and — per the strategy baseline's own import queue,
+  `docs/investigations/awcp-strategy-baseline-2026-08.md` — the already-imported `cpeddle/agent-radio`
+  evidence bearing on the milestone immediately after this one, "Horizon B") sit below AWCP as
+  interchangeable runtimes, not above or beside it. **That relationship is asserted here only as
+  context for why the boundary matters, not designed here** — Horizon B is explicitly out of scope for
+  this ADR and this recommendation does not specify or commit to anything about it.
+
+### 18.5 Domain ownership inventory (current tree, not yet moved)
+
+Every file under `server/src/workflow/` is AWCP-owned; nothing there is ai-memory-domain:
+
+| File | Ownership |
+|---|---|
+| `api.ts`, `attention.ts`, `dashboard.ts`, `observedSession.ts`, `policy.ts`, `readModel.ts`, `remoteNodeHub.ts`, `schema.ts`, `service.ts`, `store.ts`, `types.ts`, `workItemStore.ts`, `bootstrap.ts` | **AWCP domain** — packets, runs, checkpoints, decisions, attention, WorkItem, observed sessions, remote-node hub, all operator/agent-facing surfaces (`server/scripts/awcp.ts`, `server/scripts/awcp-node-client.mjs`) |
+| `ports.ts` | **The seam** — already the extraction boundary (§18.3); stays with AWCP, its adapter implementation moves to point at a real ai-memory client instead of an in-process one |
+
+Generic infrastructure AWCP currently borrows in-process, reusable as a **pattern**, not as shared
+code, without weakening either side (§5's own classification):
+
+| Pattern | Source today | Reuse mode after separation |
+|---|---|---|
+| Postgres pooling / `sql.begin` transactions | `server/src/db.ts` | Copy the ~12-line pattern; no shared package needed at this scale |
+| Migration runner idiom (self-contained, reports not terminates) | `schema.ts`'s own design | Already AWCP's own; nothing to extract |
+| Bearer-auth adapter (`requireApiKey`-shaped) | `server/src/auth.ts` | Reusable behind an adapter (§5); copy the shape |
+| Structured logging (`withTiming`) | ai-memory house style | Copy the convention |
+
+Everything else in `server/` (the six MCP tools in `index.ts`, `searchQuality.ts`, `entityWorker.ts`,
+`consolidationLLM.ts`, `embeddingBackfill.ts`, `parseContext.ts`, the memory-domain `db/schema.sql`
+etc.) is **ai-memory domain** and is untouched by any of this.
+
+### 18.6 `scope.tags` after separation
+
+The 15-path, 64+ hour enforcement surface priced in §13 is a cost of **AWCP and memory retrieval
+sharing a trust domain**. Once AWCP is a separate service with its own database and its own
+authentication, none of those 15 paths are AWCP's problem — they remain exactly what they'd be if
+AWCP had never been proposed as co-tenant: ai-memory's own personal/corporate isolation obligation,
+owned and priced on ai-memory's own roadmap (ST-082), independent of AWCP's existence. If AWCP later
+calls into ai-memory through `ContextPort`, whatever scope filtering applies to *that one call* is
+ai-memory's authorization concern at its own API boundary — a single enforcement point, not 15.
+
+**That reduction is real but it is not free, and this section must not be read as making the
+obligation vanish** (recorded 2026-08-26 after review). Collapsing 15 enforcement points to one only
+helps if the one is actually enforced, and today it is not: the read-side port carries no
+`PolicyScope` at all (§18.3), so a `ContextPort` built from the current interface would be a
+scope-blind hole in exactly the boundary this section says separation simplifies. Separation changes
+*where* the enforcement obligation sits and *how many* places must implement it — it does not
+discharge it. Criterion 5 stays unproven either way (§18.1), and threading scope through the read
+side is Phase A work (§18.8).
+
+### 18.7 What this changes elsewhere
+
+- **ST-082** (build the `scope.tags` enforcement `ST-088` priced) does not disappear — ai-memory still
+  needs it for its own product boundary — but its framing changes from "a co-tenancy tax AWCP forces"
+  to "an ai-memory product-security item on its own merits, unconnected to AWCP." Its urgency and
+  scope should be reassessed on that basis, not as an ADR-016 side effect.
+- **ADR-016 §2 (topology), §3 (storage layout), §4 (source-lineage)** describe AWCP-internal design
+  decisions that, if AWCP becomes its own codebase, belong in an AWCP-owned ADR rather than living on
+  in ai-memory's. Not actioned here — noted as an implication for whoever plans the extraction.
+- **The B–D milestone** (`awcp-strategy-baseline-2026-08.md`, decision 1 and 3: "ADR-016 Phase 4 is the
+  immediate decision gate... nothing is planned on the wrong side of the host decision") was explicitly
+  blocked on this decision. This section's recommendation, once the PO signs off on §18.10, is what
+  unblocks it.
+
+### 18.8 Bounded extraction roadmap — sketch only, **not started**
+
+**Nothing below is executed by this commit.** No file moves, no module is renamed, no behavior
+changes. This is a shape for whoever plans the extraction, offered so the ADR decision doesn't ship
+without a credible non-big-bang path:
+
+- **Phase A — Freeze the boundary, and close its scope gap.** Confirm `ports.ts`'s two interfaces are
+  the complete surface AWCP needs from memory (workflow-boundary.test.ts already proves no other file
+  imports it); document them as the contract a real adapter must implement. **Thread `PolicyScope`
+  through the read side** — `KnowledgeSearchPort.search` and `gatherAdvisoryContext` take none today
+  (§18.3), and freezing a scope-blind read contract would bake the gap into the adapter. Default-deny
+  on an absent or unrecognized scope, matching the write side's closed-union treatment rather than
+  `parseContext`'s fail-open idioms (§6.1).
+- **Phase B — Stand up AWCP's own persistence/runtime.** New database (or database + role, at minimum
+  — see below), new process, `schema.ts`'s existing self-contained migration runner ported as-is.
+- **Phase C — Move AWCP-owned modules.** The `server/src/workflow/` tree and `server/scripts/awcp*`
+  move as a unit; nothing in §18.5's AWCP-domain list needs re-architecting first, only relocating.
+- **Phase D — Replace the in-process port implementation with a real adapter.** `NoopMemoryAdapter`'s
+  contract already defines the target shape; a real adapter calls ai-memory's MCP surface instead of
+  an in-process function.
+- **Phase E — Verify isolation and retire the co-tenancy mechanisms.** Confirm a memory-service outage
+  doesn't affect AWCP (repeat the Stage 1 failure-isolation proof against a real network boundary
+  instead of an in-process fake); remove `FEATURE_WORKFLOW`, the shared-schema fail-startup wiring, and
+  the workflow-boundary lint test once nothing depends on them.
+
+**Database/role guidance for whenever Phase B happens:** co-location on one physical Postgres server
+is an operational convenience question, separate from this decision. What matters per §6.3's own
+finding ("a Postgres schema is namespacing, not access control") is that AWCP and ai-memory hold
+**separate roles/databases**, so a shared instance (if chosen for cost) does not silently become a
+shared trust boundary the way the current single `ai_memory` role does.
+
+### 18.9 Missing evidence, named honestly
+
+- **No load or concurrency evidence exists for AWCP running standalone** — nothing in Stage 1–3 tested
+  AWCP's own runtime under load, isolated or co-tenant. The co-tenancy check in §16.7 is smoke-level in
+  the *other* direction (does memory notice AWCP, not does AWCP need memory's resources).
+  Not required to settle *this* decision (the decision is about coupling, not capacity), but a real gap
+  for whoever plans Phase B's infrastructure sizing.
+- **No estimate exists for the extraction effort itself** (Phases A–E above). §13's 8+ day figure prices
+  staying, not leaving. A defended extraction estimate is follow-on work, not part of this recommendation.
+- **The recommended peer-service topology has not been scored against the six criteria** that A, B,
+  and C each went through (domain fit, security model, code maturity, migration effort, operational
+  simplicity, retirement path) — see §18.4. This is the single largest gap in the *select* half of the
+  recommendation, and it is named rather than filled deliberately: scoring a topology in the same pass
+  that proposes it is how the overclaims this section already had to correct got in.
+- **No topology-specific cost figure exists — and none is now sought.** §18.2 states which costs are
+  genuinely topology-specific (trusted-surface width, shared blast radius, shared role, worker-union
+  coupling) after removing the `scope.tags` work that ST-082 owns either way, but it does not price
+  that remaining set and no defended number should be attributed to it. This was recorded as a gap
+  in the recommendation's support; under the standing PO direction at §18's opening note it is no
+  longer one, because effort is not an input to this decision. It remains a genuine **planning**
+  gap for whoever schedules the work.
+- **The cross-topology day-count comparison has been withdrawn, not merely left unfilled.** §13.5's
+  "4–5 days saved / 3–4 days greenfield" netted the same `scope.tags` quantity against itself; the
+  note there marks it unusable. Anything downstream that cites a Candidate A/C effort delta is citing
+  a withdrawn figure.
+- **The relationship to Horizon B / agent-radio is asserted from the strategy baseline document, not
+  independently re-verified in this session** — cited at §18.4 for context on why the boundary matters
+  to what comes next, not as evidence for the host decision itself, which rests entirely on §18.1–§18.7.
+
+### 18.10 Proposed ADR-016 decision text — FOR PO REVIEW, NOT APPLIED
+
+The following is drafted for §1 of ADR-016, replacing the current "Preferred: Candidate A —
+conditionally" framing, **pending explicit PO sign-off**. ADR-016's live `status` field and body
+remain **Proposed / Conditional** until that sign-off lands as a separate, explicit commit.
+
+> **Decision, in two parts of unequal weight.**
+>
+> **(a) Reject Candidate A** — AWCP co-tenancy within ai-memory. This half is settled on the spike's
+> full evidence.
+>
+> **(b) Direct a standalone AWCP peer service** — its own codebase and runtime, consuming ai-memory as
+> an optional context provider through an adapter derived from the existing `ports.ts` boundary
+> (`KnowledgeSearchPort` / `KnowledgePromotionPort`), with `PolicyScope` threaded through its read
+> side. **This is a direction, not a scored selection.**
+>
+> **This is explicitly NOT Candidate C.** Candidate C is defined by donor retirement — "importing
+> selected packages/data from both donors and retiring them on a dated plan… defensible only with an
+> explicit retirement path for both donors" (`awcp-spec-evaluation.md:185`; ADR-016 §1's own
+> retirement-path row says the same). ai-memory is **not** retired here; it stays a live product and a
+> supported optional provider. The peer-service topology was never scored against the six criteria
+> that A, B, and C each went through, and this decision does not pretend otherwise: **scoring it is
+> the next step, and part (b) should be read as directing that work rather than concluding it.**
+>
+> Stage 1 (criteria 1–4) and Phase 2–3 (criterion 6) proved AWCP's operational domain is cleanly
+> separable and functions correctly with the memory subsystem absent, degraded, or unreachable —
+> evidence *for* standalone operation, not merely for safe co-tenancy. **Criterion 5 is not
+> discharged by this decision and must not be read as discharged by it:** Stage 2 priced the
+> policy-scope enforcement surface at 64+ hours / 8+ days, but `scope.tags` remains enforced in zero
+> retrieval paths and the read-side port carries no `PolicyScope` at all. **That work is not a cost
+> separation avoids** — it is ai-memory's own personal/corporate isolation obligation, owned by
+> ST-082, required whether or not AWCP ever shared the codebase. Separation narrows the surface AWCP
+> must trust from fifteen hand-written enforcement points to one adapter boundary; it does not
+> discharge the obligation or reduce the work. **Threading scope through the read side, default-deny,
+> is a precondition of the adapter contract this decision names**, not follow-on work. Criterion 7 asked
+> whether ai-memory's engine reuse justified Candidate A's domain-fit cost; it does not. The
+> domain-specific memory engine (search, graph, hybrid retrieval, consolidation) went entirely unused;
+> the reuse that did materialize is generic infrastructure — connection pooling, a migration idiom,
+> logging, container topology — which any competent Deno+Postgres service scaffolds for itself and
+> which is not ai-memory's to lend. Co-tenancy's ongoing costs — a shared failure blast radius,
+> a shared Postgres role with no real access-control isolation, and coupling flagged as actively
+> harmful to extend (§5) — are not offset by anything AWCP actually gained from sharing a codebase.
+>
+> **This is not a verdict that the ai-memory integration attempt failed.** It is the result the spike
+> was built to produce: memory is an optional capability AWCP can consume through an explicit port, not
+> the architectural container it must live inside. ai-memory remains a supported context provider.
+> Infrastructural patterns (connection pooling, the migration idiom, logging conventions) may still be
+> copied into a standalone AWCP codebase as patterns; nothing here characterizes that code as wasted.
+>
+> Extraction is not scoped by this decision. §18.8 of the Stage 2 findings sketches a bounded,
+> non-big-bang path (freeze the boundary → stand up standalone persistence → move AWCP-owned modules →
+> replace the in-process port with a real adapter → verify isolation) for whoever plans it next.
+
+**Gate progress, for §1's own bookkeeping once/if this is applied:** criteria 1–4 and 6 discharged as
+described above and in §16–§17. **Criterion 5 is NOT discharged** — U1 priced the enforcement surface
+(64+ hours) but `scope.tags` is still enforced in zero retrieval paths, so it remains an outstanding
+obligation ST-082 owns, not a met criterion. Criterion 7 answered **no** — reuse does not justify the
+domain-fit cost. Criterion 5's outstanding status is **neutral** between the two topologies, not an
+argument for either: the work is required either way (§18.2, §18.6). What separation changes is the
+width of the surface AWCP must trust, not the size of the bill.
+
+### 18.11 Verdict
+
+**ADR-016 EVIDENCE SUPPORTS REJECTING CANDIDATE A. It does not, on its own, select a replacement.**
+
+The two halves are not equally supported, and after two review rounds forced that distinction into
+the open it is stated plainly rather than blurred:
+
+- **Reject Candidate A — settled.** Criteria 1–4 and 6 met; criterion 5 outstanding and neutral
+  between topologies; criterion 7 answered **no**. The reuse that justified co-tenancy did not
+  materialize (§18.2). No cost differential is needed to reach that conclusion, and per §18's opening
+  note none is offered: the domain-specific engine went unused, what was reused is generic and not
+  ai-memory's to lend, and what co-tenancy adds in its place is structural coupling — a wider trusted
+  surface, a shared failure domain, a shared role. That is a design-fit answer, and it is the only
+  kind of answer criterion 7 was ever going to get from this evidence.
+- **Select a standalone peer service — directional.** Argued from the same evidence, but never put
+  through the six-criteria scoring A, B, and C each received, and explicitly *not* Candidate C, whose
+  defining donor-retirement condition this recommendation does not meet (§18.4).
+
+Of §18.9's gaps, one now bears directly on the *select* half rather than only on planning quality:
+**the peer-service topology is unscored.** AWCP's load profile, the extraction estimate, the
+topology-specific cost figure, and the Horizon B relationship remain planning-quality gaps.
+
+**§18.10 is ready for PO sign-off as a two-part decision** — settle the rejection, direct the
+replacement and its scoring. It is **not** ready to be read as a scored selection of a named
+candidate, and it now says so in its own text.
+
+---
+
+## 19. Criterion-6 definition ratified, and repo-rescan carried forward with an owner
+
+`03-CONTEXT.md:250-252` left one instruction for this phase: *"Whether repo-rescan is in Phase 3 scope
+at all remains open — the canonical plan lists it under U3, so Phase 4 must record criterion 6 against
+that definition."* Phase 4 inherited it, §18.1 assumed §16.5's answer without discharging it, and PR #59
+review caught the omission. This section discharges it.
+
+### 19.1 The conflict, and the ratification
+
+Two definitions of criterion 6 were in circulation:
+
+| Source | Wording | Includes repo-state? |
+|---|---|---|
+| `ADR-016-awcp-consolidation-host-topology.md:54` (the criterion itself) | *"authenticated remote event ingestion with spooled replay"* | **No** |
+| `.github/planning/story-board.md`, ST-088 entry — **wording as it stood before this ratification** | *"authenticated registration, heartbeat, checkpoint, repo-state; offline spool + idempotent replay"* | **Yes** |
+| Canonical plan U3 (`2026-08-04-002-…-plan.md:109`) | *"Implements spool, heartbeat, checkpoint, and repo-rescan"* | Yes, as U3 scope |
+
+**Ratified 2026-08-26 by the PO: ADR-016 §1's wording governs the criterion.** §16.5's disposition —
+that repo-rescan is an adjacent U3 capability rather than a criterion-6 element — is the accepted
+reading, and the board clause has been corrected to match rather than the criterion widened to match
+the board. The reasoning is textual and does not depend on effort: a gate criterion is discharged
+against the things it names, and ADR-016 §1 names authenticated ingestion with spooled replay. Where a
+board paraphrase of a Tier-1 artifact and the artifact disagree, the artifact wins — the ordinary
+source-of-truth precedence in `CLAUDE.md`, applied to a case where the drift was inside a single
+checklist line.
+
+**Criterion 6 is therefore discharged, unqualified.** Repo-rescan does not qualify it.
+
+### 19.2 Repo-rescan is a real U3 gap — carried forward, not closed
+
+Ratifying the criterion settles the *gate*. It does not make the capability unnecessary, and it must
+not be read as retiring it. Recorded here with an owner so it stops arriving in each phase unattributed
+(`03-VERIFICATION.md:218`).
+
+**What it is.** `request-repo-rescan`, one of five allow-listed control messages in the AWCP spec
+(`2026-07-29-001-awcp-ai-memory-host-spike.md:174-180`; restated at `2026-08-04-002-…-plan.md:95`
+alongside `request-status`, `request-checkpoint`, `pause-reporting`, `resume-reporting`). The hub asks a
+node to re-read its working tree *now* and report repository, branch and commit, rather than waiting on
+that node's own cadence.
+
+**The local case is already solved and is not part of this gap.** `server/scripts/awcp.ts` runs where
+the repository is and derives repo/branch/commit from `git` directly — shebang `--allow-run=git`,
+narrowed to that one binary, with a fixed allow-listed command set (`:1`, `:81-84`, `:457-486`). Those
+values land in permanent hub columns: `workflow.agent_runs.repository` / `.branch`
+(`001_workflow_schema.sql:44-47`), `workflow.checkpoints.repo_commit` (`:94`). Only the **remote-node**
+path has a gap.
+
+**The gap splits in two, and only one half needs new protocol.** The framing that made repo-rescan look
+expensive is that the spec specifies it as a *pull* — hub asks, node answers — which requires an
+inbound channel the node client does not have (`awcp-node-client.mjs:1512`: *"no control channel, no new
+hub route"*). Separating the halves removes most of that:
+
+1. **Push half — the node's checkpoints omit a field the spec's own checkpoint contract already
+   requires.** Spike plan §4 lists "repository commit" among a checkpoint's fields. The node client's
+   payloads are deliberately synthetic — *"nothing derived from the machine's working directory or
+   repository contents"* (`awcp-node-client.mjs:1515-1516`) — so for the remote path the hub's picture
+   of a node's commit is not stale, it is **absent**. Filling it is a payload change on the existing
+   emitter over the existing push path: no new route, no new direction, no control channel. The hub
+   columns to receive it already exist.
+2. **Pull half — `request-repo-rescan` proper**, the on-demand "tell me now." *Only* this half needs the
+   inbound channel, and it may not be wanted at all if a short push cadence suffices. It is separable
+   and should be decided on its own merits.
+
+**PO design direction, 2026-08-26 (a direction for whoever plans this, not a decision taken here):**
+prefer the push recast. It delivers the same information over a path that already exists, and it does
+not open a hub→node direction to get it.
+
+**Rejected alternative — SSH from hub to node for a direct `git status`.** Considered and rejected on
+design grounds, recorded so it is not re-proposed:
+
+- The spike plan states plainly, immediately before enumerating the five narrow control messages:
+  *"The product spike shall not implement a general-purpose remote shell"*
+  (`2026-07-29-001-awcp-ai-memory-host-spike.md:172`). SSH-for-git-status is that shell by a side door.
+- It **inverts the trust direction.** Today a node holds a bearer letting it *talk to* the hub;
+  compromising the hub reveals nothing about any node's filesystem. SSH would have the hub hold a
+  credential granting shell *on* every node it manages — a strictly worse failure domain than the
+  narrow control message it was meant to avoid, and a direct regression against criterion 4's own
+  concern.
+
+A node-side side-service that reports repo state is better than SSH — it keeps the push direction — but
+worse than (1): a second process to deploy, authenticate and keep alive, to carry data the existing
+checkpoint path can already carry.
+
+**The D-03 objection is weaker than previously recorded.** §16.5 and `03-CONTEXT.md` treat node-side
+`git` as reopening D-03's parked question of what content leaves a node under permanent retention. That
+holds for *arbitrary* working-directory content, but not for these three fields: `awcp.ts` already lands
+repo/branch/commit in permanent hub columns (cited above), so repository, branch and commit are an
+**already-retained data class**, not a new one. The remaining delta for the node client is mechanism —
+importing `node:child_process`, and the `--allow-run` grant this forces onto the in-process test file
+(D-09) — with `awcp.ts`'s narrow single-binary allow-list as the precedent for doing it safely. D-03
+still owns any proposal to send content beyond those three fields.
+
+**Owner:** unassigned at the U3/AWCP-roadmap level, and deliberately **not** folded into ST-088, which
+this closes. It survives the host decision: both halves are node-client work that a standalone AWCP
+peer service inherits unchanged, since neither depends on where the hub lives.

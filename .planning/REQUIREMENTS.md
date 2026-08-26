@@ -14,9 +14,9 @@ Requirements for the current ST-088 milestone. Each maps to exactly one roadmap 
 
 ### Remote Node Identity
 
-- [ ] **NODE-01**: An authorized Ubuntu execution node can register with the hub using a node-specific credential that is distinct from the platform MCP credential.
-- [ ] **NODE-02**: A registered node can send heartbeats and execution events that the hub attributes to that node and persists for later inspection.
-- [ ] **NODE-03**: Invalid or missing node credentials are rejected without weakening platform MCP authentication or preventing the optional workflow module from booting.
+- [x] **NODE-01**: An authorized Ubuntu execution node can register with the hub using a node-specific credential that is distinct from the platform MCP credential. Complete since Phase 2 (2026-08-06); box was stale, corrected 2026-08-26.
+- [x] **NODE-02**: A registered node can send heartbeats and execution events that the hub attributes to that node and persists for later inspection. Complete since Phase 2 (2026-08-06); box was stale, corrected 2026-08-26.
+- [x] **NODE-03**: Invalid or missing node credentials are rejected without weakening platform MCP authentication or preventing the optional workflow module from booting. Complete since Phase 2 (2026-08-06); box was stale, corrected 2026-08-26.
 
 ### Reliable Event Delivery
 
@@ -27,7 +27,7 @@ Requirements for the current ST-088 milestone. Each maps to exactly one roadmap 
 
 ### Workflow Enforcement Evidence
 
-- [ ] **BLOCK-01**: The product owner can see whether unresolved `blocking` WorkPacket state has an implemented execution consequence, with the result reported as PROVEN or UNPROVEN from observed behavior.
+- [x] **BLOCK-01**: The product owner can see whether unresolved `blocking` WorkPacket state has an implemented execution consequence, with the result reported as PROVEN or UNPROVEN from observed behavior. UNPROVEN, findings §17 (2026-08-26).
 
 ### Host Decision
 
@@ -71,18 +71,18 @@ Deferred beyond the ST-088 host-viability milestone.
 |-------------|-------|--------|
 | SCOPE-01 | Phase 1 — Policy-Scope Pricing | ✅ Complete (commit `20aac70`, 2026-08-05) |
 | SCOPE-02 | Phase 1 — Policy-Scope Pricing | ✅ Complete (commit `20aac70`, 2026-08-05) |
-| NODE-01 | Phase 2 — Remote Node Identity & Hub | Pending |
-| NODE-02 | Phase 2 — Remote Node Identity & Hub | Pending |
-| NODE-03 | Phase 2 — Remote Node Identity & Hub | Pending |
+| NODE-01 | Phase 2 — Remote Node Identity & Hub | Complete |
+| NODE-02 | Phase 2 — Remote Node Identity & Hub | Complete |
+| NODE-03 | Phase 2 — Remote Node Identity & Hub | Complete |
 | EVENT-01 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Complete |
 | EVENT-02 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Complete |
 | EVENT-03 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Complete |
 | EVENT-04 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Complete |
 | SAFE-01 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Complete |
 | SAFE-02 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Complete |
-| BLOCK-01 | Phase 4 — Blocking Evidence & ADR-016 Host Decision | Pending |
-| HOST-01 | Phase 4 — Blocking Evidence & ADR-016 Host Decision | Pending |
-| HOST-02 | Phase 4 — Blocking Evidence & ADR-016 Host Decision | Pending |
+| BLOCK-01 | Phase 4 — Blocking Evidence & ADR-016 Host Decision | Complete |
+| HOST-01 | Phase 4 — Blocking Evidence & ADR-016 Host Decision | Pending — recommendation drafted (findings §18.10), held for PO sign-off before ADR-016 itself is updated |
+| HOST-02 | Phase 4 — Blocking Evidence & ADR-016 Host Decision | Complete — reconciliation done in findings §18 (the recommendation text's application to ADR-016 is HOST-01's remaining gap, not this one's) |
 
 **Coverage:**
 
@@ -92,4 +92,4 @@ Deferred beyond the ST-088 host-viability milestone.
 
 ---
 *Requirements defined: 2026-08-05*
-*Last updated: 2026-08-05 after GSD brownfield initialization*
+*Last updated: 2026-08-26 — corrected stale NODE-01/02/03 and BLOCK-01 tracking; originally written 2026-08-05 after GSD brownfield initialization*
