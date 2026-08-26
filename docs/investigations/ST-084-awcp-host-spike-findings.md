@@ -1687,9 +1687,9 @@ pattern §13 already established in this document for unapplied ADR amendments.
   Candidate C doesn't.**
 - What Candidate A costs that Candidate C never would: the 64+ hour (8+ day) `scope.tags` enforcement
   surface (§13, entirely a consequence of sitting inside a system with 15 memory-retrieval paths to
-  defend); a shared failure blast radius (§3, ST-086's fail-startup wiring); a shared Postgres role
-  with no real access-control isolation (§3: "a Postgres schema is namespacing, not access control");
-  and the worker-type-union coupling risk §5 flagged as actively harmful.
+  defend); a shared failure blast radius (§6.2/§12a, ST-086's fail-startup wiring); a shared Postgres
+  role with no real access-control isolation (§6.3: "a Postgres schema is namespacing, not access
+  control"); and the worker-type-union coupling risk §5 flagged as actively harmful.
 - Net: the case for sharing a codebase was reuse. The reuse that would have mattered didn't happen;
   the reuse that did happen is cheap to replicate; and the thing co-tenancy actually bought AWCP was a
   bill, not a discount.
@@ -1824,7 +1824,7 @@ without a credible non-big-bang path:
   the workflow-boundary lint test once nothing depends on them.
 
 **Database/role guidance for whenever Phase B happens:** co-location on one physical Postgres server
-is an operational convenience question, separate from this decision. What matters per §3's own
+is an operational convenience question, separate from this decision. What matters per §6.3's own
 finding ("a Postgres schema is namespacing, not access control") is that AWCP and ai-memory hold
 **separate roles/databases**, so a shared instance (if chosen for cost) does not silently become a
 shared trust boundary the way the current single `ai_memory` role does.

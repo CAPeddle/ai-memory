@@ -125,7 +125,7 @@ supporting reason, not the primary one.
 **Goal**: The product owner receives an honest account of whether `blocking` WorkPacket state gates actual execution, and ADR-016 records a final, evidence-based host recommendation that reconciles all ST-088 evidence.
 **Depends on**: Phase 3
 **Requirements**: BLOCK-01, HOST-01, HOST-02
-**Delivery artifacts**: `docs/investigations/ST-084-awcp-host-spike-findings.md` §13 (U5 finding), `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` (status updated from Proposed/Conditional)
+**Delivery artifacts**: `docs/investigations/ST-084-awcp-host-spike-findings.md` §17 (U5 finding) and §18 (U6 recommendation) — not §13, corrected 2026-08-26 for the same reason §16's own header note gives above. `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` itself is **not yet updated**: §18.10 carries the proposed replacement text, held for PO sign-off (success criterion 2 below)
 **Success Criteria** (what must be TRUE):
 
   1. The Stage 2 findings document records a PROVEN or UNPROVEN verdict for `blocking` WorkPacket state with a specific file:line citation for the implemented consequence (or explicit absence of one).
@@ -133,13 +133,13 @@ supporting reason, not the primary one.
   3. The final recommendation is reconciled against all five evidence inputs: U1 pricing table, experiments 4–6 results, execution-blocking finding, shared-runtime blast-radius assessment, and post-Stage-1 code drift (§12a).
   4. ADR-016 §1 gate progress section confirms criterion 5, 6, and 7 are each recorded as discharged or UNPROVEN-with-rationale.
 
-**Status**: Recommendation drafted 2026-08-26, held for PO sign-off (see below) — criteria 1, 3, 4 satisfied; criterion 2 deliberately not yet done.
+**Status**: Recommendation drafted 2026-08-26, held for PO sign-off (see below) — criteria 1 and 3 satisfied; criteria 2 and 4 deliberately not yet done, both blocked on the same held-back ADR-016 update.
 
 **Success criteria disposition:**
   1. **Done.** `blocking` re-verified UNPROVEN against current code, file:line citations for both its only two (observational) consumers — findings §17.
   2. **Deliberately not done.** ADR-016's `status` and Decision text remain Proposed/Conditional. A full recommendation (reject Candidate A, select Candidate C) is drafted in findings §18.10, but per explicit PO direction this session it is held for sign-off rather than applied automatically — the ADR's own header names the PO as sole Decider.
-  3. **Done.** §18 reconciles all inputs: U1 pricing (§13), experiments 4-6 (§16), the execution-blocking finding (§17), the shared-runtime blast-radius assessment (§3/§12a), and post-Stage-1 drift (§12a).
-  4. **Done.** §18.1 re-evaluates all seven criteria; criterion 7 is answered (not "met", but a complete, defended "no" — reuse does not justify the domain-fit cost).
+  3. **Done.** §18 reconciles all inputs: U1 pricing (§13), experiments 4-6 (§16), the execution-blocking finding (§17), the shared-runtime blast-radius assessment (§6.2/§6.3/§12a), and post-Stage-1 drift (§12a).
+  4. **Deliberately not done — same gap as criterion 2.** This criterion asks specifically whether **ADR-016 §1's own gate-progress section** confirms criteria 5-7; that section is untouched and still reads "criteria 5, 6 and 7 remain outstanding" (`docs/design/adr/ADR-016-awcp-consolidation-host-topology.md:63`). Findings §18.1 re-evaluates all seven criteria and reaches a defended disposition for each, but that re-evaluation living in the findings doc is not the same fact as ADR-016 itself recording it — the latter is exactly what's held for PO sign-off.
 
 **Plans**: TBD
 **UI hint**: no
