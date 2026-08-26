@@ -1662,9 +1662,9 @@ pattern §13 already established in this document for unapplied ADR amendments.
 | 2. Memory-disabled operation | **Met** (Stage 1) | Same reading: a `NoopMemoryAdapter` (`ports.ts`) passes every core workflow test. AWCP's correctness never depended on the memory subsystem being present, in either topology. |
 | 3. Separate persistence/API boundaries | **Met** (Stage 1) | Operational tables and the platform MCP surface never leaked into each other. Positive evidence the boundary is real, not just declared. |
 | 4. Failure isolation | **Met** (Stage 1), with a caveat §12a/§3 already recorded | A fault in embedding/entity/consolidation workers cannot corrupt operational state — but ST-086's fail-startup wiring means a *workflow* migration fault now takes the whole memory MCP down. Failure isolation is asymmetric: memory faults can't hurt AWCP, but a shared process still lets AWCP hurt memory. |
-| 5. Policy-scope enforcement implementable | **Met, and priced** (§13/U1) | Every one of the 15 paths has a feasible mitigation (WHERE-clause addition, gating, or egress-gating) — nothing is structurally impossible. But "implementable" was never the open question; the cost was, and the cost is 64+ hours (8+ days), a number that exists *only* because AWCP and memory retrieval share a trust domain. |
+| 5. Policy-scope enforcement | **NOT met — priced, not enforced** (§13/U1) | ADR-016 §1's actual wording is *"the Q9 isolation controls (policy-scope field, default-deny retrieval/provider routing) are implementable at this boundary"*, and the board states it as **default-deny; every enabled retrieval/graph/context/export/provider path enforces or fails closed**. U1 established that every one of the 15 paths has a feasible mitigation and priced the total at 64+ hours (8+ days) — but *feasible and priced* is not *enforced*. `scope.tags` is still enforced in **zero** retrieval paths (§6.1, unchanged); ST-082 owns the build. An earlier draft of this row restated the criterion as "implementable" and marked it met on the pricing alone — corrected 2026-08-26 after review; **the criterion stays unproven, and the board's own checkbox for it correctly remains unticked.** |
 | 6. Remote-client control | **Met** (§16) | Real node, real hub, all six named elements discharged. Says nothing about *where* the hub should live — a standalone AWCP hub is exactly as capable of authenticating z2 as ai-memory's is. |
-| 7. Reuse justifies the domain-fit cost | **Not met** | See §18.2. This is the one criterion the evidence answers "no" to, and it's the deciding one — 1–6 describe a boundary that is *clean*, not a boundary that *should be shared*. |
+| 7. Reuse justifies the domain-fit cost | **Not met** | See §18.2. This is the criterion whose answer decides the host question, and the evidence answers "no" — criteria 1–4 and 6 describe a boundary that is *clean*, not a boundary that *should be shared*, and criterion 5 is an outstanding bill rather than a discharged one. |
 
 ### 18.2 The reuse-vs-cost reconciliation
 
@@ -1709,10 +1709,23 @@ seam:
   memory domain," enforced by `workflow-boundary.test.ts`, not just documented. `KnowledgeSearchPort`
   (read-side, advisory) and `KnowledgePromotionPort` (write-side) are already optional-by-construction,
   already bounded by `PORT_TIMEOUT_MS`, and a `NoopMemoryAdapter` already proves the whole operational
-  flow completes with memory absent. **This is the `ContextPort` the recommended topology below asks
-  for — it already exists, in-process.** What changes if AWCP becomes standalone is that an adapter
-  implementing these same two interfaces makes a network call instead of an in-process one; the
-  interface contract does not need to be invented.
+  flow completes with memory absent. **This is the structural shape the recommended `ContextPort`
+  needs — the boundary and its enforcement already exist, in-process.** What changes if AWCP becomes
+  standalone is that an adapter implementing these interfaces makes a network call instead of an
+  in-process one; the boundary does not need to be invented.
+
+  **One gap in that contract, and it is load-bearing for the recommendation — recorded 2026-08-26
+  after review.** The two ports are asymmetric on policy scope. The write side already carries it:
+  `PromotionInput.policyScope` is typed to the closed `PolicyScope` union (`ports.ts:162`), deliberately
+  narrowed after an earlier implementation hardcoded `"personal"` for every packet. **The read side
+  does not** — `KnowledgeSearchPort.search(query: string, limit: number)` (`ports.ts:109`) takes no
+  scope parameter at all, and neither does `service.ts`'s `gatherAdvisoryContext`. So an adapter
+  implementing this interface as-is cannot distinguish a personal, corporate, mixed, or public packet's
+  advisory retrieval, and separation alone would not fix that: it would move a scope-blind read across
+  a network boundary rather than closing it. **`ContextPort` must thread `PolicyScope` through the
+  read side (or enforce it at an equivalent mandatory boundary on the memory service) before any
+  cross-scope traffic flows through it** — this is Phase A's real content (§18.8), not a detail
+  deferred to Phase D, and it is the same enforcement obligation criterion 5 leaves outstanding.
 - **`server/src/workflow/bootstrap.ts`** / **`schema.ts`** — the composition-root seam ("this file is
   the ONLY thing the composition root needs to know about... one predicate, one bootstrap call") and
   the workflow module's own self-contained migration runner, deliberately kept out of the shared
@@ -1742,10 +1755,13 @@ through the existing port contract instead of an in-process call:
    OpenCode, ...)
 ```
 
-- **`ContextPort`** = `KnowledgeSearchPort` + `KnowledgePromotionPort` as already specified in
-  `ports.ts` (§18.3), promoted from an in-process TypeScript interface to a real adapter boundary
-  (HTTP/MCP call to ai-memory, or another provider later). AWCP's correctness must not depend on this
-  port resolving — exactly the property `NoopMemoryAdapter` already proves.
+- **`ContextPort`** = `KnowledgeSearchPort` + `KnowledgePromotionPort` as specified in `ports.ts`
+  (§18.3), promoted from an in-process TypeScript interface to a real adapter boundary (HTTP/MCP call
+  to ai-memory, or another provider later) — **and with `PolicyScope` threaded through the read side,
+  which today's `search(query, limit)` lacks (§18.3).** That threading is a precondition of the port,
+  not a later refinement: without it the adapter cannot tell a corporate packet's advisory retrieval
+  from a personal one. AWCP's correctness must not depend on this port resolving — exactly the
+  property `NoopMemoryAdapter` already proves.
 - **ai-memory** remains a **supported, optional** context provider, not a mandatory dependency and not
   an AWCP host.
 - **Execution providers** (Claude, Codex, OpenCode, and — per the strategy baseline's own import queue,
@@ -1788,6 +1804,15 @@ owned and priced on ai-memory's own roadmap (ST-082), independent of AWCP's exis
 calls into ai-memory through `ContextPort`, whatever scope filtering applies to *that one call* is
 ai-memory's authorization concern at its own API boundary — a single enforcement point, not 15.
 
+**That reduction is real but it is not free, and this section must not be read as making the
+obligation vanish** (recorded 2026-08-26 after review). Collapsing 15 enforcement points to one only
+helps if the one is actually enforced, and today it is not: the read-side port carries no
+`PolicyScope` at all (§18.3), so a `ContextPort` built from the current interface would be a
+scope-blind hole in exactly the boundary this section says separation simplifies. Separation changes
+*where* the enforcement obligation sits and *how many* places must implement it — it does not
+discharge it. Criterion 5 stays unproven either way (§18.1), and threading scope through the read
+side is Phase A work (§18.8).
+
 ### 18.7 What this changes elsewhere
 
 - **ST-082** (build the `scope.tags` enforcement `ST-088` priced) does not disappear — ai-memory still
@@ -1808,9 +1833,13 @@ ai-memory's authorization concern at its own API boundary — a single enforceme
 changes. This is a shape for whoever plans the extraction, offered so the ADR decision doesn't ship
 without a credible non-big-bang path:
 
-- **Phase A — Freeze the boundary.** Confirm `ports.ts`'s two interfaces are the complete surface
-  AWCP needs from memory (workflow-boundary.test.ts already proves no other file imports it); document
-  them as the contract a real adapter must implement.
+- **Phase A — Freeze the boundary, and close its scope gap.** Confirm `ports.ts`'s two interfaces are
+  the complete surface AWCP needs from memory (workflow-boundary.test.ts already proves no other file
+  imports it); document them as the contract a real adapter must implement. **Thread `PolicyScope`
+  through the read side** — `KnowledgeSearchPort.search` and `gatherAdvisoryContext` take none today
+  (§18.3), and freezing a scope-blind read contract would bake the gap into the adapter. Default-deny
+  on an absent or unrecognized scope, matching the write side's closed-union treatment rather than
+  `parseContext`'s fail-open idioms (§6.1).
 - **Phase B — Stand up AWCP's own persistence/runtime.** New database (or database + role, at minimum
   — see below), new process, `schema.ts`'s existing self-contained migration runner ported as-is.
 - **Phase C — Move AWCP-owned modules.** The `server/src/workflow/` tree and `server/scripts/awcp*`
@@ -1849,14 +1878,20 @@ conditionally" framing, **pending explicit PO sign-off**. ADR-016's live `status
 remain **Proposed / Conditional** until that sign-off lands as a separate, explicit commit.
 
 > **Decision: Reject Candidate A (AWCP co-tenancy within ai-memory); select Candidate C — a standalone
-> AWCP service/codebase, consuming ai-memory as an optional context provider through the existing
-> `ports.ts` adapter contract (`KnowledgeSearchPort` / `KnowledgePromotionPort`), not as its host.**
+> AWCP service/codebase, consuming ai-memory as an optional context provider through an adapter
+> contract derived from the existing `ports.ts` boundary (`KnowledgeSearchPort` /
+> `KnowledgePromotionPort`), not as its host.**
 >
 > Stage 1 (criteria 1–4) and Phase 2–3 (criterion 6) proved AWCP's operational domain is cleanly
 > separable and functions correctly with the memory subsystem absent, degraded, or unreachable —
-> evidence *for* standalone operation, not merely for safe co-tenancy. Stage 2 priced criterion 5
-> (policy-scope enforcement: 64+ hours / 8+ days) and found it entirely a consequence of sharing a
-> trust domain with 15 memory-retrieval paths — a cost Candidate C would never incur. Criterion 7 asked
+> evidence *for* standalone operation, not merely for safe co-tenancy. **Criterion 5 is not
+> discharged by this decision and must not be read as discharged by it:** Stage 2 priced the
+> policy-scope enforcement surface (64+ hours / 8+ days) and found it entirely a consequence of
+> sharing a trust domain with 15 memory-retrieval paths — a cost Candidate C would never incur — but
+> `scope.tags` remains enforced in zero retrieval paths, and the read-side port carries no
+> `PolicyScope` at all. Separation reduces that obligation from fifteen enforcement points to one; it
+> does not satisfy it. **Threading scope through the read side, default-deny, is a precondition of the
+> adapter contract this decision names**, not follow-on work. Criterion 7 asked
 > whether ai-memory's engine reuse justified Candidate A's domain-fit cost; it does not. The
 > domain-specific memory engine (search, graph, hybrid retrieval, consolidation) went entirely unused;
 > the reuse that did materialize is generic infrastructure, replicable at roughly the cost §13.5 already
@@ -1874,9 +1909,12 @@ remain **Proposed / Conditional** until that sign-off lands as a separate, expli
 > non-big-bang path (freeze the boundary → stand up standalone persistence → move AWCP-owned modules →
 > replace the in-process port with a real adapter → verify isolation) for whoever plans it next.
 
-**Gate progress, for §1's own bookkeeping once/if this is applied:** criteria 1–6 discharged as
-described above and in §16–§17; criterion 7 answered **no** — reuse does not justify the domain-fit
-cost — which is itself a complete, evidence-backed answer to the gate, not an open item.
+**Gate progress, for §1's own bookkeeping once/if this is applied:** criteria 1–4 and 6 discharged as
+described above and in §16–§17. **Criterion 5 is NOT discharged** — U1 priced the enforcement surface
+(64+ hours) but `scope.tags` is still enforced in zero retrieval paths, so it remains an outstanding
+obligation ST-082 owns, not a met criterion. Criterion 7 answered **no** — reuse does not justify the
+domain-fit cost. Note that criterion 5's outstanding status *strengthens* rather than weakens the
+recommendation: that bill is the cost co-tenancy imposes and separation avoids (§18.6).
 
 ### 18.11 Verdict
 
