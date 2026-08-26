@@ -27,7 +27,7 @@ Requirements for the current ST-088 milestone. Each maps to exactly one roadmap 
 
 ### Workflow Enforcement Evidence
 
-- [ ] **BLOCK-01**: The product owner can see whether unresolved `blocking` WorkPacket state has an implemented execution consequence, with the result reported as PROVEN or UNPROVEN from observed behavior.
+- [x] **BLOCK-01**: The product owner can see whether unresolved `blocking` WorkPacket state has an implemented execution consequence, with the result reported as PROVEN or UNPROVEN from observed behavior. UNPROVEN, findings §17 (2026-08-26).
 
 ### Host Decision
 
@@ -80,9 +80,9 @@ Deferred beyond the ST-088 host-viability milestone.
 | EVENT-04 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Complete |
 | SAFE-01 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Complete |
 | SAFE-02 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Complete |
-| BLOCK-01 | Phase 4 — Blocking Evidence & ADR-016 Host Decision | Pending |
-| HOST-01 | Phase 4 — Blocking Evidence & ADR-016 Host Decision | Pending |
-| HOST-02 | Phase 4 — Blocking Evidence & ADR-016 Host Decision | Pending |
+| BLOCK-01 | Phase 4 — Blocking Evidence & ADR-016 Host Decision | Complete |
+| HOST-01 | Phase 4 — Blocking Evidence & ADR-016 Host Decision | Pending — recommendation drafted (findings §18.10), held for PO sign-off before ADR-016 itself is updated |
+| HOST-02 | Phase 4 — Blocking Evidence & ADR-016 Host Decision | Complete — reconciliation done in findings §18 (the recommendation text's application to ADR-016 is HOST-01's remaining gap, not this one's) |
 
 **Coverage:**
 

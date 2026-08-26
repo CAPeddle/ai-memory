@@ -133,6 +133,14 @@ supporting reason, not the primary one.
   3. The final recommendation is reconciled against all five evidence inputs: U1 pricing table, experiments 4–6 results, execution-blocking finding, shared-runtime blast-radius assessment, and post-Stage-1 code drift (§12a).
   4. ADR-016 §1 gate progress section confirms criterion 5, 6, and 7 are each recorded as discharged or UNPROVEN-with-rationale.
 
+**Status**: Recommendation drafted 2026-08-26, held for PO sign-off (see below) — criteria 1, 3, 4 satisfied; criterion 2 deliberately not yet done.
+
+**Success criteria disposition:**
+  1. **Done.** `blocking` re-verified UNPROVEN against current code, file:line citations for both its only two (observational) consumers — findings §17.
+  2. **Deliberately not done.** ADR-016's `status` and Decision text remain Proposed/Conditional. A full recommendation (reject Candidate A, select Candidate C) is drafted in findings §18.10, but per explicit PO direction this session it is held for sign-off rather than applied automatically — the ADR's own header names the PO as sole Decider.
+  3. **Done.** §18 reconciles all inputs: U1 pricing (§13), experiments 4-6 (§16), the execution-blocking finding (§17), the shared-runtime blast-radius assessment (§3/§12a), and post-Stage-1 drift (§12a).
+  4. **Done.** §18.1 re-evaluates all seven criteria; criterion 7 is answered (not "met", but a complete, defended "no" — reuse does not justify the domain-fit cost).
+
 **Plans**: TBD
 **UI hint**: no
 
@@ -145,7 +153,7 @@ supporting reason, not the primary one.
 | 1. Policy-Scope Pricing | — | Complete | 2026-08-05 |
 | 2. Remote Node Identity & Hub | 2/2 | Complete | 2026-08-06 |
 | 3. Node Client, Reliable Delivery & Regression Safety | 6/6 | Complete | 2026-08-18 |
-| 4. Blocking Evidence & ADR-016 Host Decision | 0/TBD | Not started | - |
+| 4. Blocking Evidence & ADR-016 Host Decision | — | Recommendation drafted, held for PO sign-off | — |
 
 ---
 
@@ -164,9 +172,9 @@ supporting reason, not the primary one.
 | EVENT-04 | Phase 3 | Complete |
 | SAFE-01 | Phase 3 | Complete |
 | SAFE-02 | Phase 3 | Complete |
-| BLOCK-01 | Phase 4 | Pending |
-| HOST-01 | Phase 4 | Pending |
-| HOST-02 | Phase 4 | Pending |
+| BLOCK-01 | Phase 4 | Complete |
+| HOST-01 | Phase 4 | Pending — recommendation drafted, held for PO sign-off |
+| HOST-02 | Phase 4 | Complete |
 
 **v1 requirements: 14/14 mapped ✓**
 
