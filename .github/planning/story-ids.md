@@ -152,3 +152,5 @@ ST-096  2026-08-24  branch:main  seed:board — story-board.md entry
 ST-097  2026-08-24  branch:main  seed:board — story-board.md entry
 ST-098  2026-08-25  branch:main  st097 followups: observed-session restart-pinning fix, store.ts split, pre-existing test triage, browser-check refresh
 ST-099  2026-08-25  branch:chore/st098-observed-session-follow-ups  restore authenticated OpenRouter egress from dev/test containers
+ST-100  2026-08-27  branch:main  score the standalone AWCP peer-service topology against the six host criteria
+ST-101  2026-08-27  branch:main  migrate prism-llm-wiki curated knowledge into ai-memory via capture tooling
