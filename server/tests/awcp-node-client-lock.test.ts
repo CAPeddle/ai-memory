@@ -153,9 +153,33 @@ Deno.test({
 
       // Snapshot AFTER the holder has produced its start checkpoint, so the
       // byte-identical assertion below is about the refused run and nothing else.
+      //
+      // Wait for the checkpoint EVENT, not merely for the spool file to exist. `run`
+      // emits two events — `session_start`, then `emitCheckpoint({phase:"start"})`
+      // (`server/scripts/awcp-node-client.mjs:1697`) — and a non-null check is
+      // satisfied by the first of them. That let the snapshot land between the two
+      // appends, so `before.spool` held one line while the assertion below read two,
+      // and the step failed blaming the refused run for a line the holder wrote
+      // itself. Intermittent by nature: it needs the scheduler to interleave inside
+      // that ~55ms window, so it passed and failed on alternating CI runs of an
+      // unrelated docs-only branch before it was diagnosed.
       await waitFor(
         "the holder to spool its start checkpoint",
-        () => readOrNull(`${home}/spool.jsonl`) !== null,
+        () =>
+          (readOrNull(`${home}/spool.jsonl`) ?? "")
+            .split("\n")
+            .filter((line) => line.trim() !== "")
+            .some((line) => {
+              // Parse rather than substring-match: the spool line is
+              // `JSON.stringify`d, so a key reorder would silently break a
+              // substring check and reintroduce the race it was added to close.
+              // A torn final line is possible mid-append, so tolerate it.
+              try {
+                return JSON.parse(line).event_type === "checkpoint";
+              } catch {
+                return false;
+              }
+            }),
       );
       const before = {
         seq: readOrNull(`${home}/client_seq`),
