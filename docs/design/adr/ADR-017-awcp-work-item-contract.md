@@ -198,6 +198,22 @@ work presuming the host. This decision commits to nothing about *where the `work
 — only that a WorkItem lives beside its packets, wherever that is. It is **not** evidence that the
 ST-084/ST-088 host gate has been discharged; it has not been.
 
+**Superseded 2026-08-26 — the gate is now discharged, and it went against the host.** ADR-016 is
+**Accepted** (rev 1.5): Candidate A is **rejected** and AWCP becomes a standalone peer service.
+Two consequences for a migration planner reading this section, since the sentence above would
+otherwise send them back for a per-migration host decision that no longer exists:
+
+- **ADR-016 §1's bar is lifted.** Schema and migration work no longer returns for its own host
+  decision, and the narrow migration-`005` override is moot.
+- **The bar inverted rather than simply lifting.** Schema work must now assume the **standalone
+  AWCP service**, not this host — and must not assume the peer-service topology's *scoring*
+  outcome, which is still outstanding (ST-100).
+
+**This section's own decision is unchanged**: a WorkItem still lives beside its packets in the
+existing `workflow` schema, and that schema now travels with the extraction rather than settling
+where it lives. The paragraph above is retained as the record of the constraint this decision was
+taken under.
+
 **Rejected alternative:** a logically separate schema, or tables behind their own module interface.
 Rejected on all three reasons above.
 

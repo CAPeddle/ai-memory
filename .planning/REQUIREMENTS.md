@@ -32,7 +32,7 @@ Requirements for the current ST-088 milestone. Each maps to exactly one roadmap 
 ### Host Decision
 
 - [x] **HOST-01**: ADR-016 records a final evidence-based recommendation of accept Candidate A, accept Candidate A with explicit changes, or recommend Candidate C. **Complete 2026-08-26** — the outcome was a *fourth* answer this wording did not anticipate: **reject Candidate A** and direct a **standalone AWCP peer service**, which is explicitly not Candidate C (ai-memory is not retired). ADR-016 rev 1.5, Accepted.
-- [ ] **HOST-02**: The final recommendation reconciles policy-scope cost, remote-node evidence, execution-blocking evidence, shared-runtime blast radius, and current post-Stage-1 code drift.
+- [x] **HOST-02**: The final recommendation reconciles policy-scope cost, remote-node evidence, execution-blocking evidence, shared-runtime blast radius, and current post-Stage-1 code drift. **Complete 2026-08-26** — findings §18 reconciles all five: U1 pricing (§13), experiments 4–6 (§16), the execution-blocking finding (§17), the shared-runtime blast radius (§6.2/§6.3/§12a), and post-Stage-1 drift (§12a). The traceability table below has recorded this as Complete since the reconciliation landed; the checkbox was the stale half.
 
 ### Regression Safety
 
