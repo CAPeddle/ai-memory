@@ -103,7 +103,19 @@ branch `claude/st-084-awcp-host-spike`, PR #34 being open against a feature bran
 exercised by the ST-086/087/088/092 suites — read them as live, not historical. What keeps the
 hedge warranted is the module's governance status rather than any marker in its source:
 acceptance is gated on ADR-016, Proposed — Conditional at its revision 1.3, so this code may
-still change shape or go away. The hedge is anchored there deliberately. An earlier version
+still change shape or go away. The hedge is anchored there deliberately.
+
+**Updated 2026-08-26 — the gate closed, and the hedge survives with a different reason.** ADR-016
+is now **Accepted** (rev 1.5) with **Candidate A rejected**: the module is not a co-tenant here,
+it is an **extraction donor** for a standalone AWCP peer service. So "this code may still change
+shape or go away" is *still true*, but no longer because acceptance is pending — because the
+module is destined to relocate. Two things that changed in kind rather than degree, and they are
+why this paragraph is amended rather than deleted: the code is **stable and supported in place**
+until an extraction plan retires it (ADR-016's own Consequences state that nothing moves in the
+tree), so the hedge is no longer a reason to under-invest in reviewing it; and the anchor is now a
+**decided** ADR rather than a pending one, which makes it a firmer anchor than before, not a
+weaker one. The wider lesson this section actually teaches — anchor a hedge in governance status,
+not in a comment string — is unaffected. An earlier version
 rested it on the module's `SPIKE / DISPOSABLE` docblock stamps, which is the weaker anchor —
 a hedge that depends on a comment string stops being true the moment someone edits the comment,
 and one of those stamps sits inside an applied migration where it cannot be edited at all: the

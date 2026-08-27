@@ -265,7 +265,11 @@ file:
 - **Line-number citations** (`server/index.ts:941`) — the cited file moves.
 - **Counts** ("four sites", "six modules") — the set grows.
 - **Status claims about other documents** ("ADR-016 is Proposed") — the
-  document changes.
+  document changes. **Worked example, 2026-08-26: it did.** ADR-016 moved to
+  Accepted with Candidate A rejected, and every "ADR-016 is Proposed" claim in
+  this repo — including two in this very file — had to be found and corrected
+  in the same change. The prediction cost one line; not making it would have
+  cost the reader their trust in the rest of the page.
 - **Self-descriptions with a shelf life** (`SPIKE / DISPOSABLE`, `TODO`,
   `DEPRECATED — remove in v2`) — the shelf life expires.
 
@@ -376,7 +380,7 @@ exercised by the ST-086/087/088/092 suites. (The 4 migrations are verified by
 `ls server/db/workflow/`; the other two counts are that message's, quoted rather
 than re-measured — a doc about rotting counts should say which of its own it
 checked.) Deleting the module is no longer the cheap act the stamp assumes. The stamps were corrected rather than removed, since
-ADR-016 is still Proposed — Conditional.
+ADR-016 is still Proposed — Conditional. **(Updated 2026-08-26: ADR-016 is now **Accepted** at rev 1.5, with **Candidate A rejected** — so the reason the stamps stay corrected-rather-than-removed has changed, but the conclusion has not. The module is an **extraction donor** for a standalone AWCP peer service: still not a permanent fixture, and still not deletable, because ADR-016's own Consequences state that nothing moves in the tree until an extraction plan retires it. `PROVISIONAL` remains the honest word; what it is provisional *about* is now relocation rather than acceptance.)**
 
 A **seventh** stamp, `server/db/workflow/001_workflow_schema.sql:4`, could not
 be. So the module now carries two contradictory self-descriptions, and the
@@ -526,7 +530,7 @@ server/src/workflow/schema.ts
 
 Five files, not six — because `types.ts` carries the long-form note
 (`server/src/workflow/types.ts:19-27`) instead of the one-line
-`PROVISIONAL — not a throwaway spike; gated on ADR-016. See types.ts.` marker
+`PROVISIONAL — not a throwaway spike; an extraction donor. See types.ts.` marker (it read *"gated on ADR-016"* until 2026-08-26, when the gate closed against the host — see the update above)
 the other five carry. PR #53 changed six `.ts` files; the sixth is the one doing
 the explaining. The only surviving `SPIKE / DISPOSABLE` assertion is the frozen
 one at `001_workflow_schema.sql:4`; the other hit is `types.ts` quoting it in
