@@ -25,8 +25,9 @@ Knowledge worth retaining must remain accurately recallable across tools, sessio
 
 ### Active
 
-- [ ] Complete ST-088 Stage 2 evidence: price policy-scope enforcement, exercise a remote Ubuntu execution node, audit execution blocking, and finalize ADR-016's host recommendation
-- [ ] Enforce default-deny policy scope across every memory retrieval and provider-egress path before accepting co-tenancy as safe
+- [x] Complete ST-088 Stage 2 evidence: price policy-scope enforcement, exercise a remote Ubuntu execution node, audit execution blocking, and finalize ADR-016's host recommendation — **done 2026-08-26**; ADR-016 Accepted, Candidate A rejected
+- [ ] Enforce default-deny policy scope across every memory retrieval and provider-egress path ~~before accepting co-tenancy as safe~~ — **rationale corrected 2026-08-26: this is required on ai-memory's own merits, not to make co-tenancy safe.** Co-tenancy was rejected and the obligation is unchanged and topology-neutral (ST-082). The read side carries no `PolicyScope` at all, which is also a precondition of the AWCP adapter contract
+- [ ] **Score the standalone peer-service topology** against the six host criteria (ST-100) — the decision directed this and did not conclude it
 - [ ] Preserve reliable, idempotent remote execution reporting across disconnection, replay, duplicate delivery, and invalid authentication
 - [ ] Keep the existing MCP memory slice operable with observable health, migration safety, and deterministic test isolation
 - [ ] Deliver product-specific APIs and curation rules without moving product policy into the shard-storage platform
@@ -47,7 +48,11 @@ The repository is mature brownfield work with a functional cloud MCP server, ext
 
 Architecture evolved from an early C# / SQLite design to the active Deno / PostgreSQL platform. For Contact Memory work, `docs/architecture/ai_memory_architecture_decisions.md` and ADR-012 supersede conflicting platform-era assumptions. The platform stores append-only shards; product layers own review, promotion, and domain-specific tools.
 
-Current work is ST-088. Its first unit priced the policy-scope enforcement surface; the remaining units prove remote-node behavior, assess actual execution blocking, and produce the final ADR-016 host recommendation. ST-082 implements enforcement only after the host decision is settled.
+**Updated 2026-08-26 — ST-088's units are all delivered and the host decision is taken.** ADR-016 is **Accepted** (rev 1.5): **Candidate A is rejected**, and AWCP becomes a **standalone peer service** with its own codebase and runtime, consuming ai-memory as an *optional, replaceable* context provider. It is explicitly **not** Candidate C — ai-memory stays live and is not retired. ST-088 sits in **Review** pending its sign-off PR; the milestone is finished, not in flight.
+
+**A resumed session must not re-plan against the rejected host.** Follow-on work is **ST-100** (score the peer-service topology, which the decision deliberately left unscored) and **ST-082**, whose framing changed: policy-scope enforcement is **ai-memory's own isolation obligation**, topology-neutral and required whether or not AWCP had ever shared this codebase — no longer gated on the host being settled, and no longer a co-tenancy tax. Threading `PolicyScope` through the read side, default-deny, is additionally a precondition of the AWCP adapter contract.
+
+Retained as the record of what was current while the milestone ran: Current work is ST-088. Its first unit priced the policy-scope enforcement surface; the remaining units prove remote-node behavior, assess actual execution blocking, and produce the final ADR-016 host recommendation. ST-082 implements enforcement only after the host decision is settled.
 
 The Docker test stack is isolated from development data but accumulates state during a container lifetime. Provider-dependent tests may fail locally when only placeholder OpenRouter credentials are present, while CI injects real credentials.
 
@@ -72,7 +77,7 @@ The Docker test stack is isolated from development data but accumulates state du
 | Use tags rather than a binary profile field | Memories and entities can belong to several products and personas simultaneously | ✓ Good |
 | Expose per-product MCP servers over shared platform primitives | Keeps Contact and Developer domain behavior independent | — Pending |
 | Require human review for Contact Memory imports | Incorrect facts about real people have meaningful consequences | ✓ Good |
-| Treat policy-scope pricing as an ADR-016 acceptance gate | Co-tenancy is unsafe until all retrieval and egress paths have a defended enforcement cost | — Pending |
+| Treat policy-scope pricing as an ADR-016 acceptance gate | Co-tenancy is unsafe until all retrieval and egress paths have a defended enforcement cost | ✓ Good — **gate discharged 2026-08-26.** Priced at 64+ hrs (findings §13), and the pricing did its job: it fed the decision that **rejected** co-tenancy. Enforcement itself is still unbuilt and stays with ST-082, topology-neutral |
 | Keep remote nodes outbound-only with no general-purpose shell | Minimizes attack surface while preserving execution evidence | — Pending |
 | Preserve existing board and unified plans alongside GSD tracking | Migration must not discard current delivery history or violate active WIP | ✓ Good |
 

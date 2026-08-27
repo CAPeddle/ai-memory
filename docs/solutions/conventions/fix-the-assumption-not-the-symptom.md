@@ -97,7 +97,12 @@ branch SHAs are local-only and a squash merge rewrites them. PR #34 has since me
 `094b141`, so these resolve on `main`. Whether they keep resolving turns on the module's
 governance status rather than on any marker in its source: acceptance is gated on ADR-016,
 Proposed — Conditional at its revision 1.3. If that gate resolves against the module, read the
-citations as historical illustration. This deliberately no longer rests on the module's
+citations as historical illustration. **(2026-08-26: the gate resolved, and it did go against the
+module as a co-tenant — ADR-016 is **Accepted** at rev 1.5 with **Candidate A rejected**, making
+this an extraction donor for a standalone AWCP peer service. But do **not** yet read the citations
+as historical: ADR-016's Consequences state that nothing moves in the tree, so the module is stable
+and supported in place until an extraction plan retires it. Re-read this hedge when that plan
+lands.)** This deliberately no longer rests on the module's
 `SPIKE / DISPOSABLE` stamps — a hedge anchored to a comment string expires whenever someone
 edits the comment. Nothing in the guidance depends on that code still existing.
 

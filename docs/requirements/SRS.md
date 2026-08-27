@@ -3,7 +3,7 @@ name: "Software Requirements Specification — ai-memory"
 summary: "IEEE-style SRS capturing all functional and non-functional requirements for the ai-memory system"
 asset_type: "specification"
 status: "active"
-version: "1.2"
+version: "1.3"
 owners:
   - "ai-memory-maintainers"
 source_path: "docs/requirements/SRS.md"
@@ -12,7 +12,7 @@ created: "2026-05-15"
 
 # Software Requirements Specification — ai-memory
 
-**Version:** 1.2  
+**Version:** 1.3  
 **Date:** 2026-07-28  
 **Status:** Active
 
@@ -265,7 +265,7 @@ where:
 
 ### 5.6 Storyboard
 
-> **Product-layer, reassignment pending ([ADR-013](../design/adr/ADR-013-platform-product-definitions.md) §4b):** the Storyboard is no longer a platform capability. It is the embryonic work-state model of the proposed **Workflow/Operations product** (AWCP — `docs/investigations/awcp-spec-evaluation.md`, PR #31); the AWCP consolidation architecture decisions (host/topology) settle whether FR-B-001..009 are absorbed into that product's WorkItem/WorkPacket model or retired. Do not build new platform features against these requirements in the interim.
+> **Product-layer, reassignment pending ([ADR-013](../design/adr/ADR-013-platform-product-definitions.md) §4b):** the Storyboard is no longer a platform capability. It is the embryonic work-state model of the proposed **Workflow/Operations product** (AWCP — `docs/investigations/awcp-spec-evaluation.md`, PR #31); **Settled 2026-08-26 — [ADR-016](../design/adr/ADR-016-awcp-consolidation-host-topology.md) is Accepted (rev 1.5): FR-B-001..009 are absorbed, not retired.** The host half went the other way from what this banner assumed — Candidate A was **rejected**, so AWCP becomes a standalone peer service in its own codebase, and Storyboard retirement is therefore sequenced behind that extraction rather than this repo's roadmap ([ADR-013](../design/adr/ADR-013-platform-product-definitions.md) §4(b) Correction). **The instruction below is unchanged and still binding:** do not build new platform features on the Storyboard — including on the grounds that its replacement is moving out. Original wording retained: the AWCP consolidation architecture decisions (host/topology) settle whether FR-B-001..009 are absorbed into that product's WorkItem/WorkPacket model or retired. Do not build new platform features against these requirements in the interim.
 
 **FR-B-001** The system shall maintain a storyboard as a stateful projection over The Brain with story records containing: `id`, `title`, `description`, `status` (todo | in-progress | review | done), `priority`, `profile` (professional | personal), `project?`, `tags?[]`, `acceptance_criteria?[]`, `created_at`, `updated_at`.
 
@@ -610,3 +610,4 @@ where:
 | 1.1 | 2026-05-15 | ai-memory-maintainers | Contextual scoping: FR-R-016, FR-API-013, FR-MCP-007, FR-B-009, FR-C-008 added; ADR-008 reference added to traceability matrix; version bumped |
 | 1.1 | 2026-05-15 | ai-memory-maintainers | Add contextual scoping requirements: FR-R-016, FR-API-013, FR-MCP-007, FR-B-009, FR-C-008; add ADR-008 reference; bump version |
 | 1.2 | 2026-07-28 | ai-memory-maintainers | Platform/product boundary per ADR-013: supersession banners on §4.3 (three-tier model → platform is single-tier), §5.4 (consolidation → Developer Memory product logic, grandfathered), §5.5 (views → product projections), §5.6 (Storyboard → reassigned to proposed Workflow/Operations product, pending AWCP host decision); header note added |
+| 1.3 | 2026-08-26 | ai-memory-maintainers | §5.6's Storyboard banner updated: the AWCP host decision it was pending is **taken** — ADR-016 rev 1.5 is Accepted with **Candidate A rejected**, so FR-B-001..009 are absorbed into the WorkItem/WorkPacket model (not retired) and retirement is sequenced behind AWCP's extraction into its own codebase rather than this repo's roadmap. The "do not build new platform features on the Storyboard" instruction is unchanged and still binding. No requirement text changed |

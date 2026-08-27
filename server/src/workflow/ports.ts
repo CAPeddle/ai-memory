@@ -13,7 +13,7 @@
  * may roll back or corrupt operational state. Callers therefore never await these
  * inside an operational transaction. See service.ts.
  *
- * PROVISIONAL — not a throwaway spike; gated on ADR-016. See types.ts.
+ * PROVISIONAL — not a throwaway spike; an extraction donor. See types.ts.
  */
 
 import type { PolicyScope } from "./types.ts";

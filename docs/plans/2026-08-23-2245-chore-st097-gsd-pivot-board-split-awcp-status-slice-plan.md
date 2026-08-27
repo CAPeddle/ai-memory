@@ -119,7 +119,7 @@ of record, and nothing was ever built.** Three buckets, each with different auth
   roughly 3×; `:199` carries the phrase only inside struck-through question text whose recorded
   answer is *"Confirmed — absorbed/superseded. Recorded in ADR-013 §4(b)"* — that is the record of
   the narrowing, not evidence against it. What remains true and sufficient: `ADR-013:116`
-  (**Accepted**) and `ADR-016:120` say only *"the **WorkPacket** model"*, so **no decision of record
+  (**Accepted**) and `ADR-016:187` say only *"the **WorkPacket** model"*, so **no decision of record
   contains the layer**, and D0-1 must justify restoring it on the 0..n requested-work-to-packet need
   rather than on lineage.
 - **`CONCEPTS.md` already separates the two concerns as vocabulary and bridges nothing.** *Work
@@ -138,9 +138,14 @@ packet→work-item relation; any `ProviderSession` record.
 
 The PO asked for this explicitly. Six items, in descending force:
 
-1. **A persisted WorkItem table is currently barred.** `ADR-016:57` — *"Until the spike concludes,
+1. **A persisted WorkItem table is currently barred.** `ADR-016:88` — *"Until the spike concludes,
    this ADR stays Proposed and no schema or migration work may assume the host."* ST-088 Phase 4 is
    unstarted. **D0-4 is the compliant route through this, not around it** — see KTD-D3.
+   *(No longer true as of 2026-08-26 — recorded here because a later reader could act on it. The
+   spike concluded, the bar is discharged at `ADR-016:90`, and ADR-016 is Accepted with **Candidate A
+   rejected**. Schema work is no longer barred, but it must assume a standalone AWCP peer service
+   rather than this host — and it must not assume the peer-service topology's scoring outcome, which
+   is still outstanding. The rest of this plan is retained as written.)*
 2. **The Jira authority row refuses any reading in which AWCP's WorkItem is the authority over
    requested work** (`awcp-spec-evaluation.md:163`). It supports reference/provenance and nothing
    more. State this in the contract so it is not re-litigated at implementation time.
@@ -755,7 +760,7 @@ they do not expire together.
 |---|---|
 | **D0-1** ADR-017 — the WorkItem contract | Documentation of a decision; the storage half is settled in KTD-D3a, the status half in KTD-D6 |
 | **D0-2** `CONCEPTS.md` — Work Item entry, amend `:7` and Work Packet | Glossary |
-| **D0-3** Versioned types + zod (`types.ts`, `schema.ts`) | **No DDL.** Contract-first is exactly what `ADR-016:57` permits |
+| **D0-3** Versioned types + zod (`types.ts`, `schema.ts`) | **No DDL.** Contract-first is exactly what `ADR-016:88` permits |
 | **D0-5** Record the status decision in ADR-017 | Part of D0-1 |
 | **A1** Runtime flip + compatibility matrix | `.planning/config.json` only; no milestone artifact |
 | **A2** The allocator (`story-ids.md`) + `CLAUDE.md` mint procedure | Creates a new file; gates everything that mints |

@@ -52,7 +52,7 @@
  * WorkItem contract lands in, and this is the `schema.ts` it means. Nothing in
  * that section touches the migration runner above it, or the database at all.
  *
- * PROVISIONAL — not a throwaway spike; gated on ADR-016. See types.ts.
+ * PROVISIONAL — not a throwaway spike; an extraction donor. See types.ts.
  */
 
 import { z } from "npm:zod@4.1.13";

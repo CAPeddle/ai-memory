@@ -41,6 +41,11 @@ move waits on PO instruction.
 2. Stop if `.planning/` must be edited by a session that does not own it — see Risks.
 3. Stop if the ADR-016 verdict is neither "Accept A", "Accept A with required changes", nor
    "Recommend C"; the conditional shapes below cover only those three.
+   **Discharged 2026-08-26 — do NOT stop on this.** The verdict was a fourth outcome: **reject
+   Candidate A, direct a standalone AWCP peer service**. This condition existed so an executor
+   would not silently improvise a milestone shape for an unanticipated verdict — that is exactly
+   what happened, so the shape is now written down rather than left to improvisation. Take OQ1's
+   third branch and proceed.
 
 ---
 
@@ -116,10 +121,17 @@ named here so Phase 4 does not have to discover it.
 ### U2 — ST-088 Phase 4 runs to its own criteria (precondition: U1)
 
 Not re-planned here. Its four success criteria are in `ROADMAP.md:121-140` and its acceptance
-pre-condition is in `ADR-016:63-65`. This plan **depends on its verdict and does not anticipate it.**
+pre-condition is in `ADR-016:98`. This plan **depends on its verdict and does not anticipate it.**
 
 Output that matters downstream: ADR-016 leaves Proposed/Conditional and records one of three
 verdicts.
+
+**ANSWERED 2026-08-26, and by a fourth verdict this plan did not anticipate.** ADR-016 is
+**Accepted** (rev 1.5): **Candidate A is rejected** and AWCP is directed to a **standalone peer
+service** consuming ai-memory as an optional, replaceable context provider — explicitly **not**
+Candidate C, whose defining donor-retirement condition it does not meet, since ai-memory stays
+live. **U2 is therefore complete, and stop condition 3 below must not fire on this outcome** — see
+its own note. The milestone shape that follows is in OQ1's added branch.
 
 ### U3 — Discharge ST-095's prerequisites (precondition: U2 complete; may run in parallel with U2's write-up)
 
@@ -203,7 +215,7 @@ recorded and the branches landed.
 - **Authoring Horizon B–D requirements or ROADMAP content now** — baseline decision 3.
 - **Editing `.planning/` from a session that does not own it** — concurrent-session hazard; same
   class as the two story-number collisions already suffered.
-- **Assuming Candidate A anywhere** — `ADR-016:57`.
+- **Assuming Candidate A anywhere** — `ADR-016:88`.
 - **Re-planning ST-088 Phase 4** — it has its own criteria; this plan consumes its verdict.
 - **Horizons E–I** — the second milestone, per the PO's two-milestone split. Not planned here.
 - **The ARCTIC human-review-handoff capability** — still unscoped, and it hangs off the completion
@@ -233,6 +245,23 @@ B–D milestone's shape:
 - **Recommend C** → extraction and donor work enters instead. The spike is not wasted: because
   Workflow Operations was deliberately isolated, the existing module becomes the reference
   implementation, and the node client with its event semantics is the most portable part.
+
+- **ANSWERED 2026-08-26 — a third branch, and it is neither of the two above.** ADR-016 rev 1.5
+  **rejects Candidate A** and directs a **standalone AWCP peer service**, explicitly not Candidate
+  C (ai-memory is not retired). The milestone's first phase takes the extraction-and-donor shape of
+  the "Recommend C" branch — the existing module is the reference implementation and the node
+  client is the most portable part — **but without donor retirement**, since ai-memory stays live
+  as a supported optional provider. Three corrections to the branches above, none of which either
+  anticipated:
+  - **The co-tenancy tax does not disappear with Candidate A.** ST-082's policy-scope enforcement
+    is unchanged and **topology-neutral** — ai-memory's own isolation obligation, required whether
+    or not AWCP had ever shared this codebase. It is no longer gated on the host, and it is no
+    longer a reason to sequence anything before Horizon B.
+  - **Threading `PolicyScope` through the read side is a precondition, not follow-on work** — the
+    adapter contract this decision names would otherwise be scope-blind (findings §18.3, §18.8
+    Phase A).
+  - **The topology is unscored.** ADR-016 §1(b) is a *direction*, not a scored selection; **ST-100**
+    scores it. B–D must not assume that outcome.
 
 Both paths keep the same AWCP contracts, workflow operations, node topology, provider model and
 GSD/CE split. **Only the milestone's first phase differs.**
