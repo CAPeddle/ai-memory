@@ -1928,7 +1928,11 @@ side is Phase A work (§18.8).
 - **The B–D milestone** (`awcp-strategy-baseline-2026-08.md`, decision 1 and 3: "ADR-016 Phase 4 is the
   immediate decision gate... nothing is planned on the wrong side of the host decision") was explicitly
   blocked on this decision. This section's recommendation, once the PO signs off on §18.10, is what
-  unblocks it.
+  unblocks it. *(**Corrected 2026-08-26, on sign-off.** It unblocks **half** of it. The baseline
+  gates B–D on two conditions, not one: the host decision being taken — which sign-off discharges —
+  **and** ST-088 closing. ST-088 is in Review, so B–D must not be generated on the strength of this
+  sign-off alone; ADR-016's Consequences bullet governs. No further decision is owed, only that
+  board transition.)*
 
 ### 18.8 Bounded extraction roadmap — sketch only, **not started**
 
