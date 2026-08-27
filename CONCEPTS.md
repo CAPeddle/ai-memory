@@ -146,7 +146,14 @@ A Baseline names *which* tests fail and why — characteristically, credentials 
 ### Point-in-Time Result
 A verification observed once by hand, valid only for the tree state it ran against.
 
-Unlike a check that re-runs, nobody re-observes a Point-in-Time Result, so it expires silently the moment the surface it covered changes — by any hand, not only its author's. It is therefore recorded with the commit it was taken at and the paths it covered, so a later reader can ask the tree whether it has expired instead of trusting it. A date records only when someone looked; a commit records what they looked at. Expired does not mean wrong — it means unobserved, which is the state a verification record exists to rule out.
+Unlike a check that re-runs, nobody re-observes a Point-in-Time Result, so it expires silently the moment the surface it covered changes — by any hand, not only its author's. It is therefore recorded with the commit it was taken at and its Verified Surface, so a later reader can ask the tree whether it has expired instead of trusting it. A date records only when someone looked; a commit records what they looked at. Expired does not mean wrong — it means unobserved, which is the state a verification record exists to rule out.
+
+A review finding is a Point-in-Time Result of the same kind, and the case that catches people is the one where the surface moves inside the review itself: applying a batch of fixes expires every remaining finding, including the ones correctly declined. A finding declined as merely loose is precisely the one a precision-adding fix converts into a defect, so declining it and leaving it declined afterwards are not the same decision.
+
+### Verified Surface
+The set of paths a Point-in-Time Result actually covered, recorded alongside it so that expiry becomes a diff rather than a judgement.
+
+A verification whose surface cannot be named in paths is one whose expiry cannot be detected — worth knowing when the result is recorded, not when it is relied on. Two failure modes are distinct and both matter: the surface *moved*, so the result no longer describes it; or the surface *grew*, so the result still holds for what it covered while silently under-covering what was added. The second does not announce itself in a diff of the covered paths alone.
 
 ### Review Lane
 One external reviewer enlisted for an independent read, addressed as a declared unit rather than an ad-hoc invocation.

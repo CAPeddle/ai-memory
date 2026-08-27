@@ -1,6 +1,7 @@
 ---
 title: A verification result expires when the verified surface changes — including when someone else changes it
 date: 2026-08-03
+last_updated: 2026-08-27
 category: workflow-issues
 module: testing-workflow
 problem_type: workflow_issue
@@ -35,15 +36,19 @@ tags:
 
 # A verification result expires when the verified surface changes — including when someone else changes it
 
-> **This is a near-miss, not a live defect.** The stale claim was caught before the PR
-> opened, and re-verification passed against the shipped code. Because the re-run and the
-> last `dashboard.ts` change landed in the same squashed commit ([PR #40](https://github.com/CAPeddle/ai-memory/pull/40)),
-> the record in this tree is *currently* accurate. What follows is a demonstrated
-> structural hazard, documented while the evidence is re-derivable — not a bug to go fix.
+> **This was a near-miss when written. It has since happened for real.** The original stale
+> claim was caught before the PR opened, and re-verification passed against the shipped code
+> ([PR #40](https://github.com/CAPeddle/ai-memory/pull/40)). The record then stayed accurate
+> for three weeks — until ST-097 added the WorkItem lane to `dashboard.ts` in `585d2c9`, at
+> which point the 28 checks stopped describing the served page. See
+> **What happened next — the remedy landed, and then fired**, below — the remedy in
+> this doc was adopted first, so the expiry was declared rather than discovered.
 
 ## Context
 
-ST-086's sixth acceptance criterion ([`.github/planning/story-board.md:545`](../../../.github/planning/story-board.md))
+ST-086's sixth acceptance criterion (the `/workflow` dashboard criterion in
+[`.github/planning/story-board.md`](../../../.github/planning/story-board.md); it sat at
+line 545 when this was written and has since moved, which is this doc's own §2 in miniature)
 required that `/workflow` show active work, attention grouped by reason, decisions,
 checkpoints and criteria/evidence, and offer exactly resolve / attach-evidence / complete.
 
@@ -54,9 +59,13 @@ was closed by hand — the page driven in a real headless Chromium, 28/28 behavi
 
 | Record | What it says |
 |---|---|
-| [`.github/planning/story-board.md:545`](../../../.github/planning/story-board.md) | "on 2026-08-02 the page was driven in a real headless Chromium, 28/28 checks … a point-in-time manual check to repeat when `dashboard.ts` changes" |
-| [`docs/workflow-mvp.md:113`](../../workflow-mvp.md) | "Re-run that by hand if you change `dashboard.ts`." |
-| `server/tests/workflow-mvp-e2e.test.ts` (dashboard step) | "a point-in-time result, not a standing guarantee: re-run it when dashboard.ts changes" |
+| [`.github/planning/story-board.md`](../../../.github/planning/story-board.md), the ST-086 dashboard criterion | "on 2026-08-02 the page was driven in a real headless Chromium, 28/28 checks … a point-in-time manual check to repeat when `dashboard.ts` changes" |
+| [`docs/workflow-mvp.md`](../../workflow-mvp.md), the browser-verification note | "Re-run that by hand if you change `dashboard.ts`." |
+| `server/tests/workflow-mvp-e2e.test.ts` (dashboard step) | "a point-in-time result, not a standing guarantee: re-run it when dashboard.ts changes" — that comment is no longer in the file |
+
+Those three rows are quoted **as they read at the time of the incident**; all three have
+since changed, and one of them is where the fix landed — see
+**What happened next — the remedy landed, and then fired**, below.
 
 **All three anchor the result to a date. None names a commit.** That is the defect, and it
 is mechanical rather than a matter of diligence: a date cannot be diffed, so no reader —
@@ -108,7 +117,7 @@ was watched doing.
 
 ### Why nothing caught it
 
-CI never ran. Its trigger block is `main`-only ([`.github/workflows/ci.yml:1-7`](../../../.github/workflows/ci.yml)):
+CI never ran. Its trigger block is `main`-only ([`.github/workflows/ci.yml`](../../../.github/workflows/ci.yml), still verbatim as below):
 
 ```yaml
 name: CI
@@ -142,9 +151,11 @@ in silence.
 ### Why the existing guidance was not enough
 
 This is the sharpest part, because the docs *did* carry a re-verification rule and it still
-could not fire. [`docs/workflow-mvp.md:113`](../../workflow-mvp.md) says:
+could not fire. [`docs/workflow-mvp.md`](../../workflow-mvp.md) said, at the time:
 
 > Re-run that by hand if you change `dashboard.ts`.
+
+(That sentence no longer exists — it is the line this doc's guidance replaced.)
 
 Written in the second person, that covers exactly one case — the author changes the file —
 and misses the case that happened: **someone else changed it.** The other two records avoid
@@ -155,9 +166,36 @@ The structural reason is worse than the grammar. **On a stacked branch the verif
 record lives in the child while the change lands in the parent.** The person holding the
 rule never sees the commit that trips it.
 
-### How this differs from its neighbours — read this before writing a fourth doc
+### What happened next — the remedy landed, and then fired
 
-Three existing docs sit close, and this one is only worth its keep because of the deltas:
+This doc's guidance was adopted, and then the hazard it describes occurred against the
+adopted form. Both halves matter, because together they are the strongest evidence the
+mechanism works.
+
+**The remedy landed.** [`docs/workflow-mvp.md`](../../workflow-mvp.md) now carries the
+commit-anchored block from the Examples section below, close to verbatim — verified surface
+named as a path, a specific SHA, the expiry rule written as a property of the file ("**Any**
+commit touching that file — anyone's, not just yours — expires this result"), the `git diff`
+one-liner, and the pre-squash caveat pointing at `git log --grep="Story: ST-086"`. The
+second-person sentence this doc criticises is gone.
+
+**Then it fired, and the anchor is what made that a statement rather than a discovery.**
+ST-097 added the WorkItem lane to `dashboard.ts` in `585d2c9`. The same file now opens with
+an explicit expiry marker rather than a stale green claim:
+
+> **EXPIRED as of `585d2c9` (ST-097).** That commit added the WorkItem lane to
+> `dashboard.ts`, so the 28 checks below no longer describe the served page.
+
+Two things worth taking from that. The expiry was **declared by the author of the change**,
+not found later by a reader — which is what a diffable anchor buys. And the marker adds a
+second finding this doc did not anticipate: the checks are not merely stale but
+**under-covering**, since they predate the lane entirely and cover none of it, while the
+lane is now the page's primary surface. An expired result can be wrong about its scope as
+well as its content.
+
+### How this differs from its neighbours — read this before writing a fifth doc
+
+Four existing docs sit close, and this one is only worth its keep because of the deltas:
 
 - [verify-worktree-change-against-docker-test-stack.md](verify-worktree-change-against-docker-test-stack.md)
   **§4** already argues that a recorded figure goes stale ("not eventually, but within the
@@ -189,6 +227,16 @@ Three existing docs sit close, and this one is only worth its keep because of th
   is a commit anchor plus a pathspec, which converts "did someone re-verify?" from something
   a person must remember into a diff anyone can run. If you only read one, read that one;
   this adds the mechanical check and the stacked-branch framing.
+- [individually-correct-fixes-can-leave-a-document-self-contradictory.md](individually-correct-fixes-can-leave-a-document-self-contradictory.md)
+  is the same expiry law with the trigger inverted, and the inversion is what makes this
+  doc's remedy inapplicable there rather than merely different. Here the trigger is
+  **exceptional** — someone may or may not touch the verified surface — so detection is the
+  whole contribution, and a SHA plus a pathspec turns "did anyone re-verify?" into a command.
+  There the trigger fires **by construction**: the mutation *is* the review's own output, so
+  the diff is always non-empty and discriminates nothing, and the only remedy left is an
+  unconditional whole-document re-read plus re-adjudication of the findings that were
+  declined. It also carries an element absent here — a finding correctly *declined* becoming
+  correct once later fixes land.
 
 ## Guidance
 
@@ -304,6 +352,9 @@ extracted without root, a throwaway server on a spare port — or a shipped fals
 - **Not** for which working tree your tooling executed against — that is
   [verify-worktree-change-against-docker-test-stack.md](verify-worktree-change-against-docker-test-stack.md).
   Both can bite in one session; neither substitutes for the other.
+- **Not** for a review's own fixes invalidating the rest of that review's findings — that is
+  [individually-correct-fixes-can-leave-a-document-self-contradictory.md](individually-correct-fixes-can-leave-a-document-self-contradictory.md).
+  There the expiry is guaranteed rather than contingent, so a commit anchor buys nothing.
 
 ## Examples
 
