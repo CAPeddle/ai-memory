@@ -294,10 +294,16 @@ phrasing in its Consequences list.
   becomes explicit vocabulary rather than two adjacent unlinked terms.
 - The versioned TypeScript contract in `server/src/workflow/types.ts` and `schema.ts` gains WorkItem
   types and zod schemas. **Types and zod only — this ADR authorises no DDL.**
-- Any migration that creates these tables still needs its own decision against
+- ~~Any migration that creates these tables still needs its own decision against
   [ADR-016](ADR-016-awcp-consolidation-host-topology.md) §1, whose bar — *"no schema or migration
   work may assume the host"* — is discharged only by the ST-084/ST-088 spike. §5 above settles
-  layout, which is §3's question, and has no power over §1.
+  layout, which is §3's question, and has no power over §1.~~ **Superseded 2026-08-26 — the spike
+  concluded, so this per-migration gate no longer exists.** ADR-016 is **Accepted** (rev 1.5) and
+  §1's bar is lifted; a migration creating these tables does **not** return for its own host
+  decision. But the gate did not simply lift — **it inverted**: the spike **rejected Candidate A**,
+  so such a migration must assume the **standalone AWCP service** rather than this host, and must
+  not assume the peer-service topology's *scoring* outcome, which is still open (ST-100). §5's
+  layout decision stands and now travels with the extraction. See §5's own supersession note.
 - `work_packets` gains a nullable `work_item_id` foreign key when that migration lands. It is
   nullable so every existing packet stays valid, and its write path is **operator-only** — it is
   never settable through `POST /packets`, which an agent key may call.
@@ -329,4 +335,5 @@ phrasing in its Consequences list.
 
 | Version | Date | Summary |
 |---------|------|---------|
+| 1.1 | 2026-08-26 | **The ADR-016 host gate this ADR was written under is discharged, and it went against the host.** ADR-016 reached **Accepted** (rev 1.5) with **Candidate A rejected**; AWCP becomes a standalone peer service. Every statement in this ADR that treats the gate as open is superseded in place rather than rewritten — §5's *"it has not been"* discharge sentence, §7's reader instruction on `ADR-013:116`, the Revisit Trigger that fired on that rewrite, and Consequences' per-migration host-decision requirement. **The consistent correction across all four: the bar did not lift, it inverted** — schema work no longer returns for a host decision, but must assume the standalone AWCP service rather than this host, and must not assume the peer-service topology's scoring outcome (still open, ST-100). **This ADR's own decisions are unchanged**: WorkItem remains the layer above WorkPacket, in the existing `workflow` schema, which now travels with the extraction rather than settling where it lives. Status stays Accepted |
 | 1.0 | 2026-08-24 | Initial — WorkItem restored as the layer above WorkPacket on the 0..n requested-work-to-packet need: UUID identity (§1), the `(source_system, source_ref)` provenance pair recording external identity rather than replacing it (§2), relation to packet/run/observed session/checkpoint and the four "what it is not" clauses including the packet-names-the-scope rule (§3), the settled `AW-NNN` namespace with its allocation boundary in AWCP's own persistence rather than the `ST-NNN` registry (§4), storage layout settled in the existing `workflow` schema as ADR-016 §3's module-design revisit (§5), **no aggregate WorkItem status** (§6), and the supersession of ADR-013 §4(b)'s layering with a reader instruction on `ADR-013:116`, which is deliberately left unedited (§7) |

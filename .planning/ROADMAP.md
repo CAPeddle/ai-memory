@@ -4,7 +4,7 @@
 **Mode:** mvp
 **Granularity:** standard
 **Canonical plan:** [docs/plans/2026-08-04-002-spike-st088-stage2-scope-enforcement-remote-node-plan.md](../docs/plans/2026-08-04-002-spike-st088-stage2-scope-enforcement-remote-node-plan.md)
-**Story board:** [.github/planning/story-board.md](../.github/planning/story-board.md) — ST-088 In Progress section is authoritative for WIP limits and acceptance criteria.
+**Story board:** [.github/planning/story-board.md](../.github/planning/story-board.md) — **ST-088 is under `## Review` as of 2026-08-26, not `## In Progress`.** That entry is authoritative for WIP limits and acceptance criteria. A session resuming this milestone will not find an In Progress section to route to, because the milestone is **finished**: Phase 4 closed, ADR-016 Accepted with Candidate A **rejected**, and ST-088 waits only on its sign-off PR merging before it moves to Done. **Do not resume delivery work here** — follow-on is **ST-100** (score the peer-service topology) and **ST-082** (policy-scope enforcement, ai-memory's own obligation), both in Backlog.
 
 ## Overview
 
