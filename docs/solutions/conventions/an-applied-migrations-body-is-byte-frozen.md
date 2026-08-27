@@ -571,4 +571,18 @@ And the one that cannot be fixed without an operational change:
 - CLAUDE.md § "Line endings — non-trivial" — why byte-level checksums are a
   sharper hazard in this repo than elsewhere.
 - ADR-016 (`docs/design/adr/ADR-016-awcp-consolidation-host-topology.md`) —
-  the acceptance gate that keeps the module PROVISIONAL rather than accepted.
+  ~~the acceptance gate that keeps the module PROVISIONAL rather than accepted.~~
+  **Corrected 2026-08-27, and the miss is the lesson.** There is no acceptance
+  gate any more: ADR-016 is **Accepted** at rev 1.5 (2026-08-26) with Candidate A
+  **rejected**. The module is still PROVISIONAL, but about *relocation* rather
+  than acceptance — it is an extraction donor for a standalone AWCP peer service.
+  This document makes exactly that correction in its own body at §4 and in the
+  five-stamp census, and the sweep that made those two corrections **left this
+  line standing**. That is this page's own prediction — *"status claims about
+  other documents ('ADR-016 is Proposed') — the document changes"* — firing
+  against the page that made it, and surviving eight review rounds because no
+  reviewer read the Related section. It was caught by enumerating the class
+  afterwards. See
+  [`../workflow-issues/resolving-a-conditional-decision-has-a-blast-radius.md`](../workflow-issues/resolving-a-conditional-decision-has-a-blast-radius.md),
+  which owns the resolution-time sweep protocol; this page keeps the taxonomy of
+  drift-prone claim types and the frozen-file prohibition.

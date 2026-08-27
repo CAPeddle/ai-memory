@@ -158,7 +158,10 @@ about other documents ('ADR-016 is Proposed')"*. Commit `2ad8fcf` corrected two 
 document and cashed the prediction with a worked example — and **left its own Related section still
 describing ADR-016 as "the acceptance gate that keeps the module PROVISIONAL rather than
 accepted."** The class recurred inside the document that predicted it, and survived the sweep that
-documents the class. It was found by enumeration afterwards, not by any of the eight review rounds.
+documents the class. It was found by enumeration afterwards, not by any of the eight review rounds
+— none of which read that document's Related section. It is corrected now, in the same change that
+added this page, and the correction is marked in place rather than made silently, because on that
+page the miss is the lesson.
 
 If the document that warns about a failure mode contains an instance of it, the process failed, not
 the author. That is the signal to stop fixing and start enumerating.
