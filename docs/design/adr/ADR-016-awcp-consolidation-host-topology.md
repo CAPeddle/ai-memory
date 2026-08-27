@@ -176,7 +176,7 @@ The AWCP host will provide Confluence/Jira/ADO source-lineage tracking — ident
 **Of the 2026-08-26 acceptance (§1):**
 
 - **ADR-013 must be re-opened, and one of its statements is now false.** Its §4(b) reasons from *"the host decision places AWCP in the same codebase as the Storyboard it replaces"* — that premise is reversed. The product register's Workflow/Operations row and the "AWCP host/topology decision" revisit trigger both need updating. See ADR-013 revision 1.3.
-- **The peer-service topology is unscored, and scoring it is the named next step** — against the same six criteria A, B and C received (findings §18.9). New story, not an ST-088 extension.
+- **The peer-service topology is unscored, and scoring it is the named next step** — against the same six criteria A, B and C received (findings §18.9). Filed as **ST-100**, not an ST-088 extension.
 - **ST-082 does not disappear; its framing changes.** From "a co-tenancy tax AWCP forces" to "an ai-memory product-security item on its own merits, unconnected to AWCP." Its urgency and scope should be reassessed on that basis rather than inherited as an ADR-016 side effect.
 - **The B–D milestone is unblocked.** `awcp-strategy-baseline-2026-08.md` decisions 1 and 3 gated it on this decision — *"nothing is planned on the wrong side of the host decision"* — and it starts once ST-088 closes.
 - **Nothing moves in the tree.** No file, module, schema or runtime behaviour changes under this ADR. Extraction is sketched (findings §18.8) and unscheduled; `FEATURE_WORKFLOW`, the shared-schema wiring and the workflow-boundary test all stay until an extraction plan retires them.
