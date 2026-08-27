@@ -1687,6 +1687,12 @@ instruction when this section was drafted (2026-08-26), ADR-016's `status` and D
 **not changed by this commit**. §18.10 is the proposed replacement text, held for sign-off — the same
 pattern §13 already established in this document for unapplied ADR amendments.
 
+*(Superseded 2026-08-26, later the same day: the PO signed off and the recommendation was applied.
+**ADR-016 is Accepted at revision 1.5** with Candidate A rejected. The paragraph above is retained as
+the record of how §18 was drafted and of the constraint it was drafted under — this document's
+convention is marked retention, not deletion. §18.10 carries the applied text and the two things the
+PO added at sign-off that are not in the draft.)*
+
 ### 18.1 Re-evaluating criteria 1–7 against this interpretation
 
 | Criterion | Status | What it actually established |
@@ -1984,11 +1990,28 @@ shared trust boundary the way the current single `ai_memory` role does.
   independently re-verified in this session** — cited at §18.4 for context on why the boundary matters
   to what comes next, not as evidence for the host decision itself, which rests entirely on §18.1–§18.7.
 
-### 18.10 Proposed ADR-016 decision text — FOR PO REVIEW, NOT APPLIED
+### 18.10 Proposed ADR-016 decision text — **APPLIED 2026-08-26**
 
-The following is drafted for §1 of ADR-016, replacing the current "Preferred: Candidate A —
-conditionally" framing, **pending explicit PO sign-off**. ADR-016's live `status` field and body
-remain **Proposed / Conditional** until that sign-off lands as a separate, explicit commit.
+**Signed off by the PO 2026-08-26 and applied.** ADR-016 is now **Accepted** (revision 1.5) with
+Candidate A rejected; its `status` field and §1 carry the decision. The text below is retained as the
+record of what was proposed, so the applied ADR can be diffed against the recommendation that
+produced it.
+
+**Two things were added at sign-off that are not in the draft below**, both from the PO and both
+recorded in ADR-016 §1 rather than here:
+
+1. **Interface replaceability as a first-class requirement.** The draft implies it through `ports.ts`;
+   the PO required it stated — capability providers are named by what AWCP needs from them, the port
+   interface is the contract, and the wire protocol (in-process today, MCP or A2A later) is an
+   adapter detail deliberately left open. ai-memory is *a* knowledge provider, not *the* knowledge
+   layer. The scope-blind read side (§18.3) must not be frozen as that contract.
+2. **A tenancy ground the spike did not produce.** AWCP coordinates work across household,
+   development-project and trading-R&D domains; under Candidate A all three domains' operational
+   state would live inside a memory product's schema and Postgres role. This is an argument against
+   co-tenancy independent of §18's coupling and reuse findings, and it is the PO's, not this
+   document's.
+
+The draft as reviewed follows.
 
 > **Decision, in two parts of unequal weight.**
 >
@@ -2071,6 +2094,14 @@ topology-specific cost figure, and the Horizon B relationship remain planning-qu
 replacement and its scoring. It is **not** ready to be read as a scored selection of a named
 candidate, and it now says so in its own text.
 
+**Signed off and applied 2026-08-26.** ADR-016 is Accepted (revision 1.5) on exactly this two-part
+reading: the rejection settled, the replacement directed and its scoring named as the next step. The
+*select* half's largest gap is unchanged by the sign-off — **the peer-service topology is still
+unscored** — and the ADR says so in its own decision text rather than closing the gap by assertion.
+The PO also supplied a concrete target stack for it (AWCP over ai-memory, an agent-routing service and
+a verification service, each behind a replaceable interface), which gives the scoring work a defined
+topology to score rather than an absence.
+
 ---
 
 ## 19. Criterion-6 definition ratified, and repo-rescan carried forward with an owner
@@ -2086,7 +2117,7 @@ Two definitions of criterion 6 were in circulation:
 
 | Source | Wording | Includes repo-state? |
 |---|---|---|
-| `ADR-016-awcp-consolidation-host-topology.md:54` (the criterion itself) | *"authenticated remote event ingestion with spooled replay"* | **No** |
+| `ADR-016-awcp-consolidation-host-topology.md:85` (the criterion itself; `:54` before the 2026-08-26 sign-off shifted it) | *"authenticated remote event ingestion with spooled replay"* | **No** |
 | `.github/planning/story-board.md`, ST-088 entry — **wording as it stood before this ratification** | *"authenticated registration, heartbeat, checkpoint, repo-state; offline spool + idempotent replay"* | **Yes** |
 | Canonical plan U3 (`2026-08-04-002-…-plan.md:109`) | *"Implements spool, heartbeat, checkpoint, and repo-rescan"* | Yes, as U3 scope |
 

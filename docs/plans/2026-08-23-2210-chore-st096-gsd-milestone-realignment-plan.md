@@ -116,7 +116,7 @@ named here so Phase 4 does not have to discover it.
 ### U2 — ST-088 Phase 4 runs to its own criteria (precondition: U1)
 
 Not re-planned here. Its four success criteria are in `ROADMAP.md:121-140` and its acceptance
-pre-condition is in `ADR-016:63-65`. This plan **depends on its verdict and does not anticipate it.**
+pre-condition is in `ADR-016:98`. This plan **depends on its verdict and does not anticipate it.**
 
 Output that matters downstream: ADR-016 leaves Proposed/Conditional and records one of three
 verdicts.
@@ -203,7 +203,7 @@ recorded and the branches landed.
 - **Authoring Horizon B–D requirements or ROADMAP content now** — baseline decision 3.
 - **Editing `.planning/` from a session that does not own it** — concurrent-session hazard; same
   class as the two story-number collisions already suffered.
-- **Assuming Candidate A anywhere** — `ADR-016:57`.
+- **Assuming Candidate A anywhere** — `ADR-016:88`.
 - **Re-planning ST-088 Phase 4** — it has its own criteria; this plan consumes its verdict.
 - **Horizons E–I** — the second milestone, per the PO's two-milestone split. Not planned here.
 - **The ARCTIC human-review-handoff capability** — still unscoped, and it hangs off the completion

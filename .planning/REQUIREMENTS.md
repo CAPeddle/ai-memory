@@ -31,7 +31,7 @@ Requirements for the current ST-088 milestone. Each maps to exactly one roadmap 
 
 ### Host Decision
 
-- [ ] **HOST-01**: ADR-016 records a final evidence-based recommendation of accept Candidate A, accept Candidate A with explicit changes, or recommend Candidate C.
+- [x] **HOST-01**: ADR-016 records a final evidence-based recommendation of accept Candidate A, accept Candidate A with explicit changes, or recommend Candidate C. **Complete 2026-08-26** — the outcome was a *fourth* answer this wording did not anticipate: **reject Candidate A** and direct a **standalone AWCP peer service**, which is explicitly not Candidate C (ai-memory is not retired). ADR-016 rev 1.5, Accepted.
 - [ ] **HOST-02**: The final recommendation reconciles policy-scope cost, remote-node evidence, execution-blocking evidence, shared-runtime blast radius, and current post-Stage-1 code drift.
 
 ### Regression Safety
@@ -81,7 +81,7 @@ Deferred beyond the ST-088 host-viability milestone.
 | SAFE-01 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Complete |
 | SAFE-02 | Phase 3 — Node Client, Reliable Delivery & Regression Safety | Complete |
 | BLOCK-01 | Phase 4 — Blocking Evidence & ADR-016 Host Decision | Complete |
-| HOST-01 | Phase 4 — Blocking Evidence & ADR-016 Host Decision | Pending — recommendation drafted (findings §18.10), held for PO sign-off before ADR-016 itself is updated |
+| HOST-01 | Phase 4 — Blocking Evidence & ADR-016 Host Decision | Complete — ADR-016 rev 1.5 Accepted 2026-08-26; the outcome was a fourth answer (reject A, direct a standalone peer service, explicitly not Candidate C). See ROADMAP Phase 4 criterion 2 |
 | HOST-02 | Phase 4 — Blocking Evidence & ADR-016 Host Decision | Complete — reconciliation done in findings §18 (the recommendation text's application to ADR-016 is HOST-01's remaining gap, not this one's) |
 
 **Coverage:**

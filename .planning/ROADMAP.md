@@ -21,7 +21,7 @@ delivery; `docs/plans/` and the story board remain the canonical delivery record
 - [x] **Phase 1: Policy-Scope Pricing** - Classify and price all 15 retrieval/egress paths; discharge the ADR-016 gate (U1)
 - [x] **Phase 2: Remote Node Identity & Hub** - Add hub-side tables, node registration, and event ingestion endpoint (U2)
 - [x] **Phase 3: Node Client, Reliable Delivery & Regression Safety** - Implement the node client with spool/replay and run disconnection, duplicate, and invalid-auth experiments (U3+U4)
-- [ ] **Phase 4: Blocking Evidence & ADR-016 Host Decision** - Prove or report UNPROVEN execution blocking; write the final ADR-016 recommendation (U5+U6)
+- [x] **Phase 4: Blocking Evidence & ADR-016 Host Decision** - Prove or report UNPROVEN execution blocking; write the final ADR-016 recommendation (U5+U6). **Complete 2026-08-26** — ADR-016 signed off and Accepted (rev 1.5), Candidate A rejected
 
 ## Phase Details
 
@@ -125,7 +125,7 @@ supporting reason, not the primary one.
 **Goal**: The product owner receives an honest account of whether `blocking` WorkPacket state gates actual execution, and ADR-016 records a final, evidence-based host recommendation that reconciles all ST-088 evidence.
 **Depends on**: Phase 3
 **Requirements**: BLOCK-01, HOST-01, HOST-02
-**Delivery artifacts**: `docs/investigations/ST-084-awcp-host-spike-findings.md` §17 (U5 finding), §18 (U6 recommendation) and §19 (criterion-6 definition ratified; repo-rescan carried forward with an owner — discharges `03-CONTEXT.md:250-252`) — not §13, corrected 2026-08-26 for the same reason §16's own header note gives above. `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` itself is **not yet updated**: §18.10 carries the proposed replacement text, held for PO sign-off (success criterion 2 below)
+**Delivery artifacts**: `docs/investigations/ST-084-awcp-host-spike-findings.md` §17 (U5 finding), §18 (U6 recommendation) and §19 (criterion-6 definition ratified; repo-rescan carried forward with an owner — discharges `03-CONTEXT.md:250-252`) — not §13, corrected 2026-08-26 for the same reason §16's own header note gives above. **`docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` is now updated** (revision 1.5, 2026-08-26): status Proposed/Conditional → **Accepted**, Candidate A rejected, a standalone AWCP peer service directed, and §1's gate progress recorded final. `docs/design/adr/ADR-013-platform-product-definitions.md` revision 1.3 follows it (register row, the falsified disposition-(b) premise, provider-replacement revisit trigger)
 **Success Criteria** (what must be TRUE):
 
   1. The Stage 2 findings document records a PROVEN or UNPROVEN verdict for `blocking` WorkPacket state with a specific file:line citation for the implemented consequence (or explicit absence of one).
@@ -133,13 +133,17 @@ supporting reason, not the primary one.
   3. The final recommendation is reconciled against all five evidence inputs: U1 pricing table, experiments 4–6 results, execution-blocking finding, shared-runtime blast-radius assessment, and post-Stage-1 code drift (§12a).
   4. ADR-016 §1 gate progress section confirms criterion 5, 6, and 7 are each recorded as discharged or UNPROVEN-with-rationale.
 
-**Status**: Recommendation drafted 2026-08-26, held for PO sign-off (see below) — criteria 1 and 3 satisfied; criteria 2 and 4 deliberately not yet done, both blocked on the same held-back ADR-016 update.
+**Status**: **Complete 2026-08-26.** All four success criteria satisfied. The recommendation was drafted, reviewed over four rounds, merged (`1dc850d`), and then **signed off by the PO and applied to ADR-016**, which is the act criteria 2 and 4 were waiting on.
 
 **Success criteria disposition:**
   1. **Done.** `blocking` re-verified UNPROVEN against current code, file:line citations for both its only two (observational) consumers — findings §17.
-  2. **Deliberately not done.** ADR-016's `status` and Decision text remain Proposed/Conditional. A full recommendation is drafted in findings §18.10 — a **two-part decision**: reject Candidate A (settled on the spike's evidence), and direct a standalone AWCP peer service (a direction, unscored, and explicitly **not** Candidate C, which is defined by retiring both donors) — but per explicit PO direction this session it is held for sign-off rather than applied automatically — the ADR's own header names the PO as sole Decider.
+  2. **Done 2026-08-26.** ADR-016 is **Accepted** (revision 1.5). It records an outcome that was **not one of the three this criterion anticipated**: not "accept A", not "accept A with changes", and not "recommend Candidate C" — the spike **rejected Candidate A** and directed a **standalone AWCP peer service**, an unscored topology that is explicitly not Candidate C (C is defined by retiring both donors; ai-memory stays live). The criterion's own bar — *"status is no longer Proposed/Conditional"* — is met; its enumeration was written before the evidence produced a fourth answer, and is left as written rather than back-fitted.
   3. **Done.** §18 reconciles all inputs: U1 pricing (§13), experiments 4-6 (§16), the execution-blocking finding (§17), the shared-runtime blast-radius assessment (§6.2/§6.3/§12a), and post-Stage-1 drift (§12a).
-  4. **Deliberately not done — same gap as criterion 2.** This criterion asks specifically whether **ADR-016 §1's own gate-progress section** confirms criteria 5-7; that section is untouched and still reads "criteria 5, 6 and 7 remain outstanding" (`docs/design/adr/ADR-016-awcp-consolidation-host-topology.md:63`). Findings §18.1 re-evaluates all seven criteria and reaches a defended disposition for each, but that re-evaluation living in the findings doc is not the same fact as ADR-016 itself recording it — the latter is exactly what's held for PO sign-off.
+  4. **Done 2026-08-26.** ADR-016 §1 now carries a final gate-progress table recording each criterion: 1–4 met (Stage 1), **5 NOT met** and explicitly not discharged by the decision (priced at 64+ hrs but enforced in zero paths; neutral between topologies, owned by ST-082), 6 met against a real enrolled node with repo-state correctly outside its wording, 7 answered **no**. The Stage 1 progress block is retained above it rather than overwritten.
+
+**Carried forward out of this phase** (neither is ST-088 work):
+  - **The peer-service topology is unscored** against the six criteria A, B and C each received — findings §18.9 names it the largest gap in the *select* half, and ADR-016 §1(b) directs the scoring rather than concluding it. Needs its own story and a minted `ST-NNN`.
+  - **Criterion 5** stays with **ST-082**, reframed: not a co-tenancy tax AWCP forces, but ai-memory's own isolation obligation on its own merits. Threading `PolicyScope` through the read side, default-deny, is a **precondition** of the adapter contract (findings §18.3, §18.8 Phase A).
 
 **Plans**: TBD
 **UI hint**: no
@@ -153,7 +157,7 @@ supporting reason, not the primary one.
 | 1. Policy-Scope Pricing | — | Complete | 2026-08-05 |
 | 2. Remote Node Identity & Hub | 2/2 | Complete | 2026-08-06 |
 | 3. Node Client, Reliable Delivery & Regression Safety | 6/6 | Complete | 2026-08-18 |
-| 4. Blocking Evidence & ADR-016 Host Decision | — | Recommendation drafted, held for PO sign-off | — |
+| 4. Blocking Evidence & ADR-016 Host Decision | 2/2 | Complete | 2026-08-26 |
 
 ---
 
@@ -173,7 +177,7 @@ supporting reason, not the primary one.
 | SAFE-01 | Phase 3 | Complete |
 | SAFE-02 | Phase 3 | Complete |
 | BLOCK-01 | Phase 4 | Complete |
-| HOST-01 | Phase 4 | Pending — recommendation drafted, held for PO sign-off |
+| HOST-01 | Phase 4 | Complete — ADR-016 rev 1.5 Accepted 2026-08-26; the outcome was a fourth answer (reject A, direct a standalone peer service), see Phase 4 criterion 2 |
 | HOST-02 | Phase 4 | Complete |
 
 **v1 requirements: 14/14 mapped ✓**

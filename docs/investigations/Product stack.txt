@@ -1,0 +1,17 @@
+                       ┌───────────────┐
+                       │  Household    │
+                       ├───────────────┤
+                       │ Dev projects  │
+                       ├───────────────┤
+                       │ Trading R&D   │
+                       └───────┬───────┘
+                               │
+                              AWCP
+                               │
+            ┌──────────────────┼──────────────────┐
+            │                  │                  │
+       ai-memory         Agent Radio       Verification
+                              │
+        ┌──────────┬──────────┼──────────┬──────────┐
+        │          │          │          │          │
+      Claude     Codex     OpenCode    Copilot    Local

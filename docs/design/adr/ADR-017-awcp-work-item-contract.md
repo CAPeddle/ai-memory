@@ -255,8 +255,18 @@ not on the file.**
 > read *"the WorkItem/WorkPacket model"*. Do not treat the sentence's placement clause as a settled
 > host decision either — that half is stale relative to [ADR-016](ADR-016-awcp-consolidation-host-topology.md),
 > which remains Proposed/Conditional, and carries no authority on the host question.
+>
+> **DISCHARGED 2026-08-26 — this instruction's second half is spent, and its first half moved.** The
+> §7 revisit trigger below fired: ST-088 Phase 4 rewrote that sentence. ADR-013 rev 1.3 **deleted the
+> placement clause** and replaced it with a dated Correction (§4(b) now begins at `ADR-013:118`, the
+> Correction at `:120`), so there is no longer a stale clause to warn readers away from. The host
+> question is no longer merely unsettled but **decided against co-location**: ADR-016 reached
+> **Accepted** (rev 1.5) with **Candidate A rejected** and a standalone AWCP peer service directed —
+> a *direction*, not a scored selection, with the topology's scoring still outstanding. The
+> *"WorkItem/WorkPacket model"* amendment **still stands** and should be folded into ADR-013's
+> Correction when either document is next revised.
 
-The same instruction applies to `ADR-016:120`, which carries the same *"the WorkPacket model"*
+The same instruction applies to `ADR-016:187`, which carries the same *"the WorkPacket model"*
 phrasing in its Consequences list.
 
 ---
@@ -285,8 +295,11 @@ phrasing in its Consequences list.
 
 ## Revisit Triggers
 
-- **ST-088 Phase 4 rewrites `ADR-013:116`** — the reader instruction in §7 is discharged at that
-  point and should be folded into the rewritten sentence rather than left standing.
+- ~~**ST-088 Phase 4 rewrites `ADR-013:116`**~~ — **FIRED and closed 2026-08-26.** ADR-013 rev 1.3
+  deleted the placement clause and added a dated Correction (§4(b) at `:118`, Correction at `:120`);
+  ADR-016 reached Accepted (rev 1.5) with Candidate A rejected. §7's reader instruction is marked
+  discharged in place. The *"WorkItem/WorkPacket model"* half of it is **not** discharged and still
+  wants folding into ADR-013's Correction at that document's next revision.
 - **A second `source_system` value is needed** beyond the closed set in §2 — amend the set here
   rather than widening it at a call site.
 - **Anything asks for a single-word WorkItem state** — §6 is the answer, and a request to relax it

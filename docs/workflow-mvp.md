@@ -342,5 +342,12 @@ zero as "no call on the redirectable path", not "no call at all".
 ## What this is not
 
 No remote collector, no offline spool, no Jira/Confluence/ADO writes, no semantic search
-over operational state, no graph representation, no memory-domain refactor. ADR-016
-remains **Proposed / Conditional**; nothing here accepts it.
+over operational state, no graph representation, no memory-domain refactor.
+
+**Updated 2026-08-26 — ADR-016 is now Accepted (rev 1.5), and it rejected Candidate A.** AWCP is
+directed to become a **standalone peer service** consuming ai-memory as an optional context
+provider; this MVP is not the accepted host. That changes nothing about what runs today: ADR-016's
+own Consequences state that **nothing moves in the tree** — no file, module, schema or runtime
+behaviour changes under the decision, and `FEATURE_WORKFLOW`, the shared-schema wiring and the
+workflow-boundary test all stay until an extraction plan retires them. The scope exclusions above
+are unchanged. Read this document as describing an **extraction donor**, not a permanent home.

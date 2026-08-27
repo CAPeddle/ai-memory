@@ -30,7 +30,7 @@ The synthesis as first written framed the project as *"ai-memory is the platform
 and knowledge; AWCP is the operational control plane for agentic work running on that platform"* and
 proposed *"one deployable system containing different domains/modules"*.
 
-**That is Candidate A, and it is the decision ST-088 exists to make.** `ADR-016:57` is explicit:
+**That is Candidate A, and it is the decision ST-088 exists to make.** `ADR-016:88` is explicit:
 
 > *"Until the spike concludes, this ADR stays Proposed and no schema or migration work may assume the host."*
 
@@ -64,10 +64,10 @@ the comparison built on top of it.
 
 | Claim | Verdict | Evidence |
 |---|---|---|
-| ADR-013 §4(b) is stale and contradicts ADR-016's conditional gate | **Holds** | `ADR-013:116` — *"now that the host decision places AWCP in the same codebase as the Storyboard it replaces"*. `:102` and `:110` use correct conditional wording (*"Proposed/Conditional"*, co-deployment *"permitted, not mandated"*) |
+| ~~ADR-013 §4(b) is stale and contradicts ADR-016's conditional gate~~ | **Held, and is now RESOLVED 2026-08-26** | `ADR-013:116` — *"now that the host decision places AWCP in the same codebase as the Storyboard it replaces"*. `:102` and `:110` use correct conditional wording (*"Proposed/Conditional"*, co-deployment *"permitted, not mandated"*). **The sentence is gone**: ADR-013 rev 1.3 replaced it with a dated Correction (§4(b) now begins at `:118`, Correction at `:120`) recording the co-location premise as false, the supersession itself standing. ADR-016 is Accepted, not Conditional |
 | Policy-scope enforcement priced at 64+ hours / 8+ days | **Holds** | findings §13.2 (`:1086`) — a record of what enforcement costs **ai-memory**, owed under ST-082 in any topology |
 | ~~Candidate C saves 4–5 days, costs 3–4 in greenfield setup, breaks even~~ | **WITHDRAWN 2026-08-26 — do not cite** | The comparison was quoted accurately when checked, but it has since been withdrawn at source: findings §13.5's note records that all five bullets deriving the "saving" are the same `scope.tags` enforcement work as the 64+ hour figure above, so the comparison netted a quantity against itself. Compounding it, the PO has made effort a **non-input** to this evaluation (findings §18's opening note) — so even a sound figure would not carry the topology decision. Nothing downstream should restate a Candidate A/C effort delta |
-| Criterion 6 is discharged | **Holds — and the qualifier is now settled rather than open** | findings §16.5 (`:1435`) — *"criterion 6 is discharged for every element it names"*. The definition conflict behind that hedge was ratified by the PO 2026-08-26 in favour of `ADR-016:54`'s wording (findings **§19.1**), and the board clause that had widened it to include repo-state was corrected to match. Repo-rescan remains a real **U3 scope gap**, now carried forward with a design direction and an owner rather than as an open question (findings §19.2) |
+| Criterion 6 is discharged | **Holds — and the qualifier is now settled rather than open** | findings §16.5 (`:1435`) — *"criterion 6 is discharged for every element it names"*. The definition conflict behind that hedge was ratified by the PO 2026-08-26 in favour of `ADR-016:85`'s wording (findings **§19.1**), and the board clause that had widened it to include repo-state was corrected to match. Repo-rescan remains a real **U3 scope gap**, now carried forward with a design direction and an owner rather than as an open question (findings §19.2) |
 | Derived planning state has drifted from evidence | **Holds** | `ROADMAP.md:111` still shows `- [ ] 03-06-PLAN.md` unchecked; `REQUIREMENTS.md` traceability still lists NODE-01/02/03 **Pending** though `840a90c` discharged them |
 
 **Carry the criterion-6 qualifier forward.** "Discharged for every element it names" launders into
@@ -144,7 +144,17 @@ Taken by the PO on 2026-08-23, in the order they were put.
 
 ---
 
-## ADR-013 §4(b) — a real inconsistency, deliberately not fixed
+## ~~ADR-013 §4(b) — a real inconsistency, deliberately not fixed~~ — **RESOLVED 2026-08-26**
+
+> **Resolved, and every premise below is now dead.** ADR-016 reached **Accepted** (rev 1.5) with
+> **Candidate A rejected**, so it is no longer Proposed/Conditional and no longer undecided on the
+> host. ADR-013 rev 1.3 rewrote §4(b): the offending sentence is **gone** and a dated **Correction**
+> replaced it, recording that the co-location premise is false while the supersession itself stands
+> as a product-model decision. The `ADR-013:116` anchor has moved (§4(b) now begins at `:118`; the
+> Correction is at `:120`). **The reader instruction is discharged** — there is no longer a stale
+> sentence to warn readers away from. Retained below as the record of the defect and of the
+> deliberate decision to leave it standing until Phase 4 could give it its final wording, which is
+> exactly what happened.
 
 `ADR-013:116` states that *"the host decision places AWCP in the same codebase as the Storyboard it
 replaces"*. ADR-013 is **Accepted**; ADR-016 is **Proposed/Conditional**. On its face a lower-tier
@@ -162,8 +172,18 @@ stale relative to ADR-016 and carries no authority on the host question.
 
 ## What is blocked, and on what
 
-- **The B–D milestone cannot be generated yet.** It starts after ST-088 closes (decision 3), and
-  ST-088 is In Progress with Phase 4 unstarted.
+- ~~**The B–D milestone cannot be generated yet.** It starts after ST-088 closes (decision 3), and
+  ST-088 is In Progress with Phase 4 unstarted.~~ **Unblocked 2026-08-26.** Phase 4 is complete and
+  the host decision is taken: ADR-016 is **Accepted** with **Candidate A rejected**, directing a
+  standalone AWCP peer service that consumes ai-memory as an optional, replaceable context provider.
+  Decisions 1 and 3's bar — *"nothing is planned on the wrong side of the host decision"* (the
+  sentence is decision 3's; decision 1 sets the gate) — is satisfied,
+  and contract-first/storage-disposable stops being a holding pattern. **Two riders for whoever
+  generates B–D:** the peer-service topology is **unscored** (findings §18.9) and its scoring is a
+  separate story that B–D should not assume the answer to; and B's provider-native control surface is
+  **measured-negative** for in-flight steering, with the synchronous-turn path's only PASS retracted
+  by its own authors — see the agent-radio import below. ST-088 itself sits in Review pending the
+  ADR sign-off's own PR.
 - **`.planning/PROJECT.md` and `.planning/REQUIREMENTS.md` must not be rewritten now.** They define
   the in-flight milestone. Overwriting them mid-milestone breaks the traceability table that is
   already drifting (NODE-01/02/03).

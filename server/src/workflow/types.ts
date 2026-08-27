@@ -7,14 +7,21 @@
  *
  * This is no longer a throwaway spike: the module now spans 12 source files,
  * 4 migrations under server/db/workflow/, and 11 test files, exercised by the
- * ST-086, ST-087 and ST-088 suites. Acceptance is still gated on ADR-016
- * (docs/design/adr/ADR-016-awcp-consolidation-host-topology.md), which as of
- * its revision 1.3 is Proposed — Conditional: Stage 1 criteria 1-4 are met,
- * 5-7 are outstanding. The revision is named because that is a point-in-time
- * claim about another document; re-read the ADR's own changelog rather than
- * trusting this line. So the shape here is provisional, not settled, pending
- * that gate. See docs/plans/2026-07-29-001-awcp-ai-memory-host-spike.md for
- * where it originated.
+ * ST-086, ST-087 and ST-088 suites. The ADR-016 gate is now DISCHARGED
+ * (docs/design/adr/ADR-016-awcp-consolidation-host-topology.md), and it did
+ * not go the way this stamp assumed: as of its revision 1.5 (2026-08-26) the
+ * ADR is Accepted with Candidate A REJECTED. AWCP is directed to become a
+ * standalone peer service consuming ai-memory as an optional context provider;
+ * this module is therefore an EXTRACTION DONOR, not a co-tenant. The revision
+ * is named because that is a point-in-time claim about another document;
+ * re-read the ADR's own changelog rather than trusting this line.
+ *
+ * The shape here is still provisional, but in a different sense: not "pending
+ * a gate" — pending relocation. ADR-016's own Consequences state that nothing
+ * moves in the tree under that decision, so this code is stable and supported
+ * until an extraction plan retires it. Do not treat the decision as licence to
+ * start moving files. See docs/plans/2026-07-29-001-awcp-ai-memory-host-spike.md
+ * for where it originated, and findings section 18.8 for the extraction sketch.
  *
  * **A seventh stamp survives, and not by oversight.**
  * server/db/workflow/001_workflow_schema.sql still opens `SPIKE / DISPOSABLE`,
