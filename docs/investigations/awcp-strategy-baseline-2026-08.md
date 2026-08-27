@@ -172,18 +172,27 @@ stale relative to ADR-016 and carries no authority on the host question.
 
 ## What is blocked, and on what
 
-- ~~**The B–D milestone cannot be generated yet.** It starts after ST-088 closes (decision 3), and
-  ST-088 is In Progress with Phase 4 unstarted.~~ **Unblocked 2026-08-26.** Phase 4 is complete and
-  the host decision is taken: ADR-016 is **Accepted** with **Candidate A rejected**, directing a
-  standalone AWCP peer service that consumes ai-memory as an optional, replaceable context provider.
-  Decisions 1 and 3's bar — *"nothing is planned on the wrong side of the host decision"* (the
-  sentence is decision 3's; decision 1 sets the gate) — is satisfied,
+- **The B–D milestone is still blocked — but on one condition now, not two.** Decision 3 gates it on
+  *"the first new milestone starts at B, **after ST-088 closes**"*, and that is two distinct things:
+  the host decision being taken, and ST-088 actually closing. **The host half is discharged
+  2026-08-26** — Phase 4 is complete and ADR-016 is **Accepted** with **Candidate A rejected**,
+  directing a standalone AWCP peer service that consumes ai-memory as an optional, replaceable
+  context provider. **The ST-088 half is not: the story is in Review, not Done**, and the ST-096
+  board entry still reads *"nothing here may be executed before that"*. So **do not generate B–D
+  yet.** It unblocks when ST-088 moves to Done, which follows the ADR sign-off PR merging — no
+  further decision is owed, only that transition.
+
+  *(Originally: "The B–D milestone cannot be generated yet. It starts after ST-088 closes
+  (decision 3), and ST-088 is In Progress with Phase 4 unstarted." Half of that is now spent; the
+  bullet is narrowed rather than struck, because striking it read as discharging the whole gate.)*
+
+  With the host half settled, decisions 1 and 3's bar — *"nothing is planned on the wrong side of the
+  host decision"* (the sentence is decision 3's; decision 1 sets the gate) — is satisfied,
   and contract-first/storage-disposable stops being a holding pattern. **Two riders for whoever
   generates B–D:** the peer-service topology is **unscored** (findings §18.9) and its scoring is a
   separate story that B–D should not assume the answer to; and B's provider-native control surface is
   **measured-negative** for in-flight steering, with the synchronous-turn path's only PASS retracted
-  by its own authors — see the agent-radio import below. ST-088 itself sits in Review pending the
-  ADR sign-off's own PR.
+  by its own authors — see the agent-radio import below.
 - **`.planning/PROJECT.md` and `.planning/REQUIREMENTS.md` must not be rewritten now.** They define
   the in-flight milestone. Overwriting them mid-milestone breaks the traceability table that is
   already drifting (NODE-01/02/03).
