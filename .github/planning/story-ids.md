@@ -154,3 +154,4 @@ ST-098  2026-08-25  branch:main  st097 followups: observed-session restart-pinni
 ST-099  2026-08-25  branch:chore/st098-observed-session-follow-ups  restore authenticated OpenRouter egress from dev/test containers
 ST-100  2026-08-27  branch:main  score the standalone AWCP peer-service topology against the six host criteria
 ST-101  2026-08-27  branch:main  migrate prism-llm-wiki curated knowledge into ai-memory via capture tooling
+ST-102  2026-08-28  branch:main  own the unauthenticated /workflow dashboard shell exposure that FEATURE_WORKFLOW=true on base mcp created
