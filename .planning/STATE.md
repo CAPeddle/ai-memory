@@ -1,20 +1,21 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: milestone
-current_phase: 03
-current_phase_name: node-client-reliable-delivery-regression-safety
-status: executing
-stopped_at: Completed 03-05-PLAN.md
-last_updated: "2026-08-18T13:08:43.485Z"
-last_activity: 2026-08-16
-last_activity_desc: Phase 03 execution started
+milestone_name: ST-088 Host Viability
+current_phase: 04
+current_phase_name: blocking-evidence-adr016-host-decision
+status: completed
+stopped_at: Milestone complete — ST-088 Done 2026-08-27 (PR #60, 86473ac)
+last_updated: "2026-08-27T00:00:00.000Z"
+last_activity: 2026-08-27
+last_activity_desc: ST-088 closed Review to Done; milestone finished
+state_head: 71d6a9693a456af8085a9d1d38f90cdb410457f8
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 4
   total_plans: 8
-  completed_plans: 7
-  percent: 25
+  completed_plans: 8
+  percent: 100
 ---
 
 # Project State
@@ -24,16 +25,19 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-05)
 
 **Core value:** Knowledge worth retaining must remain accurately recallable across tools, sessions, projects, and time without leaking across policy boundaries.
-**Current focus:** Phase 03 — node-client-reliable-delivery-regression-safety
+**Current focus:** none — this milestone is finished. Next is the Horizon B–D milestone, not more work here.
 
 ## Current Position
 
-Phase: 03 (node-client-reliable-delivery-regression-safety) — EXECUTING
-Plan: 6 of 6
-Status: Ready to execute
-Last activity: 2026-08-16 — Phase 03 execution started
+Phase: 04 (blocking-evidence-adr016-host-decision) — **COMPLETE**
+Plan: 2 of 2
+Status: **Milestone complete.** All four phases closed; ROADMAP's Progress table is the authority and reads 4/4.
+Last activity: 2026-08-27 — ST-088 moved Review → Done, PR #60 merged to `main` as `86473ac`
 
-Progress: [█████████░] 88%
+Progress: [██████████] 100%
+
+**Do not resume delivery work in this milestone.** It is closed. The next action is the
+milestone boundary itself — see *Next action* at the foot of this file.
 
 ## Performance Metrics
 
@@ -107,29 +111,39 @@ None yet.
 - **Node 18 emits an ExperimentalWarning on global `fetch`.** Settled as D-06: use `fetch` and suppress the warning, because captured stderr is evidence in this phase and the notice would otherwise open every transcript.
 - **z2 IS NOW ENROLLED (2026-08-18, plan 03-06) — the de-enrolment hazard is live, not theoretical.** `node_id` `1fbae82b-b12d-46dc-bbbf-d64784402ca4`, enrolment window opened, used once, and closed (closure proven by a 401). **Any test run against the dev `DATABASE_URL` — including the native `./dev.sh` inner loop — issues `DROP SCHEMA IF EXISTS workflow CASCADE`, deletes z2's `execution_nodes` row, and de-enrols the node behind the opaque 401.** The criterion-6 evidence cannot be regenerated without reopening a window D-11 deliberately closed. Use `mcp-test`/`db-test` for every suite run. The durable artifact is findings `## 16.`, not the rows. This hazard outlives Phase 3.
 - **`docker compose up -d mcp` can silently keep stale environment.** Observed 2026-08-18: after editing `.env`, compose reported `Running` rather than `Recreated` and left the old process serving `:3000`. Compounding it, `.env` had no trailing newline, so an append concatenated onto the previous line — defeating both `sed '/^VAR=/d'` and `grep -c '^VAR'`, each of which then reported the reassuring answer. **Verify env changes inside the process** (`docker compose exec -T mcp printenv VAR | wc -c`), never from `.env` or an HTTP response.
-- **`progress.completed_phases` reads 1, not 2, and hand-editing it will not stick.** All four `progress.*` fields are derived from `.planning/phases/` directories by `buildStateFrontmatter` (`~/.claude/gsd-core/bin/lib/state.cjs:1433`), and `state-transition.cjs:123-127` discards a curated `total_phases`/`percent` even on the preserve path. Phase 1 completed without a phase directory, so the disk scan can only ever see 1 of the 2 completed phases. **This is cosmetic and safe as it stands**: ROADMAP is now the authority for `total_phases` (4) and for `smart-entry.isComplete`, which reads 2-of-4 from the Progress table and correctly refuses to classify the milestone complete. Fix it by giving Phase 1 a directory if it ever matters — not by editing this file.
-- **ST-082 collision watch:** If ST-082 lands before Phase 4, U1 pricing becomes an actual — update the pricing table to reflect actual rather than estimated cost before writing the ADR-016 recommendation.
+- **`progress.completed_phases` reads 1, not 2, and hand-editing it will not stick.** All four `progress.*` fields are derived from `.planning/phases/` directories by `buildStateFrontmatter` (`~/.claude/gsd-core/bin/lib/state.cjs:1433`), and `state-transition.cjs:123-127` discards a curated `total_phases`/`percent` even on the preserve path. Phase 1 completed without a phase directory, so the disk scan can only ever see 1 of the 2 completed phases. **This is cosmetic and safe as it stands**: ROADMAP is the authority for `total_phases` (4) and for `smart-entry.isComplete`, which reads the Progress table. Fix it by giving Phase 1 a directory if it ever matters — not by editing this file. **Updated 2026-08-27:** the frontmatter now reads 4/4 and `percent: 100`, matching ROADMAP's Progress table, which is the truth. Those numbers were hand-set and **a `state.cjs` disk scan may recompute them downward again** — only dirs `02` and `03` exist, so the scan can see at most 2 of 4. If you find them wrong, that is this mechanism, not a regression to chase; ROADMAP governs. The same mechanism wrote the 2026-08-22 corruption repaired here (`milestone_name: )`, `completed_phases: 0`, `percent: 0` against 8-of-8 completed plans). The milestone is over, so the durable fix is `/gsd-complete-milestone`, which archives this file rather than recomputing it.
+- ~~**ST-082 collision watch:**~~ **Moot 2026-08-27** — Phase 4 is complete and the ADR-016 recommendation is written, signed off and merged, so ST-082 can no longer land "before Phase 4". The 64+ hour U1 figure stands as the estimate of record. *(Originally: "If ST-082 lands before Phase 4, U1 pricing becomes an actual — update the pricing table to reflect actual rather than estimated cost before writing the ADR-016 recommendation.")* **What replaces it:** ADR-016 made criterion 5 **neutral between topologies**, so ST-082 is now ai-memory's own isolation obligation on its own merits — not a co-tenancy tax AWCP forced — and threading `PolicyScope` through the read side became a *precondition* of the adapter contract.
 
 ## Deferred Items
 
-- ENFORCE-01/02/03 (policy-scope implementation) — v2, owned by ST-082 after host decision settled
+- ENFORCE-01/02/03 (policy-scope implementation) — owned by **ST-082**. **The host decision it waited on is settled** (ADR-016 Accepted 2026-08-26, merged 2026-08-27), so this is no longer deferred *pending a decision*; it is Backlog work with an owner, and criterion 5 is topology-neutral
 - CONTACT-01 (Contact Memory domain MCP) — independent product track, v2
 - SYNTH-01 (Obsidian companion) — ST-019 dependent, v2
 
 ## Session Continuity
 
-**Last session:** 2026-08-16T07:28:54.467Z
-**Stopped at:** Completed 03-05-PLAN.md
+**Last session:** 2026-08-27
+**Stopped at:** Milestone complete — ST-088 Done, PR #60 merged as `86473ac`
 **Resume file:** None
 
-### If resuming mid-phase
+### There is no mid-phase to resume
 
-1. Read `.planning/ROADMAP.md` — find current phase and open plans
-2. Read story board ST-088 In Progress section for WIP status and acceptance criteria
-3. Read `docs/investigations/ST-084-awcp-host-spike-findings.md` §12a before trusting any Stage 1 claim
-4. Check `docs/plans/2026-08-04-002-spike-st088-stage2-scope-enforcement-remote-node-plan.md` for unit contracts
-5. **One In Progress slot** — do not start a second story until ST-088 is done or stalled on an external dependency
-6. Commit convention: `feat(workflow): ...` or `docs(adr): ...` with `Story: ST-088` trailer on every commit
+This milestone is finished. The route below replaces the old mid-phase checklist, which sent a
+resuming session to a board section that no longer exists.
+
+1. **The story board has no `## In Progress` and no `## Review` entry** — both WIP slots are free
+   as of 2026-08-27. ST-088 is under `## Done`. *(The previous step 2 here said "Read story board
+   ST-088 In Progress section"; ST-088 left In Progress on 2026-08-26 and left Review on
+   2026-08-27, so that instruction had been wrong twice over.)*
+2. Read `.planning/ROADMAP.md` — its header and Progress table both say the milestone is finished.
+3. `docs/investigations/ST-084-awcp-host-spike-findings.md` §12a is still the standing warning that
+   cited claims move underneath a later reader — **re-verify every `file:line` before using it.**
+   Two documents shifted under their own citations during the 2026-08-27 sweep.
+4. **Follow-on work is on the board, not here:** ST-100 (score the peer-service topology, which
+   ADR-016 §1(b) directed rather than concluded), ST-101 (prism-wiki knowledge migration), ST-082
+   (policy-scope enforcement — criterion 5, now ai-memory's own obligation, topology-neutral).
+5. Commit convention is unchanged: Conventional Commits with a `Story: ST-NNN` trailer as the final
+   block, and **no `Co-authored-by:` on any branch commit** (see `CLAUDE.md` § Merge strategy).
 
 ### Key file locations
 
@@ -146,4 +160,23 @@ None yet.
 ---
 
 *State initialized: 2026-08-05*
-*Next action: `/gsd-plan-phase 3`. Read `03-CONTEXT.md` first — its thirteen decisions are locked and must not be re-litigated. Reachability is verified; do not re-probe it. `ROADMAP.md`'s **Delivery artifacts** line is already corrected to `.mjs`; the ST-088 spike plan's U3 still names `.js` and is deliberately left as-is — it is Tier-1 authority and `03-CONTEXT.md` flags the supersession rather than editing it.*
+
+*Next action: **`/gsd-complete-milestone`, then `/gsd-new-milestone` for Horizon B–D.** Both were
+blocked until 2026-08-27 and are now unblocked: the baseline gates B–D on two conditions — the
+ADR-016 host decision being taken (discharged 2026-08-26) and ST-088 closing (discharged
+2026-08-27, PR #60 → `86473ac`). Do not hand-edit this file to effect that boundary;
+`new-milestone.md` §5 resets STATE.md's frontmatter and body atomically through the SDK and says
+explicitly not to hand-edit it there.*
+
+***Three constraints B–D must carry***, recorded on ST-097's board entry and repeated here because
+this file is what a milestone-generating session reads first: (1) **B–D must not assume ST-100's
+scoring outcome** — ADR-016 §1(b) is a *direction, not a scored selection*, and the peer-service
+topology has never been scored against the six criteria A, B and C each received; (2) the
+co-tenancy tax does **not** disappear — it moves to **ST-082** as ai-memory's own isolation
+obligation, topology-neutral; (3) threading `PolicyScope` through the read side is a
+**precondition** of the adapter contract, not follow-on work.
+
+*Superseded, retained so an old pointer still resolves: the previous next action was
+`/gsd-plan-phase 3`, with `03-CONTEXT.md`'s thirteen locked decisions, the verified z2
+reachability, and the `.mjs`-vs-`.js` supersession note. Phase 3 completed 2026-08-18 and Phase 4
+on 2026-08-26; those notes are now history, not instructions.*
