@@ -2,9 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Policy-Scope Isolation
+current_phase: 5
+current_phase_name: first phase of this milestone
 status: planning
-last_updated: "2026-08-28T12:22:00.000Z"
+stopped_at: Phase 5 context gathered
+last_updated: "2026-08-28T11:16:12.180Z"
 last_activity: 2026-08-28
+last_activity_desc: ROADMAP.md created for v1.1 (Phases 5-9, 13/13 requirements mapped)
+state_head: 9ae5132af8dd798079b5304a4193a93edfe2d31c
 progress:
   total_phases: 5
   completed_phases: 0
@@ -34,6 +39,7 @@ Progress: [░░░░░░░░░░] 0%
 ## Performance Metrics
 
 **Velocity:**
+
 - Total plans completed (v1.1): 0
 - Average duration: —
 - Total execution time: —
@@ -51,6 +57,7 @@ v1.0 velocity (91 commits, 8 GSD-tracked plans across Phases 2-3) is archived in
 | 9. Port Contract & Full Isolation Verification | TBD | — | — |
 
 **Recent Trend:**
+
 - Last 5 plans: —
 - Trend: —
 
@@ -93,9 +100,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-08-28
-Stopped at: ROADMAP.md created for v1.1 (Phases 5-9); STATE.md initialized for the new milestone
-Resume file: None
+Last session: 2026-08-28T11:16:12.153Z
+Stopped at: Phase 5 context gathered
+Resume file: .planning/phases/05-policy-scope-foundation/05-CONTEXT.md
 
 ### Key file locations
 
