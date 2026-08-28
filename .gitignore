@@ -66,3 +66,5 @@ docs/investigations/whatsapp/*.txt
 
 # GSD run-scoped dispatch sentinel (ephemeral, per-run)
 .gsd/
+
+.planning/research/.cache/
