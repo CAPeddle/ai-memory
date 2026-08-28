@@ -29,6 +29,14 @@ A closed-vocabulary `policy_scope` field (`personal` | `corporate` | `mixed` | `
 
 - **D-04:** Resolve DECISION-01 by building the real technical spike this phase — prototype `withPolicyScope()` + `FORCE ROW LEVEL SECURITY` against one real path (`list_thoughts`, per SUMMARY.md's suggestion) and let the pooled-connection/`SET LOCAL` behavior observed in that spike settle the choice, rather than deciding from the research write-up alone. This directly satisfies SC #2's "validated by a technical spike" wording. Both STACK.md and ARCHITECTURE.md are HIGH-confidence and disagree; the spike is the tiebreaker.
 
+### Interim scope for new writes (research follow-up, RESEARCH.md Assumptions Log A1)
+
+- **D-05:** New writes at the two production insert sites the RESEARCH.md spike found still uncovered (`capture_thought` in `server/index.ts`, and `consolidationWorker.ts`'s wiki-promotion insert) get an interim `policy_scope` value of `corporate` — matching D-02's legacy-backfill value — until Phase 6 wires real caller-declared scope through those paths. — **Reversibility:** easy — this is an interim default confined to the two named insert sites; Phase 6 replaces it with real scope resolution.
+
+### Public-scope self-visibility (research follow-up, RESEARCH.md Assumptions Log A2)
+
+- **D-06:** A caller declaring `scope=public` sees only `public` rows — `public` is a bucket symmetric with `personal`/`corporate`/`mixed` in D-03's matrix, not a superuser/broadcast scope that sees everything. — **Reversibility:** costly — same class as D-03: this shape is what every Phase 6-9 WHERE-clause/RLS predicate is written against.
+
 ### Claude's Discretion
 
 - Migration mechanics for adding `thoughts.policy_scope` (three-step add-nullable / backfill / set-NOT-NULL-and-CHECK vs. any faster path Postgres 15 supports) — implementation detail, not raised as a gray area.
