@@ -54,11 +54,12 @@ Product-level choices constraining the requirements below. Each is settled; none
 - KD1. Candidate A is rejected — AWCP does not live inside ai-memory. *ADR-016 §1(a), settled on the full spike evidence. The service's own codebase and runtime come from §1(b), which is unscored — see KD2.* Governs R1, R21.
 - KD2. The peer-service topology is a direction, not a scored selection. *ADR-016 §1(b); ST-100 owns the scoring and may return CONTRADICT.* Governs R54, R55, R56.
 - KD3. Contract-first, storage-disposable — packet, checkpoint and event contracts are versioned and durable; storage carries no migration promise until placement settles. Governs R7, R8.
-- KD4. Capability providers are replaceable slots, named by what AWCP needs from them rather than by the product supplying them. The port interface is the contract; the wire protocol stays open. Governs R9, R10, R11.
+- KD4. Capability providers are replaceable slots, named by what AWCP needs from them rather than by the product supplying them. The port interface is the contract; the wire protocol stays open. Governs R9, R10, R11, R63.
 - KD5. Manual is a feature, not a gap — each capability's manual path is retained permanently as the degraded mode, which is also the integration-outage fallback. Governs R13, R52.
 - KD6. The web UI is the primary interaction surface, superseding the capability ladder's deferral of it, as to primacy only. Horizon order is unchanged. Governs R35, R59.
 - KD7. AWCP holds no model surface of its own for comprehension work; decomposition is performed by the coding agents as tasks, with AWCP storing structured results. Governs R60.
 - KD8. This artifact stays at requirements altitude and states no implementation units. *(session-settled: user-directed — chosen over implementation-ready and over narrowing to the first horizon group: ADR-016 §1 bars extraction and ST-100 has not scored the topology, so build-ready units would plan work no governance gate has cleared.)* Constrains the artifact's shape rather than any individual requirement.
+- KD9. The donor implementation (`server/src/workflow/`) is a source of recorded defects to require against, never a justification for a requirement's soundness. A requirement here stands on its own architectural merit for AWCP as a new, standalone service — that the donor code, its comments, or CONCEPTS.md already say something the same way is not evidence a requirement is correct, only that ai-memory chose it that way. Constrains how every requirement in this document is justified, not any individual R#.
 
 ### Actors
 
@@ -87,8 +88,9 @@ Product-level choices constraining the requirements below. Each is settled; none
 - R9. [INV] The service consumes three capability slots — knowledge, agent routing, verification — through contracts that survive the provider behind them being replaced.
 - R10. [INV] No provider is assumed singular or permanent. ai-memory occupies the knowledge slot; it does not define it.
 - R11. [INV] The wire protocol for each slot is an adapter concern and is not selected by these requirements.
+- R63. [INV] The agent-routing slot names its verbs, and each carries its evidence status: session observation is confirmed; turn dispatch is unresolved, its only measured pass withdrawn by its own authors; in-flight steering and interruption are measured-negative and excluded from the slot until re-measured. Naming a verb is not selecting its wire form (R11), and R15's per-verb obligations quantify over this set rather than over an unnamed one. *(session-settled: user-directed — external review asked for a seven-verb taxonomy; two of those verbs are measured-negative and one is unresolved, so the set is stated with its evidence rather than adopted whole.)*
 - R12. [INV] The knowledge slot is advisory: it may fail or return nothing, and never gates an operational write.
-- R13. [INV] With any slot's provider absent, the entire operational flow completes rather than degrading — proven by a no-op provider passing the full core suite for every slot.
+- R13. [INV] With any slot's provider absent, core operational adjudication and completion remain available in an observable degraded mode — proven by a no-op provider passing the full core suite for every slot.
 - R14. [INV] Promotion is optional, one-way and non-authoritative, resolves to four outcomes rather than success or failure, and carries the Operational Decision's own identity as the idempotency key so repeated attempts yield at most one projection.
 - R15. [INV] A provider contract distinguishes accepted from delivered per verb, and authoritative from observed per state read, with an observability obligation on each. A capability an adapter cannot verify it performed is not a capability.
 - R16. [INV] A bounded wait on a provider bounds the caller, not the work, so an elapsed wait resolves as indeterminate rather than as failure. A provider must opt in to declaring that nothing was committed.
@@ -121,7 +123,7 @@ Product-level choices constraining the requirements below. Each is settled; none
 
 - R30. [INV] Any question an agent raises through the contract has its adjudication retrievable through the same contract, without human relay.
 - R31. [INV] Everything the primary human surface renders for a Work Item or Work Packet is reachable by an agent credential for the same subject. This is parity of reachability, not of permission.
-- R32. [INV] An agent submits an Evidence Item and proposes Verification Criteria; only the operator accepts Evidence against a Criterion and adopts the verification contract. Depositing a result is not judging it.
+- R32. [INV] An agent submits an Evidence Item and proposes Verification Criteria; only the operator accepts Evidence an agent submitted against a Criterion, and only the operator adopts the verification contract. Depositing a result is not judging it. R64 carves the one exception, and it is not an agent-facing one.
 - R33. [INV] Agent-authored judgement enters as a proposal awaiting operator disposition, distinguishable by provenance from service-derived fact, never as accepted state.
 - R34. [INV] Every external issue-tracker write passes a draft, preview, approve, execute ledger. The approval is permanently manual, non-delegable and non-replayable, and no agent may carry an instruction not to re-ask. An approval binds to the exact previewed payload: any change between preview and execution voids it and returns the item to draft.
 - R35. [INV] The human interface is a client of the same contract as every other caller: no interface-only endpoint and no interface-only computation.
@@ -130,7 +132,7 @@ Product-level choices constraining the requirements below. Each is settled; none
 
 #### Event delivery
 
-- R36. [INV] The Spool is bounded and evicts oldest-first after appending, so the newest event is never the one dropped, and each drop is counted and announced rather than lost.
+- R36. [INV] The Spool is bounded and evicts after appending, so the newest event is never the one dropped, and each drop is counted and announced rather than lost. Eviction consumes coalescible entries first — those a later entry of the same type supersedes — and reaches a non-coalescible entry only when no coalescible one remains. Whether a type is coalescible is declared with the type, so the classification cannot drift from the events it governs. *(session-settled: user-directed — plain oldest-first eviction contradicted this document's own AE16 and AE17, which make heartbeats coalescible by design while F5 puts them on a fixed cadence, so the highest-volume class would survive at the expense of every causally significant one.)*
 - R37. [INV] An entry leaves the Spool only when the far side names it and it was in the batch just sent. A response that cannot be verified to name an entry is not a confirmation of it.
 - R38. [INV] An acknowledgement is derived by reading back what is stored, so a replayed batch is acknowledged in full and the sender can finally clear it.
 - R39. [INV] Every delivery response maps to exactly one dispatch, and the fall-through case is failure. A Terminal Outcome stops the retry loop, leaves the Spool intact, and is never reported as success; a deferred outcome is retried under a bounded budget counting consecutive non-progress attempts.
@@ -139,7 +141,8 @@ Product-level choices constraining the requirements below. Each is settled; none
 
 #### Evidence and verification
 
-- R42. [INV] An Evidence Item records the commit it was observed at and its Verified Surface as paths, so freshness is computed rather than asserted. Evidence that cannot name its surface in paths is evidence whose expiry cannot be detected.
+- R42. [INV] An Evidence Item records the base commit it was verified against, a content identifier distinguishing pre-commit state from that commit when the check ran before one existed, its Verified Surface as paths, and its verifier's identity — so freshness is computed rather than asserted, and evidence produced before a commit exists remains replayable and fresh-checkable. Evidence that cannot name its surface in paths is evidence whose expiry cannot be detected.
+- R64. [INV] Evidence the service itself retrieved from the verification slot is accepted against an already-adopted Criterion without operator disposition, because the service authenticated the source rather than trusting a report of it. R44's validity criteria still gate acceptance, and adopting the verification contract remains operator-only under R32. This is a distinction of provenance, not of trust level: the same result relayed through an Agent Run's report stays a claim under R45, so the exception cannot be reached by an agent presenting itself as a verifier. *(session-settled: user-directed — external review showed operator-only acceptance turns deterministic verification into a manual queue; the retrieval path was chosen over an inbound verifier credential, which would have reopened R23's closed class set.)*
 - R43. [INV] Expiry means unobserved, not false, and has two modes that are reported distinctly: the surface moved, so the result no longer describes it; and the surface grew, so the result still holds but under-covers.
 - R44. [INV] An Evidence Item is accepted only where the check that produced it inspected something, discriminated between compliant and non-compliant states, and did not fail for a reason other than the one it exists to detect. A green result is not evidence until those hold.
 - R45. [INV] An Agent Run's own report is a claim rather than evidence. The service distinguishes an agent having produced output from an agent having done the work, and output from a lane that answered something other than what was asked never satisfies a Verification Criterion.
@@ -188,7 +191,7 @@ Product-level choices constraining the requirements below. Each is settled; none
 - F4. Event delivery from a node
   - **Trigger:** a node produces an event.
   - **Actors:** A3
-  - **Steps:** append to the Spool; evict oldest past the bound and count the drop; flush a bounded batch oldest-first; the service refuses malformed or oversized payloads naming the offenders, verifies node ownership, ingests idempotently, and acknowledges by reading back; the node removes only entries named and sent; the response maps to exactly one dispatch.
+  - **Steps:** append to the Spool; evict past the bound, coalescible entries first, and count the drop; flush a bounded batch oldest-first; the service refuses malformed or oversized payloads naming the offenders, verifies node ownership, ingests idempotently, and acknowledges by reading back; the node removes only entries named and sent; the response maps to exactly one dispatch.
   - **Outcome:** every event is delivered, still queued, or counted as dropped — never merely absent.
   - **Covered by:** R29, R36, R37, R38, R39, R40
 
@@ -218,7 +221,9 @@ Product-level choices constraining the requirements below. Each is settled; none
 - AE8. **Covers R19.** Given an Operational Decision under a Work Packet whose Policy Scope is restrictive; When it is promoted; Then the projection carries that Packet's real scope, and where the Packet cannot be read the promotion is refused rather than defaulting.
 - AE9. **Covers R37.** Given a Spool holding five entries and a batch of all five sent; When the response names three of them; Then exactly those three are removed. Nothing is removed on send, on a retry, or on a response that cannot be verified to name entries.
 - AE10. **Covers R37.** Given a Spool of many entries and a batch of the first few sent; When the response names an entry outside that batch; Then nothing is removed.
-- AE11. **Covers R36.** Given a Spool at its bound; When a new event is produced; Then the event is appended and the oldest entry evicted, the drop counter increases, and the drop is announced.
+- AE11. **Covers R36.** Given a Spool at its bound holding both coalescible and non-coalescible entries; When a new event is produced; Then the event is appended, a superseded coalescible entry is evicted ahead of any non-coalescible one, the drop counter increases, and the drop is announced.
+- AE23. **Covers R36.** Given a Spool at its bound holding only non-coalescible entries; When a new event is produced; Then the oldest is still evicted and the drop counted and announced. The bound holds unconditionally — no class is exempt from a bounded queue, and the ordering rule buys precedence, not immunity.
+- AE24. **Covers R64, R45.** Given a Criterion the operator already adopted and a result the service retrieved itself from the verification slot; Then it is accepted without operator disposition. Given the identical result presented instead through an Agent Run's report; Then it remains a claim and is refused as acceptance — the discriminator is who fetched it, not what it says.
 - AE12. **Covers R38, R40.** Given a batch already ingested is sent again; Then no state is duplicated, no error is raised, and the acknowledgement still names every entry so the sender can clear them.
 - AE13. **Covers R39.** Given a response that will fail identically next time; Then the retry loop stops, the Spool is left intact, the reason is named, and the result is not reported as success. A caller can distinguish a rejected credential from every other Terminal Outcome from the result alone.
 - AE14. **Covers R39.** Given transient unreachability; Then the same batch is retried under a budget counting consecutive non-progress attempts, which any progress resets; on exhaustion the outcome is deferred with the Spool intact.
@@ -246,7 +251,7 @@ The closed list SC4 quantifies over. Each is a recorded defect in `server/src/wo
 |---|---|
 | Supervision classification defaults to permissive, so an unclassified write route is agent-reachable and nothing reports it | R24 |
 | An agent can raise an Operational Decision but has no path to read its resolution | R30 |
-| Evidence attachment is operator-only, so the agent that ran the check cannot hand over the artefact | R32 |
+| Evidence attachment is operator-only, so the agent that ran the check cannot hand over the artefact | R32, R64 |
 | The module emits no logs of any kind | R48 |
 | Enrolment is a capability rather than an allowlist — any number of nodes under any hostname | R62 |
 | The enrolment secret does not expire and there is no revocation; decommissioning one machine means rotating for all | R58 |
@@ -303,6 +308,9 @@ The closed list SC4 quantifies over. Each is a recorded defect in `server/src/wo
 - Q5. **Deferred.** Is claiming an observed session for a Work Item one-to-one or many-to-many? The donor's uniqueness rule permits the same session to be claimed for several Work Items with no refusal, and offers no unclaim — so a mistaken claim is currently permanent.
 - Q6. **Deferred.** Which repository holds the AWCP codebase, and does this document move with it? It is filed here because AWCP's governance record is here.
 - Q7. **Deferred.** Does the write half of the integration auth question ever resolve positively? A denial re-examines the approval-ledger scope, not the host direction.
+- Q8. **Open.** Should capability declaration and negotiation be an invariant in their own right — AWCP issuing only controls the adapter declares, distinguishing unsupported from accepted and delivered, and never silently emulating a missing capability? R63 names the agent-routing verbs and R15 covers accepted-versus-delivered, but neither states an unsupported outcome nor bars emulation. Raised by external review after R63 was settled; not folded into it.
+- Q9. **Open.** Does R47's once-and-final adjudication admit supersession — an accepted Operational Decision or Agent Run closure staying immutable while an authorised operator records a new adjudication referencing the superseded one, with consumers following the active chain? Without it an erroneous closure cannot enter bounded rework except by violating R47. Raised by external review; unaddressed here.
+- Q10. **Open.** Should durable domain events live in an outbox or event ledger with the Spool as a delivery index over them, rather than being held in the Spool itself? R36 now orders eviction so coalescible entries go first, which bounds the harm but does not preserve causal integrity under sustained backpressure. This is the stronger form of the same external-review finding R36 partially answers.
 
 ### Sources
 
