@@ -1,38 +1,33 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: ST-088 Host Viability
-status: Awaiting next milestone
-stopped_at: "Milestone complete — ST-088 Done 2026-08-27 (PR #60, 86473ac)"
-last_updated: "2026-08-28T08:18:59.190Z"
+milestone: v1.1
+milestone_name: Policy-Scope Isolation
+status: planning
+last_updated: "2026-08-28T08:58:54.786Z"
 last_activity: 2026-08-28
-last_activity_desc: Milestone v1.0 completed and archived
-state_head: 82e8536d8fa7dc9170d41554e5c3c595e871cd81
 progress:
-  total_phases: 4
+  total_phases: 0
   completed_phases: 0
-  total_plans: 8
-  completed_plans: 8
+  total_plans: 0
+  completed_plans: 0
   percent: 0
-current_phase: 04
-current_phase_name: blocking-evidence-adr016-host-decision
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-05)
+See: .planning/PROJECT.md (updated 2026-08-28)
 
 **Core value:** Knowledge worth retaining must remain accurately recallable across tools, sessions, projects, and time without leaking across policy boundaries.
-**Current focus:** none — this milestone is finished. Next is the Horizon B–D milestone, not more work here.
+**Current focus:** v1.1 Policy-Scope Isolation (ST-082) — default-deny retrieval/provider-egress enforcement, controlled policy-scope field, negative isolation tests across every egress path.
 
 ## Current Position
 
-Phase: Milestone v1.0 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-08-28 — Milestone v1.0 completed and archived
+Status: Defining requirements
+Last activity: 2026-08-28 — Milestone v1.1 started
 
 ## Performance Metrics
 

@@ -10,6 +10,18 @@ The active platform is a Deno 2.0 / TypeScript service backed by PostgreSQL 15, 
 
 Knowledge worth retaining must remain accurately recallable across tools, sessions, projects, and time without leaking across policy boundaries.
 
+## Current Milestone: v1.1 Policy-Scope Isolation
+
+**Goal:** Enforce `scope.tags` as a real default-deny retrieval boundary between corporate and personal content, discharging ai-memory's own isolation obligation (ADR-016 criterion 5 — neutral between topologies, not discharged by the host decision).
+
+**Target features:**
+- `scope.tags` enforced as a retrieval filter in `searchQuality.ts`, across both `search_thoughts` and `list_thoughts`
+- A controlled, closed-vocabulary policy-scope field on observations/sources, distinct from free-form descriptive tags (ADR-012's tag vocabulary unchanged)
+- Default-deny semantics for retrieval **and** model-provider routing — absence of scope means deny, not allow
+- Negative isolation tests across every egress path: lexical search, vector search, graph traversal, context assembly, exports
+
+Explicitly deferred: write-side capture-time policy scoping (ST-101's need — picked up when that story starts), ST-100 (topology scoring), ST-102 (`FEATURE_WORKFLOW` exposure disposition) — separate backlog items, not bundled in.
+
 ## Requirements
 
 ### Validated
@@ -26,7 +38,7 @@ Knowledge worth retaining must remain accurately recallable across tools, sessio
 
 ### Active
 
-- [ ] Enforce default-deny policy scope across every memory retrieval and provider-egress path ~~before accepting co-tenancy as safe~~ — **rationale corrected 2026-08-26: this is required on ai-memory's own merits, not to make co-tenancy safe.** Co-tenancy was rejected and the obligation is unchanged and topology-neutral (ST-082). The read side carries no `PolicyScope` at all, which is also a precondition of the AWCP adapter contract
+- [ ] Enforce default-deny policy scope across every memory retrieval and provider-egress path (ST-082, v1.1 milestone) — read-side enforcement plus a controlled policy-scope field and negative isolation tests across every egress path. Write-side capture-time scoping deferred to ST-101's pickup
 - [ ] **Score the standalone peer-service topology** against the six host criteria (ST-100) — the decision directed this and did not conclude it
 - [ ] Preserve reliable, idempotent remote execution reporting across disconnection, replay, duplicate delivery, and invalid authentication
 - [ ] Keep the existing MCP memory slice operable with observable health, migration safety, and deterministic test isolation
@@ -48,7 +60,7 @@ The repository is mature brownfield work with a functional cloud MCP server, ext
 
 Architecture evolved from an early C# / SQLite design to the active Deno / PostgreSQL platform. For Contact Memory work, `docs/architecture/ai_memory_architecture_decisions.md` and ADR-012 supersede conflicting platform-era assumptions. The platform stores append-only shards; product layers own review, promotion, and domain-specific tools.
 
-**Updated 2026-08-26 — ST-088's units are all delivered and the host decision is taken.** ADR-016 is **Accepted** (rev 1.5): **Candidate A is rejected**, and AWCP becomes a **standalone peer service** with its own codebase and runtime, consuming ai-memory as an *optional, replaceable* context provider. It is explicitly **not** Candidate C — ai-memory stays live and is not retired. **ST-088 is Done as of 2026-08-27** — the sign-off PR ([#60](https://github.com/CAPeddle/ai-memory/pull/60)) merged as `86473ac`; the milestone is finished, not in flight, and both WIP slots are free. *(This read "sits in **Review** pending its sign-off PR" until that merge.)* The next boundary is the Horizon B–D milestone, which this closure unblocks.
+**Updated 2026-08-26 — ST-088's units are all delivered and the host decision is taken.** ADR-016 is **Accepted** (rev 1.5): **Candidate A is rejected**, and AWCP becomes a **standalone peer service** with its own codebase and runtime, consuming ai-memory as an *optional, replaceable* context provider. It is explicitly **not** Candidate C — ai-memory stays live and is not retired. **ST-088 is Done as of 2026-08-27** — the sign-off PR ([#60](https://github.com/CAPeddle/ai-memory/pull/60)) merged as `86473ac`; the milestone is finished, not in flight, and both WIP slots are free. *(This read "sits in **Review** pending its sign-off PR" until that merge.)* **Superseded 2026-08-28:** this line originally named "the Horizon B–D milestone" as the next boundary. That was corrected before v1.1 was scoped — Horizon B–D is AWCP capability build-out in a peer-service codebase that doesn't exist yet, gated on ST-100's still-unscored topology. v1.1 instead takes the concrete, ready-now backlog item: ST-082.
 
 **A resumed session must not re-plan against the rejected host.** Follow-on work is **ST-100** (score the peer-service topology, which the decision deliberately left unscored) and **ST-082**, whose framing changed: policy-scope enforcement is **ai-memory's own isolation obligation**, topology-neutral and required whether or not AWCP had ever shared this codebase — no longer gated on the host being settled, and no longer a co-tenancy tax. Threading `PolicyScope` through the read side, default-deny, is additionally a precondition of the AWCP adapter contract.
 
@@ -102,4 +114,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-28 after v1.0 milestone*
+*Last updated: 2026-08-28 after starting v1.1 milestone*
