@@ -71,25 +71,25 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| POLICY-01 | TBD | Pending |
-| POLICY-02 | TBD | Pending |
-| DECISION-01 | TBD | Pending |
-| RETRIEVAL-01 | TBD | Pending |
-| RETRIEVAL-02 | TBD | Pending |
-| RETRIEVAL-03 | TBD | Pending |
-| RETRIEVAL-04 | TBD | Pending |
-| GRAPH-01 | TBD | Pending |
-| GRAPH-02 | TBD | Pending |
-| EGRESS-01 | TBD | Pending |
-| VERIFY-01 | TBD | Pending |
-| VERIFY-02 | TBD | Pending |
-| VERIFY-03 | TBD | Pending |
+| POLICY-01 | Phase 5 | Pending |
+| POLICY-02 | Phase 5 | Pending |
+| DECISION-01 | Phase 5 | Pending |
+| RETRIEVAL-01 | Phase 6 | Pending |
+| RETRIEVAL-02 | Phase 6 | Pending |
+| RETRIEVAL-03 | Phase 6 | Pending |
+| RETRIEVAL-04 | Phase 6 | Pending |
+| GRAPH-01 | Phase 7 | Pending |
+| GRAPH-02 | Phase 7 | Pending |
+| EGRESS-01 | Phase 8 | Pending |
+| VERIFY-01 | Phase 9 | Pending |
+| VERIFY-02 | Phase 9 | Pending |
+| VERIFY-03 | Phase 9 | Pending |
 
 **Coverage:**
 - v1 requirements: 13 total
-- Mapped to phases: 0
-- Unmapped: 13 ⚠️ (roadmap not yet created)
+- Mapped to phases: 13
+- Unmapped: 0 ✓ (roadmap created 2026-08-28 — Phases 5-9)
 
 ---
 *Requirements defined: 2026-08-28*
-*Last updated: 2026-08-28 after initial definition*
+*Last updated: 2026-08-28 after roadmap creation (Phases 5-9, full coverage)*
