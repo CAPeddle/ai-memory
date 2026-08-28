@@ -22,10 +22,10 @@ Knowledge worth retaining must remain accurately recallable across tools, sessio
 - ✓ Search quality is measured against a seeded golden corpus with repeatable integration tests — existing test suite
 - ✓ Workflow Operations exposes opt-in packet, decision, checkpoint, dashboard, and CLI flows — ST-086/ST-087
 - ✓ Contact Memory can parse WhatsApp exports, review proposed facts, and commit approved shards through the platform MCP — existing `contact-memory/` slice
+- ✓ ST-088 Stage 2 evidence: policy-scope enforcement priced (64+ hrs), a remote Ubuntu execution node registers/reports/replays reliably against the hub, execution-blocking audited (UNPROVEN), and ADR-016's host recommendation finalized — v1.0 (reject Candidate A, direct a standalone AWCP peer service)
 
 ### Active
 
-- [x] Complete ST-088 Stage 2 evidence: price policy-scope enforcement, exercise a remote Ubuntu execution node, audit execution blocking, and finalize ADR-016's host recommendation — **done 2026-08-26**; ADR-016 Accepted, Candidate A rejected
 - [ ] Enforce default-deny policy scope across every memory retrieval and provider-egress path ~~before accepting co-tenancy as safe~~ — **rationale corrected 2026-08-26: this is required on ai-memory's own merits, not to make co-tenancy safe.** Co-tenancy was rejected and the obligation is unchanged and topology-neutral (ST-082). The read side carries no `PolicyScope` at all, which is also a precondition of the AWCP adapter contract
 - [ ] **Score the standalone peer-service topology** against the six host criteria (ST-100) — the decision directed this and did not conclude it
 - [ ] Preserve reliable, idempotent remote execution reporting across disconnection, replay, duplicate delivery, and invalid authentication
@@ -56,6 +56,8 @@ Retained as the record of what was current while the milestone ran: Current work
 
 The Docker test stack is isolated from development data but accumulates state during a container lifetime. Provider-dependent tests may fail locally when only placeholder OpenRouter credentials are present, while CI injects real credentials.
 
+**v1.0 shipped 2026-08-28.** 4 phases, 91 commits (`20aac70`..`86473ac`), 140 files changed, +40112/-247 LOC, 2026-08-05 → 2026-08-28. Archived to `.planning/milestones/v1.0-*`; full milestone record in `.planning/MILESTONES.md`. Phases 1 and 4 shipped through `docs/plans/` and the story board rather than `.planning/phases/`, so `/gsd-audit-milestone` scored the close `gaps_found` on tracking-artifact absence alone — the audit itself confirmed zero broken cross-phase links and full delivery evidence for every requirement; see MILESTONES.md's "Known gaps" note for the accepted overrides (W1: no read surface for node data; W3: `FEATURE_WORKFLOW` unauthenticated exposure, owned by ST-102).
+
 ## Constraints
 
 - **Architecture**: The active cloud server remains Deno 2.0 / TypeScript / Hono / MCP SDK on PostgreSQL 15 with pgvector and Apache AGE — binding ADR-009/ADR-011 decisions
@@ -80,6 +82,7 @@ The Docker test stack is isolated from development data but accumulates state du
 | Treat policy-scope pricing as an ADR-016 acceptance gate | Co-tenancy is unsafe until all retrieval and egress paths have a defended enforcement cost | ✓ Good — **gate discharged 2026-08-26.** Priced at 64+ hrs (findings §13), and the pricing did its job: it fed the decision that **rejected** co-tenancy. Enforcement itself is still unbuilt and stays with ST-082, topology-neutral |
 | Keep remote nodes outbound-only with no general-purpose shell | Minimizes attack surface while preserving execution evidence | — Pending |
 | Preserve existing board and unified plans alongside GSD tracking | Migration must not discard current delivery history or violate active WIP | ✓ Good |
+| Reject Candidate A (ai-memory as AWCP host); direct a standalone AWCP peer service instead | Reconciled all five ST-088 evidence inputs (pricing, node experiments, execution-blocking finding, shared-runtime blast radius, code drift) — a fourth outcome none of the three anticipated candidates named | ✓ Good — ADR-016 rev 1.5 Accepted 2026-08-26, merged PR #60. Peer-service topology itself is directed but unscored — ST-100 |
 
 ## Evolution
 
@@ -99,4 +102,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-05 after GSD brownfield initialization*
+*Last updated: 2026-08-28 after v1.0 milestone*

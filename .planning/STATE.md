@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: ST-088 Host Viability
-current_phase: 04
-current_phase_name: blocking-evidence-adr016-host-decision
-status: completed
-stopped_at: Milestone complete — ST-088 Done 2026-08-27 (PR #60, 86473ac)
-last_updated: "2026-08-27T00:00:00.000Z"
-last_activity: 2026-08-27
-last_activity_desc: ST-088 closed Review to Done; milestone finished
-state_head: 71d6a9693a456af8085a9d1d38f90cdb410457f8
+status: Awaiting next milestone
+stopped_at: "Milestone complete — ST-088 Done 2026-08-27 (PR #60, 86473ac)"
+last_updated: "2026-08-28T08:18:59.190Z"
+last_activity: 2026-08-28
+last_activity_desc: Milestone v1.0 completed and archived
+state_head: 82e8536d8fa7dc9170d41554e5c3c595e871cd81
 progress:
   total_phases: 4
-  completed_phases: 4
+  completed_phases: 0
   total_plans: 8
   completed_plans: 8
-  percent: 100
+  percent: 0
+current_phase: 04
+current_phase_name: blocking-evidence-adr016-host-decision
 ---
 
 # Project State
@@ -29,15 +29,10 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 
 ## Current Position
 
-Phase: 04 (blocking-evidence-adr016-host-decision) — **COMPLETE**
-Plan: 2 of 2
-Status: **Milestone complete.** All four phases closed; ROADMAP's Progress table is the authority and reads 4/4.
-Last activity: 2026-08-27 — ST-088 moved Review → Done, PR #60 merged to `main` as `86473ac`
-
-Progress: [██████████] 100%
-
-**Do not resume delivery work in this milestone.** It is closed. The next action is the
-milestone boundary itself — see *Next action* at the foot of this file.
+Phase: Milestone v1.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-08-28 — Milestone v1.0 completed and archived
 
 ## Performance Metrics
 
@@ -135,13 +130,16 @@ resuming session to a board section that no longer exists.
    as of 2026-08-27. ST-088 is under `## Done`. *(The previous step 2 here said "Read story board
    ST-088 In Progress section"; ST-088 left In Progress on 2026-08-26 and left Review on
    2026-08-27, so that instruction had been wrong twice over.)*
+
 2. Read `.planning/ROADMAP.md` — its header and Progress table both say the milestone is finished.
 3. `docs/investigations/ST-084-awcp-host-spike-findings.md` §12a is still the standing warning that
    cited claims move underneath a later reader — **re-verify every `file:line` before using it.**
    Two documents shifted under their own citations during the 2026-08-27 sweep.
+
 4. **Follow-on work is on the board, not here:** ST-100 (score the peer-service topology, which
    ADR-016 §1(b) directed rather than concluded), ST-101 (prism-wiki knowledge migration), ST-082
    (policy-scope enforcement — criterion 5, now ai-memory's own obligation, topology-neutral).
+
 5. Commit convention is unchanged: Conventional Commits with a `Story: ST-NNN` trailer as the final
    block, and **no `Co-authored-by:` on any branch commit** (see `CLAUDE.md` § Merge strategy).
 
@@ -180,3 +178,7 @@ obligation, topology-neutral; (3) threading `PolicyScope` through the read side 
 `/gsd-plan-phase 3`, with `03-CONTEXT.md`'s thirteen locked decisions, the verified z2
 reachability, and the `.mjs`-vs-`.js` supersession note. Phase 3 completed 2026-08-18 and Phase 4
 on 2026-08-26; those notes are now history, not instructions.*
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone
