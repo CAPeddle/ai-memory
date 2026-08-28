@@ -144,6 +144,7 @@ supporting reason, not the primary one.
 **Carried forward out of this phase** (neither is ST-088 work):
   - **The peer-service topology is unscored** against the six criteria A, B and C each received — findings §18.9 names it the largest gap in the *select* half, and ADR-016 §1(b) directs the scoring rather than concluding it. Needs its own story and a minted `ST-NNN`.
   - **Criterion 5** stays with **ST-082**, reframed: not a co-tenancy tax AWCP forces, but ai-memory's own isolation obligation on its own merits. Threading `PolicyScope` through the read side, default-deny, is a **precondition** of the adapter contract (findings §18.3, §18.8 Phase A).
+  - **The `FEATURE_WORKFLOW` disposition — added 2026-08-28, and it should have been here from the start.** Phase 3 routed this decision to Phase 4 by name (`03-VERIFICATION.md` human item 3; story board `:969`, *"Phase 4 owns it"*), and Phase 4 never received it: this block was written from Phase 4's own findings rather than from a sweep of what upstream had addressed to it, so the two items above were the whole list. `/gsd-audit-milestone` caught the omission on 2026-08-28 as **W3**, immediately before the milestone would have archived it unowned. Now owned by **ST-102**. *(The list is amended rather than left as written, because unlike criterion 2's enumeration below — which records a question honestly answered by a fourth outcome — this was an item silently absent, not an anticipation overtaken by evidence.)*
 
 **Plans**: TBD
 **UI hint**: no
