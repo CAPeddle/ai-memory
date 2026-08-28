@@ -50,7 +50,7 @@ None — discussion stayed within phase scope. The scoped-credential trust model
 
 This phase has two genuinely separable halves, and the plan should treat them as such. **POLICY-01/POLICY-02** are mechanical: add a `text NOT NULL CHECK (policy_scope IN ('personal','corporate','mixed','public'))` column with no `DEFAULT` to `thoughts`, following the exact pattern already shipped in `workflow.work_packets.policy_scope` (`server/db/workflow/001_workflow_schema.sql:48-49`), backfill existing rows to `'corporate'` per D-02, and ship a `shared/policyScope.ts` module mirroring `shared/tagGrammar.ts`. The non-obvious part is that this repo has **three schema-definition surfaces that must all move together** for a new column to actually exist everywhere the server expects it (fresh Docker builds, existing databases, and the migration test suite) — missing any one of the three leaves a database in a state where either the column is silently absent or `migrate.ts` tries to re-run DDL that already succeeded via a different path. Separately, **the two existing `INSERT INTO thoughts` call sites** (`capture_thought` and `consolidationWorker.ts`'s promote) do not currently supply a `policy_scope` value; once the column is `NOT NULL` with no default, both will hard-fail on the very next call unless the plan explicitly updates them, which is a corollary of POLICY-02's "no default-allow gap ... during or after migration" wording that CONTEXT.md's decisions do not name.
 
-**DECISION-01** is a real, unresolved architecture question and the research passes that fed CONTEXT.md are right that it needs a spike, not a read of this document. Both candidate mechanisms are technically sound; the deciding factors are pooling correctness and the shape of a mistake. Explicit `WHERE policy_scope = ANY($allowed)` predicates are simple and have zero pooling risk, but require correctness at every one of 15+ enumerable read paths — "14 of 15 right" is indistinguishable from wrong. Forced Postgres RLS closes that gap by making every current and future `SELECT` on `thoughts` safe by construction, but only if `SET LOCAL` (via `set_config(..., true)`, not the bare `SET` statement — see the Postgres bind-parameter limitation below) is applied correctly inside a `sql.begin()`-reserved connection on every request; the codebase has already been burned once by a *bare* `SET` leaking across the pool (`server/db/workflow/001_workflow_schema.sql:14-21`), so the spike must specifically prove `SET LOCAL`-in-transaction does not repeat that failure — which the underlying library's transaction semantics and a corroborating third-party discussion of the identical hazard both say it should not. The one design point this research adds beyond CONTEXT.md's framing: **whichever way the spike resolves, the production `thoughts` table must not have `FORCE ROW LEVEL SECURITY` actually enabled by this phase's migration**, because no other tool (`search_thoughts`, `capture_thought`, `thought_stats`, `fetch`, `search`, the three background workers) calls `withPolicyScope()` yet — forcing RLS now would make every one of those paths return zero rows or fail, which is a production outage caused by the "foundation" phase, not a later enforcement phase.
+**DECISION-01** is a real, unresolved architecture question and the research passes that fed CONTEXT.md are right that it needs a spike, not a read of this document. Both candidate mechanisms are technically sound; the deciding factors are pooling correctness and the shape of a mistake. Explicit `WHERE policy_scope = ANY($allowed)` predicates are simple and have zero pooling risk, but require correctness at every one of 15+ enumerable read paths — "14 of 15 right" is indistinguishable from wrong. Forced Postgres RLS closes that gap by making every current and future `SELECT` on `thoughts` safe by construction, but only if `SET LOCAL` (via `set_config(..., true)`, not the bare `SET` statement — see the Postgres bind-parameter limitation below) is applied correctly inside a `sql.begin()`-reserved connection on every request; the codebase has already been burned once by a *bare* `SET` leaking across the pool (`server/db/workflow/001_workflow_schema.sql:14-21`), so the spike must specifically prove `SET LOCAL`-in-transaction does not repeat that failure — which the underlying library's transaction semantics and a corroborating third-party discussion of the identical hazard both say it should not. **A related but distinct pooling hazard was found and empirically reproduced this session, and it moves the RLS predicate's design, not just its documentation:** after a `set_config(..., true)` transaction commits, the GUC on that connection reverts to an empty string, not `NULL` — so a naive fail-closed guard (`current_setting(...) IS NOT NULL`) still leaks every `public` row to an unscoped request that later reuses the same warm pooled connection. The correct guard is an allow-list (`current_setting(...) IN ('personal','corporate','mixed','public')`), confirmed against a throwaway Postgres container in this session (see Pattern 3 and Sources). The one design point this research adds beyond CONTEXT.md's framing: **whichever way the spike resolves, the production `thoughts` table must not have `FORCE ROW LEVEL SECURITY` actually enabled by this phase's migration**, because no other tool (`search_thoughts`, `capture_thought`, `thought_stats`, `fetch`, `search`, the three background workers) calls `withPolicyScope()` yet — forcing RLS now would make every one of those paths return zero rows or fail, which is a production outage caused by the "foundation" phase, not a later enforcement phase.
 
 **Primary recommendation:** Ship the column via a `007_policy_scope.sql` migration (data-only: add, backfill, constrain — no RLS), updated in lockstep with `schema.sql`, `migrate.ts`'s `detectBootstrapVersions()`, and `migrations.test.ts`'s hardcoded version lists; update both `INSERT INTO thoughts` sites to supply an interim scope value; and resolve DECISION-01 with a **committed-and-torn-down spike against `db-test`** (not an in-transaction rollback — see Pitfall 2) that exercises the real `withPolicyScope()` helper and a real `FORCE ROW LEVEL SECURITY` policy on the actual pooled connection, asserting the full D-03 visibility matrix plus the absent-GUC fail-closed case.
 
@@ -216,11 +216,20 @@ import { z } from "zod";
 export const PolicyScopeSchema = z.enum(POLICY_SCOPES);
 ```
 
-### Pattern 3: Fail-closed RLS predicate — the absent-GUC case must be a named branch, not implicit
+### Pattern 3: Fail-closed RLS predicate — the absent-GUC case must be a named branch, not implicit, and must also close the *empty-string* case a reused pooled connection produces
 
-**What:** A `CREATE POLICY ... USING (...)` boolean expression that denies (not permits) when the session GUC is unset.
+**What:** A `CREATE POLICY ... USING (...)` boolean expression that denies (not permits) when the session GUC is unset — where "unset" has **two** distinct on-the-wire representations, not one, on a pooled connection.
 
-**Why it matters:** A predicate of the shape `policy_scope = 'public' OR policy_scope = current_setting('app.policy_scope', true)` **fails open for public rows** when the GUC is unset: `policy_scope = NULL` evaluates to `NULL` (falsy), but `policy_scope = 'public'` is still `TRUE` independent of the GUC — so an unscoped/malformed request would see every `public` row. `.planning/STATE.md`'s binding constraint ("Fail-closed, not fail-open... Absence of scope must deny") and VERIFY-02's required "absent-scope denial" test both require the explicit guard:
+**Why it matters — attempt 1, incomplete:** A predicate of the shape `policy_scope = 'public' OR policy_scope = current_setting('app.policy_scope', true)` **fails open for public rows** when the GUC is unset: `policy_scope = NULL` evaluates to `NULL` (falsy), but `policy_scope = 'public'` is still `TRUE` independent of the GUC — so an unscoped/malformed request would see every `public` row. `.planning/STATE.md`'s binding constraint ("Fail-closed, not fail-open... Absence of scope must deny") and VERIFY-02's required "absent-scope denial" test both require an explicit guard, so a first attempt adds `current_setting('app.policy_scope', true) IS NOT NULL`. **This first attempt is still wrong on a reused pooled connection**, which is empirically confirmed in this session, not merely reasoned about:
+
+```sql
+-- Empirically verified against a throwaway postgres:15 container, this session:
+--   SELECT current_setting('app.policy_scope', true) IS NULL;         -- true, on a connection that NEVER set the GUC
+--   BEGIN; SELECT set_config('app.policy_scope', 'personal', true); COMMIT;
+--   SELECT current_setting('app.policy_scope', true) IS NULL;         -- false — value is now '' (empty string), NOT NULL
+--   SELECT current_setting('app.policy_scope', true) = '';            -- true
+```
+[VERIFIED: empirical test, this session, against `postgres:15` via a throwaway Docker container — see exact transcript in the Sources section]. On a `postgres.js`-pooled connection (`max: 10`), the pool reuses physical connections across unrelated requests. Once **any** request has run a scoped `withPolicyScope()` transaction to completion on a given connection, that connection's `app.policy_scope` GUC is no longer NULL — it is `''` (empty string) — for every subsequent query on that same connection, until another `set_config(..., true)` transaction overwrites it. An `IS NOT NULL` guard **does not catch `''`**, so a later *unscoped* request that happens to land on that same warm connection would still leak every `public` row, which is the exact "14 of 15 right is the same as wrong" failure class this entire mechanism exists to close — just relocated from the WHERE-clause-per-path problem into the RLS predicate itself.
 
 ```sql
 -- Fails OPEN for public rows when app.policy_scope is unset — DO NOT USE:
@@ -230,7 +239,8 @@ CREATE POLICY policy_scope_isolation ON thoughts
     OR policy_scope = current_setting('app.policy_scope', true)
   );
 
--- Fails CLOSED — the form the spike must actually test:
+-- Still fails OPEN for public rows on a REUSED pooled connection — closes the NULL
+-- case but not the empty-string case a prior committed transaction leaves behind:
 CREATE POLICY policy_scope_isolation ON thoughts
   USING (
     current_setting('app.policy_scope', true) IS NOT NULL
@@ -239,8 +249,23 @@ CREATE POLICY policy_scope_isolation ON thoughts
       OR policy_scope = current_setting('app.policy_scope', true)
     )
   );
+
+-- Fails CLOSED in both cases — the form the spike must actually test. An
+-- allow-list guard (IN the closed vocabulary) rejects NULL, '', and any other
+-- stray value in one clause, rather than trying to enumerate what "unset" looks
+-- like on every possible connection history:
+CREATE POLICY policy_scope_isolation ON thoughts
+  USING (
+    current_setting('app.policy_scope', true) IN ('personal', 'corporate', 'mixed', 'public')
+    AND (
+      policy_scope = 'public'
+      OR policy_scope = current_setting('app.policy_scope', true)
+    )
+  );
 ```
-This single predicate correctly implements the entire D-03 visibility matrix (`personal`→`{personal,public}`, `corporate`→`{corporate,public}`, `mixed`→`{mixed,public}`) in one expression — no per-scope branching is needed, because "sees itself, plus public" is symmetric across all three values. The spike's assertions should therefore be: (a) each of the three scopes sees exactly `{itself, public}` and nothing else; (b) the GUC unset case returns zero rows, including zero `public` rows; (c) `public`-declared scope sees only `public` rows (see Open Questions — D-03 doesn't explicitly say what a `public`-declaring caller sees, but this predicate's natural behavior is "only public," which is the conservative, spec-consistent reading).
+[VERIFIED: empirical test, this session — the `IS NOT NULL`-guarded predicate returned a `public` row against a reused connection carrying a leftover `''` GUC value; the `IN (...)`-guarded predicate returned zero rows against the identical reused-connection state. Full transcript in Sources.]
+
+This corrected predicate still correctly implements the entire D-03 visibility matrix (`personal`→`{personal,public}`, `corporate`→`{corporate,public}`, `mixed`→`{mixed,public}`) in one expression — no per-scope branching is needed, because "sees itself, plus public" is symmetric across all three values. The spike's assertions must therefore include a **fourth** case beyond the three obvious ones: (a) each of the three scopes sees exactly `{itself, public}` and nothing else; (b) a **fresh, never-scoped** connection's unscoped query returns zero rows, including zero `public` rows; (c) `public`-declared scope sees only `public` rows (see Open Questions — D-03 doesn't explicitly say what a `public`-declaring caller sees, but this predicate's natural behavior is "only public," which is the conservative, spec-consistent reading); **(d) a connection that has just completed a scoped `withPolicyScope()` transaction, then receives an unscoped query on the same connection (simulating pool reuse), also returns zero rows, including zero `public` rows** — this is the case that actually exercises D-04's reason for existing, and a spike that only tests case (b) on fresh connections would green-light a predicate with exactly this latent hole.
 
 ### Pattern 4: `SET LOCAL` cannot take a bind parameter — use `set_config()` instead
 
@@ -365,11 +390,13 @@ export async function withPolicyScope<T>(
 ```sql
 -- Source: PostgreSQL Row Security Policies docs, https://www.postgresql.org/docs/current/ddl-rowsecurity.html
 -- [CITED: postgresql.org/docs/current/ddl-rowsecurity.html]
+-- Guard uses an allow-list (IN), not IS NOT NULL — see Pattern 3 for why IS NOT NULL
+-- alone is empirically insufficient on a reused pooled connection.
 ALTER TABLE thoughts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE thoughts FORCE ROW LEVEL SECURITY; -- required: table owner otherwise bypasses RLS entirely
 CREATE POLICY policy_scope_isolation ON thoughts
   USING (
-    current_setting('app.policy_scope', true) IS NOT NULL
+    current_setting('app.policy_scope', true) IN ('personal', 'corporate', 'mixed', 'public')
     AND (
       policy_scope = 'public'
       OR policy_scope = current_setting('app.policy_scope', true)
@@ -413,9 +440,21 @@ This backfill `UPDATE` fires **no** trigger on `thoughts`: `trg_queue_consolidat
 | A2 | A caller declaring `scope: 'public'` (once retrieval enforcement exists, Phase 6+) sees only `public` rows, not `{public, corporate}` or any wider set | Pattern 3 | D-03 only states what `personal`/`corporate`/`mixed` see; `public`'s own "what does it see" case is not explicitly stated. The natural behavior of the recommended single-predicate implementation is "public sees only public," which is the conservative reading, but this should be confirmed as an explicit row in the visibility matrix deliverable rather than left implicit |
 | A3 | Postgres treats `ALTER TABLE ... ENABLE\|FORCE ROW LEVEL SECURITY` and `CREATE POLICY` as fully transactional DDL (rollback-safe) | Pitfall 2 | General, very well-established PostgreSQL behavior (unlike MySQL, virtually all DDL in Postgres is transactional) but not independently re-verified against the current docs in this session; the spike's own commit-and-teardown design (Pitfall 2) does not depend on this assumption being true, so the risk is contained to the (not-recommended) savepoint-emulation alternative |
 
-**Note:** Every other claim in this document is `[VERIFIED: <file>:<lines>]` (in-repo, read this session with an accompanying verbatim quote) or `[CITED: <url>]` (official docs / Context7 / a specific third-party discussion). Package versions are `[VERIFIED: npm registry]` via direct `npm view` calls this session.
+**Note:** Every other claim in this document is `[VERIFIED: <file>:<lines>]` (in-repo, read this session with an accompanying verbatim quote), `[VERIFIED: empirical test]` (reproduced against a throwaway `postgres:15` container this session — transcript in Sources), or `[CITED: <url>]` (official docs / Context7 / a specific third-party discussion). Package versions are `[VERIFIED: npm registry]` via direct `npm view` calls this session.
 
-## Open Questions
+## Runtime State Inventory
+
+This phase adds a `NOT NULL` column and backfills existing data, which is the migration/data-transition class this section exists for — even though it is additive (no rename), the same "what runtime state still has the old shape after the code changes" question applies to every pre-existing row.
+
+| Category | Items Found | Action Required |
+|----------|-------------|------------------|
+| Stored data | Every existing row in `public.thoughts` (an unknown-but-nonzero count of `shard`/`wiki` rows accumulated since v1.0) currently has no `policy_scope` concept at all. | Data migration: the `007_policy_scope.sql` backfill (`UPDATE ... SET policy_scope = 'corporate' WHERE policy_scope IS NULL`, D-02) — this is the entire POLICY-02 deliverable, not a side effect. |
+| Live service config | None found. `policy_scope` is a new column with no analogue in any external service's own configuration (no n8n/Datadog/Tailscale/Cloudflare surface touches `thoughts`). | None. |
+| OS-registered state | None found. No OS-level task/process registration references `policy_scope` or `thoughts` schema shape. | None. |
+| Secrets/env vars | None found. No secret or env var name changes; `DATABASE_URL`, `MEMORY_API_KEY` etc. are unaffected by this column addition. | None. |
+| Build artifacts | None found. No compiled/installed artifact embeds the `thoughts` column list; the Deno server reads schema at query time, not at build time. The one build-adjacent risk is covered under Pitfall 4 (schema-definition-surface lockstep), which is a migration-authoring correctness issue, not a stale build artifact. | None beyond Pitfall 4's four-file update. |
+
+
 
 1. **Do `recall_events`/`recall_queries` gain a `policy_scope` column in this phase, or in Phase 6/9?**
    - What we know: SUMMARY.md's Phase-1 sketch mentions adding scope columns to both tables "at the same migration as `thoughts.policy_scope`" [CITED: `.planning/research/SUMMARY.md:66`], reasoning that these tables are an "exports/introspection surface" that would otherwise leak cross-scope query text to any future dashboard/admin tool.
@@ -456,7 +495,7 @@ This backfill `UPDATE` fires **no** trigger on `thoughts`: `trg_queue_consolidat
 | POLICY-01 | `thoughts.policy_scope` `CHECK` constraint rejects an out-of-vocabulary value at the DB layer | integration | `docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/policy-scope-migration.test.ts` | ❌ Wave 0 |
 | POLICY-02 | Migration backfills every pre-existing NULL row to `'corporate'`; post-migration, `INSERT`ing without `policy_scope` fails; `capture_thought`/`consolidationWorker` inserts (as updated) succeed with the interim value | integration | same file as above | ❌ Wave 0 |
 | POLICY-02 | Migration framework's version-list assertions include `7`/`"007_policy_scope.sql"` | regression | `docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/migrations.test.ts` | ✅ (extend existing) |
-| DECISION-01 | Spike proves the visibility matrix (each scope sees `{itself, public}`), the absent-GUC fail-closed case, and — if RLS is chosen — that `SET LOCAL`/`set_config` scoping survives a real pool checkout under concurrent scope values | integration (`db-test`, committed-and-torn-down per Pitfall 2) | `docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/policy-scope-rls-spike.test.ts` | ❌ Wave 0 |
+| DECISION-01 | Spike proves the visibility matrix (each scope sees `{itself, public}`), the fresh-connection absent-GUC fail-closed case, **the reused-connection empty-string fail-closed case** (Pattern 3, case (d) — empirically confirmed to leak `public` rows if guarded with `IS NOT NULL` alone), and — if RLS is chosen — that `set_config` scoping survives a real pool checkout under concurrent scope values | integration (`db-test`, committed-and-torn-down per Pitfall 2) | `docker compose --profile test exec mcp-test deno test --frozen --allow-net --allow-env --allow-read tests/policy-scope-rls-spike.test.ts` | ❌ Wave 0 |
 
 ### Sampling Rate
 - **Per task commit:** run the specific new/changed test file via the quick-run command above.
@@ -511,6 +550,27 @@ This backfill `UPDATE` fires **no** trigger on `thoughts`: `trg_queue_consolidat
 - [PostgreSQL current docs — Configuration Settings Functions (`set_config`)](https://www.postgresql.org/docs/current/functions-admin.html) — `set_config()` signature and transaction-scoping semantics
 - `.planning/REQUIREMENTS.md`, `.planning/STATE.md`, `.planning/phases/05-policy-scope-foundation/05-CONTEXT.md` (this session) — locked decisions and binding constraints
 - `docs/investigations/ST-084-awcp-host-spike-findings.md` §6.1, §6.3, §13.1-13.6 (this session) — the original 15-path pricing table and the "no single chokepoint" finding
+
+### Empirical (HIGH confidence — reproduced this session)
+- **Throwaway `postgres:15` Docker container** (`docker run --name pgguctest postgres:15`, destroyed after the test — never touched this project's `db`/`db-test`), used to directly settle the reused-pooled-connection GUC-revert question rather than trust either research pass's or the advisor's unverified claim about it. Transcript:
+  ```
+  -- fresh session, GUC never set:
+  SELECT current_setting('app.policy_scope', true) IS NULL;   -- t
+
+  BEGIN;
+  SELECT set_config('app.policy_scope', 'personal', true);
+  COMMIT;
+
+  -- same session, after commit (simulates a pooled connection returned to the pool
+  -- and then checked out again for an unrelated, unscoped request):
+  SELECT current_setting('app.policy_scope', true) IS NULL;        -- f
+  SELECT current_setting('app.policy_scope', true) = '';           -- t
+
+  -- policy predicate comparison on a 4-row table (one row per scope value),
+  -- same reused-connection state as above, no new set_config issued:
+  --   IS NOT NULL guard  -> returns the 'public' row (LEAK)
+  --   IN (...) guard     -> returns 0 rows (correct)
+  ```
 
 ### Secondary (MEDIUM confidence)
 - [SET LOCAL isolation under transaction-mode pooling — Supabase GitHub Discussion #47946](https://github.com/orgs/supabase/discussions/47946) — corroborates that `SET LOCAL`/`set_config(..., true)` inside an explicit transaction is isolated between clients on a pooled connection, and that a bare session-level `SET` is the actual leak vector (matches this codebase's own documented AGE bug)
