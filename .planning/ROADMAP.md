@@ -43,7 +43,10 @@ Full phase detail, success criteria, and requirement coverage: [milestones/v1.0-
   1. Every thought (new and pre-existing) carries a non-null `policy_scope` value from the closed vocabulary (`personal`/`corporate`/`mixed`/`public`) — no row exists in a default-allow gap during or after migration.
   2. A written threat-model/trust-boundary statement documents the chosen primary SQL enforcement mechanism (Row-Level Security vs. explicit WHERE clauses), validated by a technical spike against one real query path.
   3. A cross-scope visibility matrix specifies what each scope value may see (e.g., does `personal` see `public`? what does `mixed` grant?), ready for every subsequent phase to implement against.
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 05-01-PLAN.md — Policy-scope vocabulary, migration (007), and insert-site fixes (POLICY-01, POLICY-02)
+- [ ] 05-02-PLAN.md — DECISION-01 spike (RLS vs. WHERE) and ADR-018 (mechanism, trust boundary, visibility matrix)
 
 ### Phase 6: SQL Retrieval Enforcement
 **Goal**: Every SQL-backed retrieval surface denies out-of-scope content by default, closing the standing fetch/search bypass.
@@ -96,7 +99,7 @@ Phases execute in numeric order: 5 → 6 → 7 → 8 → 9
 | 2. Remote Node Identity & Hub | v1.0 | 2/2 | Complete | 2026-08-06 |
 | 3. Node Client, Reliable Delivery & Regression Safety | v1.0 | 6/6 | Complete | 2026-08-18 |
 | 4. Blocking Evidence & ADR-016 Host Decision | v1.0 | — | Complete | 2026-08-26 |
-| 5. Policy-Scope Foundation | v1.1 | 0/TBD | Not started | - |
+| 5. Policy-Scope Foundation | v1.1 | 0/2 | Not started | - |
 | 6. SQL Retrieval Enforcement | v1.1 | 0/TBD | Not started | - |
 | 7. Graph-Lane Scope Isolation | v1.1 | 0/TBD | Not started | - |
 | 8. Provider-Egress Scope Gating | v1.1 | 0/TBD | Not started | - |
