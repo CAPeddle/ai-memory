@@ -107,6 +107,11 @@ The semantic-memory half of the system — the durable store of captured knowled
 
 The separation is structural, not conventional: operational records live in their own schema, carry no foreign key into the Memory Domain, and the whole operational flow completes with the Memory Domain absent rather than merely degraded.
 
+### Capability Slot
+A capability Workflow Operations consumes from outside itself, named by what is needed rather than by the product that currently supplies it.
+
+A slot is defined by its contract, and the contract survives the provider behind it being replaced — so the [Memory Domain](#memory-domain) occupies the knowledge slot without defining it. The wire form is an adapter's concern and is deliberately not part of the slot: an in-process call and a network call are the same slot differently adapted. Two properties follow. A slot's provider is never assumed singular or permanent, so nothing may be written against the identity of the product behind it. And a slot must be absent-tolerant in the same sense the Memory Domain already is — the operational flow completes with the provider gone, rather than degrading — which is what makes replacement a configuration change instead of a migration.
+
 ## Verification Practice
 
 These name a distinction this project draws sharply and relies on in code comments as well
