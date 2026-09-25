@@ -9,8 +9,8 @@ Requirements for the v1.1 milestone. Each maps to roadmap phases.
 
 ### Vocabulary
 
-- [ ] **POLICY-01**: A closed-vocabulary `policy_scope` field (`personal` | `corporate` | `mixed` | `public`) exists on thoughts, distinct from free-form descriptive tags (ADR-012's tag vocabulary unchanged)
-- [ ] **POLICY-02**: Existing thoughts are backfilled to a scope value with no default-allow gap during the transition
+- [x] **POLICY-01**: A closed-vocabulary `policy_scope` field (`personal` | `corporate` | `mixed` | `public`) exists on thoughts, distinct from free-form descriptive tags (ADR-012's tag vocabulary unchanged)
+- [x] **POLICY-02**: Existing thoughts are backfilled to a scope value with no default-allow gap during the transition
 
 ### Enforcement Decision
 
@@ -71,8 +71,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| POLICY-01 | Phase 5 | Pending |
-| POLICY-02 | Phase 5 | Pending |
+| POLICY-01 | Phase 5 | Complete |
+| POLICY-02 | Phase 5 | Complete |
 | DECISION-01 | Phase 5 | Pending |
 | RETRIEVAL-01 | Phase 6 | Pending |
 | RETRIEVAL-02 | Phase 6 | Pending |
@@ -86,6 +86,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | VERIFY-03 | Phase 9 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 13 total
 - Mapped to phases: 13
 - Unmapped: 0 ✓ (roadmap created 2026-08-28 — Phases 5-9)

@@ -5,17 +5,17 @@ milestone_name: Policy-Scope Isolation
 current_phase: 05
 current_phase_name: Policy-Scope Foundation
 status: executing
-stopped_at: Phase 5 context gathered
-last_updated: "2026-09-25T21:08:32.413Z"
+stopped_at: Completed 05-01-PLAN.md
+last_updated: "2026-09-25T21:27:57.700Z"
 last_activity: 2026-09-25
 last_activity_desc: Phase 05 execution started
-state_head: 5e7fbba73361ddeaaa29ec8b4fb47bb4d3431e2f
+state_head: 06fe76edcd7002bb42bc1d43d23bf59b46a18a44
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 2
-  completed_plans: 0
-  percent: 0
+  completed_plans: 1
+  percent: 50
 ---
 
 # Project State
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-08-28)
 ## Current Position
 
 Phase: 05 (Policy-Scope Foundation) — EXECUTING
-Plan: 1 of 2
-Status: Executing Phase 05
+Plan: 2 of 2
+Status: Ready to execute
 Last activity: 2026-09-25 — Phase 05 execution started
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -62,6 +62,11 @@ v1.0 velocity (91 commits, 8 GSD-tracked plans across Phases 2-3) is archived in
 - Trend: —
 
 *Updated after each plan completion*
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 05 P01 | 16 min | 3 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -74,6 +79,8 @@ Recent decisions affecting current work:
 - **Open, by design — Phase 5 resolves it:** The primary SQL enforcement mechanism (Row-Level Security vs. explicit per-path WHERE clauses) is genuinely undecided. STACK.md and ARCHITECTURE.md research passes disagree (RLS pooling/owner-exemption hazard vs. no-chokepoint risk of 15 enumerable WHERE-clause sites). Resolve via a technical spike against one real path (e.g. `list_thoughts`) before committing the remaining phases to either mechanism.
 - **Sequencing constraint carried into Phase 7:** Graph write-path scope identity (GRAPH-01) must land before graph read-path filtering (GRAPH-02) — filtering already-fused entity nodes is enforcement without effect.
 - **Fail-closed, not fail-open:** Do not copy the existing `project` context filter's fail-open shape. Absence of scope must deny, matching PROJECT.md's binding constraint.
+- [Phase 05]: promote() carries policy_scope forward from the source shard; capture_thought writes interim 'corporate' (D-05); thoughts.policy_scope has no DEFAULT
+- [Phase 05]: Phase 5 plan work lives on branch gsd/phase-05-policy-scope-foundation (main reported protected by the executor guard)
 
 ### Roadmap Evolution
 
@@ -104,9 +111,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-08-28T11:16:12.153Z
-Stopped at: Phase 5 context gathered
-Resume file: .planning/phases/05-policy-scope-foundation/05-CONTEXT.md
+Last session: 2026-09-25T21:27:57.675Z
+Stopped at: Completed 05-01-PLAN.md
+Resume file: None
 
 ### Key file locations
 

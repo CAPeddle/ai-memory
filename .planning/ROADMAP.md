@@ -48,11 +48,11 @@ Full phase detail, success criteria, and requirement coverage: [milestones/v1.0-
   2. A written threat-model/trust-boundary statement documents the chosen primary SQL enforcement mechanism (Row-Level Security vs. explicit WHERE clauses), validated by a technical spike against one real query path.
   3. A cross-scope visibility matrix specifies what each scope value may see (e.g., does `personal` see `public`? what does `mixed` grant?), ready for every subsequent phase to implement against.
 
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 Plans:
 **Wave 1**
 
-- [ ] 05-01-PLAN.md — Policy-scope vocabulary, migration (007), and insert-site fixes (POLICY-01, POLICY-02)
+- [x] 05-01-PLAN.md — Policy-scope vocabulary, migration (007), and insert-site fixes (POLICY-01, POLICY-02)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -111,7 +111,9 @@ Plans:
 **Plans**: TBD
 
 ### Phase 10: Planning Migration Handover
+
 **Goal**: ai-memory's own planning runs on GSD from v1.2 onward. Delivers ST-095, extended 2026-09-25 to absorb ST-097 Workstream A units A4–A7 (see `docs/plans/2026-08-23-2245-chore-st097-gsd-pivot-board-split-awcp-status-slice-plan.md` §Workstream A):
+
 - ST-095's governance boundary: CLAUDE.md "which system drives what", a `.planning/` source-of-truth tier, a mechanical `Story:`-trailer check.
 - A4: freeze the board's Done and Archived entries as an append-only delivery ledger.
 - A5: stage the Backlog into `.planning/backlog-candidates.md`, with a named ingestion path into `/gsd-new-milestone` for v1.2.
@@ -134,7 +136,7 @@ Phases execute in numeric order: 5 → 6 → 7 → 8 → 9
 | 2. Remote Node Identity & Hub | v1.0 | 2/2 | Complete | 2026-08-06 |
 | 3. Node Client, Reliable Delivery & Regression Safety | v1.0 | 6/6 | Complete | 2026-08-18 |
 | 4. Blocking Evidence & ADR-016 Host Decision | v1.0 | — | Complete | 2026-08-26 |
-| 5. Policy-Scope Foundation | v1.1 | 0/2 | Not started | - |
+| 5. Policy-Scope Foundation | v1.1 | 1/2 | In Progress|  |
 | 6. SQL Retrieval Enforcement | v1.1 | 0/TBD | Not started | - |
 | 7. Graph-Lane Scope Isolation | v1.1 | 0/TBD | Not started | - |
 | 8. Provider-Egress Scope Gating | v1.1 | 0/TBD | Not started | - |
