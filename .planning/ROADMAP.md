@@ -33,6 +33,7 @@ Full phase detail, success criteria, and requirement coverage: [milestones/v1.0-
 - [ ] **Phase 7: Graph-Lane Scope Isolation** - Scope-aware entity identity and graph query enforcement
 - [ ] **Phase 8: Provider-Egress Scope Gating** - Background workers stop sending out-of-scope content to OpenRouter
 - [ ] **Phase 9: Port Contract & Full Isolation Verification** - Typed port parameter, full negative-isolation test suite, denial logging
+- [ ] **Phase 10: Planning Migration Handover** - ai-memory's planning moves onto GSD (ST-095 + ST-097 A4–A7) so v1.2 starts on GSD
 
 ## Phase Details
 
@@ -109,6 +110,19 @@ Plans:
 
 **Plans**: TBD
 
+### Phase 10: Planning Migration Handover
+**Goal**: ai-memory's own planning runs on GSD from v1.2 onward. Delivers ST-095, extended 2026-09-25 to absorb ST-097 Workstream A units A4–A7 (see `docs/plans/2026-08-23-2245-chore-st097-gsd-pivot-board-split-awcp-status-slice-plan.md` §Workstream A):
+- ST-095's governance boundary: CLAUDE.md "which system drives what", a `.planning/` source-of-truth tier, a mechanical `Story:`-trailer check.
+- A4: freeze the board's Done and Archived entries as an append-only delivery ledger.
+- A5: stage the Backlog into `.planning/backlog-candidates.md`, with a named ingestion path into `/gsd-new-milestone` for v1.2.
+- A6: governance handover, including an active-work policy replacing the WIP limits and an executable boundary-sync check.
+- A7: the partitioned `story-board` reference sweep, edit set only, frozen record untouched.
+
+Existing `docs/plans/` and ExecPlans stay as historical record.
+**Depends on**: Phase 9 (closes v1.1; runs last so v1.1's phases finish under the current workflow)
+**Requirements**: TBD (ST-095 acceptance criteria + ST-097 A4–A7 pass conditions)
+**Plans**: TBD (run /gsd-plan-phase 10)
+
 ## Progress
 
 **Execution Order:**
@@ -125,6 +139,7 @@ Phases execute in numeric order: 5 → 6 → 7 → 8 → 9
 | 7. Graph-Lane Scope Isolation | v1.1 | 0/TBD | Not started | - |
 | 8. Provider-Egress Scope Gating | v1.1 | 0/TBD | Not started | - |
 | 9. Port Contract & Full Isolation Verification | v1.1 | 0/TBD | Not started | - |
+| 10. Planning Migration Handover | v1.1 | 0/TBD | Not started | - |
 
 ---
 

@@ -75,6 +75,10 @@ Recent decisions affecting current work:
 - **Sequencing constraint carried into Phase 7:** Graph write-path scope identity (GRAPH-01) must land before graph read-path filtering (GRAPH-02) — filtering already-fused entity nodes is enforcement without effect.
 - **Fail-closed, not fail-open:** Do not copy the existing `project` context filter's fail-open shape. Absence of scope must deny, matching PROJECT.md's binding constraint.
 
+### Roadmap Evolution
+
+- Phase 10 added (2026-09-25): Planning Migration Handover — ST-095 extended with ST-097 Workstream A (A4–A7), split back from CAPeddle/awcp#20; closes v1.1 so v1.2 starts on GSD.
+
 ### Pending Todos
 
 None yet.
