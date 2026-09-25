@@ -14,7 +14,7 @@ Requirements for the v1.1 milestone. Each maps to roadmap phases.
 
 ### Enforcement Decision
 
-- [ ] **DECISION-01**: The primary SQL enforcement mechanism (Row-Level Security vs. explicit per-path `WHERE` clauses) is chosen via a technical spike, with a written threat-model/trust-boundary statement and a cross-scope visibility matrix (does `personal` see `public`? what does `mixed` grant?)
+- [x] **DECISION-01**: The primary SQL enforcement mechanism (Row-Level Security vs. explicit per-path `WHERE` clauses) is chosen via a technical spike, with a written threat-model/trust-boundary statement and a cross-scope visibility matrix (does `personal` see `public`? what does `mixed` grant?)
 
 ### Retrieval
 
@@ -73,7 +73,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | POLICY-01 | Phase 5 | Complete |
 | POLICY-02 | Phase 5 | Complete |
-| DECISION-01 | Phase 5 | Pending |
+| DECISION-01 | Phase 5 | Complete |
 | RETRIEVAL-01 | Phase 6 | Pending |
 | RETRIEVAL-02 | Phase 6 | Pending |
 | RETRIEVAL-03 | Phase 6 | Pending |

@@ -48,7 +48,7 @@ Full phase detail, success criteria, and requirement coverage: [milestones/v1.0-
   2. A written threat-model/trust-boundary statement documents the chosen primary SQL enforcement mechanism (Row-Level Security vs. explicit WHERE clauses), validated by a technical spike against one real query path.
   3. A cross-scope visibility matrix specifies what each scope value may see (e.g., does `personal` see `public`? what does `mixed` grant?), ready for every subsequent phase to implement against.
 
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans executed
 Plans:
 **Wave 1**
 
@@ -56,7 +56,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 05-02-PLAN.md — DECISION-01 spike (RLS vs. WHERE) and ADR-018 (mechanism, trust boundary, visibility matrix)
+- [x] 05-02-PLAN.md — DECISION-01 spike (RLS vs. WHERE) and ADR-018 (mechanism, trust boundary, visibility matrix)
 
 ### Phase 6: SQL Retrieval Enforcement
 
@@ -136,7 +136,7 @@ Phases execute in numeric order: 5 → 6 → 7 → 8 → 9
 | 2. Remote Node Identity & Hub | v1.0 | 2/2 | Complete | 2026-08-06 |
 | 3. Node Client, Reliable Delivery & Regression Safety | v1.0 | 6/6 | Complete | 2026-08-18 |
 | 4. Blocking Evidence & ADR-016 Host Decision | v1.0 | — | Complete | 2026-08-26 |
-| 5. Policy-Scope Foundation | v1.1 | 1/2 | In Progress|  |
+| 5. Policy-Scope Foundation | v1.1 | 2/2 | In Progress|  |
 | 6. SQL Retrieval Enforcement | v1.1 | 0/TBD | Not started | - |
 | 7. Graph-Lane Scope Isolation | v1.1 | 0/TBD | Not started | - |
 | 8. Provider-Egress Scope Gating | v1.1 | 0/TBD | Not started | - |

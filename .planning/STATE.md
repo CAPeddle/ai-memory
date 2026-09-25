@@ -4,18 +4,18 @@ milestone: v1.1
 milestone_name: Policy-Scope Isolation
 current_phase: 05
 current_phase_name: Policy-Scope Foundation
-status: executing
-stopped_at: Completed 05-01-PLAN.md
-last_updated: "2026-09-25T21:27:57.700Z"
+status: verifying
+stopped_at: Completed 05-02-PLAN.md
+last_updated: "2026-09-25T21:44:00.643Z"
 last_activity: 2026-09-25
 last_activity_desc: Phase 05 execution started
-state_head: 06fe76edcd7002bb42bc1d43d23bf59b46a18a44
+state_head: 834cb647e21996a73430a2f868cdc0a9d441ab8b
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 2
-  completed_plans: 1
-  percent: 50
+  completed_plans: 2
+  percent: 67
 ---
 
 # Project State
@@ -31,10 +31,10 @@ See: .planning/PROJECT.md (updated 2026-08-28)
 
 Phase: 05 (Policy-Scope Foundation) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-25 — Phase 05 execution started
 
-Progress: [█████░░░░░] 50%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
@@ -67,6 +67,7 @@ v1.0 velocity (91 commits, 8 GSD-tracked plans across Phases 2-3) is archived in
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 05 P01 | 16 min | 3 tasks | 17 files |
+| Phase 05 P02 | 12min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -81,6 +82,8 @@ Recent decisions affecting current work:
 - **Fail-closed, not fail-open:** Do not copy the existing `project` context filter's fail-open shape. Absence of scope must deny, matching PROJECT.md's binding constraint.
 - [Phase 05]: promote() carries policy_scope forward from the source shard; capture_thought writes interim 'corporate' (D-05); thoughts.policy_scope has no DEFAULT
 - [Phase 05]: Phase 5 plan work lives on branch gsd/phase-05-policy-scope-foundation (main reported protected by the executor guard)
+- [Phase 05]: 05-02: DECISION-01 resolved as Postgres RLS keyed on transaction-local app.policy_scope (set_config via withPolicyScope), allow-list guard; proven on db-test only, not enabled in production (ADR-018)
+- [Phase 05]: 05-02: A non-superuser application runtime role is a precondition of Phase 6 enabling RLS (ai_memory is a superuser; RLS would be a silent no-op)
 
 ### Roadmap Evolution
 
@@ -111,8 +114,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-25T21:27:57.675Z
-Stopped at: Completed 05-01-PLAN.md
+Last session: 2026-09-25T21:44:00.622Z
+Stopped at: Completed 05-02-PLAN.md
 Resume file: None
 
 ### Key file locations
