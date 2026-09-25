@@ -98,8 +98,9 @@ async function isDedupHit(thoughtId: string): Promise<boolean> {
 }
 
 /** Promote: create wiki row, soft-delete shard, write audit log entry.
- *  In dry_run mode, only the audit log is written (thoughts unchanged). */
-async function promote(
+ *  In dry_run mode, only the audit log is written (thoughts unchanged).
+ *  Exported for test visibility only (policy-scope-migration.test.ts). */
+export async function promote(
   shardId: string,
   normalised: string,
   score: number,

@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts";
 
 import { sql } from "../src/db.ts";
+import { promote } from "../src/consolidationWorker.ts";
 import { detectBootstrapVersions, runMigrations } from "../src/migrate.ts";
 import { requireTestDatabase } from "./_helpers/testDatabaseGuard.ts";
 
@@ -128,5 +129,50 @@ Deno.test({
 
     await sql`DROP TABLE IF EXISTS schema_migrations`;
     await runMigrations();
+  },
+});
+
+Deno.test({
+  name: "post-migration: capture_thought and consolidation-promote insert shapes satisfy policy_scope NOT NULL",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    // capture_thought's real INSERT is exercised over HTTP by tests/e2e.test.ts. promote()
+    // has no other post-migration coverage, so this drives the real, exported function
+    // against a personal-scoped shard: the wiki row must inherit that scope, not the
+    // interim 'corporate' that capture_thought writes.
+    let shardId: string | undefined;
+    let wikiId: string | undefined;
+    try {
+      const [shard] = await sql<{ id: string }[]>`
+        INSERT INTO public.thoughts (content, content_fingerprint, memory_type, source, policy_scope)
+        VALUES (
+          'policy scope promote carry-forward source shard',
+          ${`policy-scope-promote-${crypto.randomUUID()}`},
+          'shard', 'user-taught', 'personal'
+        )
+        RETURNING id
+      `;
+      shardId = shard.id;
+
+      await promote(shardId, "test normalised content", 1, {}, crypto.randomUUID(), false);
+
+      const [wiki] = await sql<{ id: string; policy_scope: string }[]>`
+        SELECT id, policy_scope FROM public.thoughts
+        WHERE source = 'auto-promoted' AND metadata->>'source_shard_id' = ${shardId}
+      `;
+      wikiId = wiki?.id;
+      assertEquals(wiki?.policy_scope, "personal");
+    } finally {
+      const ids = [shardId, wikiId].filter((id): id is string => id !== undefined);
+      if (ids.length > 0) {
+        // consolidation_log references thoughts without ON DELETE CASCADE.
+        await sql`
+          DELETE FROM consolidation_log
+          WHERE thought_id = ANY(${ids}::uuid[]) OR wiki_id = ANY(${ids}::uuid[])
+        `;
+        await sql`DELETE FROM public.thoughts WHERE id = ANY(${ids}::uuid[])`;
+      }
+    }
   },
 });
