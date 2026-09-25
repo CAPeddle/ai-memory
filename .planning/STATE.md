@@ -93,8 +93,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 |----------|------|--------|-------------|-----------|
 | Write-side scoping | CAPTURE-01 (`capture_thought` accepts caller-supplied `policy_scope`) | Deferred | v1.1 requirements definition | v2 — picked up when ST-101 starts |
 | Vocabulary | POLICY-03 (scope vocabulary beyond the current 4 values) | Deferred | v1.1 requirements definition | v2 — only if a real use case emerges |
-| Topology | ST-100 (score standalone AWCP peer-service topology) | Backlog | v1.0 close | Separate story, not bundled |
-| Exposure | ST-102 (`FEATURE_WORKFLOW` unauthenticated dashboard exposure) | Backlog | v1.0 close | Separate story, unrelated surface |
+| Topology | ST-100 (score standalone AWCP peer-service topology) | Transferred to CAPeddle/awcp#19 (2026-09-25) | v1.0 close | AWCP-owned, not ai-memory work |
+| Exposure | ST-102 (`FEATURE_WORKFLOW` unauthenticated dashboard exposure) | Transferred to CAPeddle/awcp#23 (2026-09-25) | v1.0 close | AWCP-owned decision; any fix still lands in ai-memory `server/` until extraction |
 | Contact Memory | CONTACT-01 (Contact Memory domain MCP) | Backlog | Pre-v1.0 | Independent product track, v2 |
 | Synthesis companion | SYNTH-01 (Obsidian companion) | Backlog | Pre-v1.0 | ST-019 dependent, v2 |
 
