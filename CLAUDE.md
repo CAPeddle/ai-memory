@@ -350,3 +350,11 @@ At the end of each non-trivial session, review the work for **reusable nuggets**
 - An update to **`CLAUDE.md`** or **`.github/copilot-instructions.md`** — for architectural context or workflow-level guidance.
 
 Don't create these unilaterally — propose them to the PO with a one-line rationale. The goal is to compound project knowledge so future sessions start smarter.
+
+## Pending: extract the Windows-side Claude memory archive (added 2026-09-16)
+
+`docs/claude-memory-archive-2026-09-16/` holds the Claude Code auto-memory files that referred to
+this project from the Windows laptop (see its README). **Next session in this repo: read them,
+fold what still holds into this file or the WSL-side memory store, discard the rest, then delete
+the directory and this section.** They were moved here when the laptop's shared memory index was
+curated; nothing loads them automatically.
