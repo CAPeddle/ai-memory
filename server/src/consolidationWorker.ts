@@ -121,10 +121,10 @@ export async function promote(
   await sql.begin(async (txSql) => {
     const [wiki] = await txSql<{ id: string }[]>`
       INSERT INTO thoughts
-        (content, memory_type, source, confidence, supersedes, project, tags, metadata)
+        (content, memory_type, source, confidence, supersedes, project, tags, policy_scope, metadata)
       SELECT
         ${normalised}, 'wiki', 'auto-promoted', ${score}, NULL,
-        project, tags,
+        project, tags, policy_scope,
         jsonb_build_object(
           'generated_by', 'consolidation_worker',
           'source_shard_id', id::text

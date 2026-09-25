@@ -133,8 +133,8 @@ for (const r of ROWS) {
   // content_fingerprint uses md5 of normalised content to avoid clashing with existing rows
   const fp = `md5(lower(regexp_replace('${r.content.replace(/'/g, "''")}', '\\s+', ' ', 'g')))`;
   sqlLines.push(
-    `INSERT INTO public.thoughts (id, content, embedding, project, memory_type, source, content_fingerprint)`,
-    `VALUES ('${r.id}', '${r.content.replace(/'/g, "''")}', ${vecLit}, ${projLit}, 'shard', 'user-taught', ${fp})`,
+    `INSERT INTO public.thoughts (id, content, embedding, project, memory_type, source, content_fingerprint, policy_scope)`,
+    `VALUES ('${r.id}', '${r.content.replace(/'/g, "''")}', ${vecLit}, ${projLit}, 'shard', 'user-taught', ${fp}, 'corporate')`,
     `ON CONFLICT (content_fingerprint) DO UPDATE SET embedding = EXCLUDED.embedding, project = EXCLUDED.project;`,
   );
 }

@@ -32,12 +32,13 @@ Deno.test({
       baselineErrors = (baseline.workers as Record<string, { errors_24h: number }>)?.entity?.errors_24h ?? 0;
 
       await sql`
-        INSERT INTO thoughts (id, content, memory_type, source, content_fingerprint)
+        INSERT INTO thoughts (id, content, memory_type, source, content_fingerprint, policy_scope)
         VALUES (
           ${thoughtId}::uuid,
           ${`__TEST_LLM_FAIL__ ObservabilityE2E${suffix}`},
           'shard', 'user-taught',
-          ${`fp-obs-e2e-${suffix}`}
+          ${`fp-obs-e2e-${suffix}`},
+          'corporate'
         )
       `;
 
@@ -86,12 +87,13 @@ Deno.test({
       baselineDepth = (baseline.queues as Record<string, number>)?.entity_extraction_pending ?? 0;
 
       await sql`
-        INSERT INTO thoughts (id, content, memory_type, source, content_fingerprint)
+        INSERT INTO thoughts (id, content, memory_type, source, content_fingerprint, policy_scope)
         VALUES (
           ${thoughtId}::uuid,
           ${`QueueDepthE2E${suffix}`},
           'shard', 'user-taught',
-          ${`fp-queue-depth-${suffix}`}
+          ${`fp-queue-depth-${suffix}`},
+          'corporate'
         )
       `;
 

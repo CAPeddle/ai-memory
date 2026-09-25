@@ -10,8 +10,8 @@ const failEmbed = (_text: string) => Promise.reject(new Error("stub embed failur
 async function insertNeedyRow(opts: { attempts?: number } = {}): Promise<string> {
   const id = crypto.randomUUID();
   await sql`
-    INSERT INTO thoughts (id, content, content_fingerprint, source, memory_type, embedding_attempts)
-    VALUES (${id}, ${"ST-039 test row " + id}, ${id}, 'user-taught', 'shard', ${opts.attempts ?? 0})
+    INSERT INTO thoughts (id, content, content_fingerprint, source, memory_type, embedding_attempts, policy_scope)
+    VALUES (${id}, ${"ST-039 test row " + id}, ${id}, 'user-taught', 'shard', ${opts.attempts ?? 0}, 'corporate')
   `;
   return id; // needs_embedding defaults true, embedding NULL by default
 }
