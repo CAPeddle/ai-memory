@@ -194,6 +194,25 @@ export async function detectBootstrapVersions(tx: SqlExecutor): Promise<void> {
       ON CONFLICT (version) DO NOTHING
     `;
   }
+
+  // v7 needs the full migrated shape, not column existence alone: a policy_scope
+  // column that is nullable or unconstrained is exactly the default-allow gap 007
+  // exists to close, so it must not be recorded as migrated.
+  const [policyScopeNotNull] = await tx`
+    SELECT 1 AS found FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'thoughts' AND column_name = ${"policy_scope"}
+      AND is_nullable = 'NO'
+  `;
+  const [policyScopeCheck] = await tx`
+    SELECT 1 AS found FROM pg_constraint WHERE conname = ${"thoughts_policy_scope_check"}
+  `;
+  if (policyScopeNotNull && policyScopeCheck) {
+    await tx`
+      INSERT INTO schema_migrations (version, filename)
+      VALUES (7, '007_policy_scope.sql')
+      ON CONFLICT (version) DO NOTHING
+    `;
+  }
 }
 
 async function repairMissingMigration003Artifacts(tx: SqlExecutor, migration003: MigrationFile): Promise<void> {

@@ -134,18 +134,18 @@ Deno.test({
       const nullFingerprint = `migration-006-null-${crypto.randomUUID()}`;
 
       const [professional] = await tx<{ id: string }[]>`
-        INSERT INTO public.thoughts (content, content_fingerprint, profile, tags)
-        VALUES ('migration 006 professional row', ${professionalFingerprint}, 'professional', ARRAY['contact']::text[])
+        INSERT INTO public.thoughts (content, content_fingerprint, profile, tags, policy_scope)
+        VALUES ('migration 006 professional row', ${professionalFingerprint}, 'professional', ARRAY['contact']::text[], 'corporate')
         RETURNING id
       `;
       const [personal] = await tx<{ id: string }[]>`
-        INSERT INTO public.thoughts (content, content_fingerprint, profile)
-        VALUES ('migration 006 personal row', ${personalFingerprint}, 'personal')
+        INSERT INTO public.thoughts (content, content_fingerprint, profile, policy_scope)
+        VALUES ('migration 006 personal row', ${personalFingerprint}, 'personal', 'corporate')
         RETURNING id
       `;
       const [nullProfile] = await tx<{ id: string }[]>`
-        INSERT INTO public.thoughts (content, content_fingerprint, profile)
-        VALUES ('migration 006 null row', ${nullFingerprint}, NULL)
+        INSERT INTO public.thoughts (content, content_fingerprint, profile, policy_scope)
+        VALUES ('migration 006 null row', ${nullFingerprint}, NULL, 'corporate')
         RETURNING id
       `;
 
