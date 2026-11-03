@@ -28,7 +28,7 @@ Full phase detail, success criteria, and requirement coverage: [milestones/v1.0-
 
 **Milestone Goal:** Enforce `scope.tags` as a real default-deny retrieval boundary between corporate and personal content, discharging ai-memory's own isolation obligation (ADR-016 criterion 5 — neutral between topologies).
 
-- [ ] **Phase 5: Policy-Scope Foundation** - Closed-vocabulary scope field, migration, and the chosen SQL enforcement mechanism
+- [x] **Phase 5: Policy-Scope Foundation** - Closed-vocabulary scope field, migration, and the chosen SQL enforcement mechanism (completed 2026-11-03)
 - [ ] **Phase 6: SQL Retrieval Enforcement** - Default-deny scope filtering across every SQL-backed retrieval tool
 - [ ] **Phase 7: Graph-Lane Scope Isolation** - Scope-aware entity identity and graph query enforcement
 - [ ] **Phase 8: Provider-Egress Scope Gating** - Background workers stop sending out-of-scope content to OpenRouter
@@ -48,7 +48,7 @@ Full phase detail, success criteria, and requirement coverage: [milestones/v1.0-
   2. A written threat-model/trust-boundary statement documents the chosen primary SQL enforcement mechanism (Row-Level Security vs. explicit WHERE clauses), validated by a technical spike against one real query path.
   3. A cross-scope visibility matrix specifies what each scope value may see (e.g., does `personal` see `public`? what does `mixed` grant?), ready for every subsequent phase to implement against.
 
-**Plans:** 2/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 **Wave 1**
 
@@ -136,7 +136,7 @@ Phases execute in numeric order: 5 → 6 → 7 → 8 → 9
 | 2. Remote Node Identity & Hub | v1.0 | 2/2 | Complete | 2026-08-06 |
 | 3. Node Client, Reliable Delivery & Regression Safety | v1.0 | 6/6 | Complete | 2026-08-18 |
 | 4. Blocking Evidence & ADR-016 Host Decision | v1.0 | — | Complete | 2026-08-26 |
-| 5. Policy-Scope Foundation | v1.1 | 2/2 | In Progress|  |
+| 5. Policy-Scope Foundation | v1.1 | 2/2 | Complete    | 2026-11-03 |
 | 6. SQL Retrieval Enforcement | v1.1 | 0/TBD | Not started | - |
 | 7. Graph-Lane Scope Isolation | v1.1 | 0/TBD | Not started | - |
 | 8. Provider-Egress Scope Gating | v1.1 | 0/TBD | Not started | - |
