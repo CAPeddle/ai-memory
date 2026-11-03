@@ -31,7 +31,12 @@ covered_files:
   - "shared/policyScope.ts"
 covered_digest: "v1:sha256:fc829ac3dc191e5db5ed282320d288a6bedbf0f0dbd986a66d96e6126b75a4d2"
 behavior_unverified: 0
-overrides_applied: 0
+overrides_applied: 1
+overrides:
+  - must_have: "A written threat-model/trust-boundary statement documents the chosen primary SQL enforcement mechanism, validated by a technical spike against one real query path"
+    reason: "Spike exercises the real public.thoughts table and real postgres.js pool checkout via withPolicyScope(); handler-level integration deferred to Phase 6 wiring, as recorded in ADR-018 'What the spike did NOT prove'"
+    accepted_by: "CAPeddle"
+    accepted_at: "2026-11-02T21:07:18Z"
 human_verification:
   - test: "Confirm that ROADMAP SC #2's 'validated by a technical spike against one real query path' is satisfied by a spike that runs raw SELECTs through withPolicyScope() against the real db-test public.thoughts table and the real postgres.js pool, but NOT through list_thoughts or any other MCP tool handler."
     expected: "The PO either accepts this reading (and records the override below) or requires a list_thoughts-routed spike case before Phase 6 starts."

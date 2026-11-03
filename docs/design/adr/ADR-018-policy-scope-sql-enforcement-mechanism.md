@@ -1,7 +1,7 @@
 ---
 name: "ADR-018: Policy-Scope SQL Enforcement Mechanism (Row-Level Security via withPolicyScope)"
 asset_type: "adr"
-status: "proposed"
+status: "accepted"
 owners:
   - "ai-memory-maintainers"
 source_path: "docs/design/adr/ADR-018-policy-scope-sql-enforcement-mechanism.md"
@@ -15,7 +15,7 @@ relates_to:
 
 # ADR-018: Policy-Scope SQL Enforcement Mechanism (Row-Level Security via `withPolicyScope()`)
 
-**Status:** Proposed. The mechanism is proven against `db-test` only. It is **not yet enabled** on production `public.thoughts`, and no retrieval path calls it. Phase 6 wires and enables it (see [Non-Goals / Explicit Phase Boundary](#non-goals--explicit-phase-boundary)).
+**Status:** Accepted 2026-11-03 (PO, at Phase 5 UAT), as the mechanism decision only: Row-Level Security is the SQL enforcement mechanism every later phase builds against. Acceptance does not mean enforcement is live. The mechanism is proven against `db-test` only. It is **not yet enabled** on production `public.thoughts`, and no retrieval path calls it. Phase 6 wires and enables it (see [Non-Goals / Explicit Phase Boundary](#non-goals--explicit-phase-boundary)).
 **Date:** 2026-09-25
 **Deciders:** Christopher
 **Relates to:** ADR-012 (tags replace binary `profile`), `.planning/REQUIREMENTS.md` (DECISION-01, POLICY-01/02, RETRIEVAL-01..04, CAPTURE-01), `.planning/phases/05-policy-scope-foundation/05-CONTEXT.md` (D-01..D-06), `05-RESEARCH.md` (Patterns 3-4, Pitfalls 1-2, Security Domain)
@@ -124,7 +124,8 @@ This is D-03 plus D-06, verbatim. It is the exact predicate every Phase 6-9 enfo
 | RLS bypassed by the table owner | Elevation of Privilege | mitigate | `FORCE ROW LEVEL SECURITY`, so a non-superuser role that owns the table is still filtered |
 | RLS bypassed by a superuser | Elevation of Privilege | **open, precondition of Phase 6** | The application's `ai_memory` role is a Postgres superuser, and superusers bypass RLS unconditionally. `FORCE` does not change that. The spike used a dedicated non-superuser role for this reason. See Non-Goals |
 | Fail-open predicate on an absent or empty GUC | Elevation of Privilege / Information Disclosure | mitigate (verified) | Allow-list guard `IN ('personal','corporate','mixed','public')`. Rejects `NULL`, `''`, and any stray value. Proven by cases (b) and (d), plus the `IS NOT NULL` mutation run |
-| `ON CONFLICT` merge widening `policy_scope` | Elevation of Privilege | mitigate (done, 05-01) | `policy_scope` is absent from every `DO UPDATE SET` list, so the existing row's scope always wins |
+| `ON CONFLICT` SET list overwriting `policy_scope` | Elevation of Privilege | mitigate (done, 05-01) | `policy_scope` is absent from every `DO UPDATE SET` list, so an upsert never rewrites the existing row's scope |
+| Cross-scope merge through the global conflict key | Elevation of Privilege / Information Disclosure | **open, precondition of capture-side scope and Phase 6** | The conflict target is the global `UNIQUE (content_fingerprint)` (`server/db/schema.sql`), so identical content captured in two scopes collapses into one row: the upsert reactivates it, merges the new caller's tags into it and returns its `id`, whatever its `policy_scope`. Latent in v1.1 because every capture writes `corporate`. Once scope is declared at capture (CAPTURE-01) it becomes a cross-scope write; under RLS it becomes an existence oracle, because `INSERT ... ON CONFLICT DO UPDATE` raises a row-security error when the conflicting row fails the UPDATE policy. Likely fix: `UNIQUE (content_fingerprint, policy_scope)` with a matching `ON CONFLICT` target, promote and the corpus fixture adjusted to match. Phase 6 must decide it before capture-side scope lands (05-REVIEW.md WR-02) |
 | Production not yet enforced | Information Disclosure | **accept, tracked to Phase 6** | Deliberate phase boundary. Until Phase 6, retrieval returns every scope's rows exactly as it did before v1.1 |
 
 ---
