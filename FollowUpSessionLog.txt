@@ -1,40 +1,37 @@
-ST-088 Phase 3 — 5 of 6 plans executed. 03-06 NOT RUN (stopped at its <human-check> gate).
-BRANCH feat/st-088-phase-3-node-client  HEAD 31548af  (23 commits since f3837e4, all "Story: ST-088")
-PHASE DIR .planning/phases/03-node-client-reliable-delivery-regression-safety/
-DONE (SUMMARY.md exists for each):
-  03-01 FEATURE_WORKFLOW:"true" hardcoded on base mcp; regression baseline captured (400 testcases)
-  03-02 server/scripts/awcp-node-client.mjs tracer + workflow-node-client-hub-e2e.test.ts (EVENT-01)
-  03-03 bounded crash-safe spool, oldest-first eviction, ack-gated flush; 14 tests (EVENT-02/03/04, D-14)
-  03-04 terminal auth (77) / deferred transport (75), backoff, heartbeat+checkpoint, D-13 leak gate.
-        Fixed 2 real bugs: infinite flush loop on a no-progress 200; res.json() before res.status, so a
-        plain-text 401 read as "unreachable", defeating D-17.
-  03-05 SAFE-01 empty filtered diff (391 ok / 9 FAILED / 400 = baseline, re-verified from the artifacts);
-        SAFE-02 corpus 33/33; CLAUDE.md grant inventory updated.
+ST-082 / GSD v1.1 Policy-Scope Isolation — Phase 5 COMPLETE (2026-11-03). Next: Phase 6.
+BRANCH gsd/phase-05-policy-scope-foundation  (all "Story: ST-082", no Co-authored-by)
+PR: draft into main, opened this session. ST-082 stays In Progress on the board (spans Phases 5-9).
+SOURCE OF TRUTH: .planning/STATE.md + ROADMAP.md. The older "ST-088 Phase 3" log and
+  docs/investigations/BOOTSTRAP_z2_homeserver_deployment_session.md (ST-080) are NOT the next step.
 
-NOT RUN: 03-06 (wave 6) — real-node leg for ADR-016 criterion 6.
-  The operator WAS asked and DID authorize autonomous execution. Do not re-ask; the answer was yes.
-  The stop is a different gate, found only after reading the plan: 03-06's <human-check> is on its
-  OUTPUT — "Read the ## 16. section end to end before it is pushed" — the mechanical credential gate
-  cannot judge whether a quoted line reveals something else worth withholding, or whether the
-  criterion-6 disposition is honest. Authorizing inputs != discharging that gate.
-  Task 1 enrols z2 (REVERSIBLE: scoped DELETE FROM workflow.execution_nodes WHERE node_id = ...);
-  Task 2 runs experiments 4-6, captures transcripts to /tmp (reversible); Task 3 commits transcripts
-  into git permanently — irreversible, T-03-06-01 rates that leak CRITICAL.
-  Viable split: run Tasks 1-2, stop before Task 3's commit. Resume: /gsd-execute-phase 03 --wave 6
+DONE THIS SESSION:
+  UAT 05: 6/6 pass (05-UAT.md). PO accepted the SC #2 spike reading by override
+    (real table + pool, not via list_thoughts; handler-level proof moves to Phase 6).
+  ADR-018 -> Accepted 2026-11-03, mechanism decision only (RLS via withPolicyScope()).
+    Before accepting, its threat table was corrected (review WR-02, see below).
+  05-SECURITY.md: 12/12 plan-time threats closed, threats_open 0 (ASVS L1).
+  05-VERIFICATION.md regenerated -> passed 13/13. Only ADR-018 changed since the prior
+    verifier run, so runtime results are INHERITED, not re-run (no stack in this clone).
+  phase.complete run: ROADMAP/STATE/PROJECT updated; STATE points at Phase 6.
+  Code review was NOT re-run: source unchanged since c1c7be0, so 05-REVIEW.md stands.
 
-PHASE NOT COMPLETE. Do NOT run phase.complete or gsd-verifier — a verifier would report gaps_found
-against an unrun plan and misrepresent a deliberate stop as a defect.
-HAZARD (outlives this phase): once 03-06 enrols z2, any suite run against the DEV DATABASE_URL —
-including the native ./dev.sh loop — issues DROP SCHEMA IF EXISTS workflow CASCADE, de-enrolling the
-node behind an opaque 401 and destroying evidence. Use the test stack (mcp-test/db-test) only.
+CARRIED INTO PHASE 6 (decide before enabling RLS / before capture-side scope):
+  1. Non-superuser runtime DB role. ai_memory is a superuser, so RLS is a silent no-op.
+  2. WR-02 OPEN: global UNIQUE(content_fingerprint) merges identical content across
+     scopes. Cross-scope write once CAPTURE-01 lands; existence oracle under RLS.
+     Likely fix: UNIQUE(content_fingerprint, policy_scope). Recorded in ADR-018.
+  3. Untriaged: WR-01 (CHECK constraint looked up by name only), WR-03 (backfill records
+     no count), IN-01..09. Concurrency/reconnect tests for withPolicyScope (IN-09).
 
-OPEN FOR THE PO:
-  1. FEATURE_WORKFLOW hardcoded "true" on base mcp leaves an unauthenticated /workflow dashboard shell
-     on 0.0.0.0:3000 for every `docker compose up -d`. Logged open as T-03-01-02.
-  2. STATE.md progress metadata regressed when state.begin-phase recomputed it from .planning/phases/
-     (total_phases 4->2, completed_phases 2->1, percent dropped). phase.complete would build on it.
-  3. Learning candidate: `gsd-tools query commit` omits the mandatory "Story: ST-NNN" trailer. Caught in
-     wave 3, amended, warned in later dispatches; all 23 commits verified compliant. Proposed, not created.
+ENVIRONMENT — READ BEFORE RUNNING ANYTHING:
+  This checkout is a FRESH CLONE (2026-11-02). The previous checkout and its gitignored
+  .env are gone; .planning/state.json is a local gsd artifact (never commit it).
+  Do NOT write a placeholder .env: the dev Postgres volume may still exist under the
+  same compose project with a different password, and it carries the z2 enrolment.
+  For a test run, pass DB_PASSWORD/MEMORY_API_KEY inline on `--profile test` only.
+  HAZARD: suites against the dev DATABASE_URL DROP the workflow schema, which
+  de-enrols z2. Use mcp-test/db-test only.
+  Pre-existing baseline: 9 suite failures from OpenRouter 401 in mcp-test.
 
-FRESHNESS: no code changed after 03-05's suite run (0e2fab3..HEAD is planning docs only), so SAFE-01/02
-still describe the tree. server/src + server/index.ts untouched all phase — the client is additive.
+NEXT: merge the PR (check `git log -1 --format='%(trailers:key=Story,valueonly)'` on the
+  squash = ST-082), then /gsd-plan-phase 6.
