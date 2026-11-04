@@ -360,12 +360,12 @@ Deno.test({
     // Insert the shard
     await sql`
       INSERT INTO thoughts
-        (id, content, memory_type, source, project, tags, confidence, content_fingerprint, active)
+        (id, content, memory_type, source, project, tags, confidence, content_fingerprint, active, policy_scope)
       VALUES
         (${S_E2E_PROMOTE}::uuid,
          'Postgres autovacuum billing guidance for enterprise deployments',
          'shard', 'user-taught', 'e2e-consolidation', ARRAY['developer', 'contact']::text[], 0.8,
-         ${'fp-e2e-promote-' + crypto.randomUUID().slice(0, 8)}, true)
+         ${'fp-e2e-promote-' + crypto.randomUUID().slice(0, 8)}, true, 'corporate')
     `;
 
     // Insert 5 recall events with distinct projects to exceed the promotion threshold

@@ -17,8 +17,8 @@ Deno.test({
 
     try {
       await sql`
-        INSERT INTO thoughts (id, content, memory_type)
-        VALUES (${TEST_THOUGHT_ID}, ${TEST_CONTENT}, 'shard')
+        INSERT INTO thoughts (id, content, memory_type, policy_scope)
+        VALUES (${TEST_THOUGHT_ID}, ${TEST_CONTENT}, 'shard', 'corporate')
         ON CONFLICT (id) DO NOTHING
       `;
 
@@ -72,8 +72,8 @@ Deno.test({
 
     try {
       await sql`
-        INSERT INTO thoughts (id, content, memory_type)
-        VALUES (${thoughtId}, ${failingContent}, 'shard')
+        INSERT INTO thoughts (id, content, memory_type, policy_scope)
+        VALUES (${thoughtId}, ${failingContent}, 'shard', 'corporate')
         ON CONFLICT (id) DO NOTHING
       `;
 
@@ -132,8 +132,8 @@ Deno.test({
     const happyThoughtId = crypto.randomUUID();
     try {
       await sql`
-        INSERT INTO thoughts (id, content, memory_type)
-        VALUES (${happyThoughtId}, ${TEST_CONTENT}, 'shard')
+        INSERT INTO thoughts (id, content, memory_type, policy_scope)
+        VALUES (${happyThoughtId}, ${TEST_CONTENT}, 'shard', 'corporate')
         ON CONFLICT (id) DO NOTHING
       `;
       await sql`

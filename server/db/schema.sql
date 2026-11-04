@@ -29,6 +29,12 @@ CREATE TABLE IF NOT EXISTS public.thoughts (
   project             text,
   tags                text[]      NOT NULL DEFAULT '{}'::text[],
 
+  -- Policy scope (ST-082 / v1.1 Policy-Scope Isolation)
+  -- No DEFAULT, deliberately: every write site must state a scope (see 007_policy_scope.sql).
+  -- The inline CHECK is auto-named thoughts_policy_scope_check, which 007's guard relies on.
+  policy_scope        text        NOT NULL
+                                  CHECK (policy_scope IN ('personal', 'corporate', 'mixed', 'public')),
+
   -- Tier lifecycle
   active              boolean     NOT NULL DEFAULT true,
   supersedes          uuid        REFERENCES public.thoughts(id),

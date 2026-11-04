@@ -530,6 +530,7 @@ server.registerTool(
           memory_type,
           project,
           tags,
+          policy_scope,
           content_fingerprint,
           source
         )
@@ -541,6 +542,7 @@ server.registerTool(
           ${memory_type ?? "shard"},
           ${project},
           ${tags},
+          'corporate',
           ${fingerprint},
           'user-taught'
         )

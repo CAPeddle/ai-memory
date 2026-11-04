@@ -75,8 +75,8 @@ Deno.test({
 
     try {
       await sql`
-        INSERT INTO thoughts (id, content, memory_type, active)
-        VALUES (${thoughtId}::uuid, ${failingContent}, 'shard', true)
+        INSERT INTO thoughts (id, content, memory_type, active, policy_scope)
+        VALUES (${thoughtId}::uuid, ${failingContent}, 'shard', true, 'corporate')
         ON CONFLICT (id) DO NOTHING
       `;
 

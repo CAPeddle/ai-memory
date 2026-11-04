@@ -1,46 +1,46 @@
 ---
-gsd_state_version: 1.0
+gsd_state_version: "1.0"
 milestone: v1.1
 milestone_name: Policy-Scope Isolation
-current_phase: 05
-current_phase_name: Policy-Scope Foundation
-status: executing
-stopped_at: Phase 5 context gathered
-last_updated: "2026-08-28T12:31:17.317Z"
-last_activity: 2026-08-28
-last_activity_desc: ROADMAP.md created for v1.1 (Phases 5-9, 13/13 requirements mapped)
-state_head: e7e2cb5f88adbec4f133b96f69b40a0b1f47e165
+current_phase: 6
+current_phase_name: SQL Retrieval Enforcement
+status: planning
+stopped_at: Phase 05 complete, ready to plan Phase 6
+last_updated: "2026-11-03T21:37:33.646Z"
+last_activity: 2026-11-03
+last_activity_desc: Phase 05 complete, transitioned to Phase 6
+state_head: f7223ec82b974e6e7f4dfb5ccbc143046d9b02a4
 progress:
-  total_phases: 5
-  completed_phases: 0
+  total_phases: 6
+  completed_phases: 4
   total_plans: 2
-  completed_plans: 0
-  percent: 0
+  completed_plans: 2
+  percent: 67
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-28)
+See: .planning/PROJECT.md (updated 2026-11-03)
 
 **Core value:** Knowledge worth retaining must remain accurately recallable across tools, sessions, projects, and time without leaking across policy boundaries.
-**Current focus:** v1.1 Policy-Scope Isolation (ST-082) — default-deny retrieval/provider-egress enforcement, controlled policy-scope field, negative isolation tests across every egress path.
+**Current focus:** Phase 6 — SQL Retrieval Enforcement
 
 ## Current Position
 
-Phase: 05 (Policy-Scope Foundation) — READY TO EXECUTE
-Plan: — (roadmap just created, not yet planned)
-Status: Ready to execute
-Last activity: 2026-08-28 — ROADMAP.md created for v1.1 (Phases 5-9, 13/13 requirements mapped)
+Phase: 6 — SQL Retrieval Enforcement
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-11-03 — Phase 05 complete, transitioned to Phase 6
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed (v1.1): 0
+- Total plans completed (v1.1): 2
 - Average duration: —
 - Total execution time: —
 
@@ -50,7 +50,7 @@ v1.0 velocity (91 commits, 8 GSD-tracked plans across Phases 2-3) is archived in
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 5. Policy-Scope Foundation | TBD | — | — |
+| 5. Policy-Scope Foundation | 2 | 28 min | 14 min |
 | 6. SQL Retrieval Enforcement | TBD | — | — |
 | 7. Graph-Lane Scope Isolation | TBD | — | — |
 | 8. Provider-Egress Scope Gating | TBD | — | — |
@@ -62,6 +62,12 @@ v1.0 velocity (91 commits, 8 GSD-tracked plans across Phases 2-3) is archived in
 - Trend: —
 
 *Updated after each plan completion*
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 05 P01 | 16 min | 3 tasks | 17 files |
+| Phase 05 P02 | 12min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -71,9 +77,13 @@ Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
 - **ADR-016 (v1.0 close):** Candidate A rejected; AWCP is a standalone peer service, topology-neutral on isolation. ST-082's policy-scope enforcement is ai-memory's own obligation, not a co-tenancy tax, and is a precondition of the AWCP adapter contract — not gated on ST-100's still-unscored topology.
-- **Open, by design — Phase 5 resolves it:** The primary SQL enforcement mechanism (Row-Level Security vs. explicit per-path WHERE clauses) is genuinely undecided. STACK.md and ARCHITECTURE.md research passes disagree (RLS pooling/owner-exemption hazard vs. no-chokepoint risk of 15 enumerable WHERE-clause sites). Resolve via a technical spike against one real path (e.g. `list_thoughts`) before committing the remaining phases to either mechanism.
+- **[Phase 05] Mechanism settled — ADR-018 Accepted 2026-11-03:** Row-Level Security keyed on transaction-local `app.policy_scope`, set only via `withPolicyScope()`, with an allow-list guard. Accepted as the mechanism decision only; enforcement is not enabled. The PO accepted the SC #2 spike (real table + pool, not via `list_thoughts`) by override; handler-level proof moves to Phase 6.
 - **Sequencing constraint carried into Phase 7:** Graph write-path scope identity (GRAPH-01) must land before graph read-path filtering (GRAPH-02) — filtering already-fused entity nodes is enforcement without effect.
 - **Fail-closed, not fail-open:** Do not copy the existing `project` context filter's fail-open shape. Absence of scope must deny, matching PROJECT.md's binding constraint.
+- [Phase 05]: promote() carries policy_scope forward from the source shard; capture_thought writes interim 'corporate' (D-05); thoughts.policy_scope has no DEFAULT
+- [Phase 05]: Phase 5 plan work lives on branch gsd/phase-05-policy-scope-foundation (main reported protected by the executor guard)
+- [Phase 05]: 05-02: DECISION-01 resolved as Postgres RLS keyed on transaction-local app.policy_scope (set_config via withPolicyScope), allow-list guard; proven on db-test only, not enabled in production (ADR-018)
+- [Phase 05]: 05-02: A non-superuser application runtime role is a precondition of Phase 6 enabling RLS (ai_memory is a superuser; RLS would be a silent no-op)
 
 ### Roadmap Evolution
 
@@ -87,6 +97,9 @@ None yet.
 
 - **z2 de-enrolment hazard outlives v1.0.** Any test run against the dev `DATABASE_URL` (including native `./dev.sh`) issues `DROP SCHEMA IF EXISTS workflow CASCADE`, which deletes the real enrolled node's `execution_nodes` row. Use `mcp-test`/`db-test` for suite runs; don't run the full suite against dev unless re-enrolment is acceptable.
 - **`docker compose up -d mcp` can silently keep a stale environment** after editing `.env` — compose may report `Running` instead of `Recreated`. Verify env changes inside the running process (`docker compose exec -T mcp printenv VAR`), never from `.env` or an HTTP response.
+- **[Phase 05 → 6] Non-superuser runtime role is a precondition of enabling RLS.** `ai_memory` is a superuser; RLS would be a silent no-op. Who introduces the role (Phase 6 or a prerequisite story) is open (ADR-018 Non-Goals).
+- **[Phase 05 → 6] Global conflict key merges across scopes (WR-02, OPEN).** `UNIQUE (content_fingerprint)` collapses identical content from two scopes into one row; becomes a cross-scope write once capture declares scope, and an existence oracle under RLS. Recorded open in ADR-018's threat table; Phase 6 must decide (likely `UNIQUE (content_fingerprint, policy_scope)`) before capture-side scope lands.
+- **[Phase 05] Untriaged review warnings:** WR-01 (007 guard / migrate.ts v7 probe find the CHECK by name only), WR-03 (backfill records no count), IN-01..IN-09. See `05-REVIEW.md`.
 - **Graph tools are structurally blocked, not merely unfixed** (carried from v1.0 pricing): AGE nodes carry no scope column today. Phase 7 owns the build this milestone priced.
 
 ## Deferred Items
@@ -104,9 +117,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-08-28T11:16:12.153Z
-Stopped at: Phase 5 context gathered
-Resume file: .planning/phases/05-policy-scope-foundation/05-CONTEXT.md
+Last session: 2026-11-03
+Stopped at: Phase 05 complete, ready to plan Phase 6
+Resume file: None
 
 ### Key file locations
 
@@ -124,8 +137,8 @@ Resume file: .planning/phases/05-policy-scope-foundation/05-CONTEXT.md
 *State initialized: 2026-08-05*
 *Reset for v1.1: 2026-08-28*
 
-*Next action: `/gsd-plan-phase 5` — Phase 5 (Policy-Scope Foundation) resolves the RLS-vs-WHERE spike, ships the vocabulary and migration, and hands every later phase a chosen mechanism.*
+*Next action: merge the Phase 5 PR, then `/gsd-plan-phase 6` — Phase 6 wires every SQL retrieval path onto `withPolicyScope()` and enables RLS, after settling the non-superuser role and the WR-02 conflict key.*
 
 ## Operator Next Steps
 
-- Review ROADMAP.md for the v1.1 phase structure, then run `/gsd-plan-phase 5`
+- Merge the Phase 5 PR (ST-082), then run `/gsd-plan-phase 6`. Phase 6 planning must take up the non-superuser runtime role and the WR-02 conflict key first.

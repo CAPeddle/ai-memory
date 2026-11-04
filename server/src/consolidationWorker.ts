@@ -98,8 +98,9 @@ async function isDedupHit(thoughtId: string): Promise<boolean> {
 }
 
 /** Promote: create wiki row, soft-delete shard, write audit log entry.
- *  In dry_run mode, only the audit log is written (thoughts unchanged). */
-async function promote(
+ *  In dry_run mode, only the audit log is written (thoughts unchanged).
+ *  Exported for test visibility only (policy-scope-migration.test.ts). */
+export async function promote(
   shardId: string,
   normalised: string,
   score: number,
@@ -120,10 +121,10 @@ async function promote(
   await sql.begin(async (txSql) => {
     const [wiki] = await txSql<{ id: string }[]>`
       INSERT INTO thoughts
-        (content, memory_type, source, confidence, supersedes, project, tags, metadata)
+        (content, memory_type, source, confidence, supersedes, project, tags, policy_scope, metadata)
       SELECT
         ${normalised}, 'wiki', 'auto-promoted', ${score}, NULL,
-        project, tags,
+        project, tags, policy_scope,
         jsonb_build_object(
           'generated_by', 'consolidation_worker',
           'source_shard_id', id::text

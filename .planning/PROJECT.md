@@ -35,6 +35,7 @@ Explicitly deferred: write-side capture-time policy scoping (ST-101's need — p
 - ✓ Workflow Operations exposes opt-in packet, decision, checkpoint, dashboard, and CLI flows — ST-086/ST-087
 - ✓ Contact Memory can parse WhatsApp exports, review proposed facts, and commit approved shards through the platform MCP — existing `contact-memory/` slice
 - ✓ ST-088 Stage 2 evidence: policy-scope enforcement priced (64+ hrs), a remote Ubuntu execution node registers/reports/replays reliably against the hub, execution-blocking audited (UNPROVEN), and ADR-016's host recommendation finalized — v1.0 (reject Candidate A, direct a standalone AWCP peer service)
+- ✓ Every thought carries a closed-vocabulary, no-default `policy_scope` (`personal`/`corporate`/`mixed`/`public`), existing rows backfilled to `corporate`, and the SQL enforcement mechanism (RLS via `withPolicyScope()`) chosen and documented in ADR-018 — v1.1 Phase 5 (POLICY-01, POLICY-02, DECISION-01). Enforcement itself is Phase 6
 
 ### Active
 
@@ -95,6 +96,7 @@ The Docker test stack is isolated from development data but accumulates state du
 | Keep remote nodes outbound-only with no general-purpose shell | Minimizes attack surface while preserving execution evidence | — Pending |
 | Preserve existing board and unified plans alongside GSD tracking | Migration must not discard current delivery history or violate active WIP | ✓ Good |
 | Reject Candidate A (ai-memory as AWCP host); direct a standalone AWCP peer service instead | Reconciled all five ST-088 evidence inputs (pricing, node experiments, execution-blocking finding, shared-runtime blast radius, code drift) — a fourth outcome none of the three anticipated candidates named | ✓ Good — ADR-016 rev 1.5 Accepted 2026-08-26, merged PR #60. Peer-service topology itself is directed but unscored — ST-100 |
+| Enforce policy scope with Postgres RLS keyed on a transaction-local `app.policy_scope`, not per-path WHERE clauses | One chokepoint instead of ~15 enumerable sites; the spike proved fail-closed behaviour on an absent/empty GUC and on reused pooled connections | — Pending — ADR-018 Accepted 2026-11-03 as the mechanism decision; not live until Phase 6 adds a non-superuser runtime role and wires every path |
 
 ## Evolution
 
@@ -114,4 +116,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-28 after starting v1.1 milestone*
+*Last updated: 2026-11-03 after Phase 5*

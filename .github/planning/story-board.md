@@ -185,24 +185,6 @@
 - Docs: `docs/investigations/awcp-spec-evaluation.md` §4, §8 Q10; `docs/design/adr/ADR-007-consolidation-pipeline.md`; `docs/design/adr/ADR-013-platform-product-definitions.md` §4(a); `prism-llm-wiki` boundary plan (`docs/plans/2026-07-28-001-docs-developer-memory-prism-boundary-plan.md`) for the truth-conditions distinction
 - Notes: Committed as a real follow-on story rather than "raw platform primitives forever" (PO decision, AWCP §8 Q10, 2026-07-29) — AWCP's own knowledge requirements are effectively Developer Memory's spec already. Verify referenced file paths/sections still hold when picked up — memories freeze in time.
 
-### ST-082: Enforce `scope.tags` as a retrieval filter (corporate/personal isolation)
-- Type: hardening / security
-- Source: AWCP §8 Q9 (PO decision 2026-07-29, promoted to Must, PR #31)
-- phase: 2
-- Value: 4
-- Blocked by: —
-- Touches: `server/src/searchQuality.ts` (must consume `scope.tags` as a retrieval filter — currently parsed but not enforced), `server/src/parseContext.ts` (parsing already shipped), `server/tests/`
-- Acceptance criteria:
-  - [ ] `scope.tags`, already parsed by `parseContext.ts`, is enforced as a retrieval filter in `searchQuality.ts` across both `search_thoughts` and `list_thoughts` lanes — not merely available on the context object
-  - [ ] **Controlled policy-scope field** (extended per PR #31 governance round, AWCP §8 Q9): observations/sources carry a closed-vocabulary policy scope distinct from free-form descriptive tags — ordinary tags are not the sole policy boundary
-  - [ ] **Default-deny** semantics for retrieval *and* model-provider routing: content is never returned to, or sent through a provider for, a scope it wasn't granted; absence of scope means deny, not allow
-  - [ ] **Negative isolation tests across every egress path** — lexical search, vector search, graph traversal, context assembly, and exports — each proving corporate-scoped content is not reachable from a personal scope and vice versa (not just the search lanes)
-  - [ ] ADR-012's descriptive tag vocabulary is unchanged — the policy-scope field is additive, not a tag-vocabulary rewrite
-  - [ ] Documented as the load-bearing control set for corporate/personal isolation per `docs/investigations/prism-ground-truth-inventory.md` §6 item 1 and AWCP §8 Q9 (rev 1.5)
-- Plan: (to be created — `docs/plans/`)
-- Docs: `docs/investigations/awcp-spec-evaluation.md` §8 Q9; `docs/investigations/prism-ground-truth-inventory.md` §6 item 1; `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` §4
-- Notes: Promoted from a known, previously-deferred gap (`docs/investigations/awcp-spec-evaluation.md` §4) to a **Must** now that AWCP's local source-lineage tracker (ADR-016 §4) will co-locate corporate Confluence/Jira/ADO-derived content with personal memory in the same store. Should land before or alongside that tracker's implementation, not after — verify `parseContext.ts`/`searchQuality.ts` still match this description when picked up. **Reframed 2026-08-26 (ADR-016 rev 1.5): the co-location premise above is void.** AWCP is not hosted here — Candidate A was rejected and AWCP becomes a standalone peer service, so its source-lineage tracker goes with it and will not co-locate corporate content with personal memory in this store. **The obligation is unchanged and stands on ai-memory's own merits**: `scope.tags` is enforced in zero retrieval paths regardless of where AWCP lives, which is why ADR-016 records criterion 5 as *neutral between topologies* rather than as a co-tenancy tax. Two consequences for scope: the urgency argument must be re-derived from ai-memory's own personal/corporate boundary rather than inherited from AWCP's arrival, and threading `PolicyScope` through the **read** side (`server/src/workflow/ports.ts:109` carries none while `:162` is typed), default-deny, is additionally a **precondition of the AWCP adapter contract** (findings §18.3, §18.8 Phase A) — so that half has a second, external consumer waiting on it.
-
 ### ST-080: Revisit deployment host — self-hosted homeserver + Tailscale (fills ADR-009's deferred host decision)
 - Type: spike / architecture decision
 - Source: Investigation `docs/investigations/homeserver-tailscale-deployment-evaluation.md` (2026-07-22) — PO proposal to host the platform (and potentially all products) on a personal Z2 homeserver over Tailscale
@@ -645,6 +627,24 @@
 ## Refined
 
 ## In Progress
+
+### ST-082: Enforce `scope.tags` as a retrieval filter (corporate/personal isolation)
+- Type: hardening / security
+- Source: AWCP §8 Q9 (PO decision 2026-07-29, promoted to Must, PR #31)
+- phase: 2
+- Value: 4
+- Blocked by: —
+- Touches: `server/src/searchQuality.ts` (must consume `scope.tags` as a retrieval filter — currently parsed but not enforced), `server/src/parseContext.ts` (parsing already shipped), `server/tests/`
+- Acceptance criteria:
+  - [ ] `scope.tags`, already parsed by `parseContext.ts`, is enforced as a retrieval filter in `searchQuality.ts` across both `search_thoughts` and `list_thoughts` lanes — not merely available on the context object
+  - [ ] **Controlled policy-scope field** (extended per PR #31 governance round, AWCP §8 Q9): observations/sources carry a closed-vocabulary policy scope distinct from free-form descriptive tags — ordinary tags are not the sole policy boundary
+  - [ ] **Default-deny** semantics for retrieval *and* model-provider routing: content is never returned to, or sent through a provider for, a scope it wasn't granted; absence of scope means deny, not allow
+  - [ ] **Negative isolation tests across every egress path** — lexical search, vector search, graph traversal, context assembly, and exports — each proving corporate-scoped content is not reachable from a personal scope and vice versa (not just the search lanes)
+  - [ ] ADR-012's descriptive tag vocabulary is unchanged — the policy-scope field is additive, not a tag-vocabulary rewrite
+  - [ ] Documented as the load-bearing control set for corporate/personal isolation per `docs/investigations/prism-ground-truth-inventory.md` §6 item 1 and AWCP §8 Q9 (rev 1.5)
+- Plan: GSD milestone v1.1 — `.planning/ROADMAP.md` Phases 5-9; Phase 5 plans in `.planning/phases/05-policy-scope-foundation/`
+- Docs: `docs/investigations/awcp-spec-evaluation.md` §8 Q9; `docs/investigations/prism-ground-truth-inventory.md` §6 item 1; `docs/design/adr/ADR-016-awcp-consolidation-host-topology.md` §4
+- Notes: Promoted from a known, previously-deferred gap (`docs/investigations/awcp-spec-evaluation.md` §4) to a **Must** now that AWCP's local source-lineage tracker (ADR-016 §4) will co-locate corporate Confluence/Jira/ADO-derived content with personal memory in the same store. Should land before or alongside that tracker's implementation, not after — verify `parseContext.ts`/`searchQuality.ts` still match this description when picked up. **Reframed 2026-08-26 (ADR-016 rev 1.5): the co-location premise above is void.** AWCP is not hosted here — Candidate A was rejected and AWCP becomes a standalone peer service, so its source-lineage tracker goes with it and will not co-locate corporate content with personal memory in this store. **The obligation is unchanged and stands on ai-memory's own merits**: `scope.tags` is enforced in zero retrieval paths regardless of where AWCP lives, which is why ADR-016 records criterion 5 as *neutral between topologies* rather than as a co-tenancy tax. Two consequences for scope: the urgency argument must be re-derived from ai-memory's own personal/corporate boundary rather than inherited from AWCP's arrival, and threading `PolicyScope` through the **read** side (`server/src/workflow/ports.ts:109` carries none while `:162` is typed), default-deny, is additionally a **precondition of the AWCP adapter contract** (findings §18.3, §18.8 Phase A) — so that half has a second, external consumer waiting on it.
 
 ## Review
 
